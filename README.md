@@ -1,12 +1,12 @@
-# PaceLab
+# SectorCoach
 
-PaceLab is a performance management platform for athletes, coaches, and club admins.
+SectorCoach is a performance management platform for athletes, coaches, and club admins.
 
 It is designed to bring training plans, test weeks, athlete monitoring, reporting, and team operations into one shared system.
 
-## What PaceLab Does
+## What SectorCoach Does
 
-PaceLab supports three connected product experiences:
+SectorCoach supports three connected product experiences:
 
 - **Athletes** can view plans, submit wellness and test data, and track progress.
 - **Coaches** can manage teams, build programs, monitor athlete state, and review performance signals.
@@ -90,6 +90,6 @@ npm run qa
 
 ## Notes
 
-- PaceLab was migrated from Next.js to React + Vite.
+- SectorCoach was migrated from Next.js to React + Vite.
 - The current app is SPA-based.
 - Local planning and status markdown files are intentionally excluded from git.
