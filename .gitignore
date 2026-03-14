@@ -20,3 +20,4 @@ test-results/
 
 # Local planning / status docs
 /*.md
+!/README.md
