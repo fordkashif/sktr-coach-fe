@@ -88,6 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const useSectionBoundTopTone =
     pathname.startsWith("/coach/dashboard") ||
     pathname.startsWith("/coach/teams") ||
+    pathname.startsWith("/coach/athletes") ||
     pathname.startsWith("/coach/training-plan") ||
     pathname.startsWith("/coach/test-week") ||
     pathname.startsWith("/coach/reports")
@@ -239,8 +240,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header
           className={cn(
             "px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-6 lg:px-8 lg:pt-4",
-            "bg-[#f2f5fa] pb-3 text-slate-950 lg:bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)] lg:text-white",
-            useSectionBoundTopTone ? "lg:bg-[#06101d] lg:pb-4" : "lg:pb-0",
+            "bg-[#f2f5fa] pb-3 text-slate-950 lg:text-white",
+            useSectionBoundTopTone
+              ? "lg:bg-[#06101d] lg:pb-4"
+              : "lg:bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)] lg:pb-0",
           )}
         >
           <div className="py-0 lg:bg-transparent">
