@@ -1,10 +1,17 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
 import { BarChart, PieChart } from "@mui/x-charts"
 import { ClubAdminNav } from "@/components/club-admin/admin-nav"
 import { Button } from "@/components/ui/button"
 import { loadClubInvites, loadClubTeams, loadClubUsers } from "../state"
 import { mockAthletes, mockPRs } from "@/lib/mock-data"
+import { getBackendMode } from "@/lib/supabase/config"
+import {
+  getClubAdminOpsSnapshot,
+  getClubAdminReportSnapshot,
+  insertAuditEvent,
+} from "@/lib/data/club-admin/ops-data"
 import { logAuditEvent } from "@/lib/mock-audit"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { FileDownloadIcon, PrinterIcon } from "@hugeicons/core-free-icons"
@@ -51,39 +58,137 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export default function ClubAdminReportsPage() {
-  const users = loadClubUsers()
-  const teams = loadClubTeams()
-  const invites = loadClubInvites()
+  const backendMode = getBackendMode()
+  const [users, setUsers] = useState(loadClubUsers)
+  const [teams, setTeams] = useState(loadClubTeams)
+  const [invites, setInvites] = useState(loadClubInvites)
+  const [athleteRows, setAthleteRows] = useState(
+    mockAthletes.map((athlete) => ({
+      id: athlete.id,
+      name: athlete.name,
+      readiness: athlete.readiness,
+      adherenceLabel: `${athlete.adherence}%`,
+    })),
+  )
+  const [prRows, setPrRows] = useState<Array<{
+    athleteId: string
+    event: string
+    bestValue: string
+    category: string
+    measuredOn: string
+  }>>(
+    mockPRs.map((pr) => ({
+      athleteId: pr.athleteId,
+      event: pr.event,
+      bestValue: pr.bestValue,
+      category: pr.category,
+      measuredOn: pr.date,
+    })),
+  )
+  const [backendError, setBackendError] = useState<string | null>(null)
 
-  const exportClubUsers = () => {
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const load = async () => {
+      const [ops, report] = await Promise.all([getClubAdminOpsSnapshot(), getClubAdminReportSnapshot()])
+      if (cancelled) return
+
+      if (!ops.ok) {
+        setBackendError(ops.error.message)
+      } else {
+        setUsers(
+          ops.data.users.map((user) => ({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            teamId: user.teamId,
+          })),
+        )
+        setInvites(
+          ops.data.invites.map((invite) => ({
+            id: invite.id,
+            email: invite.email,
+            teamId: invite.teamId,
+            status: invite.status === "revoked" ? "expired" : invite.status,
+            createdAt: invite.createdAt,
+          })),
+        )
+      }
+
+      if (!report.ok) {
+        setBackendError((current) => current ?? report.error.message)
+      } else {
+        setTeams(
+          report.data.teams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            eventGroup: (team.eventGroup as "Sprint" | "Mid" | "Distance" | "Jumps" | "Throws") ?? "Sprint",
+            status: team.status,
+          })),
+        )
+        setAthleteRows(
+          report.data.athletes.map((athlete) => ({
+            id: athlete.id,
+            name: athlete.name,
+            readiness: athlete.readiness,
+            adherenceLabel: "-",
+          })),
+        )
+        setPrRows(report.data.prRows)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
+
+  const emitAudit = async (action: string, target: string, detail?: string) => {
+    if (backendMode === "supabase") {
+      const result = await insertAuditEvent({ action, target, detail })
+      if (!result.ok) setBackendError((current) => current ?? result.error.message)
+      return
+    }
+    logAuditEvent({ actor: "club-admin", action, target, detail })
+  }
+
+  const exportClubUsers = async () => {
     const rows = [["Name", "Email", "Role", "Status", "Team"], ...users.map((user) => [user.name, user.email, user.role, user.status, user.teamId ?? "-"])]
     downloadCsv("club-users.csv", rows)
-    logAuditEvent({ actor: "club-admin", action: "export_csv", target: "users", detail: "club-users.csv" })
+    await emitAudit("export_csv", "users", "club-users.csv")
   }
 
-  const exportTeams = () => {
+  const exportTeams = async () => {
     const rows = [["Team", "Event Group", "Status", "Coach"], ...teams.map((team) => [team.name, team.eventGroup, team.status, team.coachEmail ?? "-"])]
     downloadCsv("club-teams.csv", rows)
-    logAuditEvent({ actor: "club-admin", action: "export_csv", target: "teams", detail: "club-teams.csv" })
+    await emitAudit("export_csv", "teams", "club-teams.csv")
   }
 
-  const exportPerformance = () => {
+  const exportPerformance = async () => {
     const rows = [
       ["Athlete", "Readiness", "Plan Adherence", "Latest PR Event", "Latest PR"],
-      ...mockAthletes.map((athlete) => {
-        const lastPr = mockPRs.find((pr) => pr.athleteId === athlete.id)
-        return [athlete.name, athlete.readiness, `${athlete.adherence}%`, lastPr?.event ?? "-", lastPr?.bestValue ?? "-"]
+      ...athleteRows.map((athlete) => {
+        const lastPr = prRows.find((pr) => pr.athleteId === athlete.id)
+        return [athlete.name, athlete.readiness, athlete.adherenceLabel, lastPr?.event ?? "-", lastPr?.bestValue ?? "-"]
       }),
     ]
     downloadCsv("club-performance.csv", rows)
-    logAuditEvent({ actor: "club-admin", action: "export_csv", target: "performance", detail: "club-performance.csv" })
+    await emitAudit("export_csv", "performance", "club-performance.csv")
   }
 
-  const readinessSummary = {
-    green: mockAthletes.filter((athlete) => athlete.readiness === "green").length,
-    yellow: mockAthletes.filter((athlete) => athlete.readiness === "yellow").length,
-    red: mockAthletes.filter((athlete) => athlete.readiness === "red").length,
-  }
+  const readinessSummary = useMemo(
+    () => ({
+      green: athleteRows.filter((athlete) => athlete.readiness === "green").length,
+      yellow: athleteRows.filter((athlete) => athlete.readiness === "yellow").length,
+      red: athleteRows.filter((athlete) => athlete.readiness === "red").length,
+    }),
+    [athleteRows],
+  )
   const readinessTotal = readinessSummary.green + readinessSummary.yellow + readinessSummary.red
   const readinessPieData = [
     { id: "ready", value: readinessSummary.green, label: "Ready", color: "#10b981" },
@@ -92,7 +197,7 @@ export default function ClubAdminReportsPage() {
   ]
 
   const prByCategory = Object.entries(
-    mockPRs.reduce<Record<string, number>>((acc, pr) => {
+    prRows.reduce<Record<string, number>>((acc, pr) => {
       acc[pr.category] = (acc[pr.category] ?? 0) + 1
       return acc
     }, {}),
@@ -110,6 +215,11 @@ export default function ClubAdminReportsPage() {
           <ClubAdminNav />
         </div>
       </section>
+      {backendError ? (
+        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Backend sync issue: {backendError}
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <div className="mobile-card-primary">
@@ -124,7 +234,7 @@ export default function ClubAdminReportsPage() {
                 { label: "Users", value: users.length },
                 { label: "Teams", value: teams.length },
                 { label: "Invites", value: invites.length },
-                { label: "PR rows", value: mockPRs.length },
+                { label: "PR rows", value: prRows.length },
               ].map((item) => (
                 <div key={item.label} className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3 text-center">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
@@ -238,7 +348,7 @@ export default function ClubAdminReportsPage() {
               className="h-11 w-full rounded-full border-slate-200 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
               onClick={() => {
                 window.print()
-                logAuditEvent({ actor: "club-admin", action: "export_pdf", target: "reports", detail: "print flow" })
+                void emitAudit("export_pdf", "reports", "print flow")
               }}
             >
               <HugeiconsIcon icon={PrinterIcon} className="size-4" />

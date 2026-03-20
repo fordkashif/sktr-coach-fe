@@ -93,6 +93,27 @@ export type ClubAdminOpsSnapshot = {
   teams: ClubAdminTeamOption[]
 }
 
+export type ClubAdminReportSnapshot = {
+  teams: Array<{
+    id: string
+    name: string
+    eventGroup: string | null
+    status: "active" | "archived"
+  }>
+  athletes: Array<{
+    id: string
+    name: string
+    readiness: "green" | "yellow" | "red"
+  }>
+  prRows: Array<{
+    athleteId: string
+    event: string
+    bestValue: string
+    category: string
+    measuredOn: string
+  }>
+}
+
 export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnapshot>> {
   const clientResult = requireSupabaseClient("getClubAdminOpsSnapshot")
   if (!clientResult.ok) return clientResult
@@ -214,6 +235,60 @@ export async function createCoachInvite(params: {
   })
 }
 
+export async function createUserProvisioningInvite(params: {
+  email: string
+  role: ClubAdminUser["role"]
+  displayName: string
+  teamId?: string
+}): Promise<Result<ClubAdminInvite>> {
+  const clientResult = requireSupabaseClient("createUserProvisioningInvite")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const inviteEmail = params.email.trim().toLowerCase()
+  const displayName = params.displayName.trim()
+  if (!inviteEmail || !displayName) return err("VALIDATION", "Name and email are required.")
+
+  const otpResult = await clientResult.client.auth.signInWithOtp({
+    email: inviteEmail,
+    options: {
+      data: {
+        tenant_id: contextResult.data.tenantId,
+        role: params.role,
+        display_name: displayName,
+        team_id: params.teamId ?? null,
+      },
+    },
+  })
+
+  if (otpResult.error) return err("UNKNOWN", otpResult.error.message, otpResult.error)
+
+  const { data, error } = await clientResult.client
+    .from("coach_invites")
+    .insert({
+      tenant_id: contextResult.data.tenantId,
+      email: inviteEmail,
+      team_id: params.teamId ?? null,
+      role: params.role,
+      status: "pending",
+      invited_by_user_id: contextResult.data.userId,
+      metadata: { display_name: displayName },
+    })
+    .select("id, email, team_id, status, created_at")
+    .single()
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok({
+    id: data.id,
+    email: data.email,
+    teamId: data.team_id ?? undefined,
+    status: data.status,
+    createdAt: data.created_at.slice(0, 10),
+  })
+}
+
 export async function reviewAccountRequest(params: {
   requestId: string
   status: "approved" | "declined"
@@ -284,4 +359,63 @@ export async function insertAuditEvent(params: {
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
+}
+
+export async function getClubAdminReportSnapshot(): Promise<Result<ClubAdminReportSnapshot>> {
+  const clientResult = requireSupabaseClient("getClubAdminReportSnapshot")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const [teamsResult, athletesResult, prsResult] = await Promise.all([
+    clientResult.client.from("teams").select("id, name, event_group, is_archived").eq("tenant_id", contextResult.data.tenantId),
+    clientResult.client.from("athletes").select("id, first_name, last_name, readiness").eq("tenant_id", contextResult.data.tenantId),
+    clientResult.client
+      .from("pr_records")
+      .select("athlete_id, event, best_value, category, measured_on")
+      .eq("tenant_id", contextResult.data.tenantId)
+      .order("measured_on", { ascending: false }),
+  ])
+
+  if (teamsResult.error) return { ok: false, error: mapPostgrestError(teamsResult.error) }
+  if (athletesResult.error) return { ok: false, error: mapPostgrestError(athletesResult.error) }
+  if (prsResult.error) return { ok: false, error: mapPostgrestError(prsResult.error) }
+
+  return ok({
+    teams: ((teamsResult.data as Array<{
+      id: string
+      name: string
+      event_group: string | null
+      is_archived: boolean
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      eventGroup: row.event_group,
+      status: row.is_archived ? "archived" : "active",
+    })),
+    athletes: ((athletesResult.data as Array<{
+      id: string
+      first_name: string
+      last_name: string
+      readiness: "green" | "yellow" | "red" | null
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      name: `${row.first_name} ${row.last_name}`.trim(),
+      readiness: row.readiness ?? "yellow",
+    })),
+    prRows: ((prsResult.data as Array<{
+      athlete_id: string
+      event: string
+      best_value: string
+      category: string
+      measured_on: string
+    }> | null) ?? []).map((row) => ({
+      athleteId: row.athlete_id,
+      event: row.event,
+      bestValue: row.best_value,
+      category: row.category,
+      measuredOn: row.measured_on,
+    })),
+  })
 }

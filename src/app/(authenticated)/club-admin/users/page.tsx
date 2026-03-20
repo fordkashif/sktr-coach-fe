@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   createCoachInvite,
+  createUserProvisioningInvite,
   getClubAdminOpsSnapshot,
   insertAuditEvent,
   reviewAccountRequest,
@@ -166,7 +167,30 @@ export default function ClubAdminUsersPage() {
               onClick={async () => {
                 if (!name.trim() || !email.trim()) return
                 if (backendMode === "supabase") {
-                  setBackendError("Manual user provisioning is not wired yet in supabase mode.")
+                  const inviteResult = await createUserProvisioningInvite({
+                    email: email.trim().toLowerCase(),
+                    role,
+                    displayName: name.trim(),
+                    teamId: teamId !== "none" ? teamId : undefined,
+                  })
+                  if (!inviteResult.ok) {
+                    setBackendError(inviteResult.error.message)
+                    return
+                  }
+                  setInvites((current) => [
+                    {
+                      id: inviteResult.data.id,
+                      email: inviteResult.data.email,
+                      teamId: inviteResult.data.teamId,
+                      status: inviteResult.data.status === "revoked" ? "expired" : inviteResult.data.status,
+                      createdAt: inviteResult.data.createdAt,
+                    },
+                    ...current,
+                  ])
+                  await emitAudit("user_provision_invite", inviteResult.data.email, `${role}${teamId !== "none" ? ` (${teamId})` : ""}`)
+                  setName("")
+                  setEmail("")
+                  setTeamId("none")
                   return
                 }
                 const next: ClubUser = {
