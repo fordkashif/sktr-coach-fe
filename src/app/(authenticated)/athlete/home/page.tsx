@@ -4,6 +4,8 @@ import { useEffect, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArrowRight01Icon,
+  CheckmarkCircle01Icon,
+  CheckmarkCircle02Icon,
   Clock01Icon,
   Dumbbell01Icon,
   Fire03Icon,
@@ -13,11 +15,16 @@ import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { mockAthletes, mockCurrentSession } from "@/lib/mock-data"
 import {
+  dateKeyLocal,
   defaultSessionProgress,
+  parseSessionCompletions,
   progressForCurrentSession,
+  SESSION_COMPLETIONS_STORAGE_KEY,
   SESSION_PROGRESS_STORAGE_KEY,
   type SessionProgress,
 } from "@/lib/athlete-session"
+import { getCurrentAthleteWeeklySessionCompletions } from "@/lib/data/session/session-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
 type PreviewBlock = {
@@ -31,9 +38,14 @@ type PreviewBlock = {
 
 export default function AthleteHomePage() {
   const athlete = mockAthletes[0]
+  const [now, setNow] = useState(() => new Date())
   const [progress, setProgress] = useState<SessionProgress>(() => {
     if (typeof window === "undefined") return defaultSessionProgress()
     return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
+  })
+  const [completionDates, setCompletionDates] = useState<string[]>(() => {
+    if (typeof window === "undefined") return []
+    return parseSessionCompletions(window.localStorage.getItem(tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)))
   })
 
   useEffect(() => {
@@ -41,6 +53,7 @@ export default function AthleteHomePage() {
 
     const syncProgress = () => {
       setProgress(progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY))))
+      setCompletionDates(parseSessionCompletions(window.localStorage.getItem(tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY))))
     }
 
     syncProgress()
@@ -53,9 +66,63 @@ export default function AthleteHomePage() {
     }
   }, [])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date())
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [])
+
   const completedCount = progress.completedBlockIds.length
   const allComplete = completedCount === mockCurrentSession.blocks.length
   const nextActionLabel = allComplete ? "Review Workout" : completedCount > 0 ? "Resume Workout" : "Start Workout"
+  const completionDateSet = new Set(completionDates)
+
+  const startOfWeek = new Date(now)
+  const dayOffset = (startOfWeek.getDay() + 6) % 7
+  startOfWeek.setDate(startOfWeek.getDate() - dayOffset)
+  startOfWeek.setHours(0, 0, 0, 0)
+  const weekStartKey = dateKeyLocal(startOfWeek)
+  const weekEnd = new Date(startOfWeek)
+  weekEnd.setDate(startOfWeek.getDate() + 4)
+  const weekEndKey = dateKeyLocal(weekEnd)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadWeeklyCompletions = async () => {
+      if (getBackendMode() !== "supabase") return
+
+      const result = await getCurrentAthleteWeeklySessionCompletions(weekStartKey, weekEndKey)
+      if (!result.ok) {
+        console.warn("[session] failed to load weekly completions in supabase mode", result.error)
+        return
+      }
+
+      if (cancelled) return
+      setCompletionDates(result.data.map((item) => item.completionDate))
+    }
+
+    void loadWeeklyCompletions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [weekStartKey, weekEndKey])
+
+  const weeklyCompletions = Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(startOfWeek)
+    date.setDate(startOfWeek.getDate() + index)
+    const key = dateKeyLocal(date)
+    return {
+      key,
+      label: date.toLocaleDateString(undefined, { weekday: "short" }),
+      day: `${date.getDate()}`,
+      completed: completionDateSet.has(key) || (getBackendMode() !== "supabase" && index <= 2),
+      isToday: key === dateKeyLocal(now),
+    }
+  })
 
   const previewBlocks: PreviewBlock[] = [
     {
@@ -119,7 +186,9 @@ export default function AthleteHomePage() {
           </div>
 
           <div className="mt-5 space-y-3">
-            <p className="text-[3rem] leading-none font-medium tracking-[-0.07em] text-slate-950">2:35 pm</p>
+            <p className="text-[3rem] leading-none font-medium tracking-[-0.07em] text-slate-950">
+              {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </p>
             <div className="inline-flex rounded-full bg-[#eef5ff] px-3 py-1 text-sm font-medium text-slate-700">
               Lower Body
             </div>
@@ -139,11 +208,17 @@ export default function AthleteHomePage() {
             <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1">
-                    <span className="size-2.5 rounded-full bg-[#1368ff]" />
-                    <span className="size-2.5 rounded-full bg-[#0f172a]" />
-                  </div>
-                  <p className="text-[1.2rem] font-semibold tracking-[-0.04em] text-slate-950">Today&apos;s Workout</p>
+                  {allComplete ? (
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-5 text-emerald-600" />
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <span className="size-2.5 rounded-full bg-[#1368ff]" />
+                      <span className="size-2.5 rounded-full bg-[#0f172a]" />
+                    </div>
+                  )}
+                  <p className="text-[1.2rem] font-semibold tracking-[-0.04em] text-slate-950">
+                    {allComplete ? "Session Completed" : "Today's Workout"}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -154,25 +229,69 @@ export default function AthleteHomePage() {
                 </button>
               </div>
 
-              <div className="mt-4 space-y-4">
-                {previewBlocks.map((block) => (
-                  <div key={block.id} className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`flex size-10 items-center justify-center rounded-full ${block.tone}`}>
-                        {block.glyph === "clock" ? (
-                          <HugeiconsIcon icon={Clock01Icon} className="size-4 text-slate-950" />
-                        ) : block.glyph === "repeat" ? (
-                          <HugeiconsIcon icon={RepeatIcon} className="size-4 text-slate-950" />
-                        ) : (
-                          <HugeiconsIcon icon={Dumbbell01Icon} className="size-4 text-slate-950" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">{block.label}</p>
-                        {block.helper ? <p className="text-xs text-slate-500">{block.helper}</p> : null}
-                      </div>
+              {allComplete ? (
+                <div className="relative mt-4 overflow-hidden rounded-[22px] border border-[#99f6cf] bg-[linear-gradient(140deg,#f7fffb_0%,#ebfff5_48%,#e6fff9_100%)] px-4 py-4 shadow-[0_14px_34px_rgba(16,185,129,0.15)]">
+                  <div className="pointer-events-none absolute -top-10 -right-8 h-24 w-24 rounded-full bg-[#34d399]/20 blur-2xl" />
+                  <div className="pointer-events-none absolute -bottom-10 -left-8 h-24 w-24 rounded-full bg-[#10b981]/15 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700/80">Completed</p>
+                      <p className="mt-1 text-base font-semibold text-emerald-900">Today&apos;s program is done.</p>
+                      <p className="mt-1.5 max-w-[30ch] text-sm text-emerald-800/85">
+                        Recovery window started. Next assigned workout will show up here.
+                      </p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-950">{block.value}</p>
+                    <span className="inline-flex rounded-full border border-emerald-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                      Locked In
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  {previewBlocks.map((block) => (
+                    <div key={block.id} className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex size-10 items-center justify-center rounded-full ${block.tone}`}>
+                          {block.glyph === "clock" ? (
+                            <HugeiconsIcon icon={Clock01Icon} className="size-4 text-slate-950" />
+                          ) : block.glyph === "repeat" ? (
+                            <HugeiconsIcon icon={RepeatIcon} className="size-4 text-slate-950" />
+                          ) : (
+                            <HugeiconsIcon icon={Dumbbell01Icon} className="size-4 text-slate-950" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">{block.label}</p>
+                          {block.helper ? <p className="text-xs text-slate-500">{block.helper}</p> : null}
+                        </div>
+                      </div>
+                      <p className="text-sm font-semibold text-slate-950">{block.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <p className="text-sm font-semibold text-slate-950">Week Completion</p>
+              <p className="mt-1 text-xs text-slate-500">Checked days show completed training sessions.</p>
+              <div className="mt-3 grid grid-cols-5 gap-2">
+                {weeklyCompletions.map((day) => (
+                  <div
+                    key={day.key}
+                    className={`rounded-[14px] border px-2 py-2 text-center ${
+                      day.completed ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"
+                    } ${day.isToday ? "ring-1 ring-[#1f8cff]/40" : ""}`}
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{day.label}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">{day.day}</p>
+                    <div className="mt-1 flex justify-center">
+                      {day.completed ? (
+                        <HugeiconsIcon icon={CheckmarkCircle01Icon} className="size-4 text-emerald-600" />
+                      ) : (
+                        <span className="size-4 rounded-full border border-slate-300 bg-white" />
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

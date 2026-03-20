@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArrowLeft01Icon,
@@ -13,16 +13,21 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { mockAthletes, mockCurrentSession, onSaveLog, type SessionBlock } from "@/lib/mock-data"
+import { mockAthletes, mockCurrentSession, mockTestWeekResults, onSaveLog, type SessionBlock } from "@/lib/mock-data"
 import {
   blockStatus,
+  dateKeyLocal,
   defaultSessionProgress,
+  parseSessionCompletions,
   progressForCurrentSession,
+  SESSION_COMPLETIONS_STORAGE_KEY,
   SESSION_PROGRESS_STORAGE_KEY,
   sessionRowKey,
   type SessionProgress,
 } from "@/lib/athlete-session"
+import { completeLatestSessionForCurrentAthlete } from "@/lib/data/session/session-data"
+import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { cn } from "@/lib/utils"
 
@@ -34,43 +39,16 @@ const blockToneMap: Record<SessionBlock["type"], string> = {
   Throws: "bg-[#fee2e2] text-[#be123c]",
 }
 
-function fieldConfigForBlock(type: SessionBlock["type"]) {
-  switch (type) {
-    case "Strength":
-      return [
-        { key: "primary", label: "Reps", placeholder: "3" },
-        { key: "secondary", label: "Load", placeholder: "100kg" },
-        { key: "effort", label: "RPE", placeholder: "8" },
-      ]
-    case "Sprint":
-      return [
-        { key: "primary", label: "10m", placeholder: "1.82s" },
-        { key: "secondary", label: "30m", placeholder: "4.05s" },
-        { key: "effort", label: "Quality", placeholder: "Sharp" },
-      ]
-    case "Run":
-      return [
-        { key: "primary", label: "Time", placeholder: "7.05s" },
-        { key: "secondary", label: "Split", placeholder: "95%" },
-        { key: "effort", label: "RPE", placeholder: "7" },
-      ]
-    case "Jumps":
-      return [
-        { key: "primary", label: "Mark", placeholder: "40m" },
-        { key: "secondary", label: "Quality", placeholder: "Clean" },
-        { key: "effort", label: "Note", placeholder: "Reactive" },
-      ]
-    case "Throws":
-      return [
-        { key: "primary", label: "Distance", placeholder: "16.20m" },
-        { key: "secondary", label: "Implement", placeholder: "7.26kg" },
-        { key: "effort", label: "Note", placeholder: "Legal" },
-      ]
-  }
-}
-
 export default function AthleteLogPage() {
+  const navigate = useNavigate()
   const athlete = mockAthletes[0]
+  const backendMode = getBackendMode()
+  const [hasBackendTestWeekResult, setHasBackendTestWeekResult] = useState<boolean | null>(null)
+  const hasTestWeekResult =
+    backendMode === "supabase"
+      ? (hasBackendTestWeekResult ?? true)
+      : mockTestWeekResults.some((row) => row.athleteId === athlete.id)
+  const requiresGymLoadInput = !hasTestWeekResult
   const [progress, setProgress] = useState<SessionProgress>(() => {
     if (typeof window === "undefined") return defaultSessionProgress()
     return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
@@ -95,6 +73,29 @@ export default function AthleteLogPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+
+    let cancelled = false
+    const loadBaseline = async () => {
+      const snapshot = await getLatestBenchmarkSnapshotForCurrentAthlete()
+      if (!snapshot.ok) {
+        console.warn("[test-week] failed to resolve backend baseline", snapshot.error)
+        if (!cancelled) setHasBackendTestWeekResult(false)
+        return
+      }
+
+      if (!cancelled) {
+        setHasBackendTestWeekResult(Boolean(snapshot.data && snapshot.data.results.length > 0))
+      }
+    }
+
+    void loadBaseline()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
+
   const currentBlock = mockCurrentSession.blocks[progress.currentBlockIndex] ?? mockCurrentSession.blocks[0]
   const completedCount = progress.completedBlockIds.length
   const totalBlocks = mockCurrentSession.blocks.length
@@ -111,8 +112,6 @@ export default function AthleteLogPage() {
 
   if (!currentBlock) return null
 
-  const fieldConfig = fieldConfigForBlock(currentBlock.type)
-
   const handleValueChange = (key: string, value: string) => {
     setProgress((current) => ({
       ...current,
@@ -123,19 +122,10 @@ export default function AthleteLogPage() {
     }))
   }
 
-  const handleBlockNoteChange = (blockId: string, value: string) => {
-    setProgress((current) => ({
-      ...current,
-      blockNotes: {
-        ...current.blockNotes,
-        [blockId]: value,
-      },
-    }))
-  }
-
-  const handleCompleteBlock = (event: FormEvent<HTMLFormElement>) => {
+  const handleCompleteBlock = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onSaveLog()
+    const isFinalBlock = progress.currentBlockIndex === totalBlocks - 1
 
     setProgress((current) => {
       const completedBlockIds = current.completedBlockIds.includes(currentBlock.id)
@@ -148,6 +138,24 @@ export default function AthleteLogPage() {
         currentBlockIndex: Math.min(current.currentBlockIndex + 1, totalBlocks - 1),
       }
     })
+
+    if (isFinalBlock && typeof window !== "undefined") {
+      const completionDate = dateKeyLocal(new Date())
+
+      if (getBackendMode() === "supabase") {
+        const result = await completeLatestSessionForCurrentAthlete(completionDate)
+        if (!result.ok) {
+          console.warn("[session] failed to persist completion in supabase mode", result.error)
+        }
+      } else {
+        const completionStorageKey = tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)
+        const completionDates = parseSessionCompletions(window.localStorage.getItem(completionStorageKey))
+        const updated = completionDates.includes(completionDate) ? completionDates : [...completionDates, completionDate]
+        window.localStorage.setItem(completionStorageKey, JSON.stringify(updated))
+      }
+
+      navigate("/athlete/home")
+    }
   }
 
   const jumpToBlock = (blockIndex: number) => {
@@ -317,42 +325,24 @@ export default function AthleteLogPage() {
                 <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-slate-700">Programmed</span>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {fieldConfig.map((field) => {
-                  const key = sessionRowKey(currentBlock.id, rowIndex, field.key)
-                  return (
-                    <div key={field.key} className="space-y-2">
-                      <Label htmlFor={key} className="text-sm font-medium text-slate-950">
-                        {field.label}
-                      </Label>
-                      <Input
-                        id={key}
-                        value={progress.values[key] ?? ""}
-                        placeholder={field.placeholder}
-                        onChange={(event) => handleValueChange(key, event.target.value)}
-                        className="h-12 rounded-[16px] border-slate-200 bg-[#f8fafc] text-slate-950"
-                      />
-                    </div>
-                  )
-                })}
-              </div>
+              {requiresGymLoadInput && currentBlock.type === "Strength" ? (
+                <div className="mt-4 max-w-sm space-y-2">
+                  <Label htmlFor={sessionRowKey(currentBlock.id, rowIndex, "load")} className="text-sm font-medium text-slate-950">
+                    Load Used
+                  </Label>
+                  <Input
+                    id={sessionRowKey(currentBlock.id, rowIndex, "load")}
+                    value={progress.values[sessionRowKey(currentBlock.id, rowIndex, "load")] ?? ""}
+                    placeholder="e.g. 100kg"
+                    onChange={(event) => handleValueChange(sessionRowKey(currentBlock.id, rowIndex, "load"), event.target.value)}
+                    className="h-12 rounded-[16px] border-slate-200 bg-[#f8fafc] text-slate-950"
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">No athlete input required for this block.</p>
+              )}
             </div>
           ))}
-        </section>
-
-        <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-          <div className="space-y-2">
-            <Label htmlFor={`${currentBlock.id}-notes`} className="text-sm font-medium text-slate-950">
-              Block notes
-            </Label>
-            <Textarea
-              id={`${currentBlock.id}-notes`}
-              value={progress.blockNotes[currentBlock.id] ?? ""}
-              onChange={(event) => handleBlockNoteChange(currentBlock.id, event.target.value)}
-              placeholder="How did this block feel? Any coach-relevant context?"
-              className="min-h-[110px] rounded-[18px] border-slate-200 bg-[#f8fafc] text-slate-950"
-            />
-          </div>
         </section>
 
         <section className="grid gap-3 sm:grid-cols-3">

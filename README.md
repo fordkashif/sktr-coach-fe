@@ -93,3 +93,14 @@ npm run qa
 - SectorCoach was migrated from Next.js to React + Vite.
 - The current app is SPA-based.
 - Local planning and status markdown files are intentionally excluded from git.
+
+## Supabase Migration Docs
+
+- Execution plan: `SUPABASE_POSTGRES_EXECUTION_PLAN.md`
+- Live tracker: `SUPABASE_POSTGRES_STATUS_BOARD.md`
+- Schema contract: `SUPABASE_SCHEMA_V1_CONTRACT.md`
+- RLS matrix: `SUPABASE_RLS_POLICY_MATRIX.md`
+- Env/secrets setup: `SUPABASE_ENV_AND_SECRETS_SETUP.md`
+- Data access conventions: `SUPABASE_DATA_ACCESS_CONVENTIONS.md`
+- Migration runbook: `SUPABASE_MIGRATION_RUNBOOK.md`
+- Env template: `.env.supabase.example`

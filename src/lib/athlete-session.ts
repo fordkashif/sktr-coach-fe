@@ -1,6 +1,7 @@
 import { mockCurrentSession, type SessionBlock } from "@/lib/mock-data"
 
 export const SESSION_PROGRESS_STORAGE_KEY = "pacelab:athlete-session-progress"
+export const SESSION_COMPLETIONS_STORAGE_KEY = "pacelab:athlete-session-completions"
 
 export type SessionProgress = {
   sessionId: string
@@ -51,4 +52,27 @@ export function blockStatus(progress: SessionProgress, block: SessionBlock) {
   if (progress.completedBlockIds.includes(block.id)) return "completed"
   if (blockHasInputs(progress, block)) return "in-progress"
   return "up-next"
+}
+
+export function dateKeyLocal(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+export function parseSessionCompletions(raw: string | null) {
+  if (!raw) return [] as string[]
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return [] as string[]
+
+    return parsed
+      .filter((value): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .filter((value, index, values) => values.indexOf(value) === index)
+      .sort()
+  } catch {
+    return [] as string[]
+  }
 }

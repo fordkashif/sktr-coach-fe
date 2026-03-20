@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowRight01Icon, CheckmarkCircle02Icon, StarAward02Icon } from "@hugeicons/core-free-icons"
@@ -9,6 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { mockAthletes, mockPRs, mockTestDefinitions, mockTestWeekResults, onSubmitTestWeek } from "@/lib/mock-data"
+import { getBackendMode } from "@/lib/supabase/config"
+import {
+  getCurrentAthleteActiveTestWeekContext,
+  submitCurrentAthleteTestWeekResults,
+} from "@/lib/data/test-week/test-week-data"
 
 type TestSubmission = Record<string, string>
 
@@ -17,16 +22,51 @@ const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-submission"
 
 export default function AthleteTestWeekPage() {
   const athlete = mockAthletes[0]
+  const [activeTests, setActiveTests] = useState<string[]>([...mockTestDefinitions])
   const [values, setValues] = useState<TestSubmission>(Object.fromEntries(mockTestDefinitions.map((test) => [test, ""])))
   const [prUpdates, setPrUpdates] = useState<string[]>([])
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<string | null>(() => {
     if (typeof window === "undefined") return null
+    if (getBackendMode() === "supabase") return null
     return window.localStorage.getItem(tenantStorageKey(TEST_WEEK_STORAGE_KEY))
   })
 
   const athletePrs = mockPRs.filter((pr) => pr.athleteId === athlete.id)
   const lastBenchmarks = mockTestWeekResults.find((row) => row.athleteId === athlete.id)
-  const completionCount = mockTestDefinitions.filter((test) => values[test].trim()).length
+  const completionCount = activeTests.filter((test) => values[test]?.trim()).length
+
+  useEffect(() => {
+    setValues((current) => {
+      const next: TestSubmission = {}
+      activeTests.forEach((test) => {
+        next[test] = current[test] ?? ""
+      })
+      return next
+    })
+  }, [activeTests])
+
+  useEffect(() => {
+    if (getBackendMode() !== "supabase") return
+
+    void (async () => {
+      const context = await getCurrentAthleteActiveTestWeekContext()
+      if (!context.ok) {
+        setSubmissionError(context.error.message)
+        return
+      }
+
+      if (!context.data) {
+        setActiveTests([])
+        return
+      }
+
+      setActiveTests(context.data.tests.map((test) => test.name))
+      if (context.data.lastSubmittedAt) {
+        setSubmittedAt(new Date(context.data.lastSubmittedAt).toLocaleString())
+      }
+    })()
+  }, [])
 
   const benchmarkCards = useMemo(
     () => [
@@ -39,9 +79,10 @@ export default function AthleteTestWeekPage() {
     [lastBenchmarks],
   )
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     onSubmitTestWeek()
+    setSubmissionError(null)
 
     const updates: string[] = []
 
@@ -57,29 +98,39 @@ export default function AthleteTestWeekPage() {
       updates.push(`CMJ: added new benchmark ${values["CMJ"]}`)
     }
 
-    const key = tenantStorageKey(PR_OVERRIDE_STORAGE_KEY)
-    const existing = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, string>
-    const nextOverrides = { ...existing }
-    Object.entries(values).forEach(([eventName, value]) => {
-      if (value.trim()) {
-        nextOverrides[eventName] = value.trim()
+    if (getBackendMode() === "supabase") {
+      const submission = await submitCurrentAthleteTestWeekResults(values)
+      if (!submission.ok) {
+        setSubmissionError(submission.error.message)
+        return
       }
-    })
-    window.localStorage.setItem(key, JSON.stringify(nextOverrides))
+      setSubmittedAt(new Date(submission.data.submittedAt).toLocaleString())
+    } else {
+      const key = tenantStorageKey(PR_OVERRIDE_STORAGE_KEY)
+      const existing = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, string>
+      const nextOverrides = { ...existing }
+      Object.entries(values).forEach(([eventName, value]) => {
+        if (value.trim()) {
+          nextOverrides[eventName] = value.trim()
+        }
+      })
+      window.localStorage.setItem(key, JSON.stringify(nextOverrides))
 
-    const submissionStamp = new Date().toLocaleString()
-    window.localStorage.setItem(tenantStorageKey(TEST_WEEK_STORAGE_KEY), submissionStamp)
-    setSubmittedAt(submissionStamp)
+      const submissionStamp = new Date().toLocaleString()
+      window.localStorage.setItem(tenantStorageKey(TEST_WEEK_STORAGE_KEY), submissionStamp)
+      setSubmittedAt(submissionStamp)
+    }
+
     setPrUpdates(updates)
   }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6">
       <section className="mobile-hero-surface">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mobile-pill-accent">Testing</span>
-            <span className="mobile-pill-muted">{mockTestDefinitions.length} benchmarks</span>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mobile-pill-accent">Testing</span>
+            <span className="mobile-pill-muted">{activeTests.length} benchmarks</span>
           </div>
           <h1 className="mobile-hero-title">Test Week</h1>
           <p className="mobile-hero-copy">
@@ -98,13 +149,18 @@ export default function AthleteTestWeekPage() {
             </div>
             <div className="mobile-card-utility text-center">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Completion</p>
-              <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-slate-950">{completionCount}/{mockTestDefinitions.length}</p>
+              <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-slate-950">{completionCount}/{activeTests.length}</p>
             </div>
           </div>
 
           <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
+            {submissionError ? (
+              <div className="rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {submissionError}
+              </div>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
-              {mockTestDefinitions.map((test) => (
+              {activeTests.map((test) => (
                 <div key={test} className="mobile-card-utility space-y-2">
                   <Label htmlFor={test} className="text-sm font-medium text-slate-950">{test}</Label>
                   <Input
