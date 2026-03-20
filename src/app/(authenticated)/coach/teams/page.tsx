@@ -3,7 +3,7 @@
 import { HugeiconsIcon } from "@hugeicons/react"
 import { FilePasteIcon, Link01Icon, QrCodeIcon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { EventGroupBadge } from "@/components/badges"
 import { Button } from "@/components/ui/button"
 import {
@@ -20,31 +20,63 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { COACH_TEAM_COOKIE } from "@/lib/auth-session"
 import { getCoachScope } from "@/lib/coach-scope"
+import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import { useRole } from "@/lib/role-context"
 import { MOCK_COACH_TEAM_STORAGE_KEY } from "@/lib/mock-auth"
+import { getBackendMode } from "@/lib/supabase/config"
 import { getTeamDisciplineLabel, mockAthletes, mockTeams, onGenerateInvite } from "@/lib/mock-data"
 
 export default function CoachTeamsPage() {
+  const backendMode = getBackendMode()
   const { role } = useRole()
   const coachScope = useMemo(() => getCoachScope(role), [role])
+  const [backendTeams, setBackendTeams] = useState(mockTeams)
+  const [backendAthletes, setBackendAthletes] = useState(mockAthletes)
+  const [backendError, setBackendError] = useState<string | null>(null)
   const [coachTeamId, setCoachTeamId] = useState(() => {
     if (typeof window === "undefined") return mockTeams[0]?.id ?? ""
     return window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? mockTeams[0]?.id ?? ""
   })
 
-  const visibleTeams = useMemo(() => {
-    if (role !== "coach") return mockTeams
-    if (coachScope.isScopedCoach) {
-      return mockTeams.filter((team) => team.id === coachTeamId)
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const loadSnapshot = async () => {
+      const result = await getCoachTeamsSnapshotForCurrentUser()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        return
+      }
+      setBackendError(null)
+      setBackendTeams(result.data.teams)
+      setBackendAthletes(result.data.athletes)
+      if (!coachTeamId && result.data.teams[0]?.id) setCoachTeamId(result.data.teams[0].id)
     }
-    return mockTeams
-  }, [coachScope.isScopedCoach, coachTeamId, role])
+
+    void loadSnapshot()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode, coachTeamId])
+
+  const teamsSource = backendMode === "supabase" ? backendTeams : mockTeams
+  const athletesSource = backendMode === "supabase" ? backendAthletes : mockAthletes
+
+  const visibleTeams = useMemo(() => {
+    if (role !== "coach") return teamsSource
+    if (coachScope.isScopedCoach) {
+      return teamsSource.filter((team) => team.id === coachTeamId)
+    }
+    return teamsSource
+  }, [coachScope.isScopedCoach, coachTeamId, role, teamsSource])
 
   const totalAthletes = visibleTeams.reduce((sum, team) => sum + team.athleteCount, 0)
   const eventGroups = new Set(visibleTeams.map((team) => team.eventGroup))
   const scopedTeam = visibleTeams[0] ?? null
   const readinessAlerts = visibleTeams.reduce(
-    (sum, team) => sum + mockAthletes.filter((athlete) => athlete.teamId === team.id && athlete.readiness !== "green").length,
+    (sum, team) => sum + athletesSource.filter((athlete) => athlete.teamId === team.id && athlete.readiness !== "green").length,
     0,
   )
 
@@ -105,6 +137,11 @@ export default function CoachTeamsPage() {
             </div>
           </div>
         </section>
+        {backendError ? (
+          <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Backend sync issue: {backendError}
+          </section>
+        ) : null}
 
         {role === "coach" && coachScope.allowTeamSwitcher ? (
           <section className="rounded-[28px] border border-slate-200 bg-white/85 px-5 py-4 shadow-sm backdrop-blur-sm">
@@ -126,7 +163,7 @@ export default function CoachTeamsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockTeams.map((team) => (
+                  {teamsSource.map((team) => (
                     <SelectItem key={team.id} value={team.id}>
                       {team.name}
                     </SelectItem>
@@ -146,7 +183,7 @@ export default function CoachTeamsPage() {
         <section className="grid gap-5 xl:grid-cols-2">
           {visibleTeams.map((team) => {
             const inviteLink = `/invite/${team.id}`
-            const roster = mockAthletes.filter((athlete) => athlete.teamId === team.id)
+            const roster = athletesSource.filter((athlete) => athlete.teamId === team.id)
             const lowAdherenceCount = roster.filter((athlete) => athlete.adherence < 75).length
             const teamReadinessAlerts = roster.filter((athlete) => athlete.readiness !== "green").length
 
