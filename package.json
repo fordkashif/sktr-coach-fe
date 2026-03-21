@@ -12,6 +12,8 @@
     "test": "npm run test:compile && node --test .tmp-tests/tests/access-control.test.js",
     "a11y:scan": "node tools/a11y-scan.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:supabase": "playwright test -c playwright.supabase.config.ts",
+    "test:e2e:supabase:setup": "playwright test -c playwright.supabase.config.ts --project=supabase-setup",
     "qa": "npm run lint && npm run typecheck && npm run test && npm run a11y:scan && npm run build && npm run test:e2e"
   },
   "dependencies": {

@@ -10,6 +10,9 @@ export default defineConfig({
   },
   webServer: {
     command: "npm run build && npm run start -- --host 127.0.0.1 --port 3007",
+    env: {
+      VITE_BACKEND_MODE: "mock",
+    },
     port: 3007,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

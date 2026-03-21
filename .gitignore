@@ -14,6 +14,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+playwright/.auth/
 .tmp-tests/
 .legacy-next/
 *.tsbuildinfo
@@ -21,3 +22,12 @@ test-results/
 # Local planning / status docs
 /*.md
 !/README.md
+!/SUPABASE_POSTGRES_STATUS_BOARD.md
+!/SUPABASE_POSTGRES_EXECUTION_PLAN.md
+!/SUPABASE_MIGRATION_RUNBOOK.md
+!/SUPABASE_ENV_AND_SECRETS_SETUP.md
+!/SUPABASE_SCHEMA_V1_CONTRACT.md
+!/SUPABASE_RLS_POLICY_MATRIX.md
+!/SUPABASE_DATA_ACCESS_CONVENTIONS.md
+!/SUPABASE_BACKUP_RECOVERY_RUNBOOK.md
+!/PLAYWRIGHT_FLOW_TENANCY_TEST_PLAN.md
