@@ -468,6 +468,7 @@ Companion plan:
   - Club-admin teams route now reads/writes `teams` via Supabase in `supabase` mode (`getClubAdminTeamsSnapshot`, `createClubAdminTeam`, `updateClubAdminTeam`, `setClubAdminTeamArchived`), replacing local mock persistence for team lifecycle actions.
   - Club-admin profile route now persists tenant profile settings to Supabase (`club_profiles`) and emits DB audit events in `supabase` mode.
   - Club-admin billing route now persists subscription settings to Supabase (`billing_profiles`) and emits DB audit events in `supabase` mode.
+  - Added self-serve club admin signup path (`/create-club-account`) with Supabase tenant provisioning RPC (`provision_club_admin_tenant`), plus onboarding gap audit for remaining coach/athlete invite-acceptance work.
 
 ## Quick Start Prompt
 
