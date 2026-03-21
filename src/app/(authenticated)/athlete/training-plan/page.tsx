@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { getCurrentAthleteProfileSnapshot } from "@/lib/data/athlete/profile-data"
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import {
   mockAthleteTrainingPlanDetails,
   mockAthletes,
-  mockTeams,
   mockTrainingPlans,
 } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -53,6 +53,7 @@ export default function AthleteTrainingPlanPage() {
   const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null)
   const [backendPlans, setBackendPlans] = useState<TrainingPlanSummary[]>([])
   const [backendPlanDetail, setBackendPlanDetail] = useState<TrainingPlanDetail | null>(null)
+  const [backendTeamName, setBackendTeamName] = useState<string | null>(null)
   const [backendLoading, setBackendLoading] = useState(false)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [storageAssignments] = useState<PlanAssignment[]>(() => {
@@ -119,6 +120,18 @@ export default function AthleteTrainingPlanPage() {
     }
 
     void loadPlans()
+
+    const loadProfile = async () => {
+      const profileResult = await getCurrentAthleteProfileSnapshot()
+      if (cancelled) return
+      if (!profileResult.ok) {
+        setBackendError((current) => current ?? profileResult.error.message)
+        return
+      }
+      setBackendTeamName(profileResult.data.teamName)
+    }
+
+    void loadProfile()
     return () => {
       cancelled = true
     }
@@ -198,7 +211,7 @@ export default function AthleteTrainingPlanPage() {
     activePlanDetail?.weeks.find((week) => week.weekNumber === selectedWeekNumber) ??
     currentWeek ??
     null
-  const team = mockTeams.find((item) => item.id === activePlan?.teamId)
+  const teamLabel = backendMode === "supabase" ? backendTeamName ?? "Assigned team" : "Assigned team"
 
   useEffect(() => {
     setSelectedWeekNumber(null)
@@ -220,7 +233,7 @@ export default function AthleteTrainingPlanPage() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-medium text-slate-700">
-                  {team?.name ?? "Assigned team"}
+                  {teamLabel}
                 </span>
                 <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                   {activePlan.weeks} weeks

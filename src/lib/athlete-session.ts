@@ -11,9 +11,9 @@ export type SessionProgress = {
   blockNotes: Record<string, string>
 }
 
-export function defaultSessionProgress(): SessionProgress {
+export function defaultSessionProgress(options?: { sessionId?: string }): SessionProgress {
   return {
-    sessionId: mockCurrentSession.id,
+    sessionId: options?.sessionId ?? mockCurrentSession.id,
     currentBlockIndex: 0,
     completedBlockIds: [],
     values: {},
@@ -21,20 +21,25 @@ export function defaultSessionProgress(): SessionProgress {
   }
 }
 
-export function progressForCurrentSession(raw: string | null): SessionProgress {
-  if (!raw) return defaultSessionProgress()
+export function progressForCurrentSession(
+  raw: string | null,
+  options?: { sessionId?: string; blockCount?: number },
+): SessionProgress {
+  const sessionId = options?.sessionId ?? mockCurrentSession.id
+  const blockCount = Math.max(options?.blockCount ?? mockCurrentSession.blocks.length, 1)
+  if (!raw) return defaultSessionProgress({ sessionId })
   try {
     const parsed = JSON.parse(raw) as SessionProgress
-    if (parsed.sessionId !== mockCurrentSession.id) return defaultSessionProgress()
+    if (parsed.sessionId !== sessionId) return defaultSessionProgress({ sessionId })
     return {
       sessionId: parsed.sessionId,
-      currentBlockIndex: Math.min(Math.max(parsed.currentBlockIndex ?? 0, 0), Math.max(mockCurrentSession.blocks.length - 1, 0)),
+      currentBlockIndex: Math.min(Math.max(parsed.currentBlockIndex ?? 0, 0), Math.max(blockCount - 1, 0)),
       completedBlockIds: parsed.completedBlockIds ?? [],
       values: parsed.values ?? {},
       blockNotes: parsed.blockNotes ?? {},
     }
   } catch {
-    return defaultSessionProgress()
+    return defaultSessionProgress({ sessionId })
   }
 }
 

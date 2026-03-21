@@ -59,16 +59,19 @@ function downloadCsv(filename: string, rows: string[][]) {
 
 export default function ClubAdminReportsPage() {
   const backendMode = getBackendMode()
-  const [users, setUsers] = useState(loadClubUsers)
-  const [teams, setTeams] = useState(loadClubTeams)
-  const [invites, setInvites] = useState(loadClubInvites)
-  const [athleteRows, setAthleteRows] = useState(
-    mockAthletes.map((athlete) => ({
-      id: athlete.id,
-      name: athlete.name,
-      readiness: athlete.readiness,
-      adherenceLabel: `${athlete.adherence}%`,
-    })),
+  const isSupabaseMode = backendMode === "supabase"
+  const [users, setUsers] = useState(() => (isSupabaseMode ? [] : loadClubUsers()))
+  const [teams, setTeams] = useState(() => (isSupabaseMode ? [] : loadClubTeams()))
+  const [invites, setInvites] = useState(() => (isSupabaseMode ? [] : loadClubInvites()))
+  const [athleteRows, setAthleteRows] = useState(() =>
+    isSupabaseMode
+      ? []
+      : mockAthletes.map((athlete) => ({
+          id: athlete.id,
+          name: athlete.name,
+          readiness: athlete.readiness,
+          adherenceLabel: `${athlete.adherence}%`,
+        })),
   )
   const [prRows, setPrRows] = useState<Array<{
     athleteId: string
@@ -76,22 +79,26 @@ export default function ClubAdminReportsPage() {
     bestValue: string
     category: string
     measuredOn: string
-  }>>(
-    mockPRs.map((pr) => ({
-      athleteId: pr.athleteId,
-      event: pr.event,
-      bestValue: pr.bestValue,
-      category: pr.category,
-      measuredOn: pr.date,
-    })),
+  }>>(() =>
+    isSupabaseMode
+      ? []
+      : mockPRs.map((pr) => ({
+          athleteId: pr.athleteId,
+          event: pr.event,
+          bestValue: pr.bestValue,
+          category: pr.category,
+          measuredOn: pr.date,
+        })),
   )
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (!isSupabaseMode) return
     let cancelled = false
 
     const load = async () => {
+      setBackendLoading(true)
       const [ops, report] = await Promise.all([getClubAdminOpsSnapshot(), getClubAdminReportSnapshot()])
       if (cancelled) return
 
@@ -140,13 +147,14 @@ export default function ClubAdminReportsPage() {
         )
         setPrRows(report.data.prRows)
       }
+      setBackendLoading(false)
     }
 
     void load()
     return () => {
       cancelled = true
     }
-  }, [backendMode])
+  }, [isSupabaseMode])
 
   const emitAudit = async (action: string, target: string, detail?: string) => {
     if (backendMode === "supabase") {
@@ -218,6 +226,11 @@ export default function ClubAdminReportsPage() {
       {backendError ? (
         <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           Backend sync issue: {backendError}
+        </section>
+      ) : null}
+      {isSupabaseMode && backendLoading ? (
+        <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading report snapshot...
         </section>
       ) : null}
 

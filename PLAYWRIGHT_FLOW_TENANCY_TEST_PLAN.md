@@ -1,6 +1,6 @@
 # Playwright Flow + Multi-Tenant Status Board
 
-Last updated: March 20, 2026
+Last updated: March 21, 2026
 
 ## Purpose
 
@@ -8,6 +8,9 @@ Single tracking board for end-to-end flow confidence:
 - Club Admin -> Coach -> Athlete journeys.
 - Multi-tenant isolation behavior.
 - Mock-mode parity and Supabase-mode rollout.
+
+Companion runbook:
+- `CI_SETUP_E2E.md`
 
 ## Status Key
 
@@ -23,6 +26,8 @@ Single tracking board for end-to-end flow confidence:
 - Latest targeted run:
   - Command: `npx playwright test tests/e2e/role-journeys-and-tenancy.spec.ts`
   - Result: `3 passed` (March 20, 2026)
+  - Command: `npx playwright test -c playwright.supabase.config.ts tests/e2e/supabase/coach-builder.spec.ts`
+  - Result: `3 skipped` (env/auth-state gated, March 21, 2026)
 
 ## Commands
 
@@ -79,6 +84,16 @@ npx playwright show-report
 | TW5 | Reporting + Audit E2E | `[ ]` | Export actions + audit row assertions active |
 
 ## Detailed Backlog
+
+### TW4 - Critical Journey Regression Pack
+
+#### TST-401 - Coach builder Supabase-mode route smoke
+- Status: `[x] DONE`
+- Notes:
+  - Added Supabase-mode route smoke tests for `/coach/training-plan` and `/coach/test-week`.
+  - Uses coach storage-state auth and skips cleanly when setup/env is unavailable.
+  - Evidence:
+    - `tests/e2e/supabase/coach-builder.spec.ts`
 
 ### TW1 - Mock Baseline Stabilization
 
@@ -201,6 +216,10 @@ npx playwright show-report
   - Added Supabase tenant-isolation spec for club-admin invites (tenant A vs tenant B).
   - Added Supabase coach/athlete tenant-isolation specs using role-token REST checks.
   - Added `.github/workflows/e2e.yml` split CI workflow with artifact publishing.
+- March 21, 2026:
+  - Added Supabase coach builder smoke spec:
+    - `tests/e2e/supabase/coach-builder.spec.ts`
+  - Verified targeted run command completes and skips safely when env/auth fixtures are not present.
 
 ## Exit Criteria
 

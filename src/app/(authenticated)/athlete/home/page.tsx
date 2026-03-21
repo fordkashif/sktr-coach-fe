@@ -13,7 +13,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { mockAthletes, mockCurrentSession } from "@/lib/mock-data"
+import { mockCurrentSession } from "@/lib/mock-data"
 import {
   dateKeyLocal,
   defaultSessionProgress,
@@ -23,7 +23,11 @@ import {
   SESSION_PROGRESS_STORAGE_KEY,
   type SessionProgress,
 } from "@/lib/athlete-session"
-import { getCurrentAthleteWeeklySessionCompletions } from "@/lib/data/session/session-data"
+import {
+  getCurrentAthleteWeeklySessionCompletions,
+  getLatestSessionDetailForCurrentAthlete,
+  type CurrentAthleteLatestSessionDetail,
+} from "@/lib/data/session/session-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
@@ -37,8 +41,10 @@ type PreviewBlock = {
 }
 
 export default function AthleteHomePage() {
-  const athlete = mockAthletes[0]
+  const backendMode = getBackendMode()
   const [now, setNow] = useState(() => new Date())
+  const [backendSessionDetail, setBackendSessionDetail] = useState<CurrentAthleteLatestSessionDetail | null>(null)
+  const [backendError, setBackendError] = useState<string | null>(null)
   const [progress, setProgress] = useState<SessionProgress>(() => {
     if (typeof window === "undefined") return defaultSessionProgress()
     return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
@@ -67,6 +73,75 @@ export default function AthleteHomePage() {
   }, [])
 
   useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const loadSessionDetail = async () => {
+      const result = await getLatestSessionDetailForCurrentAthlete()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        return
+      }
+      setBackendError(null)
+      setBackendSessionDetail(result.data)
+    }
+
+    void loadSessionDetail()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
+
+  const currentSession =
+    backendMode === "supabase" && backendSessionDetail
+      ? {
+          id: backendSessionDetail.session.id,
+          title: backendSessionDetail.session.title,
+          status:
+            backendSessionDetail.session.status === "completed"
+              ? ("completed" as const)
+              : backendSessionDetail.session.status === "in-progress"
+                ? ("in-progress" as const)
+                : ("not-started" as const),
+          scheduledFor: backendSessionDetail.session.scheduledFor,
+          estimatedDuration: backendSessionDetail.session.estimatedDurationMinutes
+            ? `${backendSessionDetail.session.estimatedDurationMinutes} min`
+            : "N/A",
+          blocks: backendSessionDetail.blocks
+            .slice()
+            .sort((left, right) => left.sortOrder - right.sortOrder)
+            .map((block) => ({
+              id: block.id,
+              type: block.blockType,
+              name: block.name,
+              focus: block.focus ?? "",
+              coachNote: block.coachNote ?? "",
+              previousResult: block.previousResult ?? undefined,
+              rest: block.restLabel ?? undefined,
+              rows: block.rows
+                .slice()
+                .sort((left, right) => left.sortOrder - right.sortOrder)
+                .map((row) => ({
+                  label: row.label,
+                  target: row.target,
+                  helper: row.helper ?? undefined,
+                })),
+            })),
+        }
+      : mockCurrentSession
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setProgress(
+      progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)), {
+        sessionId: currentSession.id,
+        blockCount: currentSession.blocks.length,
+      }),
+    )
+  }, [currentSession.id, currentSession.blocks.length])
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(new Date())
     }, 1000)
@@ -75,7 +150,7 @@ export default function AthleteHomePage() {
   }, [])
 
   const completedCount = progress.completedBlockIds.length
-  const allComplete = completedCount === mockCurrentSession.blocks.length
+  const allComplete = currentSession.status === "completed" || completedCount === currentSession.blocks.length
   const nextActionLabel = allComplete ? "Review Workout" : completedCount > 0 ? "Resume Workout" : "Start Workout"
   const completionDateSet = new Set(completionDates)
 
@@ -92,7 +167,7 @@ export default function AthleteHomePage() {
     let cancelled = false
 
     const loadWeeklyCompletions = async () => {
-      if (getBackendMode() !== "supabase") return
+      if (backendMode !== "supabase") return
 
       const result = await getCurrentAthleteWeeklySessionCompletions(weekStartKey, weekEndKey)
       if (!result.ok) {
@@ -109,7 +184,7 @@ export default function AthleteHomePage() {
     return () => {
       cancelled = true
     }
-  }, [weekStartKey, weekEndKey])
+  }, [backendMode, weekStartKey, weekEndKey])
 
   const weeklyCompletions = Array.from({ length: 5 }, (_, index) => {
     const date = new Date(startOfWeek)
@@ -119,54 +194,40 @@ export default function AthleteHomePage() {
       key,
       label: date.toLocaleDateString(undefined, { weekday: "short" }),
       day: `${date.getDate()}`,
-      completed: completionDateSet.has(key) || (getBackendMode() !== "supabase" && index <= 2),
+      completed: completionDateSet.has(key) || (backendMode !== "supabase" && index <= 2),
       isToday: key === dateKeyLocal(now),
     }
   })
 
-  const previewBlocks: PreviewBlock[] = [
-    {
-      id: "warm-up",
-      label: "Warm up",
-      helper: "",
-      value: "5:00",
-      tone: "bg-[#eaf4ff]",
-      glyph: "clock",
-    },
-    {
-      id: "block-1",
-      label: "Squats",
-      helper: "120kg",
-      value: "3x12",
-      tone: "bg-[#eef2ff]",
-      glyph: "strength",
-    },
-    {
-      id: "block-2",
-      label: "Lunges",
-      helper: "60kg",
-      value: "4x20",
-      tone: "bg-[#eaf4ff]",
-      glyph: "repeat",
-    },
-    {
-      id: "block-3",
-      label: "RDL",
-      helper: "95kg",
-      value: "3x10",
-      tone: "bg-[#eef2ff]",
-      glyph: "strength",
-    },
-  ]
+  const previewBlocks: PreviewBlock[] = currentSession.blocks.slice(0, 4).map((block, index) => ({
+    id: block.id,
+    label: block.name,
+    helper: block.rows[0]?.target ?? "",
+    value: block.rows.length > 0 ? `${block.rows.length} rows` : block.focus || "Programmed",
+    tone: index % 2 === 0 ? "bg-[#eaf4ff]" : "bg-[#eef2ff]",
+    glyph:
+      block.type === "Strength"
+        ? "strength"
+        : block.type === "Run"
+          ? "repeat"
+          : block.type === "Sprint"
+            ? "clock"
+            : "repeat",
+  }))
 
   return (
     <div className="mx-auto min-h-[calc(100dvh-env(safe-area-inset-top)-2rem)] w-full max-w-7xl px-4 pb-6 pt-4 sm:min-h-0 sm:p-6">
       <section className="flex min-h-full max-w-xl flex-col">
         <div className="flex min-h-full flex-col">
+          {backendError ? (
+            <div className="mb-4 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              Backend sync issue: {backendError}
+            </div>
+          ) : null}
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="space-y-3">
               <h1 className="text-[2.2rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.6rem]">
-                Hey, {athlete.name.split(" ")[0]}
+                Hey, {backendSessionDetail?.athleteFirstName ?? "Athlete"}
               </h1>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-[#f5ecff] px-3 py-1 text-xs font-medium text-slate-700 shadow-[0_6px_14px_rgba(15,23,42,0.04)]">
@@ -195,7 +256,7 @@ export default function AthleteHomePage() {
             <div className="flex items-center gap-3 text-sm text-slate-600">
               <span className="inline-flex items-center gap-1.5">
                 <HugeiconsIcon icon={Clock01Icon} className="size-3.5 text-slate-400" />
-                20 min
+                {currentSession.estimatedDuration}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <HugeiconsIcon icon={Fire03Icon} className="size-3.5 text-[#ff7a2f]" />
@@ -216,8 +277,8 @@ export default function AthleteHomePage() {
                       <span className="size-2.5 rounded-full bg-[#0f172a]" />
                     </div>
                   )}
-                  <p className="text-[1.2rem] font-semibold tracking-[-0.04em] text-slate-950">
-                    {allComplete ? "Session Completed" : "Today's Workout"}
+                    <p className="text-[1.2rem] font-semibold tracking-[-0.04em] text-slate-950">
+                      {allComplete ? "Session Completed" : "Today's Workout"}
                   </p>
                 </div>
                 <button

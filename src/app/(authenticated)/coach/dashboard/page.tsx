@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArrowRight01Icon,
@@ -13,6 +14,11 @@ import { BarChart, LineChart } from "@mui/x-charts"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import { Button } from "@/components/ui/button"
 import { mockAthletes, mockPRs, mockTeams, mockTestWeekResults, mockTrendSeries } from "@/lib/mock-data"
+import {
+  getCoachDashboardSnapshotForCurrentUser,
+  type CoachDashboardSnapshot,
+} from "@/lib/data/coach/dashboard-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 
 const chartSx = {
@@ -56,14 +62,45 @@ function athleteInitials(name: string) {
 }
 
 export default function CoachDashboardPage() {
+  const backendMode = getBackendMode()
   const role = getCookieValue(ROLE_COOKIE)
   const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
+  const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const loadSnapshot = async () => {
+      const result = await getCoachDashboardSnapshotForCurrentUser({ scopeTeamId: role === "coach" ? coachTeamId : null })
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        return
+      }
+      setBackendError(null)
+      setBackendSnapshot(result.data)
+    }
+
+    void loadSnapshot()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode, coachTeamId, role])
+
+  const sourceAthletes = backendMode === "supabase" ? (backendSnapshot?.athletes ?? []) : mockAthletes
+  const sourcePrs = backendMode === "supabase" ? (backendSnapshot?.prs ?? []) : mockPRs
+  const sourceTests = backendMode === "supabase" ? (backendSnapshot?.tests ?? []) : mockTestWeekResults
+  const sourceTeams = backendMode === "supabase" ? (backendSnapshot?.teams ?? []) : mockTeams
+  const sourceTrends = backendMode === "supabase" ? (backendSnapshot?.trendSeries ?? {}) : mockTrendSeries
+
   const scopedAthletes =
-    role === "coach" && coachTeamId ? mockAthletes.filter((athlete) => athlete.teamId === coachTeamId) : mockAthletes
+    role === "coach" && coachTeamId ? sourceAthletes.filter((athlete) => athlete.teamId === coachTeamId) : sourceAthletes
   const athleteIds = new Set(scopedAthletes.map((athlete) => athlete.id))
-  const scopedPrs = mockPRs.filter((pr) => athleteIds.has(pr.athleteId))
-  const scopedTests = mockTestWeekResults.filter((row) => athleteIds.has(row.athleteId))
-  const scopedTeam = mockTeams.find((team) => team.id === coachTeamId)
+  const scopedPrs = sourcePrs.filter((pr) => athleteIds.has(pr.athleteId))
+  const scopedTests = sourceTests.filter((row) => athleteIds.has(row.athleteId))
+  const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
   const readinessSummary = {
     green: scopedAthletes.filter((athlete) => athlete.readiness === "green").length,
@@ -93,9 +130,9 @@ export default function CoachDashboardPage() {
 
   const adherenceRows = [...scopedAthletes].sort((left, right) => right.adherence - left.adherence).slice(0, 6)
 
-  const trendRows = scopedAthletes
-    .map((athlete) => mockTrendSeries[athlete.id])
-    .filter((series): series is NonNullable<typeof mockTrendSeries[string]> => Boolean(series))
+  const trendRows = scopedAthletes.map((athlete) => sourceTrends[athlete.id]).filter((series): series is NonNullable<
+    typeof sourceTrends[string]
+  > => Boolean(series))
 
   const trendDates = trendRows[0]?.map((point) => point.date) ?? []
   const readinessTrendValues = trendDates.map((date, index) => {
@@ -150,6 +187,11 @@ export default function CoachDashboardPage() {
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6">
       <section className="space-y-4 pt-1">
+        {backendError ? (
+          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Backend sync issue: {backendError}
+          </div>
+        ) : null}
         <div className="space-y-2">
           <h1 className="text-[2.35rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.8rem]">Dashboard</h1>
           <p className="max-w-xl text-[0.95rem] leading-6 text-slate-600">

@@ -4,6 +4,7 @@ import type {
   ActiveTestDefinition,
   CurrentAthleteTestWeekContext,
   LatestBenchmarkSnapshot,
+  TestDefinitionUnit,
   TestBenchmarkResult,
   TestWeekSubmissionResult,
 } from "@/lib/data/test-week/types"
@@ -45,6 +46,12 @@ type AthleteContext = {
   teamId: string | null
 }
 
+type CoachContext = {
+  userId: string
+  tenantId: string
+  role: "coach" | "club-admin"
+}
+
 async function getCurrentAthleteContext(client: SupabaseClient): Promise<Result<AthleteContext>> {
   const { data: authSession } = await client.auth.getSession()
   const userId = authSession.session?.user.id
@@ -63,6 +70,30 @@ async function getCurrentAthleteContext(client: SupabaseClient): Promise<Result<
     athleteId: athlete.id,
     tenantId: athlete.tenant_id,
     teamId: athlete.team_id,
+  })
+}
+
+async function getCurrentCoachContext(client: SupabaseClient): Promise<Result<CoachContext>> {
+  const { data: authSession } = await client.auth.getSession()
+  const userId = authSession.session?.user.id
+  if (!userId) return err("UNAUTHORIZED", "No authenticated Supabase session found.")
+
+  const { data: profile, error } = await client
+    .from("profiles")
+    .select("tenant_id, role")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!profile) return err("NOT_FOUND", "No profile found for current user.")
+  if (profile.role !== "coach" && profile.role !== "club-admin") {
+    return err("FORBIDDEN", "Only coach or club-admin users can manage test weeks.")
+  }
+
+  return ok({
+    userId,
+    tenantId: profile.tenant_id as string,
+    role: profile.role as "coach" | "club-admin",
   })
 }
 
@@ -409,4 +440,116 @@ export async function submitCurrentAthleteTestWeekResults(
     submittedAt,
     submittedCount: payload.length,
   })
+}
+
+export type CoachTestWeekListItem = {
+  id: string
+  name: string
+  teamId: string | null
+  startDate: string
+  endDate: string
+  status: "draft" | "published" | "closed"
+  testCount: number
+}
+
+export async function getCoachTestWeeksForCurrentUser(params?: {
+  scopeTeamId?: string | null
+}): Promise<Result<CoachTestWeekListItem[]>> {
+  const clientResult = requireSupabaseClient("getCoachTestWeeksForCurrentUser")
+  if (!clientResult.ok) return clientResult
+
+  const coachContext = await getCurrentCoachContext(clientResult.client)
+  if (!coachContext.ok) return coachContext
+
+  const query = clientResult.client
+    .from("test_weeks")
+    .select("id, name, team_id, start_date, end_date, status")
+    .eq("tenant_id", coachContext.data.tenantId)
+    .eq("is_archived", false)
+    .order("start_date", { ascending: false })
+    .limit(100)
+  if (params?.scopeTeamId) query.eq("team_id", params.scopeTeamId)
+
+  const { data: weeks, error: weeksError } = await query
+  if (weeksError) return { ok: false, error: mapPostgrestError(weeksError) }
+
+  const weekRows = (weeks as Array<{
+    id: string
+    name: string
+    team_id: string | null
+    start_date: string
+    end_date: string
+    status: "draft" | "published" | "closed"
+  }> | null) ?? []
+  if (weekRows.length === 0) return ok([])
+
+  const { data: definitions, error: definitionsError } = await clientResult.client
+    .from("test_definitions")
+    .select("test_week_id")
+    .in("test_week_id", weekRows.map((row) => row.id))
+  if (definitionsError) return { ok: false, error: mapPostgrestError(definitionsError) }
+
+  const countByWeek = ((definitions as Array<{ test_week_id: string }> | null) ?? []).reduce<Record<string, number>>(
+    (acc, row) => {
+      acc[row.test_week_id] = (acc[row.test_week_id] ?? 0) + 1
+      return acc
+    },
+    {},
+  )
+
+  return ok(
+    weekRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      teamId: row.team_id,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      status: row.status,
+      testCount: countByWeek[row.id] ?? 0,
+    })),
+  )
+}
+
+export async function createPublishedTestWeekForCurrentCoach(input: {
+  name: string
+  teamId: string
+  startDate: string
+  endDate: string
+  tests: Array<{ name: string; unit: TestDefinitionUnit }>
+}): Promise<Result<{ testWeekId: string }>> {
+  const clientResult = requireSupabaseClient("createPublishedTestWeekForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const coachContext = await getCurrentCoachContext(clientResult.client)
+  if (!coachContext.ok) return coachContext
+  if (!input.tests.length) return err("VALIDATION", "At least one test is required.")
+
+  const { data: insertedWeek, error: weekError } = await clientResult.client
+    .from("test_weeks")
+    .insert({
+      tenant_id: coachContext.data.tenantId,
+      team_id: input.teamId,
+      name: input.name,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      status: "published",
+      created_by_user_id: coachContext.data.userId,
+    })
+    .select("id")
+    .single()
+  if (weekError) return { ok: false, error: mapPostgrestError(weekError) }
+
+  const testWeekId = insertedWeek.id as string
+  const { error: definitionError } = await clientResult.client.from("test_definitions").insert(
+    input.tests.map((test, index) => ({
+      test_week_id: testWeekId,
+      sort_order: index,
+      name: test.name,
+      unit: test.unit,
+      is_required: true,
+    })),
+  )
+  if (definitionError) return { ok: false, error: mapPostgrestError(definitionError) }
+
+  return ok({ testWeekId })
 }

@@ -8,6 +8,13 @@ type ClientResolution =
   | { ok: true; client: SupabaseClient }
   | { ok: false; error: DataError }
 
+export type CurrentAthleteLatestSessionDetail = {
+  athleteId: string
+  athleteFirstName: string
+  session: SessionSummary
+  blocks: SessionBlock[]
+}
+
 function requireSupabaseClient(operation: string): ClientResolution {
   if (getBackendMode() !== "supabase") {
     return {
@@ -235,6 +242,28 @@ async function getCurrentAthleteId(client: SupabaseClient): Promise<Result<strin
   return ok(athlete.id)
 }
 
+async function getCurrentAthleteContext(client: SupabaseClient): Promise<
+  Result<{ athleteId: string; athleteFirstName: string }>
+> {
+  const { data: authSession } = await client.auth.getSession()
+  const userId = authSession.session?.user.id
+  if (!userId) return err("UNAUTHORIZED", "No authenticated Supabase session found.")
+
+  const { data: athlete, error: athleteError } = await client
+    .from("athletes")
+    .select("id, first_name")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (athleteError) return { ok: false, error: mapPostgrestError(athleteError) }
+  if (!athlete) return err("NOT_FOUND", "No athlete profile found for current user.")
+
+  return ok({
+    athleteId: athlete.id,
+    athleteFirstName: athlete.first_name ?? "Athlete",
+  })
+}
+
 export async function getCurrentAthleteWeeklySessionCompletions(
   startDate: string,
   endDate: string,
@@ -246,4 +275,26 @@ export async function getCurrentAthleteWeeklySessionCompletions(
   if (!athleteIdResult.ok) return athleteIdResult
 
   return getWeeklySessionCompletions(athleteIdResult.data, startDate, endDate)
+}
+
+export async function getLatestSessionDetailForCurrentAthlete(): Promise<Result<CurrentAthleteLatestSessionDetail | null>> {
+  const clientResult = requireSupabaseClient("getLatestSessionDetailForCurrentAthlete")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentAthleteContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const latestSessionResult = await getLatestSessionForAthlete(contextResult.data.athleteId)
+  if (!latestSessionResult.ok) return latestSessionResult
+  if (!latestSessionResult.data) return ok(null)
+
+  const blocksResult = await getSessionBlocksWithRows(latestSessionResult.data.id)
+  if (!blocksResult.ok) return blocksResult
+
+  return ok({
+    athleteId: contextResult.data.athleteId,
+    athleteFirstName: contextResult.data.athleteFirstName,
+    session: latestSessionResult.data,
+    blocks: blocksResult.data,
+  })
 }

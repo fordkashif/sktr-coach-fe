@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { COACH_TEAM_COOKIE } from "@/lib/auth-session"
+import { COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
 import { getCoachScope } from "@/lib/coach-scope"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import { useRole } from "@/lib/role-context"
@@ -28,49 +28,58 @@ import { getTeamDisciplineLabel, mockAthletes, mockTeams, onGenerateInvite } fro
 
 export default function CoachTeamsPage() {
   const backendMode = getBackendMode()
+  const isSupabaseMode = backendMode === "supabase"
   const { role } = useRole()
   const coachScope = useMemo(() => getCoachScope(role), [role])
-  const [backendTeams, setBackendTeams] = useState(mockTeams)
-  const [backendAthletes, setBackendAthletes] = useState(mockAthletes)
+  const [backendTeams, setBackendTeams] = useState(() => (isSupabaseMode ? [] : mockTeams))
+  const [backendAthletes, setBackendAthletes] = useState(() => (isSupabaseMode ? [] : mockAthletes))
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [coachTeamId, setCoachTeamId] = useState(() => {
-    if (typeof window === "undefined") return mockTeams[0]?.id ?? ""
+    if (typeof window === "undefined") return isSupabaseMode ? getCookieValue(COACH_TEAM_COOKIE) ?? "" : mockTeams[0]?.id ?? ""
+    if (isSupabaseMode) return getCookieValue(COACH_TEAM_COOKIE) ?? ""
     return window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? mockTeams[0]?.id ?? ""
   })
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (!isSupabaseMode) return
     let cancelled = false
 
     const loadSnapshot = async () => {
+      setBackendLoading(true)
       const result = await getCoachTeamsSnapshotForCurrentUser()
       if (cancelled) return
       if (!result.ok) {
         setBackendError(result.error.message)
+        setBackendLoading(false)
         return
       }
       setBackendError(null)
       setBackendTeams(result.data.teams)
       setBackendAthletes(result.data.athletes)
-      if (!coachTeamId && result.data.teams[0]?.id) setCoachTeamId(result.data.teams[0].id)
+      setBackendLoading(false)
+      if (!coachTeamId && result.data.teams[0]?.id && role === "coach") setCoachTeamId(result.data.teams[0].id)
     }
 
     void loadSnapshot()
     return () => {
       cancelled = true
     }
-  }, [backendMode, coachTeamId])
+  }, [coachTeamId, isSupabaseMode, role])
 
-  const teamsSource = backendMode === "supabase" ? backendTeams : mockTeams
-  const athletesSource = backendMode === "supabase" ? backendAthletes : mockAthletes
+  const teamsSource = isSupabaseMode ? backendTeams : mockTeams
+  const athletesSource = isSupabaseMode ? backendAthletes : mockAthletes
 
   const visibleTeams = useMemo(() => {
     if (role !== "coach") return teamsSource
+    if (isSupabaseMode) {
+      return coachTeamId ? teamsSource.filter((team) => team.id === coachTeamId) : teamsSource
+    }
     if (coachScope.isScopedCoach) {
       return teamsSource.filter((team) => team.id === coachTeamId)
     }
     return teamsSource
-  }, [coachScope.isScopedCoach, coachTeamId, role, teamsSource])
+  }, [coachScope.isScopedCoach, coachTeamId, isSupabaseMode, role, teamsSource])
 
   const totalAthletes = visibleTeams.reduce((sum, team) => sum + team.athleteCount, 0)
   const eventGroups = new Set(visibleTeams.map((team) => team.eventGroup))
@@ -143,7 +152,7 @@ export default function CoachTeamsPage() {
           </section>
         ) : null}
 
-        {role === "coach" && coachScope.allowTeamSwitcher ? (
+        {!isSupabaseMode && role === "coach" && coachScope.allowTeamSwitcher ? (
           <section className="rounded-[28px] border border-slate-200 bg-white/85 px-5 py-4 shadow-sm backdrop-blur-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
@@ -171,6 +180,12 @@ export default function CoachTeamsPage() {
                 </SelectContent>
               </Select>
             </div>
+          </section>
+        ) : null}
+
+        {isSupabaseMode && backendLoading ? (
+          <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500 shadow-sm">
+            Loading teams...
           </section>
         ) : null}
 

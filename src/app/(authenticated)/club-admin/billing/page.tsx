@@ -1,12 +1,18 @@
-ï»¿"use client"
+"use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ClubAdminNav } from "@/components/club-admin/admin-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  getClubAdminBillingRecord,
+  insertAuditEvent,
+  upsertClubAdminBillingRecord,
+} from "@/lib/data/club-admin/ops-data"
 import { logAuditEvent } from "@/lib/mock-audit"
+import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { cn } from "@/lib/utils"
 
@@ -37,8 +43,41 @@ function saveBilling(profile: BillingProfile) {
 }
 
 export default function ClubAdminBillingPage() {
-  const [billing, setBilling] = useState(loadBilling)
+  const backendMode = getBackendMode()
+  const isSupabaseMode = backendMode === "supabase"
+
+  const [billing, setBilling] = useState<BillingProfile>(() =>
+    isSupabaseMode
+      ? { plan: "pro", seats: 50, renewalDate: "2026-04-01", paymentMethodLast4: "4242" }
+      : loadBilling(),
+  )
   const [saved, setSaved] = useState(false)
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    let cancelled = false
+
+    const load = async () => {
+      setBackendLoading(true)
+      const result = await getClubAdminBillingRecord()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        setBackendLoading(false)
+        return
+      }
+      setBilling(result.data)
+      setBackendError(null)
+      setBackendLoading(false)
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
   const invoices = [
     { id: "INV-2026-003", amount: "$299.00", status: "Paid", date: "2026-03-01" },
@@ -57,6 +96,17 @@ export default function ClubAdminBillingPage() {
           <ClubAdminNav />
         </div>
       </section>
+
+      {backendError ? (
+        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Backend sync issue: {backendError}
+        </section>
+      ) : null}
+      {isSupabaseMode && backendLoading ? (
+        <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading billing profile...
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
         <div className="mobile-card-primary">
@@ -93,7 +143,23 @@ export default function ClubAdminBillingPage() {
             <Button
               type="button"
               className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-              onClick={() => {
+              onClick={async () => {
+                if (isSupabaseMode) {
+                  const saveResult = await upsertClubAdminBillingRecord(billing)
+                  if (!saveResult.ok) {
+                    setBackendError(saveResult.error.message)
+                    return
+                  }
+                  const auditResult = await insertAuditEvent({
+                    action: "billing_update",
+                    target: "subscription",
+                    detail: `${billing.plan} ${billing.seats} seats`,
+                  })
+                  if (!auditResult.ok) setBackendError((current) => current ?? auditResult.error.message)
+                  setSaved(true)
+                  return
+                }
+
                 saveBilling(billing)
                 setSaved(true)
                 logAuditEvent({ actor: "club-admin", action: "billing_update", target: "subscription", detail: `${billing.plan} ${billing.seats} seats` })
@@ -123,7 +189,7 @@ export default function ClubAdminBillingPage() {
             ))}
             <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Payment method</p>
-              <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950">â€¢â€¢â€¢â€¢ {billing.paymentMethodLast4}</p>
+              <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950">•••• {billing.paymentMethodLast4}</p>
             </div>
           </div>
         </div>
@@ -152,4 +218,3 @@ export default function ClubAdminBillingPage() {
     </div>
   )
 }
-

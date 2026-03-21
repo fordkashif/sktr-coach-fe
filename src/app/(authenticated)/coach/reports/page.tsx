@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import {
   ArrowUp01Icon,
   ChartAverageIcon,
@@ -14,6 +15,12 @@ import { BarChart } from "@mui/x-charts"
 import { Button } from "@/components/ui/button"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import { mockAthletes, mockPRs, mockTeams, mockWellness } from "@/lib/mock-data"
+import {
+  getCoachDashboardSnapshotForCurrentUser,
+  getCoachWellnessEntriesForCurrentUser,
+  type CoachDashboardSnapshot,
+} from "@/lib/data/coach/dashboard-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 
 const chartSx = {
@@ -47,14 +54,54 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export default function CoachReportsPage() {
+  const backendMode = getBackendMode()
   const role = getCookieValue(ROLE_COOKIE)
   const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
+  const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
+  const [backendWellness, setBackendWellness] = useState<typeof mockWellness>([])
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const loadSnapshot = async () => {
+      const [snapshotResult, wellnessResult] = await Promise.all([
+        getCoachDashboardSnapshotForCurrentUser({ scopeTeamId: role === "coach" ? coachTeamId : null }),
+        getCoachWellnessEntriesForCurrentUser({ scopeTeamId: role === "coach" ? coachTeamId : null }),
+      ])
+      if (cancelled) return
+
+      if (!snapshotResult.ok) {
+        setBackendError(snapshotResult.error.message)
+        return
+      }
+      if (!wellnessResult.ok) {
+        setBackendError(wellnessResult.error.message)
+        return
+      }
+
+      setBackendError(null)
+      setBackendSnapshot(snapshotResult.data)
+      setBackendWellness(wellnessResult.data)
+    }
+
+    void loadSnapshot()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode, coachTeamId, role])
+
+  const sourceAthletes = backendMode === "supabase" ? (backendSnapshot?.athletes ?? []) : mockAthletes
+  const sourcePrs = backendMode === "supabase" ? (backendSnapshot?.prs ?? []) : mockPRs
+  const sourceTeams = backendMode === "supabase" ? (backendSnapshot?.teams ?? []) : mockTeams
+  const sourceWellness = backendMode === "supabase" ? backendWellness : mockWellness
   const scopedAthletes =
-    role === "coach" && coachTeamId ? mockAthletes.filter((athlete) => athlete.teamId === coachTeamId) : mockAthletes
+    role === "coach" && coachTeamId ? sourceAthletes.filter((athlete) => athlete.teamId === coachTeamId) : sourceAthletes
   const athleteIds = new Set(scopedAthletes.map((athlete) => athlete.id))
-  const scopedPrs = mockPRs.filter((pr) => athleteIds.has(pr.athleteId))
-  const scopedWellness = mockWellness.filter((entry) => athleteIds.has(entry.athleteId))
-  const scopedTeam = mockTeams.find((team) => team.id === coachTeamId)
+  const scopedPrs = sourcePrs.filter((pr) => athleteIds.has(pr.athleteId))
+  const scopedWellness = sourceWellness.filter((entry) => athleteIds.has(entry.athleteId))
+  const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
   const readinessSummary = {
     green: scopedAthletes.filter((athlete) => athlete.readiness === "green").length,
@@ -184,6 +231,11 @@ export default function CoachReportsPage() {
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6 print:p-0">
       <section className="space-y-4 pt-1">
+        {backendError ? (
+          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Backend sync issue: {backendError}
+          </div>
+        ) : null}
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <h1 className="text-[2.35rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.8rem]">Reports</h1>

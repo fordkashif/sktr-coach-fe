@@ -1,6 +1,6 @@
 # PaceLab Supabase + PostgreSQL Status Board
 
-Last updated: March 20, 2026
+Last updated: March 21, 2026
 
 ## Purpose
 
@@ -9,6 +9,7 @@ Track the backend migration execution status wave-by-wave with concrete evidence
 Companion plan:
 - `SUPABASE_POSTGRES_EXECUTION_PLAN.md`
 - `PLAYWRIGHT_FLOW_TENANCY_TEST_PLAN.md`
+- `SUPABASE_RUNTIME_COVERAGE_AUDIT.md`
 
 ## Status Key
 
@@ -26,7 +27,7 @@ Companion plan:
 ## Verification Snapshot
 
 - `npm run lint`: PASS (March 20, 2026)
-- `npm run typecheck`: PASS (March 20, 2026)
+- `npm run typecheck`: PASS (March 21, 2026)
 - `npx playwright test tests/e2e/role-journeys-and-tenancy.spec.ts`: PASS (3/3, March 20, 2026)
 - `npm run test:e2e:supabase`: PASS WITH SKIPS (7 skipped, env-gated suites, March 20, 2026)
 - CI workflow added: `.github/workflows/e2e.yml` (required mock lane + optional secret-gated Supabase lane)
@@ -451,6 +452,22 @@ Companion plan:
   - Wave 0 completed (BEM-00 through BEM-04); moved active execution to Wave 1.
   - Migration execution policy updated: automatic Supabase CLI migrations are mandatory; manual SQL is break-glass only.
   - Playwright Supabase TW2/TW3 scaffolding added (role auth-state generation + admin/coach/athlete tenant isolation specs with tenant-B env gating).
+- March 21, 2026:
+  - Athlete home/log in `supabase` mode now load latest session detail from DB-backed session helpers instead of mock session structures.
+  - Athlete log progress state now keys against real session id/block count for safer session-to-session rollover behavior.
+  - Coach dashboard and coach reports now use Supabase runtime snapshots (`src/lib/data/coach/dashboard-data.ts`) with no mock fallback in `supabase` mode.
+  - Coach team/athlete detail routes now resolve entity scope from Supabase snapshot data in `supabase` mode and no longer use mock entity lookup as runtime source-of-truth.
+  - Athlete training-plan/test-week runtime paths now use Supabase-mode identity and benchmark/PR data sources instead of mock identity/benchmark dependencies.
+  - Athlete profile in `supabase` mode now resolves age, adherence, and last wellness date from DB-backed sources via `src/lib/data/athlete/profile-data.ts`.
+  - Coach training-plan and coach test-week routes now switch to Supabase-mode runtime clients (`training-plan-page-supabase-client.tsx`, `test-week-page-supabase-client.tsx`) so `supabase` mode no longer uses mock-seeded coach builders.
+  - Supabase Playwright coverage added for coach builder route smoke (`tests/e2e/supabase/coach-builder.spec.ts`), with env/auth-state gated execution behavior validated.
+  - Coach teams route in `supabase` mode now removes mock default/switcher behavior and relies on Supabase snapshot + cookie scope only.
+  - Club-admin users and reports routes now initialize from Supabase snapshot state in `supabase` mode (no mock-seeded startup state), with export/user ops actions staying on Supabase handlers.
+  - Club-admin dashboard route now initializes from Supabase ops/report snapshots in `supabase` mode (users/teams/invites/requests/readiness), removing `mockAthletes` as runtime source-of-truth for that route.
+  - Club-admin audit route now reads tenant-scoped events from Supabase (`getClubAdminAuditEvents`) in `supabase` mode, replacing mock audit logs for runtime reads.
+  - Club-admin teams route now reads/writes `teams` via Supabase in `supabase` mode (`getClubAdminTeamsSnapshot`, `createClubAdminTeam`, `updateClubAdminTeam`, `setClubAdminTeamArchived`), replacing local mock persistence for team lifecycle actions.
+  - Club-admin profile route now persists tenant profile settings to Supabase (`club_profiles`) and emits DB audit events in `supabase` mode.
+  - Club-admin billing route now persists subscription settings to Supabase (`billing_profiles`) and emits DB audit events in `supabase` mode.
 
 ## Quick Start Prompt
 

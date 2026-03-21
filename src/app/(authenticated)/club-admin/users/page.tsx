@@ -33,16 +33,20 @@ import { cn } from "@/lib/utils"
 
 export default function ClubAdminUsersPage() {
   const backendMode = getBackendMode()
-  const [users, setUsers] = useState<ClubUser[]>(loadUsersSafe)
-  const [invites, setInvites] = useState<CoachInvite[]>(loadInvitesSafe)
-  const [accountRequests, setAccountRequests] = useState<AccountRequest[]>(loadAccountRequestsSafe)
+  const isSupabaseMode = backendMode === "supabase"
+  const [users, setUsers] = useState<ClubUser[]>(() => (isSupabaseMode ? [] : loadUsersSafe()))
+  const [invites, setInvites] = useState<CoachInvite[]>(() => (isSupabaseMode ? [] : loadInvitesSafe()))
+  const [accountRequests, setAccountRequests] = useState<AccountRequest[]>(() =>
+    isSupabaseMode ? [] : loadAccountRequestsSafe(),
+  )
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<UserRole>("athlete")
   const [teamId, setTeamId] = useState<string>("none")
   const [coachInviteEmail, setCoachInviteEmail] = useState("")
   const [coachInviteTeamId, setCoachInviteTeamId] = useState<string>("none")
-  const [teams, setTeams] = useState(loadTeamsSafe)
+  const [teams, setTeams] = useState(() => (isSupabaseMode ? [] : loadTeamsSafe()))
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   const saveUsers = (next: ClubUser[]) => {
@@ -65,14 +69,16 @@ export default function ClubAdminUsersPage() {
   }
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (!isSupabaseMode) return
     let cancelled = false
 
     const loadSnapshot = async () => {
+      setBackendLoading(true)
       const result = await getClubAdminOpsSnapshot()
       if (cancelled) return
       if (!result.ok) {
         setBackendError(result.error.message)
+        setBackendLoading(false)
         return
       }
 
@@ -110,13 +116,14 @@ export default function ClubAdminUsersPage() {
         })),
       )
       setTeams(result.data.teams.map((row: ClubAdminTeamOption) => ({ id: row.id, name: row.name, eventGroup: "Sprint", status: "active" })))
+      setBackendLoading(false)
     }
 
     void loadSnapshot()
     return () => {
       cancelled = true
     }
-  }, [backendMode])
+  }, [isSupabaseMode])
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -132,6 +139,11 @@ export default function ClubAdminUsersPage() {
       {backendError ? (
         <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           Backend sync issue: {backendError}
+        </section>
+      ) : null}
+      {isSupabaseMode && backendLoading ? (
+        <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading users and access controls...
         </section>
       ) : null}
 

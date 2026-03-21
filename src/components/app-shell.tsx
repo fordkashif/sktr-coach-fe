@@ -24,15 +24,15 @@ import { useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { useTheme } from "next-themes"
 import { getCoachScope } from "@/lib/coach-scope"
-import { mockAthletes, mockTeams } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { clearSessionCookies } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_ROLE_STORAGE_KEY,
-  MOCK_USER_EMAIL_STORAGE_KEY,
 } from "@/lib/mock-auth"
+import { getBackendMode } from "@/lib/supabase/config"
+import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -83,8 +83,20 @@ function getProfileImage(role: string) {
   return "/avatar-placeholder.svg"
 }
 
+function displayNameFromEmail(userEmail: string | null, fallbackRole: string) {
+  if (!userEmail) return getRoleLabel(fallbackRole)
+  const localPart = userEmail.split("@")[0] ?? ""
+  const label = localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
+    .trim()
+  return label || getRoleLabel(fallbackRole)
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { role } = useRole()
+  const { role, userEmail } = useRole()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { resolvedTheme, setTheme } = useTheme()
@@ -123,9 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isDark = resolvedTheme === "dark"
   const toggleTheme = () => setTheme(isDark ? "light" : "dark")
   const useAthleteDrawerMenu = role === "athlete"
-  const athleteProfile = role === "athlete" ? mockAthletes[0] : null
-  const athleteTeam = athleteProfile ? mockTeams.find((team) => team.id === athleteProfile.teamId) : null
-  const userEmail = typeof window === "undefined" ? "clubadmin@pacelab.local" : window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY) ?? "clubadmin@pacelab.local"
+  const athleteDisplayName = role === "athlete" ? displayNameFromEmail(userEmail, role) : null
   useEffect(() => {
     const scroller = document.getElementById("main-content")
     if (scroller) {
@@ -155,9 +165,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-back"))
   }
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    if (getBackendMode() === "supabase") {
+      const supabase = getBrowserSupabaseClient()
+      if (supabase) {
+        await supabase.auth.signOut()
+      }
+    }
     window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
-    window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
     window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
     clearSessionCookies()
     navigate("/login")
@@ -230,7 +245,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             variant="ghost"
             className="h-12 w-full justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 text-white hover:bg-white/[0.08]"
-            onClick={handleSignOut}
+            onClick={() => {
+              void handleSignOut()
+            }}
           >
             <span className="text-sm font-medium">Sign out</span>
             <span className="text-xs uppercase tracking-[0.18em] text-white/55">Exit</span>
@@ -332,7 +349,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuContent align="start">
                       <DropdownMenuItem>Profile</DropdownMenuItem>
                       <DropdownMenuItem>Settings</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={handleSignOut}>Sign out</DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          void handleSignOut()
+                        }}
+                      >
+                        Sign out
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -383,11 +406,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                               className="size-12 rounded-[18px] object-cover"
                             />
                             <div className="min-w-0">
-                              <p className="truncate text-base font-semibold tracking-[-0.03em] text-slate-950">
-                                {athleteProfile?.name ?? "Athlete"}
-                              </p>
+                              <p className="truncate text-base font-semibold tracking-[-0.03em] text-slate-950">{athleteDisplayName ?? "Athlete"}</p>
                               <p className="truncate text-xs text-slate-500">
-                                {athleteTeam?.name ?? athleteProfile?.eventGroup ?? userEmail}
+                                {getRoleLabel(role)}
                               </p>
                             </div>
                           </div>
@@ -438,7 +459,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 Join Team
                               </Link>
                             </SheetClose>
-                            <button type="button" className="block text-left" onClick={handleSignOut}>
+                            <button
+                              type="button"
+                              className="block text-left"
+                              onClick={() => {
+                                void handleSignOut()
+                              }}
+                            >
                               Sign out
                             </button>
                           </div>
@@ -480,7 +507,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem>Profile</DropdownMenuItem>
                     <DropdownMenuItem>Settings</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={handleSignOut}>Sign out</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void handleSignOut()
+                      }}
+                    >
+                      Sign out
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

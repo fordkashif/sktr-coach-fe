@@ -9,7 +9,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { getTeamDisciplineLabel, mockAthletes, mockTeams } from "@/lib/mock-data"
+import { mockAthletes, mockTeams } from "@/lib/mock-data"
+import { getBackendMode } from "@/lib/supabase/config"
+import { getCurrentAthleteProfileSnapshot, type CurrentAthleteProfileSnapshot } from "@/lib/data/athlete/profile-data"
 
 type AthletePreferences = {
   units: "metric" | "imperial"
@@ -40,9 +42,33 @@ function loadPreferences(): AthletePreferences {
 }
 
 export default function AthleteProfilePage() {
-  const athlete = mockAthletes[0]
-  const team = mockTeams.find((item) => item.id === athlete.teamId)
+  const backendMode = getBackendMode()
+  const mockAthlete = mockAthletes[0]
+  const mockTeam = mockTeams.find((item) => item.id === mockAthlete.teamId)
+  const [backendSnapshot, setBackendSnapshot] = useState<CurrentAthleteProfileSnapshot | null>(null)
+  const [backendError, setBackendError] = useState<string | null>(null)
   const [preferences, setPreferences] = useState<AthletePreferences>(() => loadPreferences())
+
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const load = async () => {
+      const result = await getCurrentAthleteProfileSnapshot()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        return
+      }
+      setBackendError(null)
+      setBackendSnapshot(result.data)
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -65,15 +91,42 @@ export default function AthleteProfilePage() {
     )
   }, [preferences])
 
+  const athleteName = backendMode === "supabase" ? backendSnapshot?.name ?? "Athlete" : mockAthlete.name
+  const athletePrimaryEvent =
+    backendMode === "supabase" ? backendSnapshot?.primaryEvent ?? "Unassigned" : mockAthlete.primaryEvent
+  const athleteEventGroup =
+    backendMode === "supabase" ? backendSnapshot?.eventGroup ?? backendSnapshot?.teamEventGroup ?? "Unassigned" : mockAthlete.eventGroup
+  const athleteReadiness = backendMode === "supabase" ? backendSnapshot?.readiness ?? "yellow" : mockAthlete.readiness
+  const athleteAdherence = backendMode === "supabase" ? backendSnapshot?.adherencePercent ?? null : mockAthlete.adherence
+  const athleteLastWellness =
+    backendMode === "supabase"
+      ? backendSnapshot?.lastWellnessDate
+        ? new Date(`${backendSnapshot.lastWellnessDate}T00:00:00`).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : null
+      : mockAthlete.lastWellness
+  const athleteAge = backendMode === "supabase" ? backendSnapshot?.age ?? null : mockAthlete.age
+  const teamName = backendMode === "supabase" ? backendSnapshot?.teamName ?? "Unassigned" : mockTeam?.name ?? "Unassigned"
+  const disciplineGroup =
+    backendMode === "supabase" ? backendSnapshot?.teamEventGroup ?? athleteEventGroup : mockTeam?.eventGroup ?? athleteEventGroup
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 sm:space-y-6 sm:p-6">
+      {backendError ? (
+        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Backend sync issue: {backendError}
+        </section>
+      ) : null}
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-medium text-slate-700">
-            {team?.name ?? "Unassigned"}
+            {teamName}
           </span>
           <span className="inline-flex rounded-full bg-[#f8fafc] px-3 py-1 text-xs font-medium text-slate-700">
-            {getTeamDisciplineLabel(team) || athlete.eventGroup}
+            {disciplineGroup}
           </span>
         </div>
         <h1 className="text-[2.15rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.5rem]">
@@ -90,21 +143,24 @@ export default function AthleteProfilePage() {
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
               <div className="space-y-1">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Identity</p>
-                <h2 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{athlete.name}</h2>
-                <p className="text-sm text-slate-500">{athlete.primaryEvent} | {athlete.eventGroup} | Age {athlete.age}</p>
+                <h2 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{athleteName}</h2>
+                <p className="text-sm text-slate-500">
+                  {athletePrimaryEvent} | {athleteEventGroup}
+                  {athleteAge !== null ? ` | Age ${athleteAge}` : ""}
+                </p>
               </div>
               <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 text-right">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Last Wellness</p>
-                <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">{athlete.lastWellness}</p>
+                <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">{athleteLastWellness ?? "-"}</p>
               </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: "Team", value: team?.name ?? "-" },
-                { label: "Discipline Group", value: getTeamDisciplineLabel(team) || athlete.eventGroup },
-                { label: "Readiness", value: athlete.readiness },
-                { label: "Adherence", value: `${athlete.adherence}%` },
+                { label: "Team", value: teamName || "-" },
+                { label: "Discipline Group", value: disciplineGroup },
+                { label: "Readiness", value: athleteReadiness },
+                { label: "Adherence", value: athleteAdherence !== null ? `${athleteAdherence}%` : "-" },
               ].map((item) => (
                 <div key={item.label} className="mobile-card-utility">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
@@ -219,11 +275,11 @@ export default function AthleteProfilePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Primary Event</p>
-                <p className="mt-1.5 text-base font-semibold text-slate-950">{athlete.primaryEvent}</p>
+                <p className="mt-1.5 text-base font-semibold text-slate-950">{athletePrimaryEvent}</p>
               </div>
               <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Current Team</p>
-                <p className="mt-1.5 text-base font-semibold text-slate-950">{team?.name ?? "Pending assignment"}</p>
+                <p className="mt-1.5 text-base font-semibold text-slate-950">{teamName || "Pending assignment"}</p>
               </div>
             </div>
           </CardContent>

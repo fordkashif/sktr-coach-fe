@@ -13,7 +13,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { mockAthletes, mockCurrentSession, mockTestWeekResults, onSaveLog, type SessionBlock } from "@/lib/mock-data"
+import {
+  mockAthletes,
+  mockCurrentSession,
+  mockTestWeekResults,
+  onSaveLog,
+  type CurrentSession,
+  type SessionBlock,
+} from "@/lib/mock-data"
 import {
   blockStatus,
   dateKeyLocal,
@@ -25,7 +32,11 @@ import {
   sessionRowKey,
   type SessionProgress,
 } from "@/lib/athlete-session"
-import { completeLatestSessionForCurrentAthlete } from "@/lib/data/session/session-data"
+import {
+  completeLatestSessionForCurrentAthlete,
+  getLatestSessionDetailForCurrentAthlete,
+  type CurrentAthleteLatestSessionDetail,
+} from "@/lib/data/session/session-data"
 import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
@@ -43,6 +54,8 @@ export default function AthleteLogPage() {
   const navigate = useNavigate()
   const athlete = mockAthletes[0]
   const backendMode = getBackendMode()
+  const [backendSessionDetail, setBackendSessionDetail] = useState<CurrentAthleteLatestSessionDetail | null>(null)
+  const [backendSessionError, setBackendSessionError] = useState<string | null>(null)
   const [hasBackendTestWeekResult, setHasBackendTestWeekResult] = useState<boolean | null>(null)
   const hasTestWeekResult =
     backendMode === "supabase"
@@ -53,6 +66,51 @@ export default function AthleteLogPage() {
     if (typeof window === "undefined") return defaultSessionProgress()
     return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
   })
+
+  const currentSession: CurrentSession = useMemo(() => {
+    if (!(backendMode === "supabase" && backendSessionDetail)) return mockCurrentSession
+
+    return {
+      id: backendSessionDetail.session.id,
+      title: backendSessionDetail.session.title,
+      status:
+        backendSessionDetail.session.status === "completed"
+          ? "completed"
+          : backendSessionDetail.session.status === "in-progress"
+            ? "in-progress"
+            : "not-started",
+      scheduledFor: backendSessionDetail.session.scheduledFor,
+      estimatedDuration: backendSessionDetail.session.estimatedDurationMinutes
+        ? `${backendSessionDetail.session.estimatedDurationMinutes} min`
+        : "N/A",
+      coachNote: backendSessionDetail.session.coachNote ?? "",
+      blocks: backendSessionDetail.blocks
+        .slice()
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((block) => ({
+          id: block.id,
+          type: block.blockType,
+          name: block.name,
+          focus: block.focus ?? "",
+          coachNote: block.coachNote ?? "",
+          previousResult: block.previousResult ?? undefined,
+          rest: block.restLabel ?? undefined,
+          rows: block.rows
+            .slice()
+            .sort((left, right) => left.sortOrder - right.sortOrder)
+            .map((row) => ({
+              label: row.label,
+              target: row.target,
+              helper: row.helper ?? undefined,
+            })),
+        })),
+    }
+  }, [backendMode, backendSessionDetail])
+
+  const currentAthleteFirstName = useMemo(() => {
+    if (backendMode === "supabase") return backendSessionDetail?.athleteFirstName ?? "Athlete"
+    return athlete.name.split(" ")[0]
+  }, [athlete.name, backendMode, backendSessionDetail?.athleteFirstName])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -72,6 +130,38 @@ export default function AthleteLogPage() {
       window.removeEventListener("pacelab:mobile-detail-back", handleBack)
     }
   }, [])
+
+  useEffect(() => {
+    if (backendMode !== "supabase") return
+    let cancelled = false
+
+    const loadSessionDetail = async () => {
+      const result = await getLatestSessionDetailForCurrentAthlete()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendSessionError(result.error.message)
+        return
+      }
+
+      setBackendSessionError(null)
+      setBackendSessionDetail(result.data)
+    }
+
+    void loadSessionDetail()
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setProgress(
+      progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)), {
+        sessionId: currentSession.id,
+        blockCount: currentSession.blocks.length,
+      }),
+    )
+  }, [currentSession.id, currentSession.blocks.length])
 
   useEffect(() => {
     if (backendMode !== "supabase") return
@@ -96,19 +186,19 @@ export default function AthleteLogPage() {
     }
   }, [backendMode])
 
-  const currentBlock = mockCurrentSession.blocks[progress.currentBlockIndex] ?? mockCurrentSession.blocks[0]
+  const currentBlock = currentSession.blocks[progress.currentBlockIndex] ?? currentSession.blocks[0]
   const completedCount = progress.completedBlockIds.length
-  const totalBlocks = mockCurrentSession.blocks.length
-  const progressPercent = Math.round((completedCount / totalBlocks) * 100)
+  const totalBlocks = currentSession.blocks.length
+  const progressPercent = totalBlocks > 0 ? Math.round((completedCount / totalBlocks) * 100) : 0
   const allComplete = completedCount === totalBlocks
 
   const sessionState = useMemo(() => {
     if (allComplete) return { label: "Completed", tone: "bg-emerald-100 text-emerald-700" }
-    if (completedCount > 0 || mockCurrentSession.status === "in-progress") {
+    if (completedCount > 0 || currentSession.status === "in-progress") {
       return { label: "In Progress", tone: "bg-amber-100 text-amber-700" }
     }
     return { label: "Not Started", tone: "bg-slate-200 text-slate-700" }
-  }, [allComplete, completedCount])
+  }, [allComplete, completedCount, currentSession.status])
 
   if (!currentBlock) return null
 
@@ -166,26 +256,31 @@ export default function AthleteLogPage() {
   }
 
   const resetSession = () => {
-    setProgress(defaultSessionProgress())
+    setProgress(defaultSessionProgress({ sessionId: currentSession.id }))
   }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 pb-6 pt-4 sm:px-6 sm:pt-6">
       <section className="space-y-4">
+        {backendSessionError ? (
+          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Backend sync issue: {backendSessionError}
+          </div>
+        ) : null}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className="inline-flex rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-medium text-slate-700">
-              {mockCurrentSession.estimatedDuration}
+              {currentSession.estimatedDuration}
             </span>
             <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-medium", sessionState.tone)}>
               {sessionState.label}
             </span>
           </div>
           <h1 className="text-[2.15rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.5rem]">
-            {mockCurrentSession.title}
+            {currentSession.title}
           </h1>
           <p className="text-base leading-7 text-slate-600">
-            {mockCurrentSession.scheduledFor}. Programmed for {athlete.name.split(" ")[0]} and ready to log live.
+            {currentSession.scheduledFor}. Programmed for {currentAthleteFirstName} and ready to log live.
           </p>
         </div>
 
@@ -229,7 +324,7 @@ export default function AthleteLogPage() {
         </div>
 
         <div className="flex gap-3 overflow-x-auto pb-1">
-          {mockCurrentSession.blocks.map((block, index) => {
+          {currentSession.blocks.map((block, index) => {
             const status = blockStatus(progress, block)
             const isActive = index === progress.currentBlockIndex
             return (

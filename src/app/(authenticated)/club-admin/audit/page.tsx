@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   createColumnHelper,
   flexRender,
@@ -11,13 +11,45 @@ import { ClubAdminNav } from "@/components/club-admin/admin-nav"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type AuditEvent, loadAuditLogs } from "@/lib/mock-audit"
+import { getBackendMode } from "@/lib/supabase/config"
+import { getClubAdminAuditEvents } from "@/lib/data/club-admin/ops-data"
 
 const columnHelper = createColumnHelper<AuditEvent>()
 
 export default function ClubAdminAuditPage() {
-  const [entries] = useState<AuditEvent[]>(loadAuditLogs)
+  const backendMode = getBackendMode()
+  const isSupabaseMode = backendMode === "supabase"
+  const [entries, setEntries] = useState<AuditEvent[]>(() => (isSupabaseMode ? [] : loadAuditLogs()))
   const [query, setQuery] = useState("")
   const [actionFilter, setActionFilter] = useState("all")
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    let cancelled = false
+
+    const load = async () => {
+      setBackendLoading(true)
+      const result = await getClubAdminAuditEvents()
+      if (cancelled) return
+
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        setBackendLoading(false)
+        return
+      }
+
+      setEntries(result.data)
+      setBackendError(null)
+      setBackendLoading(false)
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
   const filtered = useMemo(() => {
     return entries.filter((entry) => {
@@ -74,6 +106,16 @@ export default function ClubAdminAuditPage() {
           <ClubAdminNav />
         </div>
       </section>
+      {backendError ? (
+        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Backend sync issue: {backendError}
+        </section>
+      ) : null}
+      {isSupabaseMode && backendLoading ? (
+        <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading audit logs...
+        </section>
+      ) : null}
 
       <section className="mobile-card-primary">
         <div className="space-y-1 border-b border-slate-200 pb-4">

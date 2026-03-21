@@ -11,6 +11,9 @@ import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { loadAccountRequests, saveAccountRequests, type AccountRequest } from "@/lib/mock-club-admin"
 import { setSessionCookies } from "@/lib/auth-session"
+import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
+import { getBrowserSupabaseClient } from "@/lib/supabase/client"
+import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_CREDENTIALS,
@@ -53,6 +56,7 @@ const emptyRequestForm: RequestFormState = {
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const isSupabaseMode = getBackendMode() === "supabase"
   const [mode, setMode] = useState<AuthMode>("signin")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -61,8 +65,54 @@ export default function LoginPage() {
   const [requestForm, setRequestForm] = useState<RequestFormState>(emptyRequestForm)
   const [requestSubmitted, setRequestSubmitted] = useState(false)
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSupabaseMode) {
+      if (!isSupabaseEnabled()) {
+        setError("Supabase mode is enabled but URL/key are missing in environment.")
+        return
+      }
+
+      const supabase = getBrowserSupabaseClient()
+      if (!supabase) {
+        setError("Supabase client failed to initialize.")
+        return
+      }
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      })
+
+      if (signInError || !data.session) {
+        setError(signInError?.message ?? "Sign in failed.")
+        return
+      }
+
+      const profile = await ensureProfileForSession(supabase, data.session)
+      if (!profile) {
+        setError("Sign in succeeded, but your profile is missing tenant/role metadata.")
+        return
+      }
+
+      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
+      window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
+      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
+      window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
+
+      setError("")
+      if (profile.role === "athlete") {
+        navigate("/athlete/home")
+        return
+      }
+      if (profile.role === "coach") {
+        navigate("/coach/dashboard")
+        return
+      }
+      navigate("/club-admin/dashboard")
+      return
+    }
+
     const match = resolveMockLogin(email, password)
 
     if (!match) {
@@ -86,8 +136,33 @@ export default function LoginPage() {
     navigate(match.redirectTo)
   }
 
-  const handleRequestSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSupabaseMode) {
+      const supabase = getBrowserSupabaseClient()
+      if (!supabase) {
+        setError("Supabase client is not configured.")
+        return
+      }
+
+      const result = await supabase.rpc("submit_account_request", {
+        p_full_name: requestForm.fullName.trim(),
+        p_email: requestForm.email.trim().toLowerCase(),
+        p_organization: requestForm.organization.trim(),
+        p_notes: requestForm.notes.trim() || null,
+        p_desired_role: "club-admin",
+      })
+
+      if (result.error) {
+        setError(result.error.message)
+        return
+      }
+
+      setError("")
+      setRequestSubmitted(true)
+      return
+    }
+
     const existingRequests = loadAccountRequests()
     const nextRequest: AccountRequest = {
       id: `request-${Date.now()}`,
@@ -235,7 +310,9 @@ export default function LoginPage() {
                           <span>Remember me</span>
                         </label>
                         <p className="text-xs leading-5 text-slate-500 sm:max-w-[220px] sm:text-right sm:text-sm">
-                          Demo build. Use the access panel below for role-specific credentials.
+                          {isSupabaseMode
+                            ? "Supabase mode enabled. Use your real account credentials."
+                            : "Demo build. Use the access panel below for role-specific credentials."}
                         </p>
                       </div>
 
@@ -253,69 +330,72 @@ export default function LoginPage() {
                       </Button>
                     </form>
 
-                    <div className="space-y-4">
-                    <div className="flex items-center gap-4 text-xs uppercase tracking-[0.24em] text-slate-400">
-                      <Separator className="bg-slate-200" />
-                      Demo access
-                      <Separator className="bg-slate-200" />
-                    </div>
+                    {!isSupabaseMode ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-4 text-xs uppercase tracking-[0.24em] text-slate-400">
+                          <Separator className="bg-slate-200" />
+                          Demo access
+                          <Separator className="bg-slate-200" />
+                        </div>
 
-                      <Accordion type="single" collapsible className="rounded-[28px] border border-slate-200 bg-white px-5">
-                        <AccordionItem value="demo-access" className="border-none">
-                          <AccordionTrigger className="py-5 text-base font-semibold text-slate-950 hover:no-underline">
-                            Use a mock account
-                          </AccordionTrigger>
-                          <AccordionContent className="space-y-3 pb-5 text-slate-600">
-                            <p className="text-sm leading-6">
-                              Load credentials for the exact workspace you want to inspect, then submit normally.
-                            </p>
-                            <div className="grid gap-3">
-                              <button
-                                type="button"
-                                onClick={() => applyDemoCredentials("athlete")}
-                                className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                              >
-                                <span>
-                                  <span className="block text-sm font-semibold text-slate-950">Athlete</span>
-                                  <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.athlete.email}</span>
-                                </span>
-                                <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => applyDemoCredentials("coach")}
-                                className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                              >
-                                <span>
-                                  <span className="block text-sm font-semibold text-slate-950">Coach</span>
-                                  <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.coach.email}</span>
-                                </span>
-                                <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => applyDemoCredentials("clubAdmin")}
-                                className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                              >
-                                <span>
-                                  <span className="block text-sm font-semibold text-slate-950">Club Admin</span>
-                                  <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.clubAdmin.email}</span>
-                                </span>
-                                <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                              </button>
-                            </div>
-                          </AccordionContent>
-                        </AccordionItem>
-                      </Accordion>
-                    </div>
+                        <Accordion type="single" collapsible className="rounded-[28px] border border-slate-200 bg-white px-5">
+                          <AccordionItem value="demo-access" className="border-none">
+                            <AccordionTrigger className="py-5 text-base font-semibold text-slate-950 hover:no-underline">
+                              Use a mock account
+                            </AccordionTrigger>
+                            <AccordionContent className="space-y-3 pb-5 text-slate-600">
+                              <p className="text-sm leading-6">
+                                Load credentials for the exact workspace you want to inspect, then submit normally.
+                              </p>
+                              <div className="grid gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => applyDemoCredentials("athlete")}
+                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  <span>
+                                    <span className="block text-sm font-semibold text-slate-950">Athlete</span>
+                                    <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.athlete.email}</span>
+                                  </span>
+                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyDemoCredentials("coach")}
+                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  <span>
+                                    <span className="block text-sm font-semibold text-slate-950">Coach</span>
+                                    <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.coach.email}</span>
+                                  </span>
+                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyDemoCredentials("clubAdmin")}
+                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  <span>
+                                    <span className="block text-sm font-semibold text-slate-950">Club Admin</span>
+                                    <span className="block text-xs text-slate-500">{MOCK_CREDENTIALS.clubAdmin.email}</span>
+                                  </span>
+                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
+                                </button>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </div>
+                    ) : null}
                   </>
                 ) : requestSubmitted ? (
                   <div className="space-y-4 rounded-[28px] border border-[#cfe2ff] bg-[linear-gradient(135deg,#eff6ff_0%,#f8fbff_100%)] px-5 py-5 text-slate-950 shadow-[0_12px_28px_rgba(31,140,255,0.12)]">
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#1f8cff]">Request received</p>
                     <h2 className="text-2xl font-semibold tracking-[-0.04em]">We have your access request.</h2>
                     <p className="text-sm leading-6 text-slate-600">
-                      This demo stores the request locally for now. The next backend pass should send it to club-admin review,
-                      email notification, or a dedicated request queue.
+                      {isSupabaseMode
+                        ? "Your request was submitted to the backend queue for club-admin review."
+                        : "This demo stores the request locally for now. The next backend pass should send it to club-admin review, email notification, or a dedicated request queue."}
                     </p>
                     <Button
                       type="button"
@@ -386,7 +466,9 @@ export default function LoginPage() {
                     </div>
 
                     <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
-                      This submits a club admin account request into the review queue. Approval remains mock-backed for now, but the workflow is no longer a dead end.
+                      {isSupabaseMode
+                        ? "This submits directly to the Supabase account request queue for your organization."
+                        : "This submits a club admin account request into the review queue. Approval remains mock-backed for now, but the workflow is no longer a dead end."}
                     </div>
 
                     <Button

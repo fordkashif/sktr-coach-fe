@@ -308,6 +308,48 @@ export async function publishTrainingPlanForCurrentCoach(
   })
 }
 
+export async function getCoachTrainingPlansForCurrentUser(params?: {
+  scopeTeamId?: string | null
+}): Promise<Result<TrainingPlanSummary[]>> {
+  const clientResult = requireSupabaseClient("getCoachTrainingPlansForCurrentUser")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentCoachContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const query = clientResult.client
+    .from("training_plans")
+    .select("id, name, team_id, start_date, weeks, status")
+    .eq("tenant_id", contextResult.data.tenantId)
+    .order("start_date", { ascending: false })
+    .limit(100)
+
+  if (params?.scopeTeamId) {
+    query.eq("team_id", params.scopeTeamId)
+  }
+
+  const { data, error } = await query
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok(
+    ((data as Array<{
+      id: string
+      name: string
+      team_id: string | null
+      start_date: string
+      weeks: number
+      status: TrainingPlanSummary["status"]
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      teamId: row.team_id,
+      startDate: row.start_date,
+      weeks: row.weeks,
+      status: row.status,
+    })),
+  )
+}
+
 export async function getAssignedTrainingPlansForCurrentAthlete(): Promise<Result<TrainingPlanSummary[]>> {
   const clientResult = requireSupabaseClient("getAssignedTrainingPlansForCurrentAthlete")
   if (!clientResult.ok) return clientResult

@@ -20,7 +20,17 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { mockLogs, mockPRs, mockTestWeekResults, mockTrendSeries, type Athlete } from "@/lib/mock-data"
+import {
+  mockLogs,
+  mockPRs,
+  mockTestWeekResults,
+  mockTrendSeries,
+  type Athlete,
+  type LogEntry,
+  type PR,
+  type TestWeekResult,
+  type TrendPoint,
+} from "@/lib/mock-data"
 
 const logTypes = ["All", "Strength", "Run", "Splits", "Jumps", "Throws"] as const
 type LogTypeFilter = (typeof logTypes)[number]
@@ -53,7 +63,19 @@ const ageGroupFor = (age: number) => {
   return "Senior"
 }
 
-export function CoachAthleteDetailContent({ athlete }: { athlete: Athlete }) {
+export type AthleteDetailData = {
+  prs: PR[]
+  logs: LogEntry[]
+  testWeek: TestWeekResult | null
+  trend: TrendPoint[]
+}
+
+type CoachAthleteDetailContentProps = {
+  athlete: Athlete
+  data?: AthleteDetailData
+}
+
+export function CoachAthleteDetailContent({ athlete, data }: CoachAthleteDetailContentProps) {
   const [logType, setLogType] = useState<LogTypeFilter>("All")
   const [dateRange, setDateRange] = useState("Last 7 days")
 
@@ -66,9 +88,9 @@ export function CoachAthleteDetailContent({ athlete }: { athlete: Athlete }) {
     }
   }, [])
 
-  const athletePrs = mockPRs.filter((pr) => pr.athleteId === athlete.id)
+  const athletePrs = data?.prs ?? mockPRs.filter((pr) => pr.athleteId === athlete.id)
   const topPrs = athletePrs.slice(0, 4)
-  const athleteLogs = mockLogs.filter((log) => log.athleteId === athlete.id)
+  const athleteLogs = data?.logs ?? mockLogs.filter((log) => log.athleteId === athlete.id)
 
   const filteredLogs = useMemo(() => {
     if (logType === "All") return athleteLogs
@@ -80,8 +102,8 @@ export function CoachAthleteDetailContent({ athlete }: { athlete: Athlete }) {
     return acc
   }, {})
 
-  const testWeek = mockTestWeekResults.find((row) => row.athleteId === athlete.id)
-  const trend = mockTrendSeries[athlete.id] ?? []
+  const testWeek = data?.testWeek ?? mockTestWeekResults.find((row) => row.athleteId === athlete.id) ?? null
+  const trend = data?.trend ?? mockTrendSeries[athlete.id] ?? []
   const latestReadinessDate = trend[trend.length - 1]?.date ?? athlete.lastWellness
   const totalLogs = athleteLogs.length
   const logMixRows = Object.entries(logSummary)

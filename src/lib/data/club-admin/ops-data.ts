@@ -37,6 +37,13 @@ export type ClubAdminTeamOption = {
   name: string
 }
 
+export type ClubAdminTeamRecord = {
+  id: string
+  name: string
+  eventGroup: string | null
+  status: "active" | "archived"
+}
+
 type ClientResolution =
   | { ok: true; client: SupabaseClient }
   | { ok: false; error: DataError }
@@ -112,6 +119,31 @@ export type ClubAdminReportSnapshot = {
     category: string
     measuredOn: string
   }>
+}
+
+export type ClubAdminAuditEvent = {
+  id: string
+  action: string
+  actor: string
+  target: string
+  detail?: string
+  at: string
+}
+
+export type ClubAdminProfileRecord = {
+  clubName: string
+  shortName: string
+  primaryColor: string
+  seasonYear: string
+  seasonStart: string
+  seasonEnd: string
+}
+
+export type ClubAdminBillingRecord = {
+  plan: "starter" | "pro" | "enterprise"
+  seats: number
+  renewalDate: string
+  paymentMethodLast4: string
 }
 
 export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnapshot>> {
@@ -418,4 +450,282 @@ export async function getClubAdminReportSnapshot(): Promise<Result<ClubAdminRepo
       measuredOn: row.measured_on,
     })),
   })
+}
+
+export async function getClubAdminAuditEvents(): Promise<Result<ClubAdminAuditEvent[]>> {
+  const clientResult = requireSupabaseClient("getClubAdminAuditEvents")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error } = await clientResult.client
+    .from("audit_events")
+    .select("id, action, actor_role, actor_user_id, target, detail, created_at")
+    .eq("tenant_id", contextResult.data.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(500)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok(
+    ((data as Array<{
+      id: string
+      action: string
+      actor_role: string | null
+      actor_user_id: string | null
+      target: string
+      detail: string | null
+      created_at: string
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      action: row.action,
+      actor: row.actor_role ?? row.actor_user_id ?? "system",
+      target: row.target,
+      detail: row.detail ?? undefined,
+      at: new Date(row.created_at).toLocaleString(),
+    })),
+  )
+}
+
+export async function getClubAdminProfileRecord(): Promise<Result<ClubAdminProfileRecord>> {
+  const clientResult = requireSupabaseClient("getClubAdminProfileRecord")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const [tenantResult, profileResult] = await Promise.all([
+    clientResult.client
+      .from("tenants")
+      .select("name")
+      .eq("id", contextResult.data.tenantId)
+      .maybeSingle(),
+    clientResult.client
+      .from("club_profiles")
+      .select(
+        "club_name, short_name, primary_color, season_year, season_start, season_end",
+      )
+      .eq("tenant_id", contextResult.data.tenantId)
+      .maybeSingle(),
+  ])
+
+  if (tenantResult.error) return { ok: false, error: mapPostgrestError(tenantResult.error) }
+  if (profileResult.error) return { ok: false, error: mapPostgrestError(profileResult.error) }
+
+  const nowYear = new Date().getFullYear().toString()
+  const row = profileResult.data as {
+    club_name: string
+    short_name: string
+    primary_color: string
+    season_year: string
+    season_start: string
+    season_end: string
+  } | null
+
+  return ok({
+    clubName: row?.club_name ?? tenantResult.data?.name ?? "Club",
+    shortName: row?.short_name ?? "CLUB",
+    primaryColor: row?.primary_color ?? "#16a34a",
+    seasonYear: row?.season_year ?? nowYear,
+    seasonStart: row?.season_start ?? `${nowYear}-01-10`,
+    seasonEnd: row?.season_end ?? `${nowYear}-10-30`,
+  })
+}
+
+export async function upsertClubAdminProfileRecord(
+  profile: ClubAdminProfileRecord,
+): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("upsertClubAdminProfileRecord")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  if (!profile.clubName.trim()) return err("VALIDATION", "Club name is required.")
+  if (!profile.shortName.trim()) return err("VALIDATION", "Short name is required.")
+
+  const { error } = await clientResult.client.from("club_profiles").upsert(
+    {
+      tenant_id: contextResult.data.tenantId,
+      club_name: profile.clubName.trim(),
+      short_name: profile.shortName.trim(),
+      primary_color: profile.primaryColor.trim() || "#16a34a",
+      season_year: profile.seasonYear.trim(),
+      season_start: profile.seasonStart,
+      season_end: profile.seasonEnd,
+    },
+    { onConflict: "tenant_id" },
+  )
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+export async function getClubAdminBillingRecord(): Promise<Result<ClubAdminBillingRecord>> {
+  const clientResult = requireSupabaseClient("getClubAdminBillingRecord")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error } = await clientResult.client
+    .from("billing_profiles")
+    .select("plan, seats, renewal_date, payment_method_last4")
+    .eq("tenant_id", contextResult.data.tenantId)
+    .maybeSingle()
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const row = data as {
+    plan: ClubAdminBillingRecord["plan"]
+    seats: number
+    renewal_date: string
+    payment_method_last4: string
+  } | null
+
+  return ok({
+    plan: row?.plan ?? "pro",
+    seats: row?.seats ?? 50,
+    renewalDate: row?.renewal_date ?? "2026-04-01",
+    paymentMethodLast4: row?.payment_method_last4 ?? "4242",
+  })
+}
+
+export async function upsertClubAdminBillingRecord(
+  billing: ClubAdminBillingRecord,
+): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("upsertClubAdminBillingRecord")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { error } = await clientResult.client.from("billing_profiles").upsert(
+    {
+      tenant_id: contextResult.data.tenantId,
+      plan: billing.plan,
+      seats: Math.max(1, billing.seats),
+      renewal_date: billing.renewalDate,
+      payment_method_last4: billing.paymentMethodLast4.trim().slice(0, 4),
+    },
+    { onConflict: "tenant_id" },
+  )
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+export async function getClubAdminTeamsSnapshot(): Promise<Result<ClubAdminTeamRecord[]>> {
+  const clientResult = requireSupabaseClient("getClubAdminTeamsSnapshot")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error } = await clientResult.client
+    .from("teams")
+    .select("id, name, event_group, is_archived")
+    .eq("tenant_id", contextResult.data.tenantId)
+    .order("created_at", { ascending: false })
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok(
+    ((data as Array<{
+      id: string
+      name: string
+      event_group: string | null
+      is_archived: boolean
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      eventGroup: row.event_group,
+      status: row.is_archived ? "archived" : "active",
+    })),
+  )
+}
+
+export async function createClubAdminTeam(params: {
+  name: string
+  eventGroup?: string | null
+}): Promise<Result<ClubAdminTeamRecord>> {
+  const clientResult = requireSupabaseClient("createClubAdminTeam")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const teamName = params.name.trim()
+  if (!teamName) return err("VALIDATION", "Team name is required.")
+
+  const { data, error } = await clientResult.client
+    .from("teams")
+    .insert({
+      tenant_id: contextResult.data.tenantId,
+      name: teamName,
+      event_group: params.eventGroup ?? null,
+      is_archived: false,
+    })
+    .select("id, name, event_group, is_archived")
+    .single()
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok({
+    id: data.id,
+    name: data.name,
+    eventGroup: data.event_group,
+    status: data.is_archived ? "archived" : "active",
+  })
+}
+
+export async function updateClubAdminTeam(params: {
+  teamId: string
+  name: string
+  eventGroup?: string | null
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("updateClubAdminTeam")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const teamName = params.name.trim()
+  if (!teamName) return err("VALIDATION", "Team name is required.")
+
+  const { error } = await clientResult.client
+    .from("teams")
+    .update({
+      name: teamName,
+      event_group: params.eventGroup ?? null,
+    })
+    .eq("id", params.teamId)
+    .eq("tenant_id", contextResult.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+export async function setClubAdminTeamArchived(params: {
+  teamId: string
+  archived: boolean
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("setClubAdminTeamArchived")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { error } = await clientResult.client
+    .from("teams")
+    .update({
+      is_archived: params.archived,
+      archived_at: params.archived ? new Date().toISOString() : null,
+    })
+    .eq("id", params.teamId)
+    .eq("tenant_id", contextResult.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
 }

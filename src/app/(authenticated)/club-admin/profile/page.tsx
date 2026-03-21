@@ -1,16 +1,61 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ClubAdminNav } from "@/components/club-admin/admin-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  getClubAdminProfileRecord,
+  insertAuditEvent,
+  upsertClubAdminProfileRecord,
+} from "@/lib/data/club-admin/ops-data"
 import { logAuditEvent } from "@/lib/mock-audit"
+import { getBackendMode } from "@/lib/supabase/config"
 import { loadProfileSafe, persistProfile } from "../state"
 
 export default function ClubAdminProfilePage() {
-  const [profile, setProfile] = useState(loadProfileSafe)
+  const backendMode = getBackendMode()
+  const isSupabaseMode = backendMode === "supabase"
+  const [profile, setProfile] = useState(() =>
+    isSupabaseMode
+      ? {
+          clubName: "",
+          shortName: "",
+          primaryColor: "#16a34a",
+          seasonYear: "2026",
+          seasonStart: "2026-01-10",
+          seasonEnd: "2026-10-30",
+        }
+      : loadProfileSafe(),
+  )
   const [saved, setSaved] = useState(false)
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
+  const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    let cancelled = false
+
+    const load = async () => {
+      setBackendLoading(true)
+      const result = await getClubAdminProfileRecord()
+      if (cancelled) return
+      if (!result.ok) {
+        setBackendError(result.error.message)
+        setBackendLoading(false)
+        return
+      }
+      setProfile(result.data)
+      setBackendError(null)
+      setBackendLoading(false)
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -23,6 +68,17 @@ export default function ClubAdminProfilePage() {
           <ClubAdminNav />
         </div>
       </section>
+
+      {backendError ? (
+        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Backend sync issue: {backendError}
+        </section>
+      ) : null}
+      {isSupabaseMode && backendLoading ? (
+        <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading club profile...
+        </section>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
         <div className="mobile-card-primary">
@@ -60,7 +116,23 @@ export default function ClubAdminProfilePage() {
             <Button
               type="button"
               className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-              onClick={() => {
+              onClick={async () => {
+                if (isSupabaseMode) {
+                  const saveResult = await upsertClubAdminProfileRecord(profile)
+                  if (!saveResult.ok) {
+                    setBackendError(saveResult.error.message)
+                    return
+                  }
+                  const auditResult = await insertAuditEvent({
+                    action: "profile_update",
+                    target: "club-profile",
+                    detail: `${profile.clubName} (${profile.seasonYear})`,
+                  })
+                  if (!auditResult.ok) setBackendError((current) => current ?? auditResult.error.message)
+                  setSaved(true)
+                  return
+                }
+
                 persistProfile(profile)
                 setSaved(true)
                 logAuditEvent({ actor: "club-admin", action: "profile_update", target: "club-profile", detail: `${profile.clubName} (${profile.seasonYear})` })

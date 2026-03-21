@@ -21,7 +21,16 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getTeamDisciplineLabel, mockAthletes, mockPRs, mockTeams, onGenerateInvite } from "@/lib/mock-data"
+import {
+  getTeamDisciplineLabel,
+  mockAthletes,
+  mockPRs,
+  mockTeams,
+  onGenerateInvite,
+  type Athlete,
+  type PR,
+  type Team,
+} from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 
 function AthleteReadinessPill({ readiness }: { readiness: "green" | "yellow" | "red" }) {
@@ -56,20 +65,34 @@ function AthleteStatusPill() {
   )
 }
 
-export function CoachTeamDetailContent({ teamId }: { teamId: string }) {
+export type TeamDetailData = {
+  teams: Team[]
+  athletes: Athlete[]
+  prs: PR[]
+}
+
+type CoachTeamDetailContentProps = {
+  teamId: string
+  data?: TeamDetailData
+}
+
+export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentProps) {
+  const teamsSource = data?.teams ?? mockTeams
+  const athletesSource = data?.athletes ?? mockAthletes
+  const prsSource = data?.prs ?? mockPRs
   const [rosterIds, setRosterIds] = useState<string[]>(() =>
-    mockAthletes.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id),
+    athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id),
   )
   const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("roster")
-  const team = mockTeams.find((item) => item.id === teamId)
+  const team = teamsSource.find((item) => item.id === teamId)
   const inviteLink = `/invite/${teamId}`
 
   if (!team) {
     return null
   }
 
-  const teamAthletes = mockAthletes.filter((athlete) => rosterIds.includes(athlete.id))
+  const teamAthletes = athletesSource.filter((athlete) => rosterIds.includes(athlete.id))
   const disciplineLabel = getTeamDisciplineLabel(team)
   const athleteIds = new Set(teamAthletes.map((athlete) => athlete.id))
   const readinessAlerts = teamAthletes.filter((athlete) => athlete.readiness !== "green").length
@@ -79,8 +102,8 @@ export function CoachTeamDetailContent({ teamId }: { teamId: string }) {
       ? Math.round(teamAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / teamAthletes.length)
       : 0
   const heroImage = team.eventGroup === "Throws" ? "/rotational.png" : null
-  const latestPrByAthlete = new Map<string, (typeof mockPRs)[number]>()
-  for (const pr of mockPRs) {
+  const latestPrByAthlete = new Map<string, (typeof prsSource)[number]>()
+  for (const pr of prsSource) {
     if (!athleteIds.has(pr.athleteId)) continue
     if (!latestPrByAthlete.has(pr.athleteId)) {
       latestPrByAthlete.set(pr.athleteId, pr)
