@@ -9,6 +9,7 @@ import { ClubAdminRedirectPage } from "@/pages/redirects/club-admin-redirect"
 import { NotFoundPage } from "@/pages/not-found"
 import LoginPage from "@/app/(auth)/login/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
+import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
 import AthleteHomePage from "@/app/(authenticated)/athlete/home/page"
 import AthleteJoinTeamPage from "@/app/(authenticated)/athlete/join/page"
 import AthleteJoinTeamCodePage from "@/app/(authenticated)/athlete/join/[code]/page"
@@ -44,6 +45,7 @@ export function AppRouter() {
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/create-club-account" element={<CreateClubAccountPage />} />
+          <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
         </Route>
 
         <Route element={<GuardedAuthenticatedLayout />}>

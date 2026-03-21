@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
 import { getCoachScope } from "@/lib/coach-scope"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
+import { createAthleteInviteForCurrentCoach } from "@/lib/data/athlete/invite-data"
 import { useRole } from "@/lib/role-context"
 import { MOCK_COACH_TEAM_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -33,6 +34,7 @@ export default function CoachTeamsPage() {
   const coachScope = useMemo(() => getCoachScope(role), [role])
   const [backendTeams, setBackendTeams] = useState(() => (isSupabaseMode ? [] : mockTeams))
   const [backendAthletes, setBackendAthletes] = useState(() => (isSupabaseMode ? [] : mockAthletes))
+  const [generatedInviteLinks, setGeneratedInviteLinks] = useState<Record<string, string>>({})
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [coachTeamId, setCoachTeamId] = useState(() => {
@@ -197,7 +199,7 @@ export default function CoachTeamsPage() {
 
         <section className="grid gap-5 xl:grid-cols-2">
           {visibleTeams.map((team) => {
-            const inviteLink = `/invite/${team.id}`
+            const inviteLink = generatedInviteLinks[team.id] ?? `/athlete/join/${team.id}`
             const roster = athletesSource.filter((athlete) => athlete.teamId === team.id)
             const lowAdherenceCount = roster.filter((athlete) => athlete.adherence < 75).length
             const teamReadinessAlerts = roster.filter((athlete) => athlete.readiness !== "green").length
@@ -295,7 +297,19 @@ export default function CoachTeamsPage() {
                           <Button
                             type="button"
                             className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-                            onClick={() => {
+                            onClick={async () => {
+                              if (isSupabaseMode) {
+                                const result = await createAthleteInviteForCurrentCoach({ teamId: team.id, expiresInDays: 7 })
+                                if (!result.ok) {
+                                  setBackendError(result.error.message)
+                                  return
+                                }
+                                setGeneratedInviteLinks((current) => ({
+                                  ...current,
+                                  [team.id]: result.data.invitePath,
+                                }))
+                                return
+                              }
                               onGenerateInvite()
                             }}
                           >

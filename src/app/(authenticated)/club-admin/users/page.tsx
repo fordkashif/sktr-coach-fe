@@ -100,6 +100,7 @@ export default function ClubAdminUsersPage() {
           teamId: row.teamId,
           status: row.status === "revoked" ? "expired" : row.status,
           createdAt: row.createdAt,
+          inviteUrl: row.inviteUrl ?? `/invite/coach/${row.id}`,
         })),
       )
       setAccountRequests(
@@ -189,16 +190,17 @@ export default function ClubAdminUsersPage() {
                     setBackendError(inviteResult.error.message)
                     return
                   }
-                  setInvites((current) => [
-                    {
-                      id: inviteResult.data.id,
-                      email: inviteResult.data.email,
-                      teamId: inviteResult.data.teamId,
-                      status: inviteResult.data.status === "revoked" ? "expired" : inviteResult.data.status,
-                      createdAt: inviteResult.data.createdAt,
-                    },
-                    ...current,
-                  ])
+                    setInvites((current) => [
+                      {
+                        id: inviteResult.data.id,
+                        email: inviteResult.data.email,
+                        teamId: inviteResult.data.teamId,
+                        status: inviteResult.data.status === "revoked" ? "expired" : inviteResult.data.status,
+                        createdAt: inviteResult.data.createdAt,
+                        inviteUrl: inviteResult.data.inviteUrl,
+                      },
+                      ...current,
+                    ])
                   await emitAudit("user_provision_invite", inviteResult.data.email, `${role}${teamId !== "none" ? ` (${teamId})` : ""}`)
                   setName("")
                   setEmail("")
@@ -269,6 +271,7 @@ export default function ClubAdminUsersPage() {
                         teamId: result.data.teamId,
                         status: result.data.status === "revoked" ? "expired" : result.data.status,
                         createdAt: result.data.createdAt,
+                        inviteUrl: result.data.inviteUrl,
                       },
                       ...current,
                     ])
@@ -314,7 +317,25 @@ export default function ClubAdminUsersPage() {
               ) : (
                 invites.map((invite) => (
                   <div key={invite.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                    <span className="font-medium text-slate-950">{invite.email}</span> | {invite.status} | {invite.teamId ?? "No team"}
+                    <div>
+                      <span className="font-medium text-slate-950">{invite.email}</span> | {invite.status} | {invite.teamId ?? "No team"}
+                    </div>
+                    {invite.inviteUrl ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <code className="rounded bg-white px-2 py-1 text-xs text-slate-700">{invite.inviteUrl}</code>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 rounded-full px-3 text-xs"
+                          onClick={() => {
+                            const absoluteUrl = `${window.location.origin}${invite.inviteUrl}`
+                            void navigator.clipboard.writeText(absoluteUrl)
+                          }}
+                        >
+                          Copy link
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 ))
               )}

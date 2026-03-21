@@ -18,6 +18,7 @@ export type ClubAdminInvite = {
   teamId?: string
   status: "pending" | "accepted" | "expired" | "revoked"
   createdAt: string
+  inviteUrl?: string
 }
 
 export type ClubAdminAccountRequest = {
@@ -264,6 +265,7 @@ export async function createCoachInvite(params: {
     teamId: data.team_id ?? undefined,
     status: data.status,
     createdAt: data.created_at.slice(0, 10),
+    inviteUrl: `/invite/coach/${data.id}`,
   })
 }
 
@@ -318,7 +320,20 @@ export async function createUserProvisioningInvite(params: {
     teamId: data.team_id ?? undefined,
     status: data.status,
     createdAt: data.created_at.slice(0, 10),
+    inviteUrl: `/invite/coach/${data.id}`,
   })
+}
+
+export async function acceptCoachInviteForCurrentUser(inviteId: string): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("acceptCoachInviteForCurrentUser")
+  if (!clientResult.ok) return clientResult
+
+  const { error } = await clientResult.client.rpc("accept_coach_invite", {
+    p_invite_id: inviteId,
+  })
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
 }
 
 export async function reviewAccountRequest(params: {

@@ -21,6 +21,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { createAthleteInviteForCurrentCoach } from "@/lib/data/athlete/invite-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import {
   getTeamDisciplineLabel,
   mockAthletes,
@@ -77,6 +79,7 @@ type CoachTeamDetailContentProps = {
 }
 
 export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentProps) {
+  const isSupabaseMode = getBackendMode() === "supabase"
   const teamsSource = data?.teams ?? mockTeams
   const athletesSource = data?.athletes ?? mockAthletes
   const prsSource = data?.prs ?? mockPRs
@@ -84,9 +87,10 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
     athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id),
   )
   const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("roster")
   const team = teamsSource.find((item) => item.id === teamId)
-  const inviteLink = `/invite/${teamId}`
+  const inviteLink = generatedInviteLink ?? `/athlete/join/${teamId}`
 
   if (!team) {
     return null
@@ -402,14 +406,25 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                     <Button
                       type="button"
                       className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-                      onClick={() => {
+                      onClick={async () => {
+                        setInviteError(null)
+                        if (isSupabaseMode) {
+                          const result = await createAthleteInviteForCurrentCoach({ teamId, expiresInDays: 7 })
+                          if (!result.ok) {
+                            setInviteError(result.error.message)
+                            return
+                          }
+                          setGeneratedInviteLink(result.data.invitePath)
+                          return
+                        }
                         onGenerateInvite()
-                        setGeneratedInviteLink(`${inviteLink}?token=${Date.now().toString(36)}`)
+                        setGeneratedInviteLink(`/invite/${teamId}?token=${Date.now().toString(36)}`)
                       }}
                     >
                       Generate Invite
                     </Button>
                   </DialogFooter>
+                  {inviteError ? <p className="text-sm text-rose-600">{inviteError}</p> : null}
                 </DialogContent>
               </Dialog>
             </div>

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { acceptAthleteInviteForCurrentUser, getAthleteInvitePreviewForCurrentUser } from "@/lib/data/athlete/invite-data"
+import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { getTeamDisciplineLabel, mockTeams } from "@/lib/mock-data"
 
@@ -30,25 +32,46 @@ function normalizeInviteCode(raw: string) {
   }
 }
 
-function loadStoredJoinState() {
-  if (typeof window === "undefined") return { joinedTeamId: null as string | null, joinedAt: null as string | null }
+type JoinState = {
+  joinedTeamId: string | null
+  joinedTeamName: string | null
+  joinedGroup: string | null
+  joinedAt: string | null
+}
+
+function loadStoredJoinState(): JoinState {
+  if (typeof window === "undefined") {
+    return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
+  }
 
   try {
     const stored = window.localStorage.getItem(tenantStorageKey(JOIN_TEAM_STORAGE_KEY))
-    if (!stored) return { joinedTeamId: null, joinedAt: null }
+    if (!stored) return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
     return {
       joinedTeamId: null,
+      joinedTeamName: null,
+      joinedGroup: null,
       joinedAt: null,
-      ...(JSON.parse(stored) as { joinedTeamId?: string | null; joinedAt?: string | null }),
+      ...(JSON.parse(stored) as Partial<JoinState>),
     }
   } catch {
-    return { joinedTeamId: null, joinedAt: null }
+    return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
   }
 }
 
 export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
+  const isSupabaseMode = getBackendMode() === "supabase"
   const [inviteInput, setInviteInput] = useState(initialCode)
-  const [joinState, setJoinState] = useState(() => loadStoredJoinState())
+  const [joinState, setJoinState] = useState<JoinState>(() => loadStoredJoinState())
+  const [joinError, setJoinError] = useState<string | null>(null)
+  const [resolvingInvite, setResolvingInvite] = useState(false)
+  const [supabaseInvite, setSupabaseInvite] = useState<{
+    inviteId: string
+    teamId: string
+    teamName: string
+    eventGroup: string | null
+    status: "pending" | "accepted" | "expired" | "revoked"
+  } | null>(null)
 
   useEffect(() => {
     if (!initialCode) return
@@ -57,22 +80,90 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
   const normalizedCode = useMemo(() => normalizeInviteCode(inviteInput), [inviteInput])
   const hasTypedInvite = inviteInput.trim().length > 0
-  const match = useMemo(
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    if (!normalizedCode) {
+      setSupabaseInvite(null)
+      setJoinError(null)
+      return
+    }
+
+    let cancelled = false
+
+    const loadInvite = async () => {
+      setResolvingInvite(true)
+      const result = await getAthleteInvitePreviewForCurrentUser(normalizedCode)
+      if (cancelled) return
+
+      if (!result.ok) {
+        setSupabaseInvite(null)
+        setJoinError(result.error.message)
+        setResolvingInvite(false)
+        return
+      }
+
+      setSupabaseInvite(result.data)
+      setJoinError(null)
+      setResolvingInvite(false)
+    }
+
+    void loadInvite()
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode, normalizedCode])
+
+  const mockMatch = useMemo(
     () => mockTeams.find((team) => team.id.toLowerCase() === normalizedCode) ?? null,
     [normalizedCode],
   )
-  const joinedTeam = mockTeams.find((team) => team.id === joinState.joinedTeamId) ?? null
 
-  const handleJoin = () => {
-    if (!match) return
+  const resolvedInvite = useMemo(() => {
+    if (isSupabaseMode) {
+      if (!supabaseInvite) return null
+      return {
+        inviteId: supabaseInvite.inviteId,
+        teamId: supabaseInvite.teamId,
+        name: supabaseInvite.teamName,
+        group: supabaseInvite.eventGroup ?? "Sprint",
+        athleteCount: null as number | null,
+      }
+    }
 
-    const nextState = {
-      joinedTeamId: match.id,
+    if (!mockMatch) return null
+    return {
+      inviteId: mockMatch.id,
+      teamId: mockMatch.id,
+      name: mockMatch.name,
+      group: getTeamDisciplineLabel(mockMatch),
+      athleteCount: mockMatch.athleteCount,
+    }
+  }, [isSupabaseMode, mockMatch, supabaseInvite])
+
+  const joinedMockTeam = mockTeams.find((team) => team.id === joinState.joinedTeamId) ?? null
+
+  const handleJoin = async () => {
+    if (!resolvedInvite) return
+
+    if (isSupabaseMode) {
+      const acceptResult = await acceptAthleteInviteForCurrentUser(resolvedInvite.inviteId)
+      if (!acceptResult.ok) {
+        setJoinError(acceptResult.error.message)
+        return
+      }
+    }
+
+    const nextState: JoinState = {
+      joinedTeamId: resolvedInvite.teamId,
+      joinedTeamName: resolvedInvite.name,
+      joinedGroup: resolvedInvite.group,
       joinedAt: new Date().toLocaleString(),
     }
 
     window.localStorage.setItem(tenantStorageKey(JOIN_TEAM_STORAGE_KEY), JSON.stringify(nextState))
     setJoinState(nextState)
+    setJoinError(null)
   }
 
   return (
@@ -96,7 +187,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
             <div className="mobile-surface-heading">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Invite Entry</p>
               <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Paste Link or Code</h2>
-              <p className="mt-1 text-sm text-slate-500">Links with `/join/t1` or `?code=t1` will resolve to the same confirmation flow.</p>
+              <p className="mt-1 text-sm text-slate-500">Links with <code>/athlete/join/{"{inviteId}"}</code> resolve to this same confirmation flow.</p>
             </div>
 
             <div className="space-y-2">
@@ -105,15 +196,17 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
               </Label>
               <Input
                 id="invite-code"
-                placeholder="https://pacelab.app/athlete/join?t1 or t1"
+                placeholder="https://pacelab.app/athlete/join/<invite-id>"
                 value={inviteInput}
                 onChange={(event) => setInviteInput(event.target.value)}
                 className="h-12 rounded-[16px] border-slate-200 bg-slate-50 text-slate-950"
               />
             </div>
 
+            {joinError ? <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{joinError}</div> : null}
+
             <div className="mobile-card-utility">
-              {match ? (
+              {resolvedInvite ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-[#1f5fd1]">
                     <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
@@ -122,19 +215,19 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Team</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{match.name}</p>
+                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.name}</p>
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Group</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{getTeamDisciplineLabel(match)}</p>
+                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.group}</p>
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Athletes</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{match.athleteCount}</p>
+                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.athleteCount ?? "-"}</p>
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Invite Code</p>
-                      <p className="mt-1 text-base font-semibold uppercase text-slate-950">{match.id}</p>
+                      <p className="mt-1 text-base font-semibold uppercase text-slate-950">{resolvedInvite.inviteId}</p>
                     </div>
                   </div>
                 </div>
@@ -142,9 +235,9 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-semibold text-rose-600">
                     <HugeiconsIcon icon={SearchAddIcon} className="size-4" />
-                    Invite not recognized
+                    {resolvingInvite ? "Checking invite..." : "Invite not recognized"}
                   </div>
-                  <p className="text-sm text-slate-500">Check the code or open the full invite link again. Valid mobile deep links also prefill this field automatically.</p>
+                  <p className="text-sm text-slate-500">Check the code or open the full invite link again.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -152,17 +245,12 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                     <HugeiconsIcon icon={QrCodeIcon} className="size-4" />
                     Waiting for invite
                   </div>
-                  <p className="text-sm text-slate-500">Paste the invite, open the deep link, or scan the QR on mobile to land in this same confirmation step.</p>
+                  <p className="text-sm text-slate-500">Paste the invite or open the deep link to confirm team access.</p>
                 </div>
               )}
             </div>
 
-            <Button
-              type="button"
-              className="mobile-action-primary h-12 w-full"
-              disabled={!match}
-              onClick={handleJoin}
-            >
+            <Button type="button" className="mobile-action-primary h-12 w-full" disabled={!resolvedInvite} onClick={handleJoin}>
               Confirm and join team
             </Button>
           </CardContent>
@@ -176,18 +264,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                 <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Mobile Flow</h2>
               </div>
               <div className="mobile-card-utility text-sm text-slate-600">
-                Deep links can resolve as either `/athlete/join/t1` or `/athlete/join?code=t1`. Both formats prefill the same confirmation state on mobile.
-              </div>
-              <div className="grid gap-3">
-                {[
-                  "/athlete/join/t1",
-                  "/athlete/join?code=t1",
-                  "https://pacelab.app/athlete/join/t1",
-                ].map((item) => (
-                  <div key={item} className="mobile-stat-card text-sm font-medium text-slate-950">
-                    {item}
-                  </div>
-                ))}
+                Invite links should follow the <code>/athlete/join/{"{inviteId}"}</code> pattern and resolve directly in this view.
               </div>
             </CardContent>
           </Card>
@@ -199,11 +276,11 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                 <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Join State</h2>
               </div>
 
-              {joinedTeam ? (
+              {joinState.joinedAt ? (
                 <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-4">
                   <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
                     <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
-                    Joined {joinedTeam.name}
+                    Joined {isSupabaseMode ? joinState.joinedTeamName : joinedMockTeam?.name}
                   </div>
                   <p className="mt-2 text-sm text-emerald-700/80">
                     Confirmed {joinState.joinedAt}. Your athlete view can now use this team for plan, progress, and testing context.

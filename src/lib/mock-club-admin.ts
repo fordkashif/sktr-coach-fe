@@ -37,6 +37,7 @@ export interface CoachInvite {
   teamId?: string
   status: "pending" | "accepted" | "expired"
   createdAt: string
+  inviteUrl?: string
 }
 
 export interface AccountRequest {
