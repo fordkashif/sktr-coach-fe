@@ -476,6 +476,9 @@ Companion plan:
 - March 22, 2026:
   - Phase 2 platform-admin review started: added Supabase actor resolution for `platform-admin`, guarded `/platform-admin/requests`, and DB-backed request review via `review_tenant_provision_request`.
   - App shell notification drawer now reads `notification_events` in `supabase` mode and can mark in-app events read for the current authenticated recipient.
+  - Phase 3 provisioning started: added `approve_and_provision_tenant_request` so platform-admin approval now creates tenant defaults (`tenants`, `club_profiles`, `billing_profiles`) and the frontend triggers the initial club-admin Supabase OTP access email with tenant bootstrap metadata.
+  - Platform-admin queue now tracks initial access invite state (`access_invite_sent_at`, `access_invite_last_error`) and supports resend of the initial club-admin access invite after provisioning.
+  - Initial club-admin access invite dispatch is now owned by Supabase Edge Function `platform-admin-send-club-admin-invite` instead of direct browser `signInWithOtp` calls, with server-side platform-admin validation and invite-state updates.
 
 ## Quick Start Prompt
 

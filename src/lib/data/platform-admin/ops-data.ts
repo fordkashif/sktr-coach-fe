@@ -13,8 +13,13 @@ export type PlatformAdminRequestRecord = {
   status: "pending" | "approved" | "rejected" | "cancelled"
   reviewNotes: string | null
   reviewedAt: string | null
+  provisionedTenantId: string | null
+  accessInviteSentAt: string | null
+  accessInviteLastError: string | null
   createdAt: string
 }
+
+type BrowserSupabaseClient = NonNullable<ReturnType<typeof getBrowserSupabaseClient>>
 
 type ClientResolution =
   | { ok: true; client: NonNullable<ReturnType<typeof getBrowserSupabaseClient>> }
@@ -46,7 +51,7 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
   const { data, error } = await clientResult.client
     .from("tenant_provision_requests")
     .select(
-      "id, organization_name, requestor_name, requestor_email, requested_plan, expected_seats, notes, status, review_notes, reviewed_at, created_at",
+      "id, organization_name, requestor_name, requestor_email, requested_plan, expected_seats, notes, status, review_notes, reviewed_at, provisioned_tenant_id, access_invite_sent_at, access_invite_last_error, created_at",
     )
     .order("created_at", { ascending: false })
 
@@ -64,6 +69,9 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
       status: PlatformAdminRequestRecord["status"]
       review_notes: string | null
       reviewed_at: string | null
+      provisioned_tenant_id: string | null
+      access_invite_sent_at: string | null
+      access_invite_last_error: string | null
       created_at: string
     }> | null) ?? []).map((row) => ({
       id: row.id,
@@ -76,6 +84,9 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
       status: row.status,
       reviewNotes: row.review_notes,
       reviewedAt: row.reviewed_at,
+      provisionedTenantId: row.provisioned_tenant_id,
+      accessInviteSentAt: row.access_invite_sent_at,
+      accessInviteLastError: row.access_invite_last_error,
       createdAt: row.created_at,
     })),
   )
@@ -97,6 +108,91 @@ export async function reviewTenantProvisionRequest(params: {
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
+}
+
+async function invokePlatformAdminInviteFunction(
+  client: BrowserSupabaseClient,
+  payload: {
+    requestId: string
+    requestorEmail: string
+    requestorName: string
+    tenantId: string
+  },
+): Promise<Result<{ sentAt: string }>> {
+  const { data, error } = await client.functions.invoke("platform-admin-send-club-admin-invite", {
+    body: payload,
+  })
+
+  if (error) {
+    return err("UNKNOWN", error.message, error)
+  }
+
+  const response = (data ?? {}) as { sentAt?: string; error?: string }
+  if (response.error) return err("UNKNOWN", response.error)
+  if (!response.sentAt) return err("UNKNOWN", "Invite function did not return a sent timestamp.")
+  return ok({ sentAt: response.sentAt })
+}
+
+export async function sendInitialClubAdminAccessInvite(params: {
+  requestId: string
+  requestorEmail: string
+  requestorName: string
+  tenantId: string
+}): Promise<Result<{ sentAt: string }>> {
+  const clientResult = requireSupabaseClient("sendInitialClubAdminAccessInvite")
+  if (!clientResult.ok) return clientResult
+
+  const inviteResult = await invokePlatformAdminInviteFunction(clientResult.client, {
+    requestId: params.requestId,
+    requestorEmail: params.requestorEmail.trim().toLowerCase(),
+    requestorName: params.requestorName.trim(),
+    tenantId: params.tenantId,
+  })
+
+  if (!inviteResult.ok) return inviteResult
+
+  return ok({ sentAt: inviteResult.data.sentAt })
+}
+
+export async function approveAndProvisionTenantRequest(params: {
+  requestId: string
+  requestorEmail: string
+  requestorName: string
+  reviewNotes?: string
+}): Promise<Result<{ tenantId: string; accessInviteSentAt: string | null; accessInviteError: string | null }>> {
+  const clientResult = requireSupabaseClient("approveAndProvisionTenantRequest")
+  if (!clientResult.ok) return clientResult
+
+  const provisionResult = await clientResult.client.rpc("approve_and_provision_tenant_request", {
+    p_request_id: params.requestId,
+    p_review_notes: params.reviewNotes?.trim() || null,
+  })
+
+  if (provisionResult.error) {
+    return { ok: false, error: mapPostgrestError(provisionResult.error) }
+  }
+
+  const tenantId = provisionResult.data as string
+  const inviteResult = await sendInitialClubAdminAccessInvite({
+    requestId: params.requestId,
+    requestorEmail: params.requestorEmail,
+    requestorName: params.requestorName,
+    tenantId,
+  })
+
+  if (!inviteResult.ok) {
+    return ok({
+      tenantId,
+      accessInviteSentAt: null,
+      accessInviteError: inviteResult.error.message,
+    })
+  }
+
+  return ok({
+    tenantId,
+    accessInviteSentAt: inviteResult.data.sentAt,
+    accessInviteError: null,
+  })
 }
 
 export async function getCurrentPlatformAdminIdentity(): Promise<Result<{ email: string }>> {
