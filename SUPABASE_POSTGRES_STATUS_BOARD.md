@@ -10,6 +10,7 @@ Companion plan:
 - `SUPABASE_POSTGRES_EXECUTION_PLAN.md`
 - `PLAYWRIGHT_FLOW_TENANCY_TEST_PLAN.md`
 - `SUPABASE_RUNTIME_COVERAGE_AUDIT.md`
+- `MULTI_TENANT_PROVISIONING_BILLING_ROADMAP.md`
 
 ## Status Key
 
@@ -470,6 +471,8 @@ Companion plan:
   - Club-admin billing route now persists subscription settings to Supabase (`billing_profiles`) and emits DB audit events in `supabase` mode.
   - Added self-serve club admin signup (`/create-club-account`) backed by `provision_club_admin_tenant`, and coach invite acceptance (`/invite/coach/:inviteId`) backed by `accept_coach_invite`.
   - Added DB-backed athlete invite lifecycle (`athlete_invites`, `accept_athlete_invite`) and migrated athlete join flow to Supabase invite lookup/claim in `supabase` mode.
+  - Phase 1 request-only onboarding started: removed direct self-serve entry from login, converted `/create-club-account` into a non-provisioning guidance page, and restricted `provision_club_admin_tenant` execution away from `authenticated`/`anon`.
+  - Phase 1 request intake implemented: added `tenant_provision_requests` + `submit_tenant_provision_request` and wired `/login` request form to the new pipeline, including seeded `notification_events` for platform-admin contacts.
 
 ## Quick Start Prompt
 
