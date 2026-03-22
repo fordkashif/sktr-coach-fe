@@ -149,7 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => setTheme(isDark ? "light" : "dark")
   const useAthleteDrawerMenu = role === "athlete"
   const athleteDisplayName = role === "athlete" ? displayNameFromEmail(userEmail, role) : null
-  const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.status !== "read")
+  const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.state === "unread")
 
   useEffect(() => {
     if (getBackendMode() !== "supabase" || useAthleteDrawerMenu) return
@@ -549,7 +549,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                               variant="outline"
                               className="h-10 rounded-full border-slate-200"
                               onClick={async () => {
-                                const pendingIds = unreadNotifications.map((item) => item.id)
+                                const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
                                 const result = await markNotificationsRead(pendingIds)
                                 if (!result.ok) {
                                   setNotificationsError(result.error.message)
@@ -557,7 +557,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 }
                                 setNotifications((current) =>
                                   current.map((item) =>
-                                    pendingIds.includes(item.id) ? { ...item, status: "read" } : item,
+                                    pendingIds.includes(item.userNotificationId)
+                                      ? { ...item, state: "read", readAt: new Date().toISOString() }
+                                      : item,
                                   ),
                                 )
                                 setNotificationsError(null)
@@ -575,13 +577,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                   <span
                                     className={cn(
                                       "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                                      item.status === "read" && "bg-slate-200 text-slate-600",
-                                      item.status === "pending" && "bg-[#dbeafe] text-[#1368ff]",
-                                      item.status === "sent" && "bg-emerald-100 text-emerald-700",
-                                      item.status === "failed" && "bg-rose-100 text-rose-700",
+                                      item.state === "read" && "bg-slate-200 text-slate-600",
+                                      item.state === "unread" && "bg-[#dbeafe] text-[#1368ff]",
+                                      item.state === "dismissed" && "bg-slate-100 text-slate-500",
                                     )}
                                   >
-                                    {item.status}
+                                    {item.state}
                                   </span>
                                 </div>
                                 <p className="mt-2 text-[11px] text-slate-400">

@@ -4,12 +4,14 @@ import { getBackendMode } from "@/lib/supabase/config"
 
 export type NotificationItem = {
   id: string
-  channel: "in-app" | "email"
+  userNotificationId: string
+  channel: "in-app"
   eventType: string
   subject: string
   body: string | null
-  status: "pending" | "sent" | "failed" | "read"
+  state: "unread" | "read" | "dismissed"
   createdAt: string
+  readAt: string | null
 }
 
 type ClientResolution =
@@ -40,8 +42,10 @@ export async function getNotificationFeed(limit = 8): Promise<Result<Notificatio
   if (!clientResult.ok) return clientResult
 
   const { data, error } = await clientResult.client
-    .from("notification_events")
-    .select("id, channel, event_type, subject, body, status, created_at")
+    .from("user_notifications")
+    .select(
+      "id, state, read_at, created_at, notification_events!inner(id, channel, event_type, subject, body, created_at)",
+    )
     .order("created_at", { ascending: false })
     .limit(limit)
 
@@ -50,21 +54,35 @@ export async function getNotificationFeed(limit = 8): Promise<Result<Notificatio
   return ok(
     ((data as Array<{
       id: string
-      channel: NotificationItem["channel"]
-      event_type: string
-      subject: string
-      body: string | null
-      status: NotificationItem["status"]
+      state: NotificationItem["state"]
+      read_at: string | null
       created_at: string
-    }> | null) ?? []).map((row) => ({
-      id: row.id,
-      channel: row.channel,
-      eventType: row.event_type,
-      subject: row.subject,
-      body: row.body,
-      status: row.status,
-      createdAt: row.created_at,
-    })),
+      notification_events: Array<{
+        id: string
+        channel: NotificationItem["channel"]
+        event_type: string
+        subject: string
+        body: string | null
+        created_at: string
+      }>
+    }> | null) ?? [])
+      .map((row) => {
+        const event = row.notification_events[0]
+        if (!event) return null
+
+        return {
+          id: event.id,
+      userNotificationId: row.id,
+      channel: event.channel,
+      eventType: event.event_type,
+      subject: event.subject,
+      body: event.body,
+      state: row.state,
+      createdAt: event.created_at ?? row.created_at,
+      readAt: row.read_at,
+        }
+      })
+      .filter((row): row is NotificationItem => row !== null),
   )
 }
 
@@ -74,9 +92,9 @@ export async function markNotificationsRead(notificationIds: string[]): Promise<
   if (notificationIds.length === 0) return ok(undefined)
 
   const { error } = await clientResult.client
-    .from("notification_events")
+    .from("user_notifications")
     .update({
-      status: "read",
+      state: "read",
       read_at: new Date().toISOString(),
     })
     .in("id", notificationIds)

@@ -480,6 +480,7 @@ Companion plan:
   - Platform-admin queue now tracks initial access invite state (`access_invite_sent_at`, `access_invite_last_error`) and supports resend of the initial club-admin access invite after provisioning.
   - Initial club-admin access invite dispatch is now owned by Supabase Edge Function `platform-admin-send-club-admin-invite` instead of direct browser `signInWithOtp` calls, with server-side platform-admin validation and invite-state updates.
   - Added provider-backed email notification dispatcher Edge Function `dispatch-notification-emails` plus manual platform-admin drain action for pending email `notification_events`, with delivery-attempt/provider tracking fields on notification rows.
+  - Added `user_notifications` projection + trigger/backfill so in-app unread/read state is separated from email delivery state; app shell notification drawer now reads `user_notifications` instead of mutating `notification_events` directly.
 
 ## Quick Start Prompt
 
