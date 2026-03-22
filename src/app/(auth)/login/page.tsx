@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, type FormEvent } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -58,7 +58,8 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const isSupabaseMode = getBackendMode() === "supabase"
-  const [mode, setMode] = useState<AuthMode>("signin")
+  const initialMode = searchParams.get("mode") === "request" ? "request" : "signin"
+  const [mode, setMode] = useState<AuthMode>(initialMode)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(true)
@@ -154,12 +155,13 @@ export default function LoginPage() {
         return
       }
 
-      const result = await supabase.rpc("submit_account_request", {
-        p_full_name: requestForm.fullName.trim(),
-        p_email: requestForm.email.trim().toLowerCase(),
-        p_organization: requestForm.organization.trim(),
+      const result = await supabase.rpc("submit_tenant_provision_request", {
+        p_requestor_name: requestForm.fullName.trim(),
+        p_requestor_email: requestForm.email.trim().toLowerCase(),
+        p_organization_name: requestForm.organization.trim(),
         p_notes: requestForm.notes.trim() || null,
-        p_desired_role: "club-admin",
+        p_requested_plan: "starter",
+        p_expected_seats: 25,
       })
 
       if (result.error) {
@@ -278,14 +280,6 @@ export default function LoginPage() {
                       Request account
                     </button>
                   </div>
-                  {mode === "request" ? (
-                    <div className="text-sm text-slate-600">
-                      New organization?{" "}
-                      <Link to="/create-club-account" className="font-semibold text-[#1368ff] hover:underline">
-                        Create club account
-                      </Link>
-                    </div>
-                  ) : null}
                 </div>
 
                 {mode === "signin" ? (
@@ -411,7 +405,7 @@ export default function LoginPage() {
                     <h2 className="text-2xl font-semibold tracking-[-0.04em]">We have your access request.</h2>
                     <p className="text-sm leading-6 text-slate-600">
                       {isSupabaseMode
-                        ? "Your request was submitted to the backend queue for club-admin review."
+                        ? "Your request was submitted for platform-admin review. You'll be contacted after approval."
                         : "This demo stores the request locally for now. The next backend pass should send it to club-admin review, email notification, or a dedicated request queue."}
                     </p>
                     <Button
@@ -484,7 +478,7 @@ export default function LoginPage() {
 
                     <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
                       {isSupabaseMode
-                        ? "This submits directly to the Supabase account request queue for your organization."
+                        ? "This submits a tenant provisioning request for platform-admin approval."
                         : "This submits a club admin account request into the review queue. Approval remains mock-backed for now, but the workflow is no longer a dead end."}
                     </div>
 
