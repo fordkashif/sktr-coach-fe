@@ -1,4 +1,5 @@
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
+import { NOTIFICATION_PREFERENCE_CATEGORIES } from "@/lib/notification-categories"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -8,6 +9,11 @@ export type NotificationPreferenceRecord = {
   channel: NotificationChannel
   eventType: string
   enabled: boolean
+}
+
+export type NotificationPreferenceMatrix = {
+  global: Record<NotificationChannel, boolean>
+  categories: Record<string, Record<NotificationChannel, boolean>>
 }
 
 type ClientResolution =
@@ -76,6 +82,51 @@ export async function getCurrentNotificationPreferences(): Promise<Result<Notifi
   )
 }
 
+export async function getCurrentNotificationPreferenceMatrix(): Promise<Result<NotificationPreferenceMatrix>> {
+  const result = await getCurrentNotificationPreferences()
+  if (!result.ok) return result
+
+  const global: Record<NotificationChannel, boolean> = {
+    email: true,
+    "in-app": true,
+  }
+
+  const categories = NOTIFICATION_PREFERENCE_CATEGORIES.reduce<Record<string, Record<NotificationChannel, boolean>>>(
+    (acc, category) => {
+      acc[category.key] = {
+        email: global.email,
+        "in-app": global["in-app"],
+      }
+      return acc
+    },
+    {},
+  )
+
+  for (const item of result.data) {
+    if (item.eventType === "*") {
+      global[item.channel] = item.enabled
+    }
+  }
+
+  for (const category of NOTIFICATION_PREFERENCE_CATEGORIES) {
+    categories[category.key] = {
+      email: global.email,
+      "in-app": global["in-app"],
+    }
+
+    for (const eventType of category.eventTypes) {
+      for (const channel of ["email", "in-app"] as const) {
+        const override = result.data.find((item) => item.channel === channel && item.eventType === eventType)
+        if (override) {
+          categories[category.key][channel] = override.enabled
+        }
+      }
+    }
+  }
+
+  return ok({ global, categories })
+}
+
 export async function upsertCurrentNotificationPreference(params: {
   channel: NotificationChannel
   eventType?: string
@@ -118,5 +169,25 @@ export async function upsertCurrentNotificationPreference(params: {
   })
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+export async function upsertCurrentNotificationCategoryPreference(params: {
+  channel: NotificationChannel
+  categoryKey: string
+  enabled: boolean
+}): Promise<Result<void>> {
+  const category = NOTIFICATION_PREFERENCE_CATEGORIES.find((item) => item.key === params.categoryKey)
+  if (!category) return err("VALIDATION", "Unknown notification preference category.")
+
+  for (const eventType of category.eventTypes) {
+    const updateResult = await upsertCurrentNotificationPreference({
+      channel: params.channel,
+      eventType,
+      enabled: params.enabled,
+    })
+    if (!updateResult.ok) return updateResult
+  }
+
   return ok(undefined)
 }

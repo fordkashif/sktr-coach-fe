@@ -2,23 +2,33 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Switch } from "@/components/ui/switch"
+import { NOTIFICATION_PREFERENCE_CATEGORIES } from "@/lib/notification-categories"
 import {
-  getCurrentNotificationPreferences,
+  getCurrentNotificationPreferenceMatrix,
+  upsertCurrentNotificationCategoryPreference,
   upsertCurrentNotificationPreference,
+  type NotificationPreferenceMatrix,
   type NotificationChannel,
 } from "@/lib/data/notification-preferences-data"
 
-type PreferenceState = Record<NotificationChannel, boolean>
-
-const defaultState: PreferenceState = {
-  email: true,
-  "in-app": true,
+const defaultState: NotificationPreferenceMatrix = {
+  global: {
+    email: true,
+    "in-app": true,
+  },
+  categories: NOTIFICATION_PREFERENCE_CATEGORIES.reduce<Record<string, Record<NotificationChannel, boolean>>>((acc, category) => {
+    acc[category.key] = {
+      email: true,
+      "in-app": true,
+    }
+    return acc
+  }, {}),
 }
 
 export default function NotificationSettingsPage() {
-  const [preferences, setPreferences] = useState<PreferenceState>(defaultState)
+  const [preferences, setPreferences] = useState<NotificationPreferenceMatrix>(defaultState)
   const [loading, setLoading] = useState(true)
-  const [savingChannel, setSavingChannel] = useState<NotificationChannel | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
 
@@ -27,7 +37,7 @@ export default function NotificationSettingsPage() {
 
     const loadPreferences = async () => {
       setLoading(true)
-      const result = await getCurrentNotificationPreferences()
+      const result = await getCurrentNotificationPreferenceMatrix()
       if (cancelled) return
 
       if (!result.ok) {
@@ -36,12 +46,7 @@ export default function NotificationSettingsPage() {
         return
       }
 
-      const nextState = result.data.reduce<PreferenceState>((acc, item) => {
-        if (item.eventType === "*") acc[item.channel] = item.enabled
-        return acc
-      }, { ...defaultState })
-
-      setPreferences(nextState)
+      setPreferences(result.data)
       setError(null)
       setLoading(false)
     }
@@ -69,20 +74,54 @@ export default function NotificationSettingsPage() {
   )
 
   const handleToggle = async (channel: NotificationChannel, enabled: boolean) => {
-    setSavingChannel(channel)
+    setSavingKey(`global:${channel}`)
     const result = await upsertCurrentNotificationPreference({ channel, enabled, eventType: "*" })
 
     if (!result.ok) {
       setError(result.error.message)
       setInfo(null)
-      setSavingChannel(null)
+      setSavingKey(null)
       return
     }
 
-    setPreferences((current) => ({ ...current, [channel]: enabled }))
+    setPreferences((current) => ({
+      ...current,
+      global: { ...current.global, [channel]: enabled },
+    }))
     setError(null)
     setInfo(`${channel === "email" ? "Email" : "In-app"} notifications ${enabled ? "enabled" : "disabled"}.`)
-    setSavingChannel(null)
+    setSavingKey(null)
+  }
+
+  const handleCategoryToggle = async (categoryKey: string, channel: NotificationChannel, enabled: boolean) => {
+    setSavingKey(`${categoryKey}:${channel}`)
+    const result = await upsertCurrentNotificationCategoryPreference({
+      categoryKey,
+      channel,
+      enabled,
+    })
+
+    if (!result.ok) {
+      setError(result.error.message)
+      setInfo(null)
+      setSavingKey(null)
+      return
+    }
+
+    const category = NOTIFICATION_PREFERENCE_CATEGORIES.find((item) => item.key === categoryKey)
+    setPreferences((current) => ({
+      ...current,
+      categories: {
+        ...current.categories,
+        [categoryKey]: {
+          ...current.categories[categoryKey],
+          [channel]: enabled,
+        },
+      },
+    }))
+    setError(null)
+    setInfo(`${category?.title ?? "Category"} ${channel} notifications ${enabled ? "enabled" : "disabled"}.`)
+    setSavingKey(null)
   }
 
   return (
@@ -127,8 +166,8 @@ export default function NotificationSettingsPage() {
                     <p className="text-sm text-slate-500">{row.body}</p>
                   </div>
                   <Switch
-                    checked={preferences[row.channel]}
-                    disabled={savingChannel === row.channel}
+                    checked={preferences.global[row.channel]}
+                    disabled={savingKey === `global:${row.channel}`}
                     onCheckedChange={(checked) => {
                       void handleToggle(row.channel, checked)
                     }}
@@ -136,6 +175,52 @@ export default function NotificationSettingsPage() {
                 </div>
               ))
             : null}
+        </div>
+      </section>
+
+      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Category overrides</h2>
+            <p className="text-sm text-slate-500">
+              Keep core channels on, but suppress specific notification classes when they are not useful.
+            </p>
+          </div>
+
+          {NOTIFICATION_PREFERENCE_CATEGORIES.map((category) => (
+            <div
+              key={category.key}
+              className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4"
+            >
+              <div className="space-y-1">
+                <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{category.title}</p>
+                <p className="text-sm text-slate-500">{category.description}</p>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {(["in-app", "email"] as const).map((channel) => (
+                  <div
+                    key={`${category.key}-${channel}`}
+                    className="flex items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-slate-950">{channel === "email" ? "Email" : "In-app"}</p>
+                      <p className="text-xs text-slate-500">
+                        {channel === "email" ? "Dispatch queued emails for this category." : "Project in-app items for this category."}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={preferences.categories[category.key]?.[channel] ?? preferences.global[channel]}
+                      disabled={savingKey === `${category.key}:${channel}`}
+                      onCheckedChange={(checked) => {
+                        void handleCategoryToggle(category.key, channel, checked)
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </div>

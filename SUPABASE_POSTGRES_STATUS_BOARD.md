@@ -483,6 +483,7 @@ Companion plan:
   - Added provider-backed email notification dispatcher Edge Function `dispatch-notification-emails` plus manual platform-admin drain action for pending email `notification_events`, with delivery-attempt/provider tracking fields on notification rows.
   - Added `user_notifications` projection + trigger/backfill so in-app unread/read state is separated from email delivery state; app shell notification drawer now reads `user_notifications` instead of mutating `notification_events` directly.
   - Added `notification_preferences` plus shared `/settings/notifications` UI; wildcard per-channel preferences are now enforced for in-app projection and email dispatch suppression.
+  - Extended `/settings/notifications` with category-level overrides and introduced `src/lib/notification-categories.ts`; current mapped family is tenant-provisioning lifecycle notifications.
 
 ## Quick Start Prompt
 
