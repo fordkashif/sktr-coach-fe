@@ -31,7 +31,7 @@ export default function CoachTeamsPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
   const { role } = useRole()
-  const coachScope = useMemo(() => getCoachScope(role), [role])
+  const coachScope = useMemo(() => getCoachScope(role === "coach" ? role : "club-admin"), [role])
   const [backendTeams, setBackendTeams] = useState(() => (isSupabaseMode ? [] : mockTeams))
   const [backendAthletes, setBackendAthletes] = useState(() => (isSupabaseMode ? [] : mockAthletes))
   const [generatedInviteLinks, setGeneratedInviteLinks] = useState<Record<string, string>>({})

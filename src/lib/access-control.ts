@@ -1,4 +1,4 @@
-export type AppRole = "athlete" | "coach" | "club-admin"
+import type { AppRole } from "@/lib/supabase/actor"
 
 export interface AccessInput {
   pathname: string
@@ -14,7 +14,12 @@ export interface AccessResult {
 }
 
 export function isProtectedPath(pathname: string) {
-  return pathname.startsWith("/athlete") || pathname.startsWith("/coach") || pathname.startsWith("/club-admin")
+  return (
+    pathname.startsWith("/athlete") ||
+    pathname.startsWith("/coach") ||
+    pathname.startsWith("/club-admin") ||
+    pathname.startsWith("/platform-admin")
+  )
 }
 
 export function evaluateAccess(input: AccessInput): AccessResult {
@@ -26,6 +31,14 @@ export function evaluateAccess(input: AccessInput): AccessResult {
 
   if (!isAuthenticated) {
     return { allowed: false, reason: "unauthenticated", redirectTo: "/login" }
+  }
+
+  if (pathname.startsWith("/platform-admin")) {
+    if (role !== "platform-admin") {
+      return { allowed: false, reason: "forbidden-role", redirectTo: "/login" }
+    }
+
+    return { allowed: true }
   }
 
   if (!tenantId) {

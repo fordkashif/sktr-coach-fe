@@ -2,9 +2,9 @@ import { useEffect } from "react"
 import { clearSessionCookies, setSessionCookies } from "@/lib/auth-session"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { isSupabaseEnabled } from "@/lib/supabase/config"
-import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
+import { resolveSessionActor } from "@/lib/supabase/actor"
 
-function isAppRole(value: string): value is "athlete" | "coach" | "club-admin" {
+function isTenantRole(value: string): value is "athlete" | "coach" | "club-admin" {
   return value === "athlete" || value === "coach" || value === "club-admin"
 }
 
@@ -28,12 +28,15 @@ export function SupabaseAuthSync() {
         return
       }
 
-      const profile = await ensureProfileForSession(supabase, session)
+      const actor = await resolveSessionActor(supabase, session)
 
       if (!active) return
-      if (!profile || !isAppRole(profile.role) || !profile.tenant_id) return
+      if (!actor || !isTenantRole(actor.role) || !actor.tenantId) {
+        clearSessionCookies()
+        return
+      }
 
-      setSessionCookies(profile.role, profile.tenant_id, session.user.email ?? session.user.id)
+      setSessionCookies(actor.role, actor.tenantId, session.user.email ?? session.user.id)
     }
 
     void syncSession()

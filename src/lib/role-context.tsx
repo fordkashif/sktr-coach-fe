@@ -1,11 +1,10 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import type { AppRole } from "@/lib/access-control"
 import { MOCK_ROLE_STORAGE_KEY, MOCK_USER_EMAIL_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
+import { resolveSessionActor, type AppRole } from "@/lib/supabase/actor"
 
 interface RoleContextValue {
   role: AppRole
@@ -14,7 +13,7 @@ interface RoleContextValue {
 }
 
 function isAppRole(value: unknown): value is AppRole {
-  return value === "coach" || value === "athlete" || value === "club-admin"
+  return value === "coach" || value === "athlete" || value === "club-admin" || value === "platform-admin"
 }
 
 const RoleContext = createContext<RoleContextValue>({
@@ -62,9 +61,9 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       }
 
       setUserEmail(session.user.email ?? null)
-      const profile = await ensureProfileForSession(supabase, session)
-      if (!active || !profile || !isAppRole(profile.role)) return
-      setRole(profile.role)
+      const actor = await resolveSessionActor(supabase, session)
+      if (!active || !actor || !isAppRole(actor.role)) return
+      setRole(actor.role)
     }
 
     void syncFromSession()

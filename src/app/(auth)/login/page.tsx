@@ -13,7 +13,7 @@ import { loadAccountRequests, saveAccountRequests, type AccountRequest } from "@
 import { setSessionCookies } from "@/lib/auth-session"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
+import { resolveSessionActor } from "@/lib/supabase/actor"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_CREDENTIALS,
@@ -95,9 +95,9 @@ export default function LoginPage() {
         return
       }
 
-      const profile = await ensureProfileForSession(supabase, data.session)
-      if (!profile) {
-        setError("Sign in succeeded, but your profile is missing tenant/role metadata.")
+      const actor = await resolveSessionActor(supabase, data.session)
+      if (!actor) {
+        setError("Sign in succeeded, but your account is not mapped to an application role.")
         return
       }
 
@@ -111,12 +111,16 @@ export default function LoginPage() {
         navigate(safeRedirect)
         return
       }
-      if (profile.role === "athlete") {
+      if (actor.role === "athlete") {
         navigate("/athlete/home")
         return
       }
-      if (profile.role === "coach") {
+      if (actor.role === "coach") {
         navigate("/coach/dashboard")
+        return
+      }
+      if (actor.role === "platform-admin") {
+        navigate("/platform-admin/requests")
         return
       }
       navigate("/club-admin/dashboard")

@@ -2,14 +2,14 @@ import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { evaluateAccess, type AccessResult } from "@/lib/access-control"
 import { getCookieValue, ROLE_COOKIE, SESSION_COOKIE, TENANT_COOKIE } from "@/lib/auth-session"
-import type { AppRole } from "@/lib/access-control"
+import type { AppRole } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
+import { resolveSessionActor } from "@/lib/supabase/actor"
 
 function getRoleFromCookie() {
   const role = getCookieValue(ROLE_COOKIE)
-  if (role === "athlete" || role === "coach" || role === "club-admin") {
+  if (role === "athlete" || role === "coach" || role === "club-admin" || role === "platform-admin") {
     return role as AppRole
   }
   return null
@@ -22,7 +22,7 @@ type GuardAuthContext = {
 }
 
 function isAppRole(value: unknown): value is AppRole {
-  return value === "athlete" || value === "coach" || value === "club-admin"
+  return value === "athlete" || value === "coach" || value === "club-admin" || value === "platform-admin"
 }
 
 function getMockAuthContext(): GuardAuthContext {
@@ -53,8 +53,8 @@ async function getSupabaseAuthContext(): Promise<GuardAuthContext> {
     }
   }
 
-  const profile = await ensureProfileForSession(supabase, session)
-  if (!profile || !isAppRole(profile.role) || !profile.tenant_id) {
+  const actor = await resolveSessionActor(supabase, session)
+  if (!actor || !isAppRole(actor.role)) {
     return {
       isAuthenticated: true,
       role: null,
@@ -64,8 +64,8 @@ async function getSupabaseAuthContext(): Promise<GuardAuthContext> {
 
   return {
     isAuthenticated: true,
-    role: profile.role,
-    tenantId: profile.tenant_id,
+    role: actor.role,
+    tenantId: actor.tenantId,
   }
 }
 

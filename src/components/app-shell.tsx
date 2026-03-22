@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { useTheme } from "next-themes"
 import { getCoachScope } from "@/lib/coach-scope"
+import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { clearSessionCookies } from "@/lib/auth-session"
@@ -71,16 +72,24 @@ const clubAdminLinks: ShellLink[] = [
   { href: "/club-admin/reports", label: "Reports", icon: PieChartSquareIcon },
 ]
 
+const platformAdminLinks: ShellLink[] = [{ href: "/platform-admin/requests", label: "Requests", icon: Notification01Icon }]
+
 function getRoleLabel(role: string) {
+  if (role === "platform-admin") return "Platform Admin"
   if (role === "club-admin") return "Club Admin"
   if (role === "coach") return "Coach"
   return "Athlete"
 }
 
 function getProfileImage(role: string) {
+  if (role === "platform-admin") return "/avatar-placeholder.svg"
   if (role === "coach") return "/coach-avatar.png"
   if (role === "athlete") return "/coach-avatar.png"
   return "/avatar-placeholder.svg"
+}
+
+function formatNotificationTime(value: string) {
+  return new Date(value).toLocaleString()
 }
 
 function displayNameFromEmail(userEmail: string | null, fallbackRole: string) {
@@ -101,6 +110,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const { resolvedTheme, setTheme } = useTheme()
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [notificationsError, setNotificationsError] = useState<string | null>(null)
   const useAthleteHomeActionNav = pathname.startsWith("/athlete/home")
   const hideMobileNav = mobileDetailMode
   const useSectionBoundTopTone =
@@ -128,6 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (role === "coach") {
       return coachLinks.map((link) => (link.href === "/coach/teams" ? { ...link, href: coachTeamsHref } : link))
     }
+    if (role === "platform-admin") return platformAdminLinks
     return clubAdminLinks
   }, [coachTeamsHref, role])
 
@@ -136,6 +149,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => setTheme(isDark ? "light" : "dark")
   const useAthleteDrawerMenu = role === "athlete"
   const athleteDisplayName = role === "athlete" ? displayNameFromEmail(userEmail, role) : null
+  const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.status !== "read")
+
+  useEffect(() => {
+    if (getBackendMode() !== "supabase" || useAthleteDrawerMenu) return
+
+    let cancelled = false
+
+    const loadNotifications = async () => {
+      setNotificationsLoading(true)
+      const result = await getNotificationFeed()
+      if (cancelled) return
+
+      if (!result.ok) {
+        setNotificationsError(result.error.message)
+        setNotificationsLoading(false)
+        return
+      }
+
+      setNotifications(result.data)
+      setNotificationsError(null)
+      setNotificationsLoading(false)
+    }
+
+    void loadNotifications()
+    return () => {
+      cancelled = true
+    }
+  }, [pathname, role, useAthleteDrawerMenu, userEmail])
   useEffect(() => {
     const scroller = document.getElementById("main-content")
     if (scroller) {
@@ -379,7 +420,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <SheetTrigger asChild>
                     <Button variant="ghost" size="icon" className="relative size-14 rounded-[24px] border border-slate-200/70 bg-white/95 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] hover:bg-white lg:size-8 lg:rounded-full lg:border-white/10 lg:bg-white/[0.04] lg:text-white lg:shadow-none lg:hover:bg-white/[0.1]" aria-label={useAthleteDrawerMenu ? "Open menu" : "Notifications"}>
                       <HugeiconsIcon icon={useAthleteDrawerMenu ? Menu01Icon : Notification01Icon} className="size-3.5" />
-                      {!useAthleteDrawerMenu ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[#ff6a55]" /> : null}
+                      {!useAthleteDrawerMenu && unreadNotifications.length > 0 ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[#ff6a55]" /> : null}
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="right" showCloseButton={false} className="w-full border-l-slate-200 bg-white sm:max-w-md">
@@ -484,10 +525,72 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       </div>
                     ) : (
                       <div className="space-y-3 p-4">
-                        <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-sm font-medium text-slate-950">No new notifications</p>
-                          <p className="text-xs text-slate-500">You are all caught up.</p>
-                        </div>
+                        {notificationsLoading ? (
+                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-sm font-medium text-slate-950">Loading notifications</p>
+                            <p className="text-xs text-slate-500">Fetching your latest events.</p>
+                          </div>
+                        ) : null}
+                        {notificationsError ? (
+                          <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4">
+                            <p className="text-sm font-medium text-rose-700">{notificationsError}</p>
+                          </div>
+                        ) : null}
+                        {!notificationsLoading && !notificationsError && notifications.length === 0 ? (
+                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-sm font-medium text-slate-950">No new notifications</p>
+                            <p className="text-xs text-slate-500">You are all caught up.</p>
+                          </div>
+                        ) : null}
+                        {!notificationsLoading && !notificationsError && notifications.length > 0 ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-10 rounded-full border-slate-200"
+                              onClick={async () => {
+                                const pendingIds = unreadNotifications.map((item) => item.id)
+                                const result = await markNotificationsRead(pendingIds)
+                                if (!result.ok) {
+                                  setNotificationsError(result.error.message)
+                                  return
+                                }
+                                setNotifications((current) =>
+                                  current.map((item) =>
+                                    pendingIds.includes(item.id) ? { ...item, status: "read" } : item,
+                                  ),
+                                )
+                                setNotificationsError(null)
+                              }}
+                            >
+                              Mark all read
+                            </Button>
+                            {notifications.map((item) => (
+                              <div key={item.id} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-950">{item.subject}</p>
+                                    {item.body ? <p className="mt-1 text-xs leading-5 text-slate-500">{item.body}</p> : null}
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                                      item.status === "read" && "bg-slate-200 text-slate-600",
+                                      item.status === "pending" && "bg-[#dbeafe] text-[#1368ff]",
+                                      item.status === "sent" && "bg-emerald-100 text-emerald-700",
+                                      item.status === "failed" && "bg-rose-100 text-rose-700",
+                                    )}
+                                  >
+                                    {item.status}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-[11px] text-slate-400">
+                                  {item.channel} · {formatNotificationTime(item.createdAt)}
+                                </p>
+                              </div>
+                            ))}
+                          </>
+                        ) : null}
                       </div>
                     )}
                   </SheetContent>
@@ -545,7 +648,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <div className="mx-auto max-w-md rounded-[28px] border border-white/12 bg-[linear-gradient(135deg,rgba(7,17,34,0.94)_0%,rgba(9,20,39,0.92)_100%)] px-2 py-2 shadow-[0_20px_60px_rgba(5,12,24,0.34)] backdrop-blur-xl">
-            <div className="grid grid-cols-5 gap-1">
+            <div
+              className="grid gap-1"
+              style={{ gridTemplateColumns: `repeat(${links.length}, minmax(0, 1fr))` }}
+            >
               {links.map((link) => {
                 const isActive = pathname.startsWith(link.href)
                 return (

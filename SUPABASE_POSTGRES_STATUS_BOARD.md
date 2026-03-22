@@ -1,6 +1,6 @@
 # PaceLab Supabase + PostgreSQL Status Board
 
-Last updated: March 21, 2026
+Last updated: March 22, 2026
 
 ## Purpose
 
@@ -27,8 +27,8 @@ Companion plan:
 
 ## Verification Snapshot
 
-- `npm run lint`: PASS (March 20, 2026)
-- `npm run typecheck`: PASS (March 21, 2026)
+- `npm run lint`: PASS (March 22, 2026)
+- `npm run typecheck`: PASS (March 22, 2026)
 - `npx playwright test tests/e2e/role-journeys-and-tenancy.spec.ts`: PASS (3/3, March 20, 2026)
 - `npm run test:e2e:supabase`: PASS WITH SKIPS (7 skipped, env-gated suites, March 20, 2026)
 - CI workflow added: `.github/workflows/e2e.yml` (required mock lane + optional secret-gated Supabase lane)
@@ -473,6 +473,9 @@ Companion plan:
   - Added DB-backed athlete invite lifecycle (`athlete_invites`, `accept_athlete_invite`) and migrated athlete join flow to Supabase invite lookup/claim in `supabase` mode.
   - Phase 1 request-only onboarding started: removed direct self-serve entry from login, converted `/create-club-account` into a non-provisioning guidance page, and restricted `provision_club_admin_tenant` execution away from `authenticated`/`anon`.
   - Phase 1 request intake implemented: added `tenant_provision_requests` + `submit_tenant_provision_request` and wired `/login` request form to the new pipeline, including seeded `notification_events` for platform-admin contacts.
+- March 22, 2026:
+  - Phase 2 platform-admin review started: added Supabase actor resolution for `platform-admin`, guarded `/platform-admin/requests`, and DB-backed request review via `review_tenant_provision_request`.
+  - App shell notification drawer now reads `notification_events` in `supabase` mode and can mark in-app events read for the current authenticated recipient.
 
 ## Quick Start Prompt
 

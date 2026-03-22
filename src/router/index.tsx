@@ -6,6 +6,7 @@ import { GuardedAuthenticatedLayout } from "@/router/guards"
 import { RootRedirectPage } from "@/pages/redirects/root-redirect"
 import { InviteRedirectPage } from "@/pages/redirects/invite-redirect"
 import { ClubAdminRedirectPage } from "@/pages/redirects/club-admin-redirect"
+import { PlatformAdminRedirectPage } from "@/pages/redirects/platform-admin-redirect"
 import { NotFoundPage } from "@/pages/not-found"
 import LoginPage from "@/app/(auth)/login/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
@@ -34,6 +35,7 @@ import ClubAdminTeamsPage from "@/app/(authenticated)/club-admin/teams/page"
 import ClubAdminReportsPage from "@/app/(authenticated)/club-admin/reports/page"
 import ClubAdminBillingPage from "@/app/(authenticated)/club-admin/billing/page"
 import ClubAdminAuditPage from "@/app/(authenticated)/club-admin/audit/page"
+import PlatformAdminRequestsPage from "@/app/(authenticated)/platform-admin/requests/page"
 
 export function AppRouter() {
   return (
@@ -77,6 +79,9 @@ export function AppRouter() {
             <Route path="/club-admin/reports" element={<ClubAdminReportsPage />} />
             <Route path="/club-admin/billing" element={<ClubAdminBillingPage />} />
             <Route path="/club-admin/audit" element={<ClubAdminAuditPage />} />
+
+            <Route path="/platform-admin" element={<PlatformAdminRedirectPage />} />
+            <Route path="/platform-admin/requests" element={<PlatformAdminRequestsPage />} />
           </Route>
         </Route>
 
