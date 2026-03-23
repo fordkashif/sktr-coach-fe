@@ -1,6 +1,6 @@
 # PaceLab Supabase + PostgreSQL Status Board
 
-Last updated: March 22, 2026
+Last updated: March 23, 2026
 
 ## Purpose
 
@@ -32,6 +32,7 @@ Companion plan:
 - Club-admin audit-writer hardening update: `/club-admin/profile`, `/club-admin/billing`, `/club-admin/teams`, and `/club-admin/users` no longer statically import `mock-audit` on the Supabase route path; mock audit logging is lazy-loaded only for mock mode.
 - Club-admin audit-reader hardening update: `/club-admin/audit` no longer statically imports `mock-audit` on the Supabase route path; mock audit logs are lazy-loaded only for mock mode.
 - Local invite-preview testing update: approved platform-admin requests now expose a localhost-only `Copy initial access link` action backed by `platform-admin-preview-club-admin-invite`, so first-login bootstrap can be tested without depending on mailbox access in local development.
+- Club-admin first-access onboarding update: new provisioned club-admin tenants are now gated to `/club-admin/get-started` until password setup and minimum tenant profile completion are persisted in `club_profiles`.
 
 ## Verification Snapshot
 
@@ -505,6 +506,9 @@ Companion plan:
   - Added `/platform-admin/dashboard` as the platform-admin landing page and updated shell navigation/redirects so the admin role no longer starts on a deep link.
   - Added platform-admin CSV/PDF export actions for request queue and platform audit views, with backend logging through `log_platform_admin_export(...)` into `platform_audit_events`.
   - Explicitly locked the current system boundary: all operational app flows are now expected to be real in `supabase` mode, and provider-backed billing is the only intentional remaining stub. `billing_profiles` is temporary app-owned config, not a real subscription authority.
+- March 23, 2026:
+  - Added localhost-only initial access link preview through `platform-admin-preview-club-admin-invite` so approved request first-access can be tested without mailbox dependency in local development.
+  - Added required club-admin first-access onboarding with password setup + tenant profile completion, backed by `club_profiles.password_set_at` and `club_profiles.onboarding_completed_at`, and enforced via `/club-admin/get-started` route gating.
 
 ## Quick Start Prompt
 

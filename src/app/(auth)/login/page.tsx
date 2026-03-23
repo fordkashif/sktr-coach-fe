@@ -141,7 +141,20 @@ export default function LoginPage() {
       navigate("/club-admin/dashboard", { replace: true })
     }
 
-    void routeActor()
+    const handleAuthCallback = async () => {
+      const callbackCode = new URL(window.location.href).searchParams.get("code")
+      if (callbackCode) {
+        const exchangeResult = await supabase.auth.exchangeCodeForSession(callbackCode)
+        if (exchangeResult.error) {
+          setError(exchangeResult.error.message)
+          return
+        }
+      }
+
+      await routeActor()
+    }
+
+    void handleAuthCallback()
 
     const {
       data: { subscription },
