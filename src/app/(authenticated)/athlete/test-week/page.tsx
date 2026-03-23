@@ -11,7 +11,6 @@ import { tenantStorageKey } from "@/lib/tenant-storage"
 import { getCurrentAthletePrRecords } from "@/lib/data/pr/pr-data"
 import type { PrRecord } from "@/lib/data/pr/types"
 import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
-import { mockAthletes, mockPRs, mockTestDefinitions, mockTestWeekResults, onSubmitTestWeek } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
   getCurrentAthleteActiveTestWeekContext,
@@ -22,12 +21,27 @@ type TestSubmission = Record<string, string>
 
 const PR_OVERRIDE_STORAGE_KEY = "pacelab:pr-overrides"
 const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-submission"
+const fallbackAthlete = { id: "fallback-athlete" }
+const fallbackTestDefinitions = ["30m", "Flying 30m", "150m", "Squat 1RM", "CMJ"]
+const fallbackPrs = [
+  { athleteId: "fallback-athlete", event: "30m", bestValue: "4.05s" },
+  { athleteId: "fallback-athlete", event: "Flying 30m", bestValue: "2.89s" },
+  { athleteId: "fallback-athlete", event: "150m", bestValue: "16.8s" },
+  { athleteId: "fallback-athlete", event: "Squat 1RM", bestValue: "185kg" },
+]
+const fallbackBenchmarks = {
+  thirtyM: { value: "4.05s" },
+  flyingThirtyM: { value: "2.89s" },
+  oneHundredFiftyM: { value: "16.8s" },
+  squat1RM: { value: "185kg" },
+  cmj: { value: "72cm" },
+}
 
 export default function AthleteTestWeekPage() {
   const backendMode = getBackendMode()
-  const athlete = mockAthletes[0]
-  const [activeTests, setActiveTests] = useState<string[]>([...mockTestDefinitions])
-  const [values, setValues] = useState<TestSubmission>(Object.fromEntries(mockTestDefinitions.map((test) => [test, ""])))
+  const athlete = fallbackAthlete
+  const [activeTests, setActiveTests] = useState<string[]>([...fallbackTestDefinitions])
+  const [values, setValues] = useState<TestSubmission>(Object.fromEntries(fallbackTestDefinitions.map((test) => [test, ""])))
   const [prUpdates, setPrUpdates] = useState<string[]>([])
   const [backendPrs, setBackendPrs] = useState<PrRecord[]>([])
   const [backendBenchmarks, setBackendBenchmarks] = useState<Record<string, string>>({})
@@ -44,10 +58,10 @@ export default function AthleteTestWeekPage() {
           event: pr.event,
           bestValue: pr.bestValue,
         }))
-      : mockPRs
+      : fallbackPrs
           .filter((pr) => pr.athleteId === athlete.id)
           .map((pr) => ({ event: pr.event, bestValue: pr.bestValue }))
-  const lastBenchmarks = backendMode === "supabase" ? null : mockTestWeekResults.find((row) => row.athleteId === athlete.id)
+  const lastBenchmarks = backendMode === "supabase" ? null : fallbackBenchmarks
   const completionCount = activeTests.filter((test) => values[test]?.trim()).length
 
   useEffect(() => {
@@ -141,7 +155,6 @@ export default function AthleteTestWeekPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSubmitTestWeek()
     setSubmissionError(null)
 
     const updates: string[] = []

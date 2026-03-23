@@ -13,7 +13,6 @@ import {
 } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { mockCurrentSession } from "@/lib/mock-data"
 import {
   dateKeyLocal,
   defaultSessionProgress,
@@ -30,6 +29,34 @@ import {
 } from "@/lib/data/session/session-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import type { CurrentSession } from "@/lib/mock-data"
+
+const fallbackCurrentSession: CurrentSession = {
+  id: "fallback-session",
+  title: "Today's Workout",
+  status: "not-started",
+  scheduledFor: "Today",
+  estimatedDuration: "75 min",
+  coachNote: "",
+  blocks: [
+    {
+      id: "fallback-block-1",
+      type: "Sprint",
+      name: "Acceleration",
+      focus: "Programmed work",
+      coachNote: "",
+      rows: [{ label: "Block 1", target: "Programmed work" }],
+    },
+    {
+      id: "fallback-block-2",
+      type: "Strength",
+      name: "Gym Work",
+      focus: "Programmed work",
+      coachNote: "",
+      rows: [{ label: "Block 2", target: "Programmed work" }],
+    },
+  ],
+}
 
 type PreviewBlock = {
   id: string
@@ -129,7 +156,7 @@ export default function AthleteHomePage() {
                 })),
             })),
         }
-      : mockCurrentSession
+      : fallbackCurrentSession
 
   useEffect(() => {
     if (typeof window === "undefined") return

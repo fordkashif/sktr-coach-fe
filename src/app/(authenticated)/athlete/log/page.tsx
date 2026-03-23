@@ -14,10 +14,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
-  mockAthletes,
-  mockCurrentSession,
-  mockTestWeekResults,
-  onSaveLog,
   type CurrentSession,
   type SessionBlock,
 } from "@/lib/mock-data"
@@ -42,6 +38,30 @@ import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { cn } from "@/lib/utils"
 
+const fallbackAthlete = {
+  id: "fallback-athlete",
+  name: "Athlete",
+}
+
+const fallbackCurrentSession: CurrentSession = {
+  id: "fallback-session",
+  title: "Today's Workout",
+  status: "not-started",
+  scheduledFor: "Today",
+  estimatedDuration: "75 min",
+  coachNote: "",
+  blocks: [
+    {
+      id: "fallback-block-1",
+      type: "Sprint",
+      name: "Acceleration",
+      focus: "Programmed work",
+      coachNote: "",
+      rows: [{ label: "Rep 1", target: "Programmed work" }],
+    },
+  ],
+}
+
 const blockToneMap: Record<SessionBlock["type"], string> = {
   Sprint: "bg-[#dbeafe] text-[#1d4ed8]",
   Run: "bg-[#fef3c7] text-[#b45309]",
@@ -52,7 +72,7 @@ const blockToneMap: Record<SessionBlock["type"], string> = {
 
 export default function AthleteLogPage() {
   const navigate = useNavigate()
-  const athlete = mockAthletes[0]
+  const athlete = fallbackAthlete
   const backendMode = getBackendMode()
   const [backendSessionDetail, setBackendSessionDetail] = useState<CurrentAthleteLatestSessionDetail | null>(null)
   const [backendSessionError, setBackendSessionError] = useState<string | null>(null)
@@ -60,7 +80,7 @@ export default function AthleteLogPage() {
   const hasTestWeekResult =
     backendMode === "supabase"
       ? (hasBackendTestWeekResult ?? true)
-      : mockTestWeekResults.some((row) => row.athleteId === athlete.id)
+      : true
   const requiresGymLoadInput = !hasTestWeekResult
   const [progress, setProgress] = useState<SessionProgress>(() => {
     if (typeof window === "undefined") return defaultSessionProgress()
@@ -68,7 +88,7 @@ export default function AthleteLogPage() {
   })
 
   const currentSession: CurrentSession = useMemo(() => {
-    if (!(backendMode === "supabase" && backendSessionDetail)) return mockCurrentSession
+    if (!(backendMode === "supabase" && backendSessionDetail)) return fallbackCurrentSession
 
     return {
       id: backendSessionDetail.session.id,
@@ -214,7 +234,6 @@ export default function AthleteLogPage() {
 
   const handleCompleteBlock = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSaveLog()
     const isFinalBlock = progress.currentBlockIndex === totalBlocks - 1
 
     setProgress((current) => {

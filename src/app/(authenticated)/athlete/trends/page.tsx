@@ -11,8 +11,29 @@ import type { PrRecord } from "@/lib/data/pr/types"
 import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
 import { getCurrentAthleteWellnessTrend } from "@/lib/data/wellness/wellness-data"
 import type { WellnessTrendPoint } from "@/lib/data/wellness/types"
-import { mockAthletes, mockPRs, mockTestWeekResults, mockTrendSeries } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
+
+const fallbackAthlete = { id: "fallback-athlete" }
+const fallbackPrs = [
+  { id: "fallback-pr-1", athleteId: "fallback-athlete", event: "30m", date: "Mar 2, 2026", bestValue: "4.05s", previousValue: "4.10s" },
+  { id: "fallback-pr-2", athleteId: "fallback-athlete", event: "Flying 30m", date: "Mar 2, 2026", bestValue: "2.89s", previousValue: "2.95s" },
+  { id: "fallback-pr-3", athleteId: "fallback-athlete", event: "Squat 1RM", date: "Mar 2, 2026", bestValue: "185kg", previousValue: "180kg" },
+  { id: "fallback-pr-4", athleteId: "fallback-athlete", event: "CMJ", date: "Mar 2, 2026", bestValue: "72cm", previousValue: "70cm" },
+]
+const fallbackLatestTest = {
+  thirtyM: { value: "4.05s" },
+  flyingThirtyM: { value: "2.89s" },
+  squat1RM: { value: "185kg" },
+  cmj: { value: "72cm" },
+}
+const fallbackTrendSeries: Record<string, WellnessTrendPoint[]> = {
+  "fallback-athlete": [
+    { date: "2026-03-01", readiness: 78, fatigue: 32, trainingLoad: 64 },
+    { date: "2026-03-08", readiness: 82, fatigue: 28, trainingLoad: 68 },
+    { date: "2026-03-15", readiness: 84, fatigue: 30, trainingLoad: 70 },
+    { date: "2026-03-22", readiness: 86, fatigue: 27, trainingLoad: 66 },
+  ],
+}
 
 const chartSx = {
   "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
@@ -38,13 +59,13 @@ const chartSx = {
 
 export default function AthleteTrendsPage() {
   const backendMode = getBackendMode()
-  const athlete = mockAthletes[0]
+  const athlete = fallbackAthlete
   const [backendTrend, setBackendTrend] = useState<WellnessTrendPoint[]>([])
   const [backendPrs, setBackendPrs] = useState<PrRecord[]>([])
   const [backendBenchmarks, setBackendBenchmarks] = useState<Record<string, string>>({})
   const [backendError, setBackendError] = useState<string | null>(null)
 
-  const trend = backendMode === "supabase" ? backendTrend : mockTrendSeries[athlete.id] ?? []
+  const trend = backendMode === "supabase" ? backendTrend : fallbackTrendSeries[athlete.id] ?? []
   const athletePrs =
     backendMode === "supabase"
       ? backendPrs.slice(0, 4).map((pr) => ({
@@ -54,8 +75,8 @@ export default function AthleteTrendsPage() {
           bestValue: pr.bestValue,
           previousValue: pr.previousValue ?? undefined,
         }))
-      : mockPRs.filter((pr) => pr.athleteId === athlete.id).slice(0, 4)
-  const latestTest = mockTestWeekResults.find((row) => row.athleteId === athlete.id)
+      : fallbackPrs.filter((pr) => pr.athleteId === athlete.id).slice(0, 4)
+  const latestTest = fallbackLatestTest
 
   useEffect(() => {
     if (typeof window === "undefined") return

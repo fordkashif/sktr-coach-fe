@@ -7,11 +7,6 @@ import { getCurrentAthleteProfileSnapshot } from "@/lib/data/athlete/profile-dat
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import {
-  mockAthleteTrainingPlanDetails,
-  mockAthletes,
-  mockTrainingPlans,
-} from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 
@@ -23,6 +18,78 @@ interface PlanAssignment {
   teamId: string
   athleteId?: string
 }
+
+const fallbackAthlete = {
+  id: "fallback-athlete",
+  teamId: "fallback-team",
+}
+
+const fallbackPlans: Array<{
+  id: string
+  name: string
+  teamId: string
+  startDate: string
+  weeks: number
+  assignedTo: "team" | "athlete"
+  assignedAthleteIds?: string[]
+}> = [
+  {
+    id: "fallback-plan",
+    name: "General Performance Block",
+    teamId: "fallback-team",
+    startDate: "2026-03-02",
+    weeks: 2,
+    assignedTo: "team",
+  },
+]
+
+const fallbackPlanDetails: Array<{
+  planId: string
+  weeks: Array<{
+    weekNumber: number
+    emphasis: string
+    status: "completed" | "current" | "up-next"
+    days: Array<{
+      id: string
+      dayLabel: string
+      date: string
+      title: string
+      type: "Track" | "Gym" | "Recovery" | "Technical" | "Mixed"
+      focus: string
+      status: "completed" | "scheduled" | "up-next"
+      duration: string
+      location: string
+      coachNote?: string
+      blockPreview: string[]
+    }>
+  }>
+}> = [
+  {
+    planId: "fallback-plan",
+    weeks: [
+      {
+        weekNumber: 1,
+        emphasis: "General speed and strength",
+        status: "current",
+        days: [
+          {
+            id: "fallback-plan-w1-1",
+            dayLabel: "Mon",
+            date: "2026-03-02",
+            title: "Acceleration + Gym",
+            type: "Mixed",
+            focus: "Programmed speed and lifting work",
+            status: "scheduled",
+            duration: "75",
+            location: "Track / Gym",
+            coachNote: "Stay sharp and relaxed.",
+            blockPreview: ["Starts", "Accel runs", "Lift"],
+          },
+        ],
+      },
+    ],
+  },
+]
 
 function planRangeLabel(startDate: string, weeks: number) {
   const start = new Date(`${startDate}T00:00:00`)
@@ -49,7 +116,7 @@ const typeToneMap: Record<TrainingPlanDay["sessionType"], string> = {
 
 export default function AthleteTrainingPlanPage() {
   const backendMode = getBackendMode()
-  const athlete = mockAthletes[0]
+  const athlete = fallbackAthlete
   const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null)
   const [backendPlans, setBackendPlans] = useState<TrainingPlanSummary[]>([])
   const [backendPlanDetail, setBackendPlanDetail] = useState<TrainingPlanDetail | null>(null)
@@ -82,7 +149,7 @@ export default function AthleteTrainingPlanPage() {
   }, [])
 
   const mockPlans = useMemo(() => {
-    const base = mockTrainingPlans.filter(
+    const base = fallbackPlans.filter(
       (plan) => plan.teamId === athlete.teamId || (plan.assignedTo === "athlete" && plan.assignedAthleteIds?.includes(athlete.id)),
     )
 
@@ -91,8 +158,8 @@ export default function AthleteTrainingPlanPage() {
         if (assignment.scope === "team") return assignment.teamId === athlete.teamId
         return assignment.athleteId === athlete.id
       })
-      .map((assignment) => mockTrainingPlans.find((plan) => plan.id === assignment.planId))
-      .filter((plan): plan is (typeof mockTrainingPlans)[number] => Boolean(plan))
+      .map((assignment) => fallbackPlans.find((plan) => plan.id === assignment.planId))
+      .filter((plan): plan is (typeof fallbackPlans)[number] => Boolean(plan))
 
     const deduped = new Map([...base, ...fromAssignments].map((plan) => [plan.id, plan]))
     return [...deduped.values()]
@@ -178,7 +245,7 @@ export default function AthleteTrainingPlanPage() {
 
   const activePlanDetail = useMemo<TrainingPlanDetail | null>(() => {
     if (backendMode === "supabase") return backendPlanDetail
-    const mockDetail = mockAthleteTrainingPlanDetails.find((detail) => detail.planId === activePlan?.id)
+    const mockDetail = fallbackPlanDetails.find((detail) => detail.planId === activePlan?.id)
     if (!mockDetail) return null
 
     return {

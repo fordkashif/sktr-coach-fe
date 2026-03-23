@@ -7,12 +7,51 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getCurrentAthletePrRecords } from "@/lib/data/pr/pr-data"
 import type { PrRecord } from "@/lib/data/pr/types"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { mockPRs } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 
 const categories = ["All", "Sprint", "Mid", "Distance", "Jumps", "Throws", "Strength"] as const
 type Category = (typeof categories)[number]
 const PR_OVERRIDE_STORAGE_KEY = "pacelab:pr-overrides"
+const fallbackPrs: Array<{
+  id: string
+  athleteId: string
+  athleteName: string
+  event: string
+  category: Exclude<Category, "All">
+  bestValue: string
+  previousValue?: string
+  date: string
+  legal: boolean
+  wind?: string
+  type: "Training" | "Competition"
+}> = [
+  {
+    id: "fallback-pr-1",
+    athleteId: "fallback-athlete",
+    athleteName: "Athlete",
+    event: "30m",
+    category: "Sprint",
+    bestValue: "4.05s",
+    previousValue: "4.10s",
+    date: "Mar 2, 2026",
+    legal: true,
+    wind: undefined,
+    type: "Training",
+  },
+  {
+    id: "fallback-pr-2",
+    athleteId: "fallback-athlete",
+    athleteName: "Athlete",
+    event: "Squat 1RM",
+    category: "Strength",
+    bestValue: "185kg",
+    previousValue: "180kg",
+    date: "Mar 2, 2026",
+    legal: true,
+    wind: undefined,
+    type: "Training",
+  },
+]
 
 export default function AthletePrsPage() {
   const backendMode = getBackendMode()
@@ -69,7 +108,7 @@ export default function AthletePrsPage() {
       }))
     }
 
-    const source = category === "All" ? mockPRs : mockPRs.filter((pr) => pr.category === category)
+    const source = category === "All" ? fallbackPrs : fallbackPrs.filter((pr) => pr.category === category)
     return source.map((pr) => {
       const overrideValue = overrides[pr.event]
       if (!overrideValue || overrideValue === pr.bestValue) return pr
