@@ -28,4 +28,16 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     description: "Invite-link creation and acceptance updates for coaches and athletes.",
     eventTypes: ["athlete_invite_created", "athlete_invite_accepted"],
   },
+  {
+    key: "training-plans",
+    title: "Training plans",
+    description: "Notifications when a published training plan becomes immediately available to an athlete.",
+    eventTypes: ["training_plan_published"],
+  },
+  {
+    key: "test-weeks",
+    title: "Test weeks",
+    description: "Notifications when a published test week opens for an athlete's team.",
+    eventTypes: ["test_week_published"],
+  },
 ]

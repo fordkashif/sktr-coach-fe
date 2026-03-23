@@ -485,6 +485,7 @@ Companion plan:
   - Added `notification_preferences` plus shared `/settings/notifications` UI; wildcard per-channel preferences are now enforced for in-app projection and email dispatch suppression.
   - Extended `/settings/notifications` with category-level overrides and introduced `src/lib/notification-categories.ts`; current mapped family is tenant-provisioning lifecycle notifications.
   - Added DB-backed coach/athlete invite notification triggers so invite creation and acceptance now emit `notification_events`, and `/settings/notifications` category coverage now includes coach-invites and athlete-invites.
+  - Added DB-backed athlete-facing publication notifications: immediate `training_plan_assignments` now emit `training_plan_published`, and published `test_weeks` now emit `test_week_published`; settings coverage now includes training-plans and test-weeks.
 
 ## Quick Start Prompt
 
