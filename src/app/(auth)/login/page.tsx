@@ -142,13 +142,24 @@ export default function LoginPage() {
     }
 
     const handleAuthCallback = async () => {
-      const callbackCode = new URL(window.location.href).searchParams.get("code")
+      const currentUrl = new URL(window.location.href)
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""))
+      if (hashParams.get("access_token") || hashParams.get("refresh_token")) {
+        setError("Unexpected hash-based auth callback. This flow should complete through a code exchange instead.")
+        return
+      }
+
+      const callbackCode = currentUrl.searchParams.get("code")
       if (callbackCode) {
         const exchangeResult = await supabase.auth.exchangeCodeForSession(callbackCode)
         if (exchangeResult.error) {
           setError(exchangeResult.error.message)
           return
         }
+
+        currentUrl.searchParams.delete("code")
+        currentUrl.searchParams.delete("type")
+        window.history.replaceState({}, document.title, currentUrl.toString())
       }
 
       await routeActor()
