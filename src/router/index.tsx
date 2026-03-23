@@ -36,6 +36,7 @@ import ClubAdminReportsPage from "@/app/(authenticated)/club-admin/reports/page"
 import ClubAdminBillingPage from "@/app/(authenticated)/club-admin/billing/page"
 import ClubAdminAuditPage from "@/app/(authenticated)/club-admin/audit/page"
 import PlatformAdminRequestsPage from "@/app/(authenticated)/platform-admin/requests/page"
+import PlatformAdminAuditPage from "@/app/(authenticated)/platform-admin/audit/page"
 import NotificationSettingsPage from "@/app/(authenticated)/settings/notifications/page"
 
 export function AppRouter() {
@@ -83,6 +84,7 @@ export function AppRouter() {
 
             <Route path="/platform-admin" element={<PlatformAdminRedirectPage />} />
             <Route path="/platform-admin/requests" element={<PlatformAdminRequestsPage />} />
+            <Route path="/platform-admin/audit" element={<PlatformAdminAuditPage />} />
 
             <Route path="/settings/notifications" element={<NotificationSettingsPage />} />
           </Route>

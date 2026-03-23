@@ -19,6 +19,19 @@ export type PlatformAdminRequestRecord = {
   createdAt: string
 }
 
+export type PlatformAuditEventRecord = {
+  id: string
+  actorUserId: string | null
+  actorEmail: string | null
+  actorRole: string
+  action: string
+  target: string
+  detail: string | null
+  metadata: Record<string, unknown>
+  occurredAt: string
+  createdAt: string
+}
+
 type BrowserSupabaseClient = NonNullable<ReturnType<typeof getBrowserSupabaseClient>>
 
 type ClientResolution =
@@ -87,6 +100,45 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
       provisionedTenantId: row.provisioned_tenant_id,
       accessInviteSentAt: row.access_invite_sent_at,
       accessInviteLastError: row.access_invite_last_error,
+      createdAt: row.created_at,
+    })),
+  )
+}
+
+export async function getPlatformAuditEvents(limit = 100): Promise<Result<PlatformAuditEventRecord[]>> {
+  const clientResult = requireSupabaseClient("getPlatformAuditEvents")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client
+    .from("platform_audit_events")
+    .select("id, actor_user_id, actor_email, actor_role, action, target, detail, metadata, occurred_at, created_at")
+    .order("occurred_at", { ascending: false })
+    .limit(Math.max(1, Math.min(limit, 250)))
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok(
+    ((data as Array<{
+      id: string
+      actor_user_id: string | null
+      actor_email: string | null
+      actor_role: string
+      action: string
+      target: string
+      detail: string | null
+      metadata: Record<string, unknown> | null
+      occurred_at: string
+      created_at: string
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      actorUserId: row.actor_user_id,
+      actorEmail: row.actor_email,
+      actorRole: row.actor_role,
+      action: row.action,
+      target: row.target,
+      detail: row.detail,
+      metadata: row.metadata ?? {},
+      occurredAt: row.occurred_at,
       createdAt: row.created_at,
     })),
   )

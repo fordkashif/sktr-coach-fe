@@ -72,7 +72,10 @@ const clubAdminLinks: ShellLink[] = [
   { href: "/club-admin/reports", label: "Reports", icon: PieChartSquareIcon },
 ]
 
-const platformAdminLinks: ShellLink[] = [{ href: "/platform-admin/requests", label: "Requests", icon: Notification01Icon }]
+const platformAdminLinks: ShellLink[] = [
+  { href: "/platform-admin/requests", label: "Requests", icon: Notification01Icon },
+  { href: "/platform-admin/audit", label: "Audit", icon: PieChartSquareIcon },
+]
 
 function getRoleLabel(role: string) {
   if (role === "platform-admin") return "Platform Admin"
