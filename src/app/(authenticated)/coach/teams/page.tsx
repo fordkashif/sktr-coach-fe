@@ -25,23 +25,45 @@ import { createAthleteInviteForCurrentCoach } from "@/lib/data/athlete/invite-da
 import { useRole } from "@/lib/role-context"
 import { MOCK_COACH_TEAM_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBackendMode } from "@/lib/supabase/config"
-import { getTeamDisciplineLabel, mockAthletes, mockTeams, onGenerateInvite } from "@/lib/mock-data"
+import type { Athlete, Team } from "@/lib/mock-data"
+
+function getTeamDisciplineLabel(team: Pick<Team, "disciplines" | "eventGroup"> | null | undefined) {
+  if (!team) return ""
+  if (team.disciplines?.length) return team.disciplines.join(" / ")
+  return team.eventGroup
+}
 
 export default function CoachTeamsPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
   const { role } = useRole()
   const coachScope = useMemo(() => getCoachScope(role === "coach" ? role : "club-admin"), [role])
-  const [backendTeams, setBackendTeams] = useState(() => (isSupabaseMode ? [] : mockTeams))
-  const [backendAthletes, setBackendAthletes] = useState(() => (isSupabaseMode ? [] : mockAthletes))
+  const [backendTeams, setBackendTeams] = useState<Team[]>([])
+  const [backendAthletes, setBackendAthletes] = useState<Athlete[]>([])
   const [generatedInviteLinks, setGeneratedInviteLinks] = useState<Record<string, string>>({})
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [coachTeamId, setCoachTeamId] = useState(() => {
-    if (typeof window === "undefined") return isSupabaseMode ? getCookieValue(COACH_TEAM_COOKIE) ?? "" : mockTeams[0]?.id ?? ""
+    if (typeof window === "undefined") return getCookieValue(COACH_TEAM_COOKIE) ?? ""
     if (isSupabaseMode) return getCookieValue(COACH_TEAM_COOKIE) ?? ""
-    return window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? mockTeams[0]?.id ?? ""
+    return window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? ""
   })
+
+  useEffect(() => {
+    if (isSupabaseMode) return
+    let cancelled = false
+
+    void import("@/lib/mock-data").then((module) => {
+      if (cancelled) return
+      setBackendTeams(module.mockTeams)
+      setBackendAthletes(module.mockAthletes)
+      setCoachTeamId((current) => current || module.mockTeams[0]?.id || "")
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
   useEffect(() => {
     if (!isSupabaseMode) return
@@ -69,8 +91,8 @@ export default function CoachTeamsPage() {
     }
   }, [coachTeamId, isSupabaseMode, role])
 
-  const teamsSource = isSupabaseMode ? backendTeams : mockTeams
-  const athletesSource = isSupabaseMode ? backendAthletes : mockAthletes
+  const teamsSource = backendTeams
+  const athletesSource = backendAthletes
 
   const visibleTeams = useMemo(() => {
     if (role !== "coach") return teamsSource
@@ -310,7 +332,6 @@ export default function CoachTeamsPage() {
                                 }))
                                 return
                               }
-                              onGenerateInvite()
                             }}
                           >
                             <HugeiconsIcon icon={Link01Icon} className="size-4" />

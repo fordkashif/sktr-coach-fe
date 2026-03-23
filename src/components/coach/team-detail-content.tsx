@@ -3,7 +3,7 @@
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowRight01Icon, FilePasteIcon, Link01Icon, QrCodeIcon } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ReadinessBadge } from "@/components/badges"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,17 +23,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createAthleteInviteForCurrentCoach } from "@/lib/data/athlete/invite-data"
 import { getBackendMode } from "@/lib/supabase/config"
-import {
-  getTeamDisciplineLabel,
-  mockAthletes,
-  mockPRs,
-  mockTeams,
-  onGenerateInvite,
-  type Athlete,
-  type PR,
-  type Team,
-} from "@/lib/mock-data"
+import type { Athlete, PR, Team } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
+
+function getTeamDisciplineLabel(team: Pick<Team, "disciplines" | "eventGroup"> | null | undefined) {
+  if (!team) return ""
+  if (team.disciplines?.length) return team.disciplines.join(" / ")
+  return team.eventGroup
+}
 
 function AthleteReadinessPill({ readiness }: { readiness: "green" | "yellow" | "red" }) {
   return (
@@ -80,9 +77,10 @@ type CoachTeamDetailContentProps = {
 
 export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentProps) {
   const isSupabaseMode = getBackendMode() === "supabase"
-  const teamsSource = data?.teams ?? mockTeams
-  const athletesSource = data?.athletes ?? mockAthletes
-  const prsSource = data?.prs ?? mockPRs
+  const [mockData, setMockData] = useState<TeamDetailData>({ teams: [], athletes: [], prs: [] })
+  const teamsSource = data?.teams ?? mockData.teams
+  const athletesSource = data?.athletes ?? mockData.athletes
+  const prsSource = data?.prs ?? mockData.prs
   const [rosterIds, setRosterIds] = useState<string[]>(() =>
     athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id),
   )
@@ -91,6 +89,29 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const [activeTab, setActiveTab] = useState("roster")
   const team = teamsSource.find((item) => item.id === teamId)
   const inviteLink = generatedInviteLink ?? `/athlete/join/${teamId}`
+
+  useEffect(() => {
+    if (isSupabaseMode || data) return
+    let cancelled = false
+
+    void import("@/lib/mock-data").then((module) => {
+      if (!cancelled) {
+        setMockData({
+          teams: module.mockTeams,
+          athletes: module.mockAthletes,
+          prs: module.mockPRs,
+        })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [data, isSupabaseMode])
+
+  useEffect(() => {
+    setRosterIds(athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id))
+  }, [athletesSource, teamId])
 
   if (!team) {
     return null
@@ -417,7 +438,6 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                           setGeneratedInviteLink(result.data.invitePath)
                           return
                         }
-                        onGenerateInvite()
                         setGeneratedInviteLink(`/invite/${teamId}?token=${Date.now().toString(36)}`)
                       }}
                     >

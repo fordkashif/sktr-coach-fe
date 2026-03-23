@@ -25,6 +25,8 @@ Companion plan:
 - Program status: `[x] COMPLETE`
 - Backend runtime status: `[~] MIXED (operational supabase-mode is real; remaining mock runtime is now mostly isolated to explicit mock-mode compatibility and provider-backed billing remains intentionally stubbed)`
 - Routing boundary hardening update: route guards now resolve through `src/router/guard-auth-context.ts`, and `role-context` lazy-loads mock storage keys only in `mock` mode.
+- Coach teams hardening update: `/coach/teams`, `/coach/teams/[teamId]`, and `team-detail-content` no longer statically import mock datasets on the Supabase route path; mock team data is lazy-loaded only for mock mode.
+- Coach operational-route hardening update: `/coach/dashboard`, `/coach/reports`, `/coach/athletes/[athleteId]`, and `athlete-detail-content` no longer statically import runtime mock datasets on the Supabase route path; mock fallback data is lazy-loaded only for mock mode.
 
 ## Verification Snapshot
 

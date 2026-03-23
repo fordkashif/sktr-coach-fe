@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom"
 import { CoachTeamDetailContent } from "@/components/coach/team-detail-content"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import { getCoachDashboardSnapshotForCurrentUser, type CoachDashboardSnapshot } from "@/lib/data/coach/dashboard-data"
-import { mockTeams } from "@/lib/mock-data"
+import type { Team } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { InvalidEntityPage } from "@/pages/invalid-entity"
 
@@ -13,7 +13,23 @@ export default function CoachTeamDetailPage() {
   const role = getCookieValue(ROLE_COOKIE)
   const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
+  const [mockTeams, setMockTeams] = useState<Team[]>([])
   const [backendError, setBackendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (backendMode === "supabase") return
+    let cancelled = false
+
+    void import("@/lib/mock-data").then((module) => {
+      if (!cancelled) {
+        setMockTeams(module.mockTeams)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendMode])
 
   useEffect(() => {
     if (backendMode !== "supabase") return
