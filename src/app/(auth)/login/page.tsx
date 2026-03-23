@@ -95,6 +95,66 @@ export default function LoginPage() {
     }
   }, [isSupabaseMode])
 
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    if (!isSupabaseEnabled()) return
+
+    const supabase = getBrowserSupabaseClient()
+    if (!supabase) return
+
+    let active = true
+    let redirecting = false
+
+    const routeActor = async () => {
+      const { data } = await supabase.auth.getSession()
+      const session = data.session
+
+      if (!active || !session || redirecting) return
+
+      const actor = await resolveSessionActor(supabase, session)
+      if (!active || !actor) return
+
+      redirecting = true
+      setError("")
+
+      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
+      window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
+      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
+      window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
+
+      if (safeRedirect) {
+        navigate(safeRedirect, { replace: true })
+        return
+      }
+      if (actor.role === "athlete") {
+        navigate("/athlete/home", { replace: true })
+        return
+      }
+      if (actor.role === "coach") {
+        navigate("/coach/dashboard", { replace: true })
+        return
+      }
+      if (actor.role === "platform-admin") {
+        navigate("/platform-admin/dashboard", { replace: true })
+        return
+      }
+      navigate("/club-admin/dashboard", { replace: true })
+    }
+
+    void routeActor()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void routeActor()
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [isSupabaseMode, navigate, rememberMe, safeRedirect])
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isSupabaseMode) {
