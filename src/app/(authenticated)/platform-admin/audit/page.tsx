@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { getPlatformAuditEvents, type PlatformAuditEventRecord } from "@/lib/data/platform-admin/ops-data"
+import { getPlatformAuditEvents, logPlatformAdminExport, type PlatformAuditEventRecord } from "@/lib/data/platform-admin/ops-data"
 
 function formatDateLabel(value: string) {
   return new Date(value).toLocaleString()
@@ -20,6 +20,17 @@ function metadataPreview(value: Record<string, unknown>) {
     .slice(0, 3)
     .map(([key, item]) => `${key}: ${String(item)}`)
     .join(" | ")
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function PlatformAdminAuditPage() {
@@ -84,6 +95,47 @@ export default function PlatformAdminAuditPage() {
     }
   }, [events])
 
+  const handleExportCsv = async () => {
+    const rows = [
+      ["Occurred At", "Action", "Target", "Actor Role", "Actor Email", "Detail", "Metadata"],
+      ...filteredEvents.map((event) => [
+        event.occurredAt,
+        event.action,
+        event.target,
+        event.actorRole,
+        event.actorEmail ?? "",
+        event.detail ?? "",
+        JSON.stringify(event.metadata),
+      ]),
+    ]
+    downloadCsv("platform-admin-audit.csv", rows)
+
+    const auditResult = await logPlatformAdminExport({
+      target: "platform-audit",
+      format: "csv",
+      recordCount: filteredEvents.length,
+      filters: {
+        search: search.trim() || null,
+        action: actionFilter,
+      },
+    })
+    if (!auditResult.ok) setError((current) => current ?? auditResult.error.message)
+  }
+
+  const handleExportPdf = async () => {
+    window.print()
+    const auditResult = await logPlatformAdminExport({
+      target: "platform-audit",
+      format: "pdf",
+      recordCount: filteredEvents.length,
+      filters: {
+        search: search.trim() || null,
+        action: actionFilter,
+      },
+    })
+    if (!auditResult.ok) setError((current) => current ?? auditResult.error.message)
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
       <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(25,12,45,0.98)_0%,rgba(15,23,42,0.94)_58%,rgba(6,78,59,0.82)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
@@ -132,6 +184,14 @@ export default function PlatformAdminAuditPage() {
               placeholder="Search audit trail"
               className="h-11 w-full rounded-full border-slate-200 bg-slate-50 lg:max-w-sm"
             />
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => void handleExportCsv()}>
+                Export CSV
+              </Button>
+              <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => void handleExportPdf()}>
+                Export PDF
+              </Button>
+            </div>
             <div className="flex flex-wrap gap-2">
               {([
                 ["all", "All"],

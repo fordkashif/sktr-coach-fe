@@ -8,6 +8,7 @@ import {
   approveAndProvisionTenantRequest,
   dispatchPendingNotificationEmails,
   getPlatformAdminRequestQueue,
+  logPlatformAdminExport,
   reviewTenantProvisionRequest,
   sendInitialClubAdminAccessInvite,
   type PlatformAdminRequestRecord,
@@ -17,6 +18,17 @@ import { cn } from "@/lib/utils"
 function formatDateLabel(value: string | null, emptyLabel = "Not reviewed") {
   if (!value) return emptyLabel
   return new Date(value).toLocaleString()
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function PlatformAdminRequestsPage() {
@@ -226,6 +238,52 @@ export default function PlatformAdminRequestsPage() {
     setSubmittingId(null)
   }
 
+  const handleExportQueueCsv = async () => {
+    const rows = [
+      ["Organization", "Requestor", "Email", "Plan", "Seats", "Status", "Submitted", "Reviewed", "Provisioned Tenant", "Invite Sent"],
+      ...filteredRequests.map((request) => [
+        request.organizationName,
+        request.requestorName,
+        request.requestorEmail,
+        request.requestedPlan,
+        String(request.expectedSeats),
+        request.status,
+        request.createdAt,
+        request.reviewedAt ?? "",
+        request.provisionedTenantId ?? "",
+        request.accessInviteSentAt ?? "",
+      ]),
+    ]
+    downloadCsv("platform-admin-request-queue.csv", rows)
+
+    const auditResult = await logPlatformAdminExport({
+      target: "request-queue",
+      format: "csv",
+      recordCount: filteredRequests.length,
+      filters: {
+        search: search.trim() || null,
+        status: statusFilter,
+      },
+    })
+    if (!auditResult.ok) setError((current) => current ?? auditResult.error.message)
+    else setInfo(`Exported ${filteredRequests.length} request row(s) to CSV.`)
+  }
+
+  const handleExportQueuePdf = async () => {
+    window.print()
+    const auditResult = await logPlatformAdminExport({
+      target: "request-queue",
+      format: "pdf",
+      recordCount: filteredRequests.length,
+      filters: {
+        search: search.trim() || null,
+        status: statusFilter,
+      },
+    })
+    if (!auditResult.ok) setError((current) => current ?? auditResult.error.message)
+    else setInfo(`Opened print/PDF flow for ${filteredRequests.length} request row(s).`)
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
       <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,17,34,0.96)_0%,rgba(10,24,44,0.9)_55%,rgba(20,67,160,0.72)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
@@ -285,15 +343,33 @@ export default function PlatformAdminRequestsPage() {
               <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Queue filters</h2>
               <p className="text-sm text-slate-500">Search by organization, requestor, plan, or tenant id, then narrow the queue by status.</p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 rounded-full border-slate-200"
-              disabled={submittingId === "dispatch-email-queue"}
-              onClick={() => void handleDispatchPendingEmails()}
-            >
-              Dispatch pending notification emails
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-full border-slate-200"
+                onClick={() => void handleExportQueueCsv()}
+              >
+                Export CSV
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-full border-slate-200"
+                onClick={() => void handleExportQueuePdf()}
+              >
+                Export PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-full border-slate-200"
+                disabled={submittingId === "dispatch-email-queue"}
+                onClick={() => void handleDispatchPendingEmails()}
+              >
+                Dispatch pending notification emails
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

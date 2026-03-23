@@ -314,3 +314,23 @@ export async function dispatchPendingNotificationEmails(params?: {
     results: payload.results ?? [],
   })
 }
+
+export async function logPlatformAdminExport(params: {
+  target: string
+  format: "csv" | "pdf"
+  recordCount: number
+  filters?: Record<string, unknown>
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("logPlatformAdminExport")
+  if (!clientResult.ok) return clientResult
+
+  const { error } = await clientResult.client.rpc("log_platform_admin_export", {
+    p_target: params.target,
+    p_format: params.format,
+    p_record_count: Math.max(0, Math.floor(params.recordCount)),
+    p_filters: params.filters ?? {},
+  })
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}

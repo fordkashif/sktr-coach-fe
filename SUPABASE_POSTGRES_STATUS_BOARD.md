@@ -489,6 +489,7 @@ Companion plan:
   - Added `platform_audit_events` for pre-tenant observability and wired tenant-request submission/review/provision RPCs into platform-level audit logging; request lifecycle contract is now documented as `pending|approved|rejected|cancelled`.
   - Added `/platform-admin/audit` plus Supabase-backed platform audit reads so platform admins now have a dedicated system-level audit surface alongside the request queue.
   - Added `/platform-admin/dashboard` as the platform-admin landing page and updated shell navigation/redirects so the admin role no longer starts on a deep link.
+  - Added platform-admin CSV/PDF export actions for request queue and platform audit views, with backend logging through `log_platform_admin_export(...)` into `platform_audit_events`.
 
 ## Quick Start Prompt
 
