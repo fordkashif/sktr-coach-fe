@@ -1,7 +1,6 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { MOCK_ROLE_STORAGE_KEY, MOCK_USER_EMAIL_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionActor, type AppRole } from "@/lib/supabase/actor"
@@ -16,6 +15,14 @@ function isAppRole(value: unknown): value is AppRole {
   return value === "coach" || value === "athlete" || value === "club-admin" || value === "platform-admin"
 }
 
+async function getMockRoleStorage() {
+  const module = await import("@/lib/mock-auth")
+  return {
+    roleKey: module.MOCK_ROLE_STORAGE_KEY,
+    emailKey: module.MOCK_USER_EMAIL_STORAGE_KEY,
+  }
+}
+
 const RoleContext = createContext<RoleContextValue>({
   role: "club-admin",
   userEmail: null,
@@ -28,18 +35,30 @@ export function RoleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (getBackendMode() !== "supabase") {
-      const storedRole = window.localStorage.getItem(MOCK_ROLE_STORAGE_KEY)
-      const storedEmail = window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY)
+      let cancelled = false
 
-      if (isAppRole(storedRole) && storedRole !== role) {
-        const frameId = window.requestAnimationFrame(() => {
-          setRole(storedRole)
-          setUserEmail(storedEmail)
-        })
-        return () => window.cancelAnimationFrame(frameId)
+      void getMockRoleStorage().then(({ roleKey, emailKey }) => {
+        if (cancelled) return
+        const storedRole = window.localStorage.getItem(roleKey)
+        const storedEmail = window.localStorage.getItem(emailKey)
+
+        if (isAppRole(storedRole) && storedRole !== role) {
+          const frameId = window.requestAnimationFrame(() => {
+            setRole(storedRole)
+            setUserEmail(storedEmail)
+          })
+          if (cancelled) {
+            window.cancelAnimationFrame(frameId)
+          }
+          return
+        }
+
+        setUserEmail(storedEmail)
+      })
+
+      return () => {
+        cancelled = true
       }
-
-      setUserEmail(storedEmail)
       return undefined
     }
 
@@ -83,7 +102,9 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const handleSetRole = (nextRole: AppRole) => {
     setRole(nextRole)
     if (getBackendMode() === "supabase") return
-    window.localStorage.setItem(MOCK_ROLE_STORAGE_KEY, nextRole)
+    void getMockRoleStorage().then(({ roleKey }) => {
+      window.localStorage.setItem(roleKey, nextRole)
+    })
   }
 
   return (

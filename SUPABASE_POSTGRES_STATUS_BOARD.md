@@ -24,6 +24,7 @@ Companion plan:
 - Current wave: `Wave 6 - Club/Admin Ops + Hardening`
 - Program status: `[x] COMPLETE`
 - Backend runtime status: `[~] MIXED (operational supabase-mode is real; remaining mock runtime is now mostly isolated to explicit mock-mode compatibility and provider-backed billing remains intentionally stubbed)`
+- Routing boundary hardening update: route guards now resolve through `src/router/guard-auth-context.ts`, and `role-context` lazy-loads mock storage keys only in `mock` mode.
 
 ## Verification Snapshot
 
