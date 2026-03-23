@@ -176,7 +176,11 @@ async function invokePlatformAdminInviteFunction(
   })
 
   if (error) {
-    return err("UNKNOWN", error.message, error)
+    const contextualMessage =
+      typeof (error as { context?: { json?: { error?: string } } }).context?.json?.error === "string"
+        ? (error as { context?: { json?: { error?: string } } }).context!.json!.error!
+        : error.message
+    return err("UNKNOWN", contextualMessage, error)
   }
 
   const response = (data ?? {}) as { sentAt?: string; error?: string }

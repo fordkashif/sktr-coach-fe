@@ -107,7 +107,7 @@ Deno.serve(async (request) => {
 
   const token = authorization.replace(/^Bearer\s+/i, "").trim()
   const [{ data: authData, error: authError }, payload] = await Promise.all([
-    userClient.auth.getUser(token),
+    serviceClient.auth.getUser(token),
     request.json() as Promise<DispatchPayload>,
   ])
 
