@@ -47,6 +47,33 @@ function splitDisplayName(displayName: string | null) {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") }
 }
 
+async function profileSeedFromApprovedTenantRequest(
+  supabase: SupabaseClient,
+  session: Session,
+): Promise<ProfileSeed | null> {
+  const normalizedEmail = session.user.email?.trim().toLowerCase()
+  if (!normalizedEmail) return null
+
+  const requestResult = await supabase
+    .from("tenant_provision_requests")
+    .select("provisioned_tenant_id, requestor_name")
+    .eq("requestor_email", normalizedEmail)
+    .eq("status", "approved")
+    .not("provisioned_tenant_id", "is", null)
+    .order("reviewed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (requestResult.error || !requestResult.data) return null
+
+  return {
+    tenantId: requestResult.data.provisioned_tenant_id as string,
+    role: "club-admin",
+    displayName: (requestResult.data.requestor_name as string | null) ?? session.user.email ?? null,
+    teamId: null,
+  }
+}
+
 async function ensureAthleteForSession(supabase: SupabaseClient, session: Session, seed: ProfileSeed) {
   if (seed.role !== "athlete" || !seed.tenantId) return
 
@@ -92,7 +119,14 @@ export async function ensureProfileForSession(supabase: SupabaseClient, session:
 
   if (existing.data) return existing.data
 
-  const seed = profileSeedFromSession(session)
+  let seed = profileSeedFromSession(session)
+  if (!seed.tenantId || !seed.role) {
+    const requestSeed = await profileSeedFromApprovedTenantRequest(supabase, session)
+    if (requestSeed) {
+      seed = requestSeed
+    }
+  }
+
   if (!seed.tenantId || !seed.role) {
     console.warn("[supabase] Missing profile and insufficient metadata for bootstrap.", {
       userId: session.user.id,
