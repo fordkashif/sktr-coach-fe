@@ -125,7 +125,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/coach/athletes") ||
     pathname.startsWith("/coach/training-plan") ||
     pathname.startsWith("/coach/test-week") ||
-    pathname.startsWith("/coach/reports")
+    pathname.startsWith("/coach/reports") ||
+    pathname.startsWith("/platform-admin")
 
   const coachTeamsHref = useMemo(() => {
     if (role !== "coach" || typeof window === "undefined" || getBackendMode() !== "mock") return "/coach/teams"

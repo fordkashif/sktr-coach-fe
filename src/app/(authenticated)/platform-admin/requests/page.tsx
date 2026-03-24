@@ -1,7 +1,17 @@
 "use client"
 
+import { FilePasteIcon, FilterHorizontalIcon, Notification01Icon, TextCreationIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -30,6 +40,14 @@ function downloadCsv(filename: string, rows: string[][]) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+const statusFilterLabels: Record<PlatformAdminRequestRecord["status"] | "all", string> = {
+  all: "All statuses",
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
 }
 
 export default function PlatformAdminRequestsPage() {
@@ -353,27 +371,29 @@ export default function PlatformAdminRequestsPage() {
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,17,34,0.96)_0%,rgba(10,24,44,0.9)_55%,rgba(20,67,160,0.72)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
+      <section className="px-1 py-1 sm:px-2 lg:px-3">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <div className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">Platform Admin</p>
-            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
+          <div className="space-y-4">
+            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-slate-950">
               Request intake with real review control.
             </h1>
-            <p className="max-w-[60ch] text-sm leading-7 text-white/72 sm:text-base">
+            <p className="max-w-[60ch] text-sm leading-7 text-slate-600 sm:text-base">
               New tenant creation now stops here first. Review the request, provision the tenant, and verify the initial access invite actually went out.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4 lg:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { label: "Pending", value: summary.pending },
               { label: "Approved", value: summary.approved },
               { label: "Provisioned", value: summary.provisioned },
               { label: "Invite sent", value: summary.inviteReady },
             ].map((item) => (
-              <div key={item.label} className="rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 backdrop-blur-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">{item.label}</p>
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{item.value}</p>
+              <div
+                key={item.label}
+                className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#1368ff]">{item.label}</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{item.value}</p>
               </div>
             ))}
           </div>
@@ -405,38 +425,77 @@ export default function PlatformAdminRequestsPage() {
 
       <section className="flex justify-end">
         <div className="flex w-full flex-col gap-3 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Queue filters</h2>
               <p className="text-sm text-slate-500">
                 Search by organization, requestor, role, region, plan, or tenant id, then narrow the queue by status.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2 self-start">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className={cn(
+                      "size-11 rounded-2xl border-slate-200",
+                      statusFilter !== "all" && "border-[#1368ff] bg-[#eef5ff] text-[#1368ff]",
+                    )}
+                    aria-label={`Filter requests by status. Current filter: ${statusFilterLabels[statusFilter]}`}
+                    title={`Filter: ${statusFilterLabels[statusFilter]}`}
+                  >
+                    <HugeiconsIcon icon={FilterHorizontalIcon} className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Status filter</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={statusFilter}
+                    onValueChange={(value) => setStatusFilter(value as PlatformAdminRequestRecord["status"] | "all")}
+                  >
+                    <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="pending">Pending</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="approved">Approved</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="rejected">Rejected</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="cancelled">Cancelled</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 rounded-full border-slate-200"
+                size="icon"
+                className="size-11 rounded-2xl border-slate-200"
+                aria-label="Export request queue as CSV"
+                title="Export CSV"
                 onClick={() => void handleExportQueueCsv()}
               >
-                Export CSV
+                <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 rounded-full border-slate-200"
+                size="icon"
+                className="size-11 rounded-2xl border-slate-200"
+                aria-label="Open print or PDF export for request queue"
+                title="Export PDF"
                 onClick={() => void handleExportQueuePdf()}
               >
-                Export PDF
+                <HugeiconsIcon icon={TextCreationIcon} className="size-4" />
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 rounded-full border-slate-200"
+                size="icon"
+                className="size-11 rounded-2xl border-slate-200"
                 disabled={submittingId === "dispatch-email-queue"}
+                aria-label="Dispatch pending notification emails"
+                title="Dispatch pending emails"
                 onClick={() => void handleDispatchPendingEmails()}
               >
-                Dispatch pending notification emails
+                <HugeiconsIcon icon={Notification01Icon} className="size-4" />
               </Button>
             </div>
           </div>
@@ -446,30 +505,9 @@ export default function PlatformAdminRequestsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search request queue"
-              className="h-11 rounded-full border-slate-200 bg-slate-50 lg:max-w-md"
+              className="h-12 rounded-full border-slate-200 bg-slate-50 px-5 text-base lg:max-w-xl lg:flex-1"
             />
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["all", "All"],
-                ["pending", "Pending"],
-                ["approved", "Approved"],
-                ["rejected", "Rejected"],
-                ["cancelled", "Cancelled"],
-              ] as const).map(([value, label]) => (
-                <Button
-                  key={value}
-                  type="button"
-                  variant="outline"
-                  className={cn(
-                    "h-10 rounded-full border-slate-200 px-4",
-                    statusFilter === value && "border-[#1368ff] bg-[#eef5ff] text-[#1368ff]",
-                  )}
-                  onClick={() => setStatusFilter(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <p className="text-sm text-slate-500">Status: <span className="font-medium text-slate-700">{statusFilterLabels[statusFilter]}</span></p>
           </div>
         </div>
       </section>

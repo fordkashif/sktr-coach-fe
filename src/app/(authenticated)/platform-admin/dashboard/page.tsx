@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
-  getCurrentPlatformAdminIdentity,
   getPlatformAdminRequestQueue,
   getPlatformAuditEvents,
   type PlatformAdminRequestRecord,
@@ -16,7 +15,6 @@ function formatDateLabel(value: string | null, fallback = "Not available") {
 }
 
 export default function PlatformAdminDashboardPage() {
-  const [email, setEmail] = useState<string | null>(null)
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEventRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,19 +25,9 @@ export default function PlatformAdminDashboardPage() {
 
     const load = async () => {
       setLoading(true)
-      const [identityResult, requestsResult, auditResult] = await Promise.all([
-        getCurrentPlatformAdminIdentity(),
-        getPlatformAdminRequestQueue(),
-        getPlatformAuditEvents(12),
-      ])
+      const [requestsResult, auditResult] = await Promise.all([getPlatformAdminRequestQueue(), getPlatformAuditEvents(12)])
 
       if (cancelled) return
-
-      if (!identityResult.ok) {
-        setError(identityResult.error.message)
-        setLoading(false)
-        return
-      }
 
       if (!requestsResult.ok) {
         setError(requestsResult.error.message)
@@ -53,7 +41,6 @@ export default function PlatformAdminDashboardPage() {
         return
       }
 
-      setEmail(identityResult.data.email)
       setRequests(requestsResult.data)
       setAuditEvents(auditResult.data)
       setError(null)
@@ -80,29 +67,30 @@ export default function PlatformAdminDashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(25,12,45,0.98)_0%,rgba(15,23,42,0.94)_55%,rgba(19,104,255,0.78)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
+      <section className="px-1 py-1 sm:px-2 lg:px-3">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-          <div className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#9fd0ff]">Platform Admin</p>
-            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
+          <div className="space-y-4">
+            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-slate-950">
               System control, without tenant leakage.
             </h1>
-            <p className="max-w-[60ch] text-sm leading-7 text-white/72 sm:text-base">
+            <p className="max-w-[60ch] text-sm leading-7 text-slate-600 sm:text-base">
               This surface tracks new organization intake, provisioning progress, and the platform-level audit trail before tenant ownership even exists.
             </p>
-            <p className="text-sm text-white/70">Signed in as {email ?? "platform-admin"}</p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { label: "Pending", value: summary.pending },
               { label: "Approved", value: summary.approved },
               { label: "Rejected", value: summary.rejected },
               { label: "Provisioned", value: summary.provisioned },
             ].map((item) => (
-              <div key={item.label} className="rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 backdrop-blur-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#9fd0ff]">{item.label}</p>
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{item.value}</p>
+              <div
+                key={item.label}
+                className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#1368ff]">{item.label}</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{item.value}</p>
               </div>
             ))}
           </div>

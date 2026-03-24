@@ -39,6 +39,9 @@ Companion plan:
 - Club-admin setup persistence update: first-run walkthrough dismissal is now stored on `club_profiles.setup_guide_dismissed_at`, and dismissed tenants get a compact Resume setup guide card until onboarding-relevant tenant state is no longer incomplete.
 - Team-surface ownership update: the rich team operations overview is now the club-admin teams surface, while coaches are redirected off `/coach/teams` into their specific `/coach/teams/:teamId` detail view.
 - Athlete claim-flow update: athlete invites no longer assume an already-authenticated tenant athlete. New invites now target a dedicated athlete claim route with public preview, server-owned account claim, password setup, invite acceptance, and a first-run athlete guide.
+- Platform-admin shell UI rule: desktop `/platform-admin/*` routes now opt into the dark/blue top-tone shell header, and that shared shell treatment should be preserved as the baseline for the ongoing platform-admin UI pass.
+- Platform-admin summary-card UI rule: the top summary metrics on `/platform-admin/dashboard`, `/platform-admin/requests`, and `/platform-admin/audit` should render as a 2-column grid on mobile instead of collapsing to a single-column stack.
+- Platform-admin toolbar UI rule: action-heavy toolbars should avoid long pill rows; prefer a larger search field plus compact icon actions for filter/export/dispatch controls, with the current filter shown as supporting text instead of separate status pills.
 
 ## Verification Snapshot
 

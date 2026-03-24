@@ -138,27 +138,29 @@ export default function PlatformAdminAuditPage() {
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(25,12,45,0.98)_0%,rgba(15,23,42,0.94)_58%,rgba(6,78,59,0.82)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
+      <section className="px-1 py-1 sm:px-2 lg:px-3">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <div className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#8ef1c7]">Platform Admin</p>
-            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
+          <div className="space-y-4">
+            <h1 className="max-w-[10ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-slate-950">
               Platform audit, not tenant guesswork.
             </h1>
-            <p className="max-w-[60ch] text-sm leading-7 text-white/72 sm:text-base">
+            <p className="max-w-[60ch] text-sm leading-7 text-slate-600 sm:text-base">
               This is the system-level trail for request intake, review, and provisioning before a tenant exists. Use it to verify exactly who did what and when.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4 lg:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { label: "Events", value: summary.total },
               { label: "Submitted", value: summary.submissions },
               { label: "Reviewed", value: summary.reviews },
               { label: "Provisioned", value: summary.provisioned },
             ].map((item) => (
-              <div key={item.label} className="rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 backdrop-blur-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8ef1c7]">{item.label}</p>
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{item.value}</p>
+              <div
+                key={item.label}
+                className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#1368ff]">{item.label}</p>
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{item.value}</p>
               </div>
             ))}
           </div>
