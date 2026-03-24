@@ -369,9 +369,9 @@ export default function LoginPage() {
       <div className="relative isolate min-h-screen overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(31,140,255,0.22),_transparent_36%),linear-gradient(180deg,_rgba(8,15,28,0.96)_0%,_rgba(4,9,18,1)_58%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:72px_72px] opacity-[0.16]" />
-        <div className="relative mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(440px,520px)] lg:gap-10 lg:px-8 xl:px-12">
-          <section className="flex min-h-[160px] flex-col justify-between px-6 pb-5 pt-8 sm:min-h-[176px] sm:px-8 sm:pb-6 lg:min-h-screen lg:px-6 lg:pb-14 lg:pt-12 xl:px-10">
-            <div className="space-y-6 lg:max-w-[620px] lg:space-y-10">
+        <div className="relative mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1.15fr)_minmax(440px,520px)] xl:gap-10 xl:px-8 2xl:px-12">
+          <section className="flex min-h-[160px] flex-col justify-between px-6 pb-5 pt-8 sm:min-h-[176px] sm:px-8 sm:pb-6 md:pb-8 xl:min-h-screen xl:px-6 xl:pb-14 xl:pt-12 2xl:px-10">
+            <div className="space-y-6 md:space-y-8 xl:max-w-[620px] xl:space-y-10">
               <div className="space-y-4">
                 <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] shadow-[0_12px_40px_rgba(31,140,255,0.35)]">
                   <div className="h-5 w-5 rotate-12 rounded-sm bg-white/95" />
@@ -380,18 +380,18 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-3 lg:space-y-4">
-                <div className="space-y-2 lg:hidden">
+                <div className="space-y-2 xl:hidden">
                   <h1 className="max-w-[10ch] text-[clamp(2.5rem,9vw,3.5rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
                     {mode === "signin" ? "Welcome back" : "Request account"}
                   </h1>
-                  <p className="max-w-[320px] text-sm leading-6 text-white/68">
+                  <p className="max-w-[560px] text-sm leading-6 text-white/68 md:text-base">
                     {mode === "signin"
                       ? "Sign in to continue into your athlete, coach, or club admin workspace."
                       : "Request a club admin account for your organization from this form."}
                   </p>
                 </div>
 
-                <div className="hidden space-y-4 lg:block">
+                <div className="hidden space-y-4 xl:block">
                   <h1 className="max-w-[10ch] text-[clamp(3rem,8vw,6rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
                     {mode === "signin"
                       ? "Performance operations for athletes, coaches, and clubs."
@@ -406,7 +406,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="hidden gap-3 sm:grid-cols-3 lg:grid lg:max-w-[720px] lg:gap-4">
+            <div className="hidden gap-3 md:grid md:grid-cols-3 md:max-w-[900px] md:gap-4 xl:max-w-[720px]">
               {featurePillars.map((pillar) => (
                 <div
                   key={pillar.label}
@@ -419,8 +419,8 @@ export default function LoginPage() {
             </div>
           </section>
 
-          <section className="relative flex items-end lg:min-h-screen lg:items-center lg:justify-end lg:py-10">
-            <div className="w-full rounded-t-[36px] border-x border-t border-white/10 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-5 pb-8 pt-6 text-slate-950 shadow-[0_-24px_80px_rgba(0,0,0,0.24)] sm:px-8 sm:pb-10 sm:pt-8 lg:w-full lg:max-w-[500px] lg:rounded-[36px] lg:border lg:px-8 lg:pb-8 xl:max-w-[520px] xl:px-10">
+          <section className="relative flex items-end md:px-6 md:pb-8 xl:min-h-screen xl:items-center xl:justify-end xl:px-0 xl:py-10">
+            <div className="w-full rounded-t-[36px] border-x border-t border-white/10 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-5 pb-8 pt-6 text-slate-950 shadow-[0_-24px_80px_rgba(0,0,0,0.24)] sm:px-8 sm:pb-10 sm:pt-8 md:mx-auto md:max-w-[760px] md:rounded-[36px] md:border md:px-8 md:shadow-[0_24px_80px_rgba(0,0,0,0.24)] xl:mx-0 xl:w-full xl:max-w-[500px] xl:px-8 xl:pb-8 2xl:max-w-[520px] 2xl:px-10">
               <div className="space-y-6">
                 <div className="space-y-4">
                   <div className="inline-flex w-full max-w-[340px] rounded-full border border-slate-200 bg-slate-100 p-1 text-sm font-medium text-slate-600 sm:w-auto">
