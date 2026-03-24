@@ -7,8 +7,15 @@ export type PlatformAdminRequestRecord = {
   organizationName: string
   requestorName: string
   requestorEmail: string
+  jobTitle: string | null
+  organizationType: string | null
+  organizationWebsite: string | null
+  region: string | null
   requestedPlan: "starter" | "pro" | "enterprise"
   expectedSeats: number
+  expectedCoachCount: number | null
+  expectedAthleteCount: number | null
+  desiredStartDate: string | null
   notes: string | null
   status: "pending" | "approved" | "rejected" | "cancelled"
   reviewNotes: string | null
@@ -64,7 +71,7 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
   const { data, error } = await clientResult.client
     .from("tenant_provision_requests")
     .select(
-      "id, organization_name, requestor_name, requestor_email, requested_plan, expected_seats, notes, status, review_notes, reviewed_at, provisioned_tenant_id, access_invite_sent_at, access_invite_last_error, created_at",
+      "id, organization_name, requestor_name, requestor_email, job_title, organization_type, organization_website, region, requested_plan, expected_seats, expected_coach_count, expected_athlete_count, desired_start_date, notes, status, review_notes, reviewed_at, provisioned_tenant_id, access_invite_sent_at, access_invite_last_error, created_at",
     )
     .order("created_at", { ascending: false })
 
@@ -76,8 +83,15 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
       organization_name: string
       requestor_name: string
       requestor_email: string
+      job_title: string | null
+      organization_type: string | null
+      organization_website: string | null
+      region: string | null
       requested_plan: PlatformAdminRequestRecord["requestedPlan"]
       expected_seats: number
+      expected_coach_count: number | null
+      expected_athlete_count: number | null
+      desired_start_date: string | null
       notes: string | null
       status: PlatformAdminRequestRecord["status"]
       review_notes: string | null
@@ -91,8 +105,15 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
       organizationName: row.organization_name,
       requestorName: row.requestor_name,
       requestorEmail: row.requestor_email,
+      jobTitle: row.job_title,
+      organizationType: row.organization_type,
+      organizationWebsite: row.organization_website,
+      region: row.region,
       requestedPlan: row.requested_plan,
       expectedSeats: row.expected_seats,
+      expectedCoachCount: row.expected_coach_count,
+      expectedAthleteCount: row.expected_athlete_count,
+      desiredStartDate: row.desired_start_date,
       notes: row.notes,
       status: row.status,
       reviewNotes: row.review_notes,

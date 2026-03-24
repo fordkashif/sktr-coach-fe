@@ -33,6 +33,7 @@ Companion plan:
 - Club-admin audit-reader hardening update: `/club-admin/audit` no longer statically imports `mock-audit` on the Supabase route path; mock audit logs are lazy-loaded only for mock mode.
 - Local invite-preview testing update: approved platform-admin requests now expose a localhost-only `Copy initial access link` action backed by `platform-admin-preview-club-admin-invite`, so first-login bootstrap can be tested without depending on mailbox access in local development.
 - Club-admin first-access onboarding update: new provisioned club-admin tenants are now gated to `/club-admin/get-started` until password setup and minimum tenant profile completion are persisted in `club_profiles`.
+- Tenant request intake update: request submission now captures job title, organization type, website, region, coach count, athlete count, and desired start date; platform-admin queue/export now surfaces those fields for approval review.
 
 ## Verification Snapshot
 
@@ -509,6 +510,9 @@ Companion plan:
 - March 23, 2026:
   - Added localhost-only initial access link preview through `platform-admin-preview-club-admin-invite` so approved request first-access can be tested without mailbox dependency in local development.
   - Added required club-admin first-access onboarding with password setup + tenant profile completion, backed by `club_profiles.password_set_at` and `club_profiles.onboarding_completed_at`, and enforced via `/club-admin/get-started` route gating.
+- March 24, 2026:
+  - Expanded `tenant_provision_requests` intake and submission RPC to capture review-quality org metadata and split headcount fields (`job_title`, `organization_type`, `organization_website`, `region`, `expected_coach_count`, `expected_athlete_count`, `desired_start_date`).
+  - Updated the platform-admin request queue and CSV export so approval review is no longer based on just requestor/email/plan/seats.
 
 ## Quick Start Prompt
 

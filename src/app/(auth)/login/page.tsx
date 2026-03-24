@@ -31,7 +31,14 @@ type AuthMode = "signin" | "request"
 type RequestFormState = {
   fullName: string
   email: string
+  jobTitle: string
   organization: string
+  organizationType: string
+  organizationWebsite: string
+  region: string
+  expectedCoachCount: string
+  expectedAthleteCount: string
+  desiredStartDate: string
   notes: string
 }
 
@@ -53,7 +60,14 @@ const featurePillars = [
 const emptyRequestForm: RequestFormState = {
   fullName: "",
   email: "",
+  jobTitle: "",
   organization: "",
+  organizationType: "",
+  organizationWebsite: "",
+  region: "",
+  expectedCoachCount: "",
+  expectedAthleteCount: "",
+  desiredStartDate: "",
   notes: "",
 }
 
@@ -283,7 +297,16 @@ export default function LoginPage() {
         p_organization_name: requestForm.organization.trim(),
         p_notes: requestForm.notes.trim() || null,
         p_requested_plan: "starter",
-        p_expected_seats: 25,
+        p_expected_seats:
+          Math.max(0, Number.parseInt(requestForm.expectedCoachCount || "0", 10)) +
+          Math.max(0, Number.parseInt(requestForm.expectedAthleteCount || "0", 10)),
+        p_job_title: requestForm.jobTitle.trim(),
+        p_organization_type: requestForm.organizationType.trim(),
+        p_organization_website: requestForm.organizationWebsite.trim() || null,
+        p_region: requestForm.region.trim(),
+        p_expected_coach_count: Math.max(0, Number.parseInt(requestForm.expectedCoachCount || "0", 10)),
+        p_expected_athlete_count: Math.max(0, Number.parseInt(requestForm.expectedAthleteCount || "0", 10)),
+        p_desired_start_date: requestForm.desiredStartDate || null,
       })
 
       if (result.error) {
@@ -576,6 +599,20 @@ export default function LoginPage() {
                     </div>
 
                     <div className="space-y-2.5">
+                      <Label htmlFor="request-job-title" className="text-sm font-medium text-slate-700">
+                        Job title
+                      </Label>
+                      <Input
+                        id="request-job-title"
+                        required
+                        value={requestForm.jobTitle}
+                        onChange={(event) => setRequestForm((previous) => ({ ...previous, jobTitle: event.target.value }))}
+                        placeholder="Head coach"
+                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div className="space-y-2.5">
                       <Label htmlFor="request-organization" className="text-sm font-medium text-slate-700">
                         Organization
                       </Label>
@@ -587,6 +624,94 @@ export default function LoginPage() {
                           placeholder="Elite Track Club"
                         className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
                       />
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <div className="space-y-2.5">
+                        <Label htmlFor="request-organization-type" className="text-sm font-medium text-slate-700">
+                          Organization type
+                        </Label>
+                        <Input
+                          id="request-organization-type"
+                          required
+                          value={requestForm.organizationType}
+                          onChange={(event) => setRequestForm((previous) => ({ ...previous, organizationType: event.target.value }))}
+                          placeholder="School, club, university"
+                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="request-region" className="text-sm font-medium text-slate-700">
+                          Country or region
+                        </Label>
+                        <Input
+                          id="request-region"
+                          required
+                          value={requestForm.region}
+                          onChange={(event) => setRequestForm((previous) => ({ ...previous, region: event.target.value }))}
+                          placeholder="Jamaica"
+                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <Label htmlFor="request-organization-website" className="text-sm font-medium text-slate-700">
+                        Organization website
+                      </Label>
+                      <Input
+                        id="request-organization-website"
+                        type="url"
+                        value={requestForm.organizationWebsite}
+                        onChange={(event) => setRequestForm((previous) => ({ ...previous, organizationWebsite: event.target.value }))}
+                        placeholder="https://jamaicacollege.edu.jm"
+                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-3">
+                      <div className="space-y-2.5">
+                        <Label htmlFor="request-expected-coaches" className="text-sm font-medium text-slate-700">
+                          Expected coaches
+                        </Label>
+                        <Input
+                          id="request-expected-coaches"
+                          type="number"
+                          min="0"
+                          required
+                          value={requestForm.expectedCoachCount}
+                          onChange={(event) => setRequestForm((previous) => ({ ...previous, expectedCoachCount: event.target.value }))}
+                          placeholder="4"
+                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="request-expected-athletes" className="text-sm font-medium text-slate-700">
+                          Expected athletes
+                        </Label>
+                        <Input
+                          id="request-expected-athletes"
+                          type="number"
+                          min="0"
+                          required
+                          value={requestForm.expectedAthleteCount}
+                          onChange={(event) => setRequestForm((previous) => ({ ...previous, expectedAthleteCount: event.target.value }))}
+                          placeholder="60"
+                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <Label htmlFor="request-desired-start" className="text-sm font-medium text-slate-700">
+                          Target start date
+                        </Label>
+                        <Input
+                          id="request-desired-start"
+                          type="date"
+                          value={requestForm.desiredStartDate}
+                          onChange={(event) => setRequestForm((previous) => ({ ...previous, desiredStartDate: event.target.value }))}
+                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2.5">

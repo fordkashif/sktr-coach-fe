@@ -91,7 +91,14 @@ export default function PlatformAdminRequestsPage() {
         item.organizationName,
         item.requestorName,
         item.requestorEmail,
+        item.jobTitle ?? "",
+        item.organizationType ?? "",
+        item.organizationWebsite ?? "",
+        item.region ?? "",
         item.requestedPlan,
+        item.expectedCoachCount?.toString() ?? "",
+        item.expectedAthleteCount?.toString() ?? "",
+        item.desiredStartDate ?? "",
         item.notes ?? "",
         item.reviewNotes ?? "",
         item.provisionedTenantId ?? "",
@@ -275,13 +282,38 @@ export default function PlatformAdminRequestsPage() {
 
   const handleExportQueueCsv = async () => {
     const rows = [
-      ["Organization", "Requestor", "Email", "Plan", "Seats", "Status", "Submitted", "Reviewed", "Provisioned Tenant", "Invite Sent"],
+      [
+        "Organization",
+        "Requestor",
+        "Email",
+        "Job Title",
+        "Organization Type",
+        "Website",
+        "Region",
+        "Plan",
+        "Coaches",
+        "Athletes",
+        "Seats",
+        "Target Start",
+        "Status",
+        "Submitted",
+        "Reviewed",
+        "Provisioned Tenant",
+        "Invite Sent",
+      ],
       ...filteredRequests.map((request) => [
         request.organizationName,
         request.requestorName,
         request.requestorEmail,
+        request.jobTitle ?? "",
+        request.organizationType ?? "",
+        request.organizationWebsite ?? "",
+        request.region ?? "",
         request.requestedPlan,
+        request.expectedCoachCount?.toString() ?? "",
+        request.expectedAthleteCount?.toString() ?? "",
         String(request.expectedSeats),
+        request.desiredStartDate ?? "",
         request.status,
         request.createdAt,
         request.reviewedAt ?? "",
@@ -376,7 +408,9 @@ export default function PlatformAdminRequestsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Queue filters</h2>
-              <p className="text-sm text-slate-500">Search by organization, requestor, plan, or tenant id, then narrow the queue by status.</p>
+              <p className="text-sm text-slate-500">
+                Search by organization, requestor, role, region, plan, or tenant id, then narrow the queue by status.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -481,10 +515,16 @@ export default function PlatformAdminRequestsPage() {
                     </p>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Expected seats</p>
                       <p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-slate-950">{request.expectedSeats}</p>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Roster mix</p>
+                      <p className="mt-1 text-sm font-medium text-slate-950">
+                        {request.expectedCoachCount ?? 0} coaches · {request.expectedAthleteCount ?? 0} athletes
+                      </p>
                     </div>
                     <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Submitted</p>
@@ -495,6 +535,41 @@ export default function PlatformAdminRequestsPage() {
                       <p className="mt-1 text-sm font-medium text-slate-950">{formatDateLabel(request.reviewedAt)}</p>
                     </div>
                   </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Job title</p>
+                      <p className="mt-1 text-sm font-medium text-slate-950">{request.jobTitle ?? "Not provided"}</p>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Organization type</p>
+                      <p className="mt-1 text-sm font-medium text-slate-950">{request.organizationType ?? "Not provided"}</p>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Region</p>
+                      <p className="mt-1 text-sm font-medium text-slate-950">{request.region ?? "Not provided"}</p>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Target start</p>
+                      <p className="mt-1 text-sm font-medium text-slate-950">
+                        {request.desiredStartDate ? new Date(request.desiredStartDate).toLocaleDateString() : "Flexible"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {request.organizationWebsite ? (
+                    <div className="rounded-[22px] border border-slate-200 bg-[#f8fbff] px-4 py-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Organization website</p>
+                      <a
+                        href={request.organizationWebsite}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 block break-all text-sm leading-6 text-[#1368ff] underline-offset-4 hover:underline"
+                      >
+                        {request.organizationWebsite}
+                      </a>
+                    </div>
+                  ) : null}
 
                   {request.provisionedTenantId ? (
                     <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-4">
