@@ -1,9 +1,23 @@
 "use client"
 
+import { ArrowDown01Icon, FilePasteIcon, FilterHorizontalIcon, TextCreationIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getPlatformAuditEvents, logPlatformAdminExport, type PlatformAuditEventRecord } from "@/lib/data/platform-admin/ops-data"
+import { cn } from "@/lib/utils"
 
 function formatDateLabel(value: string) {
   return new Date(value).toLocaleString()
@@ -14,12 +28,12 @@ function formatActionLabel(value: string) {
 }
 
 function metadataPreview(value: Record<string, unknown>) {
-  const entries = Object.entries(value)
-  if (entries.length === 0) return "No metadata"
-  return entries
-    .slice(0, 3)
-    .map(([key, item]) => `${key}: ${String(item)}`)
-    .join(" | ")
+  const entries = Object.entries(value).filter(([, item]) => typeof item !== "object" || item === null)
+  if (entries.length === 0) return []
+  return entries.slice(0, 6).map(([key, item]) => ({
+    label: key.replaceAll("_", " "),
+    value: String(item ?? "None"),
+  }))
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
@@ -33,12 +47,37 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url)
 }
 
+const actionFilterLabels = {
+  all: "All events",
+  tenant_provision_request_submitted: "Submitted",
+  tenant_provision_request_reviewed: "Reviewed",
+  tenant_provision_request_provisioned: "Provisioned",
+} as const
+
+const toolbarIconButtonClassName =
+  "size-11 rounded-2xl border-slate-200 bg-white text-slate-700 shadow-none hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+
+function EventBadge({ action }: { action: PlatformAuditEventRecord["action"] }) {
+  const label = formatActionLabel(action)
+  const tone =
+    action === "tenant_provision_request_submitted"
+      ? "bg-amber-100 text-amber-700"
+      : action === "tenant_provision_request_reviewed"
+        ? "bg-sky-100 text-sky-700"
+        : "bg-emerald-100 text-emerald-700"
+
+  return <span className={cn("rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]", tone)}>{label}</span>
+}
+
 export default function PlatformAdminAuditPage() {
   const [events, setEvents] = useState<PlatformAuditEventRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [actionFilter, setActionFilter] = useState<"all" | "tenant_provision_request_submitted" | "tenant_provision_request_reviewed" | "tenant_provision_request_provisioned">("all")
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
+  const [actionFilter, setActionFilter] = useState<
+    "all" | "tenant_provision_request_submitted" | "tenant_provision_request_reviewed" | "tenant_provision_request_provisioned"
+  >("all")
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +124,17 @@ export default function PlatformAdminAuditPage() {
         .includes(query)
     })
   }, [events, search, actionFilter])
+
+  useEffect(() => {
+    if (filteredEvents.length === 0) {
+      setExpandedEventId(null)
+      return
+    }
+
+    if (expandedEventId && !filteredEvents.some((item) => item.id === expandedEventId)) {
+      setExpandedEventId(null)
+    }
+  }, [expandedEventId, filteredEvents])
 
   const summary = useMemo(() => {
     return {
@@ -174,48 +224,121 @@ export default function PlatformAdminAuditPage() {
       ) : null}
 
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="flex flex-col gap-3">
-          <div>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Audit feed</h2>
-            <p className="text-sm text-slate-500">Search by action, email, target, or request metadata.</p>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 sm:block">
+                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Audit feed</h2>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={cn("sm:hidden", toolbarIconButtonClassName)}
+                      aria-label="Open audit actions"
+                    >
+                      <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Audit actions</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => setActionFilter("all")}>Show all events</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setActionFilter("tenant_provision_request_submitted")}>Show submitted</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setActionFilter("tenant_provision_request_reviewed")}>Show reviewed</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setActionFilter("tenant_provision_request_provisioned")}>Show provisioned</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => void handleExportCsv()}>Export CSV</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void handleExportPdf()}>Export PDF</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <p className="max-w-[64ch] text-sm text-slate-500">Search by action, email, target, or request metadata.</p>
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500">
+                Event: <span className="ml-1 font-medium text-slate-700">{actionFilterLabels[actionFilter]}</span>
+              </div>
+            </div>
+
+            <div className="hidden items-center gap-2 sm:flex">
+              <Tooltip>
+                <DropdownMenu>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className={cn(
+                          toolbarIconButtonClassName,
+                          actionFilter !== "all" && "border-[#1368ff] bg-[#eef5ff] text-[#1368ff]",
+                        )}
+                        aria-label={`Filter audit events. Current filter: ${actionFilterLabels[actionFilter]}`}
+                      >
+                        <HugeiconsIcon icon={FilterHorizontalIcon} className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Event filter</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={actionFilter}
+                      onValueChange={(value) =>
+                        setActionFilter(
+                          value as "all" | "tenant_provision_request_submitted" | "tenant_provision_request_reviewed" | "tenant_provision_request_provisioned",
+                        )
+                      }
+                    >
+                      <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="tenant_provision_request_submitted">Submitted</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="tenant_provision_request_reviewed">Reviewed</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="tenant_provision_request_provisioned">Provisioned</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <TooltipContent side="bottom">Filter events</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className={toolbarIconButtonClassName}
+                    aria-label="Export audit feed as CSV"
+                    onClick={() => void handleExportCsv()}
+                  >
+                    <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export CSV</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className={toolbarIconButtonClassName}
+                    aria-label="Open print or PDF export for audit feed"
+                    onClick={() => void handleExportPdf()}
+                  >
+                    <HugeiconsIcon icon={TextCreationIcon} className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export PDF</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+
+          <div className="pt-1">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search audit trail"
-              className="h-11 w-full rounded-full border-slate-200 bg-slate-50 lg:max-w-sm"
+              className="h-12 rounded-full border-slate-200 bg-slate-50 px-5 text-base lg:max-w-2xl"
             />
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => void handleExportCsv()}>
-                Export CSV
-              </Button>
-              <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => void handleExportPdf()}>
-                Export PDF
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["all", "All"],
-                ["tenant_provision_request_submitted", "Submitted"],
-                ["tenant_provision_request_reviewed", "Reviewed"],
-                ["tenant_provision_request_provisioned", "Provisioned"],
-              ] as const).map(([value, label]) => (
-                <Button
-                  key={value}
-                  type="button"
-                  variant="outline"
-                  className={
-                    actionFilter === value
-                      ? "h-10 rounded-full border-[#0f9b63] bg-emerald-50 px-4 text-emerald-700"
-                      : "h-10 rounded-full border-slate-200 px-4"
-                  }
-                  onClick={() => setActionFilter(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
           </div>
         </div>
       </section>
@@ -233,48 +356,111 @@ export default function PlatformAdminAuditPage() {
       ) : null}
 
       <section className="space-y-4">
-        {filteredEvents.map((event) => (
-          <article
-            key={event.id}
-            className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6"
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                    {formatActionLabel(event.action)}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                    {event.actorRole}
-                  </span>
-                </div>
+        {filteredEvents.map((event) => {
+          const isExpanded = expandedEventId === event.id
+          const metadataItems = metadataPreview(event.metadata)
 
-                <div>
-                  <h2 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{event.target}</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {event.actorEmail ?? "System actor"} · {formatDateLabel(event.occurredAt)}
-                  </p>
-                </div>
+          return (
+            <article
+              key={event.id}
+              className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6"
+            >
+              <div className="space-y-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <EventBadge action={event.action} />
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                        {event.actorRole}
+                      </span>
+                    </div>
 
-                {event.detail ? (
-                  <div className="rounded-[22px] border border-slate-200 bg-[#f8fbff] px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Detail</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-700">{event.detail}</p>
+                    <div>
+                      <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{event.target}</h2>
+                      <p className="mt-1 text-sm text-slate-500">{event.actorEmail ?? "System actor"} - {formatDateLabel(event.occurredAt)}</p>
+                    </div>
+
+                    <div className={cn("grid gap-3 xl:grid-cols-3", isExpanded ? "grid-cols-1 sm:grid-cols-2" : "hidden sm:grid sm:grid-cols-2")}>
+                      <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Action</p>
+                        <p className="mt-1 text-sm font-medium text-slate-950">{formatActionLabel(event.action)}</p>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Actor</p>
+                        <p className="mt-1 text-sm font-medium text-slate-950">{event.actorEmail ?? "System actor"}</p>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Occurred</p>
+                        <p className="mt-1 text-sm font-medium text-slate-950">{formatDateLabel(event.occurredAt)}</p>
+                      </div>
+                    </div>
+
+                    {isExpanded && event.detail ? (
+                      <div className="rounded-[22px] border border-slate-200 bg-[#f8fbff] px-4 py-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Detail</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{event.detail}</p>
+                      </div>
+                    ) : null}
+
+                    {isExpanded && metadataItems.length > 0 ? (
+                      <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Metadata highlights</p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {metadataItems.map((item) => (
+                            <div key={item.label} className="rounded-[18px] border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
+                              <p className="mt-1 break-all text-sm text-slate-800">{item.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
 
-              <div className="w-full max-w-[360px] rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Metadata</p>
-                <p className="mt-3 text-sm leading-6 text-slate-700">{metadataPreview(event.metadata)}</p>
-                <pre className="mt-4 overflow-x-auto rounded-[18px] bg-slate-950/95 px-4 py-3 text-xs leading-6 text-slate-100">
-                  {JSON.stringify(event.metadata, null, 2)}
-                </pre>
+                  <div className="w-full max-w-[320px] rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {isExpanded ? "Event detail" : "Quick review"}
+                    </p>
+                    {!isExpanded ? (
+                      <div className="mt-3 space-y-3">
+                        <p className="text-sm leading-6 text-slate-600">
+                          {event.detail ?? (metadataItems.length > 0 ? `${metadataItems.length} metadata fields available.` : "Open this event to inspect its details.")}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-11 w-full rounded-full border-slate-200"
+                          onClick={() => setExpandedEventId(event.id)}
+                        >
+                          View details
+                          <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 w-full rounded-full border-slate-200"
+                          onClick={() => setExpandedEventId(null)}
+                        >
+                          Collapse event
+                          <HugeiconsIcon icon={ArrowDown01Icon} className="size-4 rotate-180" />
+                        </Button>
+                        <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                          <p className="font-medium text-slate-950">Frontend rule</p>
+                          <p className="mt-1 leading-6">Raw audit JSON is intentionally hidden here. Exports retain the full payload for controlled admin use.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          )
+        })}
       </section>
     </div>
   )
 }
+

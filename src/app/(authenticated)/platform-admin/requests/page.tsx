@@ -666,11 +666,43 @@ export default function PlatformAdminRequestsPage() {
       <section className="flex justify-end">
         <div className="flex w-full flex-col gap-3 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Queue filters</h2>
-              <p className="text-sm text-slate-500">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 sm:block">
+                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Queue filters</h2>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={cn("sm:hidden", toolbarIconButtonClassName)}
+                      aria-label="Open request queue actions"
+                    >
+                      <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Queue actions</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => setStatusFilter("all")}>Show all requests</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setStatusFilter("pending")}>Show pending only</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => void handleExportQueueCsv()}>Export CSV</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void handleExportQueuePdf()}>Export PDF</DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={submittingId === "dispatch-email-queue"}
+                      onClick={() => void handleDispatchPendingEmails()}
+                    >
+                      Dispatch pending emails
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <p className="max-w-[64ch] text-sm text-slate-500">
                 Search by organization, requestor, role, region, plan, or tenant id, then narrow the queue by status.
               </p>
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500">
+                Status: <span className="ml-1 font-medium text-slate-700">{statusFilterLabels[statusFilter]}</span>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 self-start">
               <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 lg:flex">
@@ -769,46 +801,17 @@ export default function PlatformAdminRequestsPage() {
                 </Tooltip>
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className={cn("sm:hidden", toolbarIconButtonClassName)}
-                    aria-label="Open request queue actions"
-                  >
-                    <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Queue actions</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setStatusFilter("all")}>Show all requests</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setStatusFilter("pending")}>Show pending only</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void handleExportQueueCsv()}>Export CSV</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void handleExportQueuePdf()}>Export PDF</DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={submittingId === "dispatch-email-queue"}
-                    onClick={() => void handleDispatchPendingEmails()}
-                  >
-                    Dispatch pending emails
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="pt-1">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search request queue"
-              className="h-12 rounded-full border-slate-200 bg-slate-50 px-5 text-base lg:max-w-xl lg:flex-1"
+              className="h-12 rounded-full border-slate-200 bg-slate-50 px-5 text-base lg:max-w-2xl"
             />
-            <p className="text-sm text-slate-500">
-              Status: <span className="font-medium text-slate-700">{statusFilterLabels[statusFilter]}</span>
-            </p>
           </div>
         </div>
       </section>
@@ -842,7 +845,7 @@ export default function PlatformAdminRequestsPage() {
                       <p className="mt-1 text-sm text-slate-500">{request.requestorName} - {request.requestorEmail}</p>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className={cn("grid gap-3 xl:grid-cols-4", isExpanded ? "grid-cols-1 sm:grid-cols-2" : "hidden sm:grid sm:grid-cols-2")}>
                       <InfoPill label="Expected seats" value={String(request.expectedSeats)} />
                       <InfoPill
                         label="Roster mix"
@@ -950,5 +953,7 @@ export default function PlatformAdminRequestsPage() {
     </div>
   )
 }
+
+
 
 
