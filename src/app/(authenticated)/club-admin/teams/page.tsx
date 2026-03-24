@@ -12,6 +12,7 @@ import {
   getClubAdminTeamsSnapshot,
   insertAuditEvent,
   setClubAdminTeamArchived,
+  setClubAdminTeamLeadCoach,
   type ClubAdminAssignableCoachOption,
   updateClubAdminTeam,
 } from "@/lib/data/club-admin/ops-data"
@@ -138,10 +139,6 @@ export default function ClubAdminTeamsPage() {
   }, [isSupabaseMode])
 
   const selectedLeadCoach = assignableCoaches.find((option) => option.userId === leadCoachSelection)
-  const selfCoachOption = assignableCoaches.find((option) => option.isSelf)
-  const selfCoachDisplayLabel = selfCoachOption
-    ? `${selfCoachOption.name}${selfCoachOption.email ? ` (${selfCoachOption.email})` : ""}`
-    : undefined
   const resolvedLeadCoachLabel =
     leadCoachSelection === "none"
       ? undefined
@@ -185,7 +182,7 @@ export default function ClubAdminTeamsPage() {
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-950">Event group</Label>
             <Select value={eventGroup} onValueChange={(value) => setEventGroup(value as EventGroup)}>
-              <SelectTrigger className="h-12 rounded-[16px] border-slate-200 bg-slate-50"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-12 w-full rounded-[16px] border-slate-200 bg-slate-50"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {groups.map((group) => (
                   <SelectItem key={group} value={group}>{group}</SelectItem>
@@ -196,7 +193,7 @@ export default function ClubAdminTeamsPage() {
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-950">Lead coach</Label>
             <Select value={leadCoachSelection} onValueChange={setLeadCoachSelection}>
-              <SelectTrigger className="h-12 rounded-[16px] border-slate-200 bg-slate-50">
+              <SelectTrigger className="h-12 w-full rounded-[16px] border-slate-200 bg-slate-50">
                 <SelectValue placeholder="Unassigned" />
               </SelectTrigger>
               <SelectContent>
@@ -315,29 +312,68 @@ export default function ClubAdminTeamsPage() {
                       }
                     }}
                   >
-                    <SelectTrigger className="h-11 rounded-[16px] border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-11 w-full rounded-[16px] border-slate-200 bg-white"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {groups.map((group) => (
                         <SelectItem key={group} value={group}>{group}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Input
-                    className="h-11 rounded-[16px] border-slate-200 bg-white"
-                    value={team.coachEmail ?? ""}
-                    placeholder="Unassigned"
-                    readOnly
-                  />
+                  <Select
+                    value={assignableCoaches.find((coach) => {
+                      const selfLabel = coach.isSelf
+                        ? `${coach.name}${coach.email ? ` (${coach.email})` : ""}`
+                        : coach.email || coach.name
+                      return team.coachEmail === selfLabel
+                    })?.userId ?? "none"}
+                    onValueChange={async (value) => {
+                      const selectedCoach = assignableCoaches.find((coach) => coach.userId === value)
+                      const nextCoachLabel =
+                        value === "none"
+                          ? undefined
+                          : selectedCoach?.isSelf
+                            ? `${selectedCoach.name}${selectedCoach.email ? ` (${selectedCoach.email})` : ""}`
+                            : selectedCoach?.email || selectedCoach?.name
+                      const next = teams.map((item) => (item.id === team.id ? { ...item, coachEmail: nextCoachLabel } : item))
+                      saveTeams(next)
+
+                      if (isSupabaseMode) {
+                        const result = await setClubAdminTeamLeadCoach({
+                          teamId: team.id,
+                          leadCoachUserId: value === "none" ? null : value,
+                        })
+                        if (!result.ok) setBackendError((current) => current ?? result.error.message)
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-11 w-full rounded-[16px] border-slate-200 bg-white">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Unassigned</SelectItem>
+                      {assignableCoaches.map((coach) => (
+                        <SelectItem key={coach.userId} value={coach.userId}>
+                          {coach.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                   <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", groupTones[team.eventGroup])}>
                     {team.eventGroup}
                   </span>
-                  {team.coachEmail && (team.coachEmail === selfCoachDisplayLabel || team.coachEmail === selfCoachOption?.label) ? (
+                  {(() => {
+                    const selfCoachOption = assignableCoaches.find((option) => option.isSelf)
+                    if (!team.coachEmail || !selfCoachOption) return null
+                    const selfCoachDisplayLabel = `${selfCoachOption.name}${selfCoachOption.email ? ` (${selfCoachOption.email})` : ""}`
+                    if (team.coachEmail !== selfCoachDisplayLabel) return null
+                    return (
                     <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-[#1368ff]">
                       Assigned to me
                     </span>
-                  ) : null}
+                    )
+                  })()}
                   <span className={cn(
                     "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                     team.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700",

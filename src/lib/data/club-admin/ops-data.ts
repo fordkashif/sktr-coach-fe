@@ -707,11 +707,11 @@ export async function getClubAdminTeamsSnapshot(): Promise<Result<ClubAdminTeamR
     { userId: string; isPrimary: boolean; createdAt: string }
   >()
   for (const membership of memberships) {
+    if (!membership.is_primary) continue
     const existing = leadMembershipByTeamId.get(membership.team_id)
     if (
       !existing ||
-      (!existing.isPrimary && membership.is_primary) ||
-      (existing.isPrimary === membership.is_primary && membership.created_at < existing.createdAt)
+      membership.created_at < existing.createdAt
     ) {
       leadMembershipByTeamId.set(membership.team_id, {
         userId: membership.user_id,
@@ -905,6 +905,47 @@ export async function updateClubAdminTeam(params: {
     })
     .eq("id", params.teamId)
     .eq("tenant_id", contextResult.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+export async function setClubAdminTeamLeadCoach(params: {
+  teamId: string
+  leadCoachUserId?: string | null
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("setClubAdminTeamLeadCoach")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const teamId = params.teamId.trim()
+  if (!teamId) return err("VALIDATION", "Team id is required.")
+
+  const clearExistingResult = await clientResult.client
+    .from("team_coaches")
+    .update({ is_primary: false })
+    .eq("tenant_id", contextResult.data.tenantId)
+    .eq("team_id", teamId)
+
+  if (clearExistingResult.error) {
+    return { ok: false, error: mapPostgrestError(clearExistingResult.error) }
+  }
+
+  const leadCoachUserId = params.leadCoachUserId?.trim() || null
+  if (!leadCoachUserId) return ok(undefined)
+
+  const { error } = await clientResult.client.from("team_coaches").upsert(
+    {
+      tenant_id: contextResult.data.tenantId,
+      team_id: teamId,
+      user_id: leadCoachUserId,
+      is_primary: true,
+      created_by_user_id: contextResult.data.userId,
+    },
+    { onConflict: "team_id,user_id" },
+  )
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
