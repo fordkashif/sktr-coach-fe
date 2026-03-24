@@ -267,6 +267,30 @@ export default function ClubAdminDashboardPage() {
       text: "text-rose-700",
     },
   ]
+  const setupChecklist = [
+    {
+      title: "Create your first team",
+      body: "Set up the first roster container before assigning coaches or athletes.",
+      href: "/club-admin/teams",
+      cta: "Open teams",
+      done: kpi.teams > 0,
+    },
+    {
+      title: "Invite your first coach",
+      body: "Coach access should start from invites, not manual account creation.",
+      href: "/club-admin/users",
+      cta: "Open invites",
+      done: kpi.activeCoaches > 0 || kpi.pendingInvites > 0,
+    },
+    {
+      title: "Review tenant settings",
+      body: "Check profile, billing placeholder state, and audit visibility before rollout.",
+      href: "/club-admin/profile",
+      cta: "Open settings",
+      done: false,
+    },
+  ] as const
+  const showSetupGuide = kpi.teams === 0 || kpi.activeCoaches === 0 || kpi.users <= 1
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -290,6 +314,61 @@ export default function ClubAdminDashboardPage() {
       {isSupabaseMode && backendLoading ? (
         <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading dashboard snapshot...
+        </section>
+      ) : null}
+
+      {showSetupGuide ? (
+        <section className="overflow-hidden rounded-[30px] border border-[#cfe2ff] bg-[linear-gradient(135deg,#eff6ff_0%,#f8fbff_55%,#ffffff_100%)] p-5 shadow-[0_18px_50px_rgba(31,140,255,0.12)] sm:p-6">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)] lg:items-start">
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#1368ff]">
+                First steps
+              </p>
+              <h2 className="max-w-[14ch] text-3xl font-semibold tracking-[-0.05em] text-slate-950">
+                Start here if this tenant is brand new.
+              </h2>
+              <p className="max-w-[58ch] text-sm leading-7 text-slate-600">
+                A new club admin should not have to guess the next move. Set up the first team, invite the first coach, then review the tenant settings before handing the workspace to the wider club.
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {setupChecklist.map((item, index) => (
+                <div
+                  key={item.title}
+                  className="rounded-[22px] border border-white/70 bg-white/90 px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Step {index + 1}
+                      </p>
+                      <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">
+                        {item.title}
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{item.body}</p>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
+                        item.done
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-600",
+                      )}
+                    >
+                      {item.done ? "Done" : "Next"}
+                    </span>
+                  </div>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="mt-4 h-10 rounded-full border-slate-200 bg-white px-4 text-slate-950 hover:border-[#1368ff] hover:bg-[#eef5ff] hover:text-slate-950"
+                  >
+                    <Link to={item.href}>{item.cta}</Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       ) : null}
 

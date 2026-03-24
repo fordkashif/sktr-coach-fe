@@ -35,6 +35,7 @@ Companion plan:
 - Club-admin first-access onboarding update: new provisioned club-admin tenants are now gated to `/club-admin/get-started` until password setup and minimum tenant profile completion are persisted in `club_profiles`.
 - Tenant request intake update: request submission now captures job title, organization type, website, region, coach count, athlete count, and desired start date; platform-admin queue/export now surfaces those fields for approval review.
 - Club-admin access-control update: the manual user-provisioning block has been removed from `/club-admin/users`; tenant user creation is now invite-only from the club-admin surface.
+- Club-admin first-run UX update: `/club-admin/dashboard` now shows a guided first-steps panel for new tenants so club admins have an explicit path through teams, invites, and settings instead of landing on a cold dashboard.
 
 ## Verification Snapshot
 
