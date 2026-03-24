@@ -50,6 +50,9 @@ const statusFilterLabels: Record<PlatformAdminRequestRecord["status"] | "all", s
   cancelled: "Cancelled",
 }
 
+const toolbarIconButtonClassName =
+  "size-11 rounded-2xl border-slate-200 bg-white text-slate-700 shadow-none hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+
 export default function PlatformAdminRequestsPage() {
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -440,7 +443,7 @@ export default function PlatformAdminRequestsPage() {
                     variant="outline"
                     size="icon"
                     className={cn(
-                      "size-11 rounded-2xl border-slate-200",
+                      toolbarIconButtonClassName,
                       statusFilter !== "all" && "border-[#1368ff] bg-[#eef5ff] text-[#1368ff]",
                     )}
                     aria-label={`Filter requests by status. Current filter: ${statusFilterLabels[statusFilter]}`}
@@ -467,7 +470,7 @@ export default function PlatformAdminRequestsPage() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="size-11 rounded-2xl border-slate-200"
+                className={toolbarIconButtonClassName}
                 aria-label="Export request queue as CSV"
                 title="Export CSV"
                 onClick={() => void handleExportQueueCsv()}
@@ -478,7 +481,7 @@ export default function PlatformAdminRequestsPage() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="size-11 rounded-2xl border-slate-200"
+                className={toolbarIconButtonClassName}
                 aria-label="Open print or PDF export for request queue"
                 title="Export PDF"
                 onClick={() => void handleExportQueuePdf()}
@@ -489,7 +492,7 @@ export default function PlatformAdminRequestsPage() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="size-11 rounded-2xl border-slate-200"
+                className={toolbarIconButtonClassName}
                 disabled={submittingId === "dispatch-email-queue"}
                 aria-label="Dispatch pending notification emails"
                 title="Dispatch pending emails"

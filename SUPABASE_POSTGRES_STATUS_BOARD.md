@@ -42,6 +42,7 @@ Companion plan:
 - Platform-admin shell UI rule: desktop `/platform-admin/*` routes now opt into the dark/blue top-tone shell header, and that shared shell treatment should be preserved as the baseline for the ongoing platform-admin UI pass.
 - Platform-admin summary-card UI rule: the top summary metrics on `/platform-admin/dashboard`, `/platform-admin/requests`, and `/platform-admin/audit` should render as a 2-column grid on mobile instead of collapsing to a single-column stack.
 - Platform-admin toolbar UI rule: action-heavy toolbars should avoid long pill rows; prefer a larger search field plus compact icon actions for filter/export/dispatch controls, with the current filter shown as supporting text instead of separate status pills.
+- Platform-admin control-color rule: neutral admin tool buttons should not inherit the app-wide green accent hover state; use slate/blue interaction styling for filter/export/dispatch controls unless the action is explicitly success-state.
 
 ## Verification Snapshot
 
