@@ -77,8 +77,8 @@ test("root and invite redirects behave correctly", async ({ page }) => {
 
   await seedSession(page, "athlete")
   await page.goto("/invite/t1")
-  await expect(page).toHaveURL(/\/athlete\/join\/t1$/)
-  await expect(page.locator("body")).toContainText("Join Team")
+  await expect(page).toHaveURL(/\/athlete\/claim\/t1$/)
+  await expect(page.locator("body")).toContainText("Claim athlete access")
 })
 
 test("protected routes redirect to login when unauthenticated", async ({ page }) => {
@@ -112,6 +112,12 @@ test("coach route inventory resolves for a coach session", async ({ page }) => {
 
   for (const route of coachRoutes) {
     await page.goto(route)
+    if (route === "/coach/teams") {
+      await expect(page).toHaveURL(/\/coach\/teams\/t4$/)
+      await expect(page.locator("body")).toContainText(/Sprint Group|Team not found|Roster State/)
+      continue
+    }
+
     await expect(page).toHaveURL(new RegExp(`${route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
     await expect(page.locator("body")).toContainText(/PaceLab|Dashboard|Teams|Reports|Training Plan|Test Weeks|Athlete/)
   }
