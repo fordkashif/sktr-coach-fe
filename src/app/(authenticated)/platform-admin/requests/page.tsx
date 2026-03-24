@@ -867,18 +867,18 @@ export default function PlatformAdminRequestsPage() {
       </section>
 
       <section className={cn("hidden", desktopViewMode === "table" && "lg:block")}>
-        <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+        <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:px-5">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Organization</TableHead>
-                <TableHead>Requestor</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Roster</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead>Target start</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Organization</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Requestor</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Status</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Plan</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Roster</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Submitted</TableHead>
+                <TableHead className="px-5 py-4 text-xs uppercase tracking-[0.16em] text-slate-500">Target start</TableHead>
+                <TableHead className="px-5 py-4 text-right text-xs uppercase tracking-[0.16em] text-slate-500">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -886,7 +886,7 @@ export default function PlatformAdminRequestsPage() {
                 const isExpanded = expandedRequestId === request.id
                 return [
                   <TableRow key={request.id}>
-                    <TableCell className="align-top">
+                    <TableCell className="px-5 py-4 align-top">
                       <div className="space-y-1">
                         <p className="font-semibold text-slate-950">{request.organizationName}</p>
                         <p className="text-xs text-slate-500">
@@ -894,13 +894,13 @@ export default function PlatformAdminRequestsPage() {
                         </p>
                       </div>
                     </TableCell>
-                    <TableCell className="align-top">
+                    <TableCell className="px-5 py-4 align-top">
                       <div className="space-y-1">
                         <p className="font-medium text-slate-900">{request.requestorName}</p>
                         <p className="text-xs text-slate-500">{request.requestorEmail}</p>
                       </div>
                     </TableCell>
-                    <TableCell className="align-top">
+                    <TableCell className="px-5 py-4 align-top">
                       <div className="flex flex-wrap gap-2">
                         <StatusBadge status={request.status} />
                         {request.accessInviteSentAt ? (
@@ -910,15 +910,15 @@ export default function PlatformAdminRequestsPage() {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="align-top text-sm text-slate-700">{request.requestedPlan}</TableCell>
-                    <TableCell className="align-top text-sm text-slate-700">
+                    <TableCell className="px-5 py-4 align-top text-sm text-slate-700">{request.requestedPlan}</TableCell>
+                    <TableCell className="px-5 py-4 align-top text-sm text-slate-700">
                       {(request.expectedCoachCount ?? 0).toString()} coaches - {(request.expectedAthleteCount ?? 0).toString()} athletes
                     </TableCell>
-                    <TableCell className="align-top text-sm text-slate-700">{formatDateLabel(request.createdAt, "Not submitted")}</TableCell>
-                    <TableCell className="align-top text-sm text-slate-700">
+                    <TableCell className="px-5 py-4 align-top text-sm text-slate-700">{formatDateLabel(request.createdAt, "Not submitted")}</TableCell>
+                    <TableCell className="px-5 py-4 align-top text-sm text-slate-700">
                       {request.desiredStartDate ? new Date(request.desiredStartDate).toLocaleDateString() : "Flexible"}
                     </TableCell>
-                    <TableCell className="align-top text-right">
+                    <TableCell className="px-5 py-4 align-top text-right">
                       <Button
                         type="button"
                         variant="outline"
@@ -932,7 +932,7 @@ export default function PlatformAdminRequestsPage() {
                   ...(isExpanded
                     ? [
                         <TableRow key={`${request.id}-expanded`} className="bg-slate-50/60">
-                          <TableCell colSpan={8} className="p-4">
+                          <TableCell colSpan={8} className="px-5 py-5">
                             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                               {renderExpandedRequestDetails(request)}
                               <div>{renderRequestActionPanel(request, true)}</div>
@@ -950,4 +950,5 @@ export default function PlatformAdminRequestsPage() {
     </div>
   )
 }
+
 
