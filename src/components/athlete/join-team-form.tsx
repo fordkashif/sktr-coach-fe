@@ -205,7 +205,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
             <div className="mobile-surface-heading">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Invite Entry</p>
               <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Paste Link or Code</h2>
-              <p className="mt-1 text-sm text-slate-500">Links with <code>/athlete/join/{"{inviteId}"}</code> resolve to this same confirmation flow.</p>
+              <p className="mt-1 text-sm text-slate-500">Public athlete invite links now use <code>/athlete/claim/{"{inviteId}"}</code>. Signed-in athletes can still paste a code here to switch teams.</p>
             </div>
 
             <div className="space-y-2">
@@ -214,7 +214,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
               </Label>
               <Input
                 id="invite-code"
-                placeholder="https://pacelab.app/athlete/join/<invite-id>"
+                placeholder="https://pacelab.app/athlete/claim/<invite-id>"
                 value={inviteInput}
                 onChange={(event) => setInviteInput(event.target.value)}
                 className="h-12 rounded-[16px] border-slate-200 bg-slate-50 text-slate-950"
@@ -282,7 +282,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                 <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Mobile Flow</h2>
               </div>
               <div className="mobile-card-utility text-sm text-slate-600">
-                Invite links should follow the <code>/athlete/join/{"{inviteId}"}</code> pattern and resolve directly in this view.
+                Claim links should follow the <code>/athlete/claim/{"{inviteId}"}</code> pattern. Signed-in athletes can also paste the invite id here to confirm the join manually.
               </div>
             </CardContent>
           </Card>

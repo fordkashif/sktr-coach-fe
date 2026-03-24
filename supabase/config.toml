@@ -9,3 +9,7 @@ verify_jwt = false
 
 [functions.claim-coach-invite-account]
 verify_jwt = false
+
+[functions.claim-athlete-invite-account]
+verify_jwt = false
+

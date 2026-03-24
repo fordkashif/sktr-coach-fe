@@ -88,7 +88,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("roster")
   const team = teamsSource.find((item) => item.id === teamId)
-  const inviteLink = generatedInviteLink ?? `/athlete/join/${teamId}`
+  const inviteLink = generatedInviteLink ?? `/athlete/claim/${teamId}`
 
   useEffect(() => {
     if (isSupabaseMode || data) return

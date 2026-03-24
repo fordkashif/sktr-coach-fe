@@ -222,7 +222,7 @@ export default function CoachTeamsPage() {
 
         <section className="grid gap-5 xl:grid-cols-2">
           {visibleTeams.map((team) => {
-            const inviteLink = generatedInviteLinks[team.id] ?? `/athlete/join/${team.id}`
+            const inviteLink = generatedInviteLinks[team.id] ?? `/athlete/claim/${team.id}`
             const roster = athletesSource.filter((athlete) => athlete.teamId === team.id)
             const lowAdherenceCount = roster.filter((athlete) => athlete.adherence < 75).length
             const teamReadinessAlerts = roster.filter((athlete) => athlete.readiness !== "green").length

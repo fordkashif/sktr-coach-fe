@@ -27,6 +27,10 @@ import {
   getLatestSessionDetailForCurrentAthlete,
   type CurrentAthleteLatestSessionDetail,
 } from "@/lib/data/session/session-data"
+import {
+  getCurrentAthleteOnboardingState,
+  setCurrentAthleteSetupGuideDismissed,
+} from "@/lib/data/athlete/invite-claim-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import type { CurrentSession } from "@/lib/mock-data"
@@ -72,6 +76,8 @@ export default function AthleteHomePage() {
   const [now, setNow] = useState(() => new Date())
   const [backendSessionDetail, setBackendSessionDetail] = useState<CurrentAthleteLatestSessionDetail | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
+  const [setupGuideDismissedAt, setSetupGuideDismissedAt] = useState<string | null>(null)
+  const [setupGuideSaving, setSetupGuideSaving] = useState(false)
   const [progress, setProgress] = useState<SessionProgress>(() => {
     if (typeof window === "undefined") return defaultSessionProgress()
     return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
@@ -104,7 +110,10 @@ export default function AthleteHomePage() {
     let cancelled = false
 
     const loadSessionDetail = async () => {
-      const result = await getLatestSessionDetailForCurrentAthlete()
+      const [result, onboardingResult] = await Promise.all([
+        getLatestSessionDetailForCurrentAthlete(),
+        getCurrentAthleteOnboardingState(),
+      ])
       if (cancelled) return
       if (!result.ok) {
         setBackendError(result.error.message)
@@ -112,6 +121,9 @@ export default function AthleteHomePage() {
       }
       setBackendError(null)
       setBackendSessionDetail(result.data)
+      if (onboardingResult.ok) {
+        setSetupGuideDismissedAt(onboardingResult.data.setupGuideDismissedAt ?? null)
+      }
     }
 
     void loadSessionDetail()
@@ -157,6 +169,7 @@ export default function AthleteHomePage() {
             })),
         }
       : fallbackCurrentSession
+  const athleteNeedsGuide = backendMode === "supabase" && (!backendSessionDetail || !backendSessionDetail.session.id)
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -272,6 +285,95 @@ export default function AthleteHomePage() {
               </div>
             </div>
           </div>
+
+          {athleteNeedsGuide && !setupGuideDismissedAt ? (
+            <div className="mb-5 rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="max-w-2xl space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">First steps</p>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Start in the right order</h2>
+                  <p className="text-sm leading-6 text-slate-600">
+                    A new athlete should not land in a blank workspace. Confirm the team assignment, open today&apos;s session, and then complete profile or wellness details once the training context is visible.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-full px-5"
+                  disabled={setupGuideSaving}
+                  onClick={async () => {
+                    setSetupGuideSaving(true)
+                    const result = await setCurrentAthleteSetupGuideDismissed(true)
+                    setSetupGuideSaving(false)
+                    if (!result.ok) {
+                      setBackendError((current) => current ?? result.error.message)
+                      return
+                    }
+                    setSetupGuideDismissedAt(new Date().toISOString())
+                  }}
+                >
+                  {setupGuideSaving ? "Saving..." : "Dismiss for now"}
+                </Button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-sm font-medium text-slate-950">1. Confirm team context</p>
+                  <p className="mt-1 text-sm text-slate-500">Use the profile screen to verify the current team, event group, and identity details.</p>
+                  <Button asChild variant="outline" className="mt-3 h-10 rounded-full px-4">
+                    <Link to="/athlete/profile">Open profile</Link>
+                  </Button>
+                </div>
+                <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-sm font-medium text-slate-950">2. Open today</p>
+                  <p className="mt-1 text-sm text-slate-500">The home and workout flow should be the primary daily entry, not a dead-end invite screen.</p>
+                  <Button asChild variant="outline" className="mt-3 h-10 rounded-full px-4">
+                    <Link to="/athlete/log">Open workout</Link>
+                  </Button>
+                </div>
+                <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-sm font-medium text-slate-950">3. Keep the signal updated</p>
+                  <p className="mt-1 text-sm text-slate-500">After the team and workout context are clear, complete wellness and review the plan.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button asChild variant="outline" className="h-10 rounded-full px-4">
+                      <Link to="/athlete/wellness">Wellness</Link>
+                    </Button>
+                    <Button asChild variant="outline" className="h-10 rounded-full px-4">
+                      <Link to="/athlete/training-plan">Plan</Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {athleteNeedsGuide && setupGuideDismissedAt ? (
+            <div className="mb-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-950">Continue athlete setup</p>
+                  <p className="text-sm text-slate-500">Reopen the first-steps guide if you still need orientation in the athlete workspace.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-full px-5"
+                  disabled={setupGuideSaving}
+                  onClick={async () => {
+                    setSetupGuideSaving(true)
+                    const result = await setCurrentAthleteSetupGuideDismissed(false)
+                    setSetupGuideSaving(false)
+                    if (!result.ok) {
+                      setBackendError((current) => current ?? result.error.message)
+                      return
+                    }
+                    setSetupGuideDismissedAt(null)
+                  }}
+                >
+                  {setupGuideSaving ? "Saving..." : "Resume guide"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-5 space-y-3">
             <p className="text-[3rem] leading-none font-medium tracking-[-0.07em] text-slate-950">

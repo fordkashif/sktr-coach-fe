@@ -36,9 +36,10 @@ Companion plan:
 - Tenant request intake update: request submission now captures job title, organization type, website, region, coach count, athlete count, and desired start date; platform-admin queue/export now surfaces those fields for approval review.
 - Club-admin access-control update: the manual user-provisioning block has been removed from `/club-admin/users`; tenant user creation is now invite-only from the club-admin surface.
 - Club-admin first-run UX update: `/club-admin/dashboard` now shows a guided first-steps panel for new tenants so club admins have an explicit path through teams, invites, and settings instead of landing on a cold dashboard.
-- Club-admin setup persistence update: first-run walkthrough dismissal is now stored on `club_profiles.setup_guide_dismissed_at`, and dismissed tenants get a compact “Resume setup guide” card until onboarding-relevant tenant state is no longer incomplete.
+- Club-admin setup persistence update: first-run walkthrough dismissal is now stored on `club_profiles.setup_guide_dismissed_at`, and dismissed tenants get a compact Resume setup guide card until onboarding-relevant tenant state is no longer incomplete.
 
-- Coach claim-flow update: first-time coaches now claim invites through a dedicated server-owned flow instead of raw signUp, so coach onboarding no longer depends on separate email confirmation before password setup, invite acceptance, and guided workspace entry.
+
+- Athlete claim-flow update: athlete invites no longer assume an already-authenticated tenant athlete. New invites now target a dedicated athlete claim route with public preview, server-owned account claim, password setup, invite acceptance, and a first-run athlete guide.
 
 ## Verification Snapshot
 
@@ -524,4 +525,5 @@ Companion plan:
 ```text
 Use SUPABASE_POSTGRES_STATUS_BOARD.md as the single source of truth. Pick the highest-priority NOT STARTED item in the current wave, implement it end-to-end, run checks, and update this board with evidence.
 ```
+
 

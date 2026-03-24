@@ -76,7 +76,7 @@ export async function createAthleteInviteForCurrentCoach(params: {
 
   return ok({
     inviteId: data.id,
-    invitePath: `/athlete/join/${data.id}`,
+    invitePath: `/athlete/claim/${data.id}`,
   })
 }
 

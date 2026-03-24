@@ -9,6 +9,7 @@ import { ClubAdminRedirectPage } from "@/pages/redirects/club-admin-redirect"
 import { PlatformAdminRedirectPage } from "@/pages/redirects/platform-admin-redirect"
 import { NotFoundPage } from "@/pages/not-found"
 import LoginPage from "@/app/(auth)/login/page"
+import AthleteClaimPage from "@/app/(auth)/athlete/claim/[inviteId]/page"
 import ClubAdminClaimPage from "@/app/(auth)/club-admin/claim/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
 import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
@@ -51,6 +52,7 @@ export function AppRouter() {
 
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/athlete/claim/:inviteId" element={<AthleteClaimPage />} />
           <Route path="/club-admin/claim" element={<ClubAdminClaimPage />} />
           <Route path="/create-club-account" element={<CreateClubAccountPage />} />
           <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />

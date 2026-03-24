@@ -73,6 +73,7 @@ jobs:
           supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
 
   migrate-prod:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'prod')
@@ -129,3 +130,5 @@ jobs:
           supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+
