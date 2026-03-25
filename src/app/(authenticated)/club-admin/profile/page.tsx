@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
-  getClubAdminProfileRecord,
+  DEFAULT_CLUB_ADMIN_PROFILE,
+  useClubAdmin,
+} from "@/lib/club-admin-context"
+import {
   insertAuditEvent,
   upsertClubAdminProfileRecord,
 } from "@/lib/data/club-admin/ops-data"
@@ -15,21 +18,12 @@ import { loadProfileSafe, persistProfile } from "../state"
 export default function ClubAdminProfilePage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
+  const clubAdmin = useClubAdmin()
   const [profile, setProfile] = useState(() =>
-    isSupabaseMode
-      ? {
-          clubName: "",
-          shortName: "",
-          primaryColor: "#16a34a",
-          seasonYear: "2026",
-          seasonStart: "2026-01-10",
-          seasonEnd: "2026-10-30",
-        }
-      : loadProfileSafe(),
+    isSupabaseMode ? clubAdmin.profile ?? DEFAULT_CLUB_ADMIN_PROFILE : loadProfileSafe(),
   )
   const [saved, setSaved] = useState(false)
-  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
-  const [backendError, setBackendError] = useState<string | null>(null)
+  const [backendError, setBackendError] = useState<string | null>(clubAdmin.profileError)
   const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
     actor: string
     action: string
@@ -39,27 +33,13 @@ export default function ClubAdminProfilePage() {
 
   useEffect(() => {
     if (!isSupabaseMode) return
-    let cancelled = false
+    if (clubAdmin.profile) setProfile(clubAdmin.profile)
+  }, [clubAdmin.profile, isSupabaseMode])
 
-    const load = async () => {
-      setBackendLoading(true)
-      const result = await getClubAdminProfileRecord()
-      if (cancelled) return
-      if (!result.ok) {
-        setBackendError(result.error.message)
-        setBackendLoading(false)
-        return
-      }
-      setProfile(result.data)
-      setBackendError(null)
-      setBackendLoading(false)
-    }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [isSupabaseMode])
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    setBackendError(clubAdmin.profileError)
+  }, [clubAdmin.profileError, isSupabaseMode])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -122,7 +102,7 @@ export default function ClubAdminProfilePage() {
           Backend sync issue: {backendError}
         </section>
       ) : null}
-      {isSupabaseMode && backendLoading ? (
+      {isSupabaseMode && clubAdmin.profileLoading ? (
         <section className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading club profile...
         </section>
@@ -137,27 +117,54 @@ export default function ClubAdminProfilePage() {
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Club name</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" value={profile.clubName} onChange={(event) => setProfile((current) => ({ ...current, clubName: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                value={profile.clubName}
+                onChange={(event) => setProfile((current) => ({ ...current, clubName: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Short name</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" value={profile.shortName} onChange={(event) => setProfile((current) => ({ ...current, shortName: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                value={profile.shortName}
+                onChange={(event) => setProfile((current) => ({ ...current, shortName: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Primary color</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" type="color" value={profile.primaryColor} onChange={(event) => setProfile((current) => ({ ...current, primaryColor: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                type="color"
+                value={profile.primaryColor}
+                onChange={(event) => setProfile((current) => ({ ...current, primaryColor: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Season year</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" value={profile.seasonYear} onChange={(event) => setProfile((current) => ({ ...current, seasonYear: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                value={profile.seasonYear}
+                onChange={(event) => setProfile((current) => ({ ...current, seasonYear: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Season start</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" type="date" value={profile.seasonStart} onChange={(event) => setProfile((current) => ({ ...current, seasonStart: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                type="date"
+                value={profile.seasonStart}
+                onChange={(event) => setProfile((current) => ({ ...current, seasonStart: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-slate-950">Season end</Label>
-              <Input className="h-12 rounded-[16px] border-slate-200 bg-slate-50" type="date" value={profile.seasonEnd} onChange={(event) => setProfile((current) => ({ ...current, seasonEnd: event.target.value }))} />
+              <Input
+                className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                type="date"
+                value={profile.seasonEnd}
+                onChange={(event) => setProfile((current) => ({ ...current, seasonEnd: event.target.value }))}
+              />
             </div>
           </div>
           <div className="mt-5 flex items-center gap-3">
@@ -171,6 +178,12 @@ export default function ClubAdminProfilePage() {
                     setBackendError(saveResult.error.message)
                     return
                   }
+                  clubAdmin.updateCachedProfile({
+                    ...profile,
+                    passwordSetAt: clubAdmin.profile?.passwordSetAt ?? null,
+                    onboardingCompletedAt: clubAdmin.profile?.onboardingCompletedAt ?? null,
+                    setupGuideDismissedAt: clubAdmin.profile?.setupGuideDismissedAt ?? null,
+                  })
                   const auditResult = await insertAuditEvent({
                     action: "profile_update",
                     target: "club-profile",
@@ -183,7 +196,12 @@ export default function ClubAdminProfilePage() {
 
                 persistProfile(profile)
                 setSaved(true)
-                mockAuditLogger?.({ actor: "club-admin", action: "profile_update", target: "club-profile", detail: `${profile.clubName} (${profile.seasonYear})` })
+                mockAuditLogger?.({
+                  actor: "club-admin",
+                  action: "profile_update",
+                  target: "club-profile",
+                  detail: `${profile.clubName} (${profile.seasonYear})`,
+                })
               }}
             >
               Save profile

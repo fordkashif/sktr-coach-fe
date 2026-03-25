@@ -4,10 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { BarChart, PieChart } from "@mui/x-charts"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { useClubAdmin } from "@/lib/club-admin-context"
 import {
-  getClubAdminProfileRecord,
-  getClubAdminOpsSnapshot,
-  getClubAdminReportSnapshot,
   setClubAdminSetupGuideDismissed,
 } from "@/lib/data/club-admin/ops-data"
 import type { EventGroup } from "@/lib/mock-data"
@@ -55,6 +53,7 @@ const chartSx = {
 export default function ClubAdminDashboardPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
+  const clubAdmin = useClubAdmin()
 
   const [users, setUsers] = useState<ClubUser[]>(() =>
     isSupabaseMode ? [] : loadClubUsers(),
@@ -71,105 +70,99 @@ export default function ClubAdminDashboardPage() {
   const [athleteRows, setAthleteRows] = useState<Array<{ readiness: "green" | "yellow" | "red"; adherence: number }>>(() =>
     [],
   )
-  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
-  const [backendError, setBackendError] = useState<string | null>(null)
+  const [backendLoading, setBackendLoading] = useState(
+    isSupabaseMode && (!clubAdmin.opsSnapshot || !clubAdmin.reportSnapshot),
+  )
+  const [backendError, setBackendError] = useState<string | null>(
+    clubAdmin.opsError ?? clubAdmin.reportError ?? clubAdmin.profileError,
+  )
   const [setupGuideDismissedAt, setSetupGuideDismissedAt] = useState<string | null>(null)
   const [setupGuideSaving, setSetupGuideSaving] = useState(false)
 
   useEffect(() => {
     if (!isSupabaseMode) return
-    let cancelled = false
+    setBackendLoading(
+      clubAdmin.opsLoading || clubAdmin.reportLoading || clubAdmin.profileLoading,
+    )
+    setBackendError(clubAdmin.opsError ?? clubAdmin.reportError ?? clubAdmin.profileError)
 
-    const loadSnapshot = async () => {
-      setBackendLoading(true)
-      const [ops, report] = await Promise.all([
-        getClubAdminOpsSnapshot(),
-        getClubAdminReportSnapshot(),
-      ])
-      const profile = await getClubAdminProfileRecord()
-      if (cancelled) return
-
-      if (!ops.ok) {
-        setBackendError(ops.error.message)
-      } else {
-        setUsers(
-          ops.data.users.map((row) => ({
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            role: row.role,
-            status: row.status,
-            teamId: row.teamId,
-          })),
-        )
-        setTeams(
-          ops.data.teams.map((row) => ({
-            id: row.id,
-            name: row.name,
-            eventGroup: "Sprint" as EventGroup,
-            status: "active",
-          })),
-        )
-        setInvites(
-          ops.data.invites.map((row) => ({
-            id: row.id,
-            email: row.email,
-            teamId: row.teamId,
-            status: row.status === "revoked" ? "expired" : row.status,
-            createdAt: row.createdAt,
-          })),
-        )
-        setAccountRequests(
-          ops.data.accountRequests.map((row) => ({
-            id: row.id,
-            fullName: row.fullName,
-            email: row.email,
-            organization: row.organization,
-            role: row.role,
-            notes: row.notes,
-            status: row.status,
-            createdAt: row.createdAt,
-            reviewedAt: row.reviewedAt,
-          })),
-        )
-      }
-
-      if (!report.ok) {
-        setBackendError((current) => current ?? report.error.message)
-      } else {
-        setAthleteRows(
-          report.data.athletes.map((athlete) => ({
-            readiness: athlete.readiness,
-            adherence: 0,
-          })),
-        )
-        setTeams((current) =>
-          current.length > 0
-            ? current
-            : report.data.teams.map((team) => ({
-                id: team.id,
-                name: team.name,
-                eventGroup: (team.eventGroup as EventGroup) ?? "Sprint",
-                status: team.status,
-              })),
-        )
-      }
-
-      if (!profile.ok) {
-        setBackendError((current) => current ?? profile.error.message)
-      } else {
-        setSetupGuideDismissedAt(profile.data.setupGuideDismissedAt ?? null)
-      }
-
-      if (ops.ok && report.ok && profile.ok) setBackendError(null)
-      setBackendLoading(false)
+    if (clubAdmin.opsSnapshot) {
+      setUsers(
+        clubAdmin.opsSnapshot.users.map((row) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          role: row.role,
+          status: row.status,
+          teamId: row.teamId,
+        })),
+      )
+      setTeams(
+        clubAdmin.opsSnapshot.teams.map((row) => ({
+          id: row.id,
+          name: row.name,
+          eventGroup: "Sprint" as EventGroup,
+          status: "active",
+        })),
+      )
+      setInvites(
+        clubAdmin.opsSnapshot.invites.map((row) => ({
+          id: row.id,
+          email: row.email,
+          teamId: row.teamId,
+          status: row.status === "revoked" ? "expired" : row.status,
+          createdAt: row.createdAt,
+        })),
+      )
+      setAccountRequests(
+        clubAdmin.opsSnapshot.accountRequests.map((row) => ({
+          id: row.id,
+          fullName: row.fullName,
+          email: row.email,
+          organization: row.organization,
+          role: row.role,
+          notes: row.notes,
+          status: row.status,
+          createdAt: row.createdAt,
+          reviewedAt: row.reviewedAt,
+        })),
+      )
     }
 
-    void loadSnapshot()
-    return () => {
-      cancelled = true
+    if (clubAdmin.reportSnapshot) {
+      setAthleteRows(
+        clubAdmin.reportSnapshot.athletes.map((athlete) => ({
+          readiness: athlete.readiness,
+          adherence: 0,
+        })),
+      )
+      setTeams((current) =>
+        current.length > 0
+          ? current
+          : clubAdmin.reportSnapshot!.teams.map((team) => ({
+              id: team.id,
+              name: team.name,
+              eventGroup: (team.eventGroup as EventGroup) ?? "Sprint",
+              status: team.status,
+            })),
+      )
     }
-  }, [isSupabaseMode])
+
+    if (clubAdmin.profile) {
+      setSetupGuideDismissedAt(clubAdmin.profile.setupGuideDismissedAt ?? null)
+    }
+  }, [
+    clubAdmin.opsError,
+    clubAdmin.opsLoading,
+    clubAdmin.opsSnapshot,
+    clubAdmin.profile,
+    clubAdmin.profileError,
+    clubAdmin.profileLoading,
+    clubAdmin.reportError,
+    clubAdmin.reportLoading,
+    clubAdmin.reportSnapshot,
+    isSupabaseMode,
+  ])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -319,7 +312,14 @@ export default function ClubAdminDashboardPage() {
     }
 
     setBackendError(null)
-    setSetupGuideDismissedAt(dismissed ? new Date().toISOString() : null)
+    const nextDismissedAt = dismissed ? new Date().toISOString() : null
+    setSetupGuideDismissedAt(nextDismissedAt)
+    if (clubAdmin.profile) {
+      clubAdmin.updateCachedProfile({
+        ...clubAdmin.profile,
+        setupGuideDismissedAt: nextDismissedAt,
+      })
+    }
   }
 
   return (

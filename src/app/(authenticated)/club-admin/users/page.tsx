@@ -22,25 +22,18 @@ import {
 } from "@/components/ui/drawer"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useClubAdmin } from "@/lib/club-admin-context"
 import {
   createCoachInvite,
-  getClubAdminOpsSnapshot,
   insertAuditEvent,
-  reviewAccountRequest,
   updateProfileRoleAndStatus,
-  type ClubAdminAccountRequest,
-  type ClubAdminInvite,
-  type ClubAdminTeamOption,
-  type ClubAdminUser,
 } from "@/lib/data/club-admin/ops-data"
-import type { AccountRequest, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
+import type { ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
-  loadAccountRequestsSafe,
   loadInvitesSafe,
   loadTeamsSafe,
   loadUsersSafe,
-  persistAccountRequests,
   persistInvites,
   persistUsers,
 } from "../state"
@@ -49,20 +42,19 @@ import { cn } from "@/lib/utils"
 export default function ClubAdminUsersPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
+  const clubAdmin = useClubAdmin()
   const isLocalPreviewEnabled =
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
   const [users, setUsers] = useState<ClubUser[]>(() => (isSupabaseMode ? [] : loadUsersSafe()))
   const [invites, setInvites] = useState<CoachInvite[]>(() => (isSupabaseMode ? [] : loadInvitesSafe()))
-  const [accountRequests, setAccountRequests] = useState<AccountRequest[]>(() =>
-    isSupabaseMode ? [] : loadAccountRequestsSafe(),
-  )
   const [coachInviteEmail, setCoachInviteEmail] = useState("")
   const [coachInviteTeamId, setCoachInviteTeamId] = useState<string>("none")
   const [inviteComposerOpen, setInviteComposerOpen] = useState(false)
+  const [useDesktopInviteDialog, setUseDesktopInviteDialog] = useState(false)
   const [teams, setTeams] = useState(() => (isSupabaseMode ? [] : loadTeamsSafe()))
-  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
-  const [backendError, setBackendError] = useState<string | null>(null)
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode && !clubAdmin.opsSnapshot)
+  const [backendError, setBackendError] = useState<string | null>(clubAdmin.opsError)
   const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
     actor: string
     action: string
@@ -73,11 +65,6 @@ export default function ClubAdminUsersPage() {
   const saveUsers = (next: ClubUser[]) => {
     setUsers(next)
     if (backendMode !== "supabase") persistUsers(next)
-  }
-
-  const saveAccountRequests = (next: AccountRequest[]) => {
-    setAccountRequests(next)
-    if (backendMode !== "supabase") persistAccountRequests(next)
   }
 
   const emitAudit = async (action: string, target: string, detail?: string) => {
@@ -91,61 +78,39 @@ export default function ClubAdminUsersPage() {
 
   useEffect(() => {
     if (!isSupabaseMode) return
-    let cancelled = false
+    setBackendLoading(clubAdmin.opsLoading)
+    setBackendError(clubAdmin.opsError)
+    if (!clubAdmin.opsSnapshot) return
 
-    const loadSnapshot = async () => {
-      setBackendLoading(true)
-      const result = await getClubAdminOpsSnapshot()
-      if (cancelled) return
-      if (!result.ok) {
-        setBackendError(result.error.message)
-        setBackendLoading(false)
-        return
-      }
-
-      setBackendError(null)
-      setUsers(
-        result.data.users.map((row: ClubAdminUser) => ({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          role: row.role,
-          status: row.status,
-          teamId: row.teamId,
-        })),
-      )
-      setInvites(
-        result.data.invites.map((row: ClubAdminInvite) => ({
-          id: row.id,
-          email: row.email,
-          teamId: row.teamId,
-          status: row.status === "revoked" ? "expired" : row.status,
-          createdAt: row.createdAt,
-          inviteUrl: row.inviteUrl ?? `/invite/coach/${row.id}`,
-        })),
-      )
-      setAccountRequests(
-        result.data.accountRequests.map((row: ClubAdminAccountRequest) => ({
-          id: row.id,
-          fullName: row.fullName,
-          email: row.email,
-          organization: row.organization,
-          role: row.role,
-          notes: row.notes,
-          status: row.status,
-          createdAt: row.createdAt,
-          reviewedAt: row.reviewedAt,
-        })),
-      )
-      setTeams(result.data.teams.map((row: ClubAdminTeamOption) => ({ id: row.id, name: row.name, eventGroup: "Sprint", status: "active" })))
-      setBackendLoading(false)
-    }
-
-    void loadSnapshot()
-    return () => {
-      cancelled = true
-    }
-  }, [isSupabaseMode])
+    setUsers(
+      clubAdmin.opsSnapshot.users.map((row) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        role: row.role,
+        status: row.status,
+        teamId: row.teamId,
+      })),
+    )
+    setInvites(
+      clubAdmin.opsSnapshot.invites.map((row) => ({
+        id: row.id,
+        email: row.email,
+        teamId: row.teamId,
+        status: row.status === "revoked" ? "expired" : row.status,
+        createdAt: row.createdAt,
+        inviteUrl: row.inviteUrl ?? `/invite/coach/${row.id}`,
+      })),
+    )
+    setTeams(
+      clubAdmin.opsSnapshot.teams.map((row) => ({
+        id: row.id,
+        name: row.name,
+        eventGroup: "Sprint",
+        status: "active",
+      })),
+    )
+  }, [clubAdmin.opsError, clubAdmin.opsLoading, clubAdmin.opsSnapshot, isSupabaseMode])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -161,6 +126,17 @@ export default function ClubAdminUsersPage() {
       cancelled = true
     }
   }, [isSupabaseMode])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const mediaQuery = window.matchMedia("(min-width: 640px)")
+    const sync = () => setUseDesktopInviteDialog(mediaQuery.matches)
+
+    sync()
+    mediaQuery.addEventListener("change", sync)
+    return () => mediaQuery.removeEventListener("change", sync)
+  }, [])
 
   const handleSendCoachInvite = async () => {
     if (!coachInviteEmail.trim()) return
@@ -255,10 +231,14 @@ export default function ClubAdminUsersPage() {
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-5 p-4 sm:space-y-6 sm:p-6">
-      <section className="admin-page-intro">
-        <div>
-          <h1 className="admin-page-intro-title">Access control should start with invites, not manual provisioning.</h1>
-          <p className="admin-page-intro-copy">Review club admin requests, send invites, and control access. Club admins should never provision users manually.</p>
+      <section className="px-1 py-1 sm:px-2 lg:px-3">
+        <div className="space-y-4">
+          <h1 className="max-w-[14ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-slate-950">
+            Invite and access control.
+          </h1>
+          <p className="max-w-[60ch] text-sm leading-7 text-slate-600 sm:text-base">
+            Send invites and manage active user access. Club admins should never provision accounts manually.
+          </p>
         </div>
       </section>
       {backendError ? (
@@ -272,7 +252,7 @@ export default function ClubAdminUsersPage() {
         </section>
       ) : null}
 
-      <section className="grid gap-5">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] xl:items-start">
         <div className="mobile-card-primary">
           <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
             <div className="space-y-1">
@@ -281,7 +261,7 @@ export default function ClubAdminUsersPage() {
               <p className="text-sm text-slate-500">Start coach access from an invite instead of exposing the form inline on the page.</p>
             </div>
             <div className="shrink-0">
-              <div className="hidden sm:block">
+              {useDesktopInviteDialog ? (
                 <Dialog open={inviteComposerOpen} onOpenChange={setInviteComposerOpen}>
                   <DialogTrigger asChild>
                     <Button
@@ -318,8 +298,7 @@ export default function ClubAdminUsersPage() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-              </div>
-              <div className="sm:hidden">
+              ) : (
                 <Drawer open={inviteComposerOpen} onOpenChange={setInviteComposerOpen}>
                   <DrawerTrigger asChild>
                     <Button
@@ -356,7 +335,7 @@ export default function ClubAdminUsersPage() {
                     </DrawerFooter>
                   </DrawerContent>
                 </Drawer>
-              </div>
+              )}
             </div>
           </div>
           <div className="mt-4 space-y-3">
@@ -406,109 +385,6 @@ export default function ClubAdminUsersPage() {
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Club Admin Requests</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Approval Queue</h2>
-          </div>
-          <div className="mt-4 space-y-3">
-            {accountRequests.length === 0 ? (
-              <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                No pending club admin account requests.
-              </div>
-            ) : (
-              accountRequests.map((request) => (
-                <div key={request.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-1">
-                      <p className="font-semibold text-slate-950">{request.fullName}</p>
-                      <p className="text-sm text-slate-500">{request.email}</p>
-                      <p className="text-sm text-slate-500">{request.organization} | Club Admin | {request.status}</p>
-                      <p className="text-xs text-slate-500">Requested {new Date(request.createdAt).toLocaleDateString()}</p>
-                      {request.notes ? <p className="text-sm text-slate-500">{request.notes}</p> : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-full border-slate-200 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-                        disabled={request.status !== "pending"}
-                        onClick={async () => {
-                          if (backendMode === "supabase") {
-                            const result = await reviewAccountRequest({ requestId: request.id, status: "approved" })
-                            if (!result.ok) {
-                              setBackendError(result.error.message)
-                              return
-                            }
-                            saveAccountRequests(
-                              accountRequests.map((item) =>
-                                item.id === request.id ? { ...item, status: "approved", reviewedAt: new Date().toISOString() } : item,
-                              ),
-                            )
-                            await emitAudit("account_request_approve", request.email, request.role)
-                            return
-                          }
-
-                          const nextUser: ClubUser = {
-                            id: `u-${Date.now()}`,
-                            name: request.fullName,
-                            email: request.email,
-                            role: request.role,
-                            status: "active",
-                          }
-                          saveUsers([nextUser, ...users])
-                          saveAccountRequests(
-                            accountRequests.map((item) =>
-                              item.id === request.id ? { ...item, status: "approved", reviewedAt: new Date().toISOString() } : item,
-                            ),
-                          )
-                          await emitAudit("account_request_approve", request.email, request.role)
-                        }}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-full border-slate-200 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-                        disabled={request.status !== "pending"}
-                        onClick={async () => {
-                          if (backendMode === "supabase") {
-                            const result = await reviewAccountRequest({ requestId: request.id, status: "declined" })
-                            if (!result.ok) {
-                              setBackendError(result.error.message)
-                              return
-                            }
-                            saveAccountRequests(
-                              accountRequests.map((item) =>
-                                item.id === request.id ? { ...item, status: "declined", reviewedAt: new Date().toISOString() } : item,
-                              ),
-                            )
-                            await emitAudit("account_request_decline", request.email, request.role)
-                            return
-                          }
-
-                          saveAccountRequests(
-                            accountRequests.map((item) =>
-                              item.id === request.id ? { ...item, status: "declined", reviewedAt: new Date().toISOString() } : item,
-                            ),
-                          )
-                          await emitAudit("account_request_decline", request.email, request.role)
-                        }}
-                      >
-                        Decline
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
         <div className="mobile-card-primary">
           <div className="space-y-1 border-b border-slate-200 pb-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">User Directory</p>

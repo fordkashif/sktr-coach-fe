@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useClubAdmin } from "@/lib/club-admin-context"
 import {
-  getClubAdminBillingRecord,
   insertAuditEvent,
   upsertClubAdminBillingRecord,
 } from "@/lib/data/club-admin/ops-data"
@@ -43,15 +43,16 @@ function saveBilling(profile: BillingProfile) {
 export default function ClubAdminBillingPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
+  const clubAdmin = useClubAdmin()
 
   const [billing, setBilling] = useState<BillingProfile>(() =>
     isSupabaseMode
-      ? { plan: "pro", seats: 50, renewalDate: "2026-04-01", paymentMethodLast4: "4242" }
+      ? clubAdmin.billingRecord ?? { plan: "pro", seats: 50, renewalDate: "2026-04-01", paymentMethodLast4: "4242" }
       : loadBilling(),
   )
   const [saved, setSaved] = useState(false)
-  const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
-  const [backendError, setBackendError] = useState<string | null>(null)
+  const [backendLoading, setBackendLoading] = useState(isSupabaseMode && !clubAdmin.billingRecord)
+  const [backendError, setBackendError] = useState<string | null>(clubAdmin.billingError)
   const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
     actor: string
     action: string
@@ -61,27 +62,10 @@ export default function ClubAdminBillingPage() {
 
   useEffect(() => {
     if (!isSupabaseMode) return
-    let cancelled = false
-
-    const load = async () => {
-      setBackendLoading(true)
-      const result = await getClubAdminBillingRecord()
-      if (cancelled) return
-      if (!result.ok) {
-        setBackendError(result.error.message)
-        setBackendLoading(false)
-        return
-      }
-      setBilling(result.data)
-      setBackendError(null)
-      setBackendLoading(false)
-    }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [isSupabaseMode])
+    setBackendLoading(clubAdmin.billingLoading)
+    setBackendError(clubAdmin.billingError)
+    if (clubAdmin.billingRecord) setBilling(clubAdmin.billingRecord)
+  }, [clubAdmin.billingError, clubAdmin.billingLoading, clubAdmin.billingRecord, isSupabaseMode])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -166,6 +150,7 @@ export default function ClubAdminBillingPage() {
                     setBackendError(saveResult.error.message)
                     return
                   }
+                  clubAdmin.updateCachedBillingRecord(billing)
                   const auditResult = await insertAuditEvent({
                     action: "billing_update",
                     target: "subscription",
