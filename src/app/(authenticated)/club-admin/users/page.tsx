@@ -51,7 +51,10 @@ export default function ClubAdminUsersPage() {
   const [coachInviteEmail, setCoachInviteEmail] = useState("")
   const [coachInviteTeamId, setCoachInviteTeamId] = useState<string>("none")
   const [inviteComposerOpen, setInviteComposerOpen] = useState(false)
-  const [useDesktopInviteDialog, setUseDesktopInviteDialog] = useState(false)
+  const [useDesktopInviteDialog, setUseDesktopInviteDialog] = useState(() => {
+    if (typeof window === "undefined") return false
+    return window.matchMedia("(min-width: 640px)").matches
+  })
   const [teams, setTeams] = useState(() => (isSupabaseMode ? [] : loadTeamsSafe()))
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode && !clubAdmin.opsSnapshot)
   const [backendError, setBackendError] = useState<string | null>(clubAdmin.opsError)

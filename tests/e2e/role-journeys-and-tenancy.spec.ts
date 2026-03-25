@@ -5,7 +5,7 @@ test("club-admin, coach, and athlete core surfaces are reachable", async ({ page
   await seedMockSession(page, { role: "club-admin", tenantId: "tenant-alpha" })
   await page.goto("/club-admin/users")
   await expect(page).toHaveURL(/\/club-admin\/users$/)
-  await expect(page.locator("body")).toContainText("Users & Roles")
+  await expect(page.locator("body")).toContainText("Invite and access control")
 
   await seedMockSession(page, { role: "coach", tenantId: "tenant-alpha", coachTeamId: "t1" })
   await page.goto("/coach/teams")
@@ -36,6 +36,7 @@ test("tenant storage isolation: invite created in tenant A is not visible in ten
   const tenantAPage = await tenantAContext.newPage()
   await seedMockSession(tenantAPage, { role: "club-admin", tenantId: "tenant-alpha" })
   await tenantAPage.goto("/club-admin/users")
+  await tenantAPage.getByRole("button", { name: "New invite" }).click()
   await tenantAPage.getByPlaceholder("coach@email.com").fill(email)
   await tenantAPage.getByRole("button", { name: "Send invite" }).click()
   await expect(tenantAPage.locator("body")).toContainText(email)
