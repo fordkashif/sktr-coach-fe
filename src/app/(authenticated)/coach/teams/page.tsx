@@ -152,63 +152,102 @@ export default function CoachTeamsPage() {
   }
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#081120_0%,#0b1424_280px,#f3f6fb_280px,#eef3f8_100%)]">
+    <div
+      className={
+        isClubAdminViewer
+          ? "min-h-full bg-[linear-gradient(180deg,#f7f9fc_0%,#eef3f8_100%)]"
+          : "min-h-full bg-[linear-gradient(180deg,#081120_0%,#0b1424_280px,#f3f6fb_280px,#eef3f8_100%)]"
+      }
+    >
       <div className="mx-auto w-full max-w-[1440px] space-y-6 px-4 pb-8 pt-4 sm:px-6 sm:pb-10 sm:pt-6 lg:px-8">
-        <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,17,34,0.96)_0%,rgba(10,24,44,0.9)_55%,rgba(20,67,160,0.72)_100%)] text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)]">
-          <div className="grid gap-8 px-5 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,420px)] lg:px-8 lg:py-9 xl:px-10">
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">
-                  {isClubAdminViewer ? "Team Operations" : "Coach Teams"}
-                </p>
-                <h1 className="max-w-[11ch] text-[clamp(2.35rem,6vw,4.9rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
-                  {isClubAdminViewer ? "Operate every team from one view." : "Team operations with clearer signal and less admin clutter."}
+        {isClubAdminViewer ? (
+          <section className="px-1 py-1 sm:px-2 lg:px-3">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+              <div className="space-y-4">
+                <h1 className="max-w-[16ch] text-[clamp(2.2rem,5vw,4.75rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-slate-950">
+                  Team operations overview.
                 </h1>
-                <p className="max-w-[58ch] text-sm leading-7 text-white/72 sm:text-base">
-                  {isClubAdminViewer
-                    ? "Create teams, review roster load, manage athlete invite flow, and keep group health visible from one operating surface."
-                    : "Review roster load, invite flow, and current group health from one surface."}
+                <p className="max-w-[60ch] text-sm leading-7 text-slate-600 sm:text-base">
+                  Create teams, review roster load, manage athlete invite flow, and keep group health visible from one operating surface.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "Visible teams", value: visibleTeams.length },
+                  { label: "Athletes", value: totalAthletes },
+                  { label: "Alerts", value: readinessAlerts },
+                  { label: "Event groups", value: visibleEventGroups.length },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#1368ff]">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,17,34,0.96)_0%,rgba(10,24,44,0.9)_55%,rgba(20,67,160,0.72)_100%)] text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)]">
+            <div className="grid gap-8 px-5 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,420px)] lg:px-8 lg:py-9 xl:px-10">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">
+                    Coach Teams
+                  </p>
+                  <h1 className="max-w-[11ch] text-[clamp(2.35rem,6vw,4.9rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
+                    Team operations with clearer signal and less admin clutter.
+                  </h1>
+                  <p className="max-w-[58ch] text-sm leading-7 text-white/72 sm:text-base">
+                    Review roster load, invite flow, and current group health from one surface.
+                  </p>
+                </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Visible teams</p>
-                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{visibleTeams.length}</p>
-                  <p className="mt-1 text-sm text-white/64">Current operational scope</p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Visible teams</p>
+                    <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{visibleTeams.length}</p>
+                    <p className="mt-1 text-sm text-white/64">Current operational scope</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Athletes</p>
+                    <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{totalAthletes}</p>
+                    <p className="mt-1 text-sm text-white/64">Across active roster view</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Alerts</p>
+                    <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{readinessAlerts}</p>
+                    <p className="mt-1 text-sm text-white/64">Readiness issues in view</p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Athletes</p>
-                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{totalAthletes}</p>
-                  <p className="mt-1 text-sm text-white/64">Across active roster view</p>
-                </div>
-                <div className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">Alerts</p>
-                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">{readinessAlerts}</p>
-                  <p className="mt-1 text-sm text-white/64">Readiness issues in view</p>
+              </div>
+
+              <div className="rounded-[28px] border border-white/12 bg-white/[0.08] p-5 backdrop-blur-sm lg:self-end">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#6fb6ff]">In scope</p>
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
+                    <span>Event groups</span>
+                    <span className="font-semibold text-white">{visibleEventGroups.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
+                    <span>Primary team</span>
+                    <span className="font-semibold text-white">{scopedTeam?.name ?? "Mixed scope"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-sm text-white/72">
+                    <span>Workflow priority</span>
+                    <span className="font-semibold text-white">Roster + invites</span>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="rounded-[28px] border border-white/12 bg-white/[0.08] p-5 backdrop-blur-sm lg:self-end">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#6fb6ff]">In scope</p>
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
-                  <span>Event groups</span>
-                  <span className="font-semibold text-white">{visibleEventGroups.length}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
-                  <span>Primary team</span>
-                  <span className="font-semibold text-white">{scopedTeam?.name ?? "Mixed scope"}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-sm text-white/72">
-                  <span>Workflow priority</span>
-                  <span className="font-semibold text-white">Roster + invites</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
         {backendError ? (
           <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             Backend sync issue: {backendError}
