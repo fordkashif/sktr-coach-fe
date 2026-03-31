@@ -1,18 +1,14 @@
 import { expect, test, type Browser, type Page } from "@playwright/test"
-import { access, constants } from "node:fs/promises"
-
-async function fileExists(path: string) {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
+import {
+  getStorageStatePathForRole,
+  hasSupabaseBaseSetupEnvVars,
+  storageStateFileExists,
+} from "../helpers/supabase-auth"
 
 async function withClubAdminPage(browser: Browser, fn: (page: Page) => Promise<void>) {
-  const storageStatePath = "playwright/.auth/club-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("clubAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath, acceptDownloads: true })
   const page = await context.newPage()

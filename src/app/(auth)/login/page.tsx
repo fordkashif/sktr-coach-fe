@@ -11,7 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { setSessionCookies } from "@/lib/auth-session"
+import { submitMockTenantProvisionRequest } from "@/lib/mock-platform-admin"
 import type { AccountRequest } from "@/lib/mock-club-admin"
+import { loadAccountRequests, saveAccountRequests } from "@/lib/mock-club-admin"
+import { MOCK_CREDENTIALS, resolveMockLogin } from "@/lib/mock-auth"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionActor } from "@/lib/supabase/actor"
@@ -19,13 +22,13 @@ import { resolveSessionActor } from "@/lib/supabase/actor"
 type DemoCredential = {
   email: string
   password: string
-  role: "athlete" | "coach" | "club-admin"
+  role: "athlete" | "coach" | "club-admin" | "platform-admin"
   redirectTo: string
   tenantId: string
   defaultTeamId?: string
 }
 
-type DemoCredentialMap = Record<"athlete" | "coach" | "clubAdmin", DemoCredential>
+type DemoCredentialMap = Record<"athlete" | "coach" | "clubAdmin" | "platformAdmin", DemoCredential>
 type DemoAccountKey = keyof DemoCredentialMap
 type AuthMode = "signin" | "request"
 
@@ -104,18 +107,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isSupabaseMode) return
-
-    let cancelled = false
-
-    void import("@/lib/mock-auth").then((module) => {
-      if (!cancelled) {
-        setDemoCredentials(module.MOCK_CREDENTIALS)
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
+    setDemoCredentials(MOCK_CREDENTIALS)
   }, [isSupabaseMode])
 
   useEffect(() => {
@@ -267,7 +259,6 @@ export default function LoginPage() {
       return
     }
 
-    const { resolveMockLogin } = await import("@/lib/mock-auth")
     const match = resolveMockLogin(email, password)
 
     if (!match) {
@@ -329,7 +320,20 @@ export default function LoginPage() {
       return
     }
 
-    const { loadAccountRequests, saveAccountRequests } = await import("@/lib/mock-club-admin")
+    submitMockTenantProvisionRequest({
+      fullName: requestForm.fullName,
+      email: requestForm.email,
+      jobTitle: requestForm.jobTitle,
+      organization: requestForm.organization,
+      organizationType: requestForm.organizationType,
+      organizationWebsite: requestForm.organizationWebsite,
+      region: requestForm.region,
+      expectedCoachCount: Math.max(0, Number.parseInt(requestForm.expectedCoachCount || "0", 10)),
+      expectedAthleteCount: Math.max(0, Number.parseInt(requestForm.expectedAthleteCount || "0", 10)),
+      desiredStartDate: requestForm.desiredStartDate,
+      notes: requestForm.notes,
+    })
+
     const existingRequests = loadAccountRequests()
     const nextRequest: AccountRequest = {
       id: `request-${Date.now()}`,
@@ -400,7 +404,7 @@ export default function LoginPage() {
                   <p className="max-w-[520px] text-sm leading-7 text-white/68 sm:text-base">
                     {mode === "signin"
                       ? "Enter one shared system for training plans, readiness, testing, and team coordination. The product should feel operational, not generic. This surface now carries that same bar."
-                      : "Use this request form when your organization needs a new club admin account. The request lands in the club-admin review queue so the approval flow can be exercised end to end."}
+                      : "Use this request form when your organization needs a new club admin account. The request lands in the platform-admin review queue so provisioning can be exercised end to end."}
                   </p>
                 </div>
               </div>
@@ -554,6 +558,18 @@ export default function LoginPage() {
                                   </span>
                                   <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyDemoCredentials("platformAdmin")}
+                                  disabled={!demoCredentials}
+                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  <span>
+                                    <span className="block text-sm font-semibold text-slate-950">Platform Admin</span>
+                                    <span className="block text-xs text-slate-500">{demoCredentials?.platformAdmin.email ?? "Loading..."}</span>
+                                  </span>
+                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
+                                </button>
                               </div>
                             </AccordionContent>
                           </AccordionItem>
@@ -568,7 +584,7 @@ export default function LoginPage() {
                     <p className="text-sm leading-6 text-slate-600">
                       {isSupabaseMode
                         ? "Your request was submitted for platform-admin review. You'll be contacted after approval."
-                        : "This demo stores the request locally for now. The next backend pass should send it to club-admin review, email notification, or a dedicated request queue."}
+                        : "This demo now stores the request in the platform-admin queue so approval, provisioning, and audit flow can be exercised locally."}
                     </p>
                     <Button
                       type="button"

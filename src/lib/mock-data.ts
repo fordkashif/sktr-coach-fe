@@ -1,4 +1,4 @@
-export type Role = "coach" | "athlete" | "club-admin"
+export type Role = "coach" | "athlete" | "club-admin" | "platform-admin"
 
 export type EventGroup = "Sprint" | "Mid" | "Distance" | "Jumps" | "Throws"
 

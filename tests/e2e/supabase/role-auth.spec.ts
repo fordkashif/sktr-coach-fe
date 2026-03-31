@@ -1,18 +1,14 @@
 import { expect, test } from "@playwright/test"
-import { access, constants } from "node:fs/promises"
-
-async function fileExists(path: string) {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
+import {
+  getStorageStatePathForRole,
+  hasSupabaseBaseSetupEnvVars,
+  storageStateFileExists,
+} from "../helpers/supabase-auth"
 
 test("club admin session can access users page", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/club-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("clubAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()
@@ -25,8 +21,9 @@ test("club admin session can access users page", async ({ browser }) => {
 })
 
 test("coach session can access teams page", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/coach.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("coach")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()
@@ -39,8 +36,9 @@ test("coach session can access teams page", async ({ browser }) => {
 })
 
 test("athlete session can access wellness page", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/athlete.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("athlete")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()

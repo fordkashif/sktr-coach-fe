@@ -70,6 +70,7 @@ const clubAdminLinks: ShellLink[] = [
   { href: "/club-admin/users", label: "Users", icon: UserGroupIcon },
   { href: "/club-admin/teams", label: "Teams", icon: AssignmentsIcon },
   { href: "/club-admin/reports", label: "Reports", icon: PieChartSquareIcon },
+  { href: "/club-admin/audit", label: "Audit", icon: Notification01Icon },
   { href: "/club-admin/billing", label: "Billing", icon: TextCreationIcon },
 ]
 

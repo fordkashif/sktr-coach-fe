@@ -1,5 +1,5 @@
 import type { Browser } from "@playwright/test"
-import { mkdir } from "node:fs/promises"
+import { access, constants, mkdir, rm } from "node:fs/promises"
 import { dirname } from "node:path"
 
 export type SupabaseRoleKey =
@@ -95,9 +95,34 @@ export function getMissingSupabaseAuthEnvVars() {
   return [...required].filter((name) => !process.env[name])
 }
 
+export function hasSupabaseBaseSetupEnvVars() {
+  return getMissingSupabaseAuthEnvVars().length === 0
+}
+
 export function hasRoleCredential(role: SupabaseRoleKey) {
   const mapping = roleEnvMap[role]
   return Boolean(process.env[mapping.email] && process.env[mapping.password])
+}
+
+export function getStorageStatePathForRole(role: SupabaseRoleKey) {
+  return roleEnvMap[role].storageStatePath
+}
+
+export async function storageStateFileExists(path: string) {
+  try {
+    await access(path, constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function clearSupabaseStorageStates() {
+  await Promise.all(
+    Object.values(roleEnvMap).map(async (entry) => {
+      await rm(entry.storageStatePath, { force: true })
+    }),
+  )
 }
 
 export function getRoleCredential(role: SupabaseRoleKey): SupabaseRoleCredential {

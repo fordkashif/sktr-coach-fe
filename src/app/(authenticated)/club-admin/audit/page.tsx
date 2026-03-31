@@ -72,6 +72,7 @@ export default function ClubAdminAuditPage() {
       const queryLower = query.trim().toLowerCase()
       const queryOk =
         !queryLower ||
+        entry.action.toLowerCase().includes(queryLower) ||
         entry.actor.toLowerCase().includes(queryLower) ||
         entry.target.toLowerCase().includes(queryLower) ||
         (entry.detail ?? "").toLowerCase().includes(queryLower)

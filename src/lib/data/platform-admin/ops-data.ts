@@ -1,3 +1,13 @@
+import {
+  approveAndProvisionMockTenantRequest,
+  dispatchMockPendingNotificationEmails,
+  loadMockPlatformAdminRequests,
+  loadMockPlatformAuditEvents,
+  logMockPlatformAdminExport,
+  previewMockInitialAccessInvite,
+  resendMockInitialAccessInvite,
+  reviewMockTenantProvisionRequest,
+} from "@/lib/mock-platform-admin"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -45,8 +55,12 @@ type ClientResolution =
   | { ok: true; client: NonNullable<ReturnType<typeof getBrowserSupabaseClient>> }
   | { ok: false; error: DataError }
 
+function isMockMode() {
+  return getBackendMode() !== "supabase"
+}
+
 function requireSupabaseClient(operation: string): ClientResolution {
-  if (getBackendMode() !== "supabase") {
+  if (isMockMode()) {
     return {
       ok: false,
       error: { code: "UNKNOWN", message: `[${operation}] backend mode is not 'supabase'.` },
@@ -65,6 +79,8 @@ function requireSupabaseClient(operation: string): ClientResolution {
 }
 
 export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdminRequestRecord[]>> {
+  if (isMockMode()) return ok(loadMockPlatformAdminRequests())
+
   const clientResult = requireSupabaseClient("getPlatformAdminRequestQueue")
   if (!clientResult.ok) return clientResult
 
@@ -127,6 +143,8 @@ export async function getPlatformAdminRequestQueue(): Promise<Result<PlatformAdm
 }
 
 export async function getPlatformAuditEvents(limit = 100): Promise<Result<PlatformAuditEventRecord[]>> {
+  if (isMockMode()) return ok(loadMockPlatformAuditEvents().slice(0, Math.max(1, Math.min(limit, 250))))
+
   const clientResult = requireSupabaseClient("getPlatformAuditEvents")
   if (!clientResult.ok) return clientResult
 
@@ -170,6 +188,11 @@ export async function reviewTenantProvisionRequest(params: {
   status: "approved" | "rejected"
   reviewNotes?: string
 }): Promise<Result<void>> {
+  if (isMockMode()) {
+    const updated = reviewMockTenantProvisionRequest(params)
+    return updated ? ok(undefined) : err("NOT_FOUND", "Tenant provisioning request not found.")
+  }
+
   const clientResult = requireSupabaseClient("reviewTenantProvisionRequest")
   if (!clientResult.ok) return clientResult
 
@@ -217,6 +240,11 @@ export async function sendInitialClubAdminAccessInvite(params: {
   requestorName: string
   tenantId: string
 }): Promise<Result<{ sentAt: string }>> {
+  if (isMockMode()) {
+    const preview = resendMockInitialAccessInvite({ requestId: params.requestId })
+    return preview ? ok(preview) : err("NOT_FOUND", "Provisioned request not found.")
+  }
+
   const clientResult = requireSupabaseClient("sendInitialClubAdminAccessInvite")
   if (!clientResult.ok) return clientResult
 
@@ -239,6 +267,11 @@ export async function previewInitialClubAdminAccessInvite(params: {
   requestorName: string
   tenantId: string
 }): Promise<Result<{ actionLink: string }>> {
+  if (isMockMode()) {
+    const preview = previewMockInitialAccessInvite({ requestId: params.requestId })
+    return preview ? ok(preview) : err("NOT_FOUND", "Provisioned request not found.")
+  }
+
   const clientResult = requireSupabaseClient("previewInitialClubAdminAccessInvite")
   if (!clientResult.ok) return clientResult
 
@@ -273,6 +306,15 @@ export async function approveAndProvisionTenantRequest(params: {
   requestorName: string
   reviewNotes?: string
 }): Promise<Result<{ tenantId: string; accessInviteSentAt: string | null; accessInviteError: string | null }>> {
+  if (isMockMode()) {
+    const provisioned = approveAndProvisionMockTenantRequest({
+      requestId: params.requestId,
+      requestorEmail: params.requestorEmail.trim().toLowerCase(),
+      reviewNotes: params.reviewNotes,
+    })
+    return provisioned ? ok(provisioned) : err("NOT_FOUND", "Tenant provisioning request not found.")
+  }
+
   const clientResult = requireSupabaseClient("approveAndProvisionTenantRequest")
   if (!clientResult.ok) return clientResult
 
@@ -309,6 +351,8 @@ export async function approveAndProvisionTenantRequest(params: {
 }
 
 export async function getCurrentPlatformAdminIdentity(): Promise<Result<{ email: string }>> {
+  if (isMockMode()) return ok({ email: "platformadmin@pacelab.local" })
+
   const clientResult = requireSupabaseClient("getCurrentPlatformAdminIdentity")
   if (!clientResult.ok) return clientResult
 
@@ -348,6 +392,8 @@ export async function dispatchPendingNotificationEmails(params?: {
   limit?: number
   eventIds?: string[]
 }): Promise<Result<{ processed: number; results: Array<{ id: string; status: "sent" | "failed"; error?: string }> }>> {
+  if (isMockMode()) return ok(dispatchMockPendingNotificationEmails(params))
+
   const clientResult = requireSupabaseClient("dispatchPendingNotificationEmails")
   if (!clientResult.ok) return clientResult
 
@@ -382,6 +428,11 @@ export async function logPlatformAdminExport(params: {
   recordCount: number
   filters?: Record<string, unknown>
 }): Promise<Result<void>> {
+  if (isMockMode()) {
+    logMockPlatformAdminExport(params)
+    return ok(undefined)
+  }
+
   const clientResult = requireSupabaseClient("logPlatformAdminExport")
   if (!clientResult.ok) return clientResult
 

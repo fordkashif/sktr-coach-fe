@@ -30,6 +30,14 @@ export const MOCK_CREDENTIALS = {
     tenantId: "elite-track-club",
     teamScope: "all-teams" as TeamScope,
   },
+  platformAdmin: {
+    email: "platformadmin@pacelab.local",
+    password: "Password123!",
+    role: "platform-admin" as Role,
+    redirectTo: "/platform-admin/dashboard",
+    tenantId: "platform",
+    teamScope: "all-teams" as TeamScope,
+  },
 } as const
 
 export const MOCK_ROLE_STORAGE_KEY = "pacelab:mock-role"

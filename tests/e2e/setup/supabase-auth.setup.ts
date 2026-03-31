@@ -1,5 +1,6 @@
 import { test } from "@playwright/test"
 import {
+  clearSupabaseStorageStates,
   getMissingSupabaseAuthEnvVars,
   hasRoleCredential,
   writeSupabaseStorageStateForRole,
@@ -7,6 +8,9 @@ import {
 
 test("generate Supabase storage states for e2e roles", async ({ browser, baseURL }) => {
   const missing = getMissingSupabaseAuthEnvVars()
+  if (missing.length > 0) {
+    await clearSupabaseStorageStates()
+  }
   test.skip(
     missing.length > 0,
     `Missing Supabase e2e env vars: ${missing.join(", ")}. Set them before running playwright.supabase.config.ts.`,

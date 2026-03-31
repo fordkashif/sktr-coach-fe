@@ -1,16 +1,17 @@
 # SectorCoach
 
-SectorCoach is a performance management platform for athletes, coaches, and club admins.
+SectorCoach is a performance management platform for athletes, coaches, club admins, and platform admins.
 
 It is designed to bring training plans, test weeks, athlete monitoring, reporting, and team operations into one shared system.
 
 ## What SectorCoach Does
 
-SectorCoach supports three connected product experiences:
+SectorCoach supports four connected product experiences:
 
 - **Athletes** can view plans, submit wellness and test data, and track progress.
 - **Coaches** can manage teams, build programs, monitor athlete state, and review performance signals.
 - **Club Admins** can manage people, teams, approvals, reporting, and operating workflows across the club.
+- **Platform Admins** can review tenant requests, provision organizations, and oversee platform-level operational workflows.
 
 ## Core Product Areas
 
@@ -19,6 +20,7 @@ SectorCoach supports three connected product experiences:
 - Athlete readiness and monitoring
 - Team and roster management
 - Reporting and operational oversight
+- Tenant request review and provisioning oversight
 
 ## Product Status
 

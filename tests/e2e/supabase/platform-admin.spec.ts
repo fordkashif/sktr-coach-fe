@@ -1,18 +1,16 @@
 import { expect, test } from "@playwright/test"
-import { access, constants } from "node:fs/promises"
-
-async function fileExists(path: string) {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
+import {
+  getStorageStatePathForRole,
+  hasRoleCredential,
+  hasSupabaseBaseSetupEnvVars,
+  storageStateFileExists,
+} from "../helpers/supabase-auth"
 
 test("platform admin session can access dashboard landing page", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/platform-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("platformAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!hasRoleCredential("platformAdmin"), "Missing platform-admin Supabase credentials.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()
@@ -25,8 +23,10 @@ test("platform admin session can access dashboard landing page", async ({ browse
 })
 
 test("platform admin session can access request queue", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/platform-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("platformAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!hasRoleCredential("platformAdmin"), "Missing platform-admin Supabase credentials.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()
@@ -39,8 +39,10 @@ test("platform admin session can access request queue", async ({ browser }) => {
 })
 
 test("platform admin session can access platform audit", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/platform-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("platformAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!hasRoleCredential("platformAdmin"), "Missing platform-admin Supabase credentials.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const context = await browser.newContext({ storageState: storageStatePath })
   const page = await context.newPage()
@@ -53,8 +55,10 @@ test("platform admin session can access platform audit", async ({ browser }) => 
 })
 
 test("platform admin can review a newly submitted tenant request and see it in platform audit", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/platform-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("platformAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!hasRoleCredential("platformAdmin"), "Missing platform-admin Supabase credentials.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const nonce = Date.now()
   const organizationName = `E2E Platform Org ${nonce}`
@@ -96,8 +100,10 @@ test("platform admin can review a newly submitted tenant request and see it in p
 })
 
 test("platform admin request queue export is logged in platform audit", async ({ browser }) => {
-  const storageStatePath = "playwright/.auth/platform-admin.json"
-  test.skip(!(await fileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
+  const storageStatePath = getStorageStatePathForRole("platformAdmin")
+  test.skip(!hasSupabaseBaseSetupEnvVars(), "Missing required Supabase e2e environment variables.")
+  test.skip(!hasRoleCredential("platformAdmin"), "Missing platform-admin Supabase credentials.")
+  test.skip(!(await storageStateFileExists(storageStatePath)), `Missing storage state: ${storageStatePath}`)
 
   const adminContext = await browser.newContext({ storageState: storageStatePath, acceptDownloads: true })
   const requestsPage = await adminContext.newPage()

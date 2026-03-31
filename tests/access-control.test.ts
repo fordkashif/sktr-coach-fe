@@ -71,3 +71,38 @@ test("allows club-admin on club-admin route", () => {
 
   assert.equal(result.allowed, true)
 })
+
+test("allows platform-admin on platform-admin route without tenant context", () => {
+  const result = evaluateAccess({
+    pathname: "/platform-admin/dashboard",
+    isAuthenticated: true,
+    role: "platform-admin",
+    tenantId: null,
+  })
+
+  assert.equal(result.allowed, true)
+})
+
+test("prevents club-admin from escalating to platform-admin path", () => {
+  const result = evaluateAccess({
+    pathname: "/platform-admin/dashboard",
+    isAuthenticated: true,
+    role: "club-admin",
+    tenantId: "elite-track-club",
+  })
+
+  assert.equal(result.allowed, false)
+  assert.equal(result.reason, "forbidden-role")
+})
+
+test("prevents platform-admin from entering tenant-scoped club-admin path", () => {
+  const result = evaluateAccess({
+    pathname: "/club-admin/dashboard",
+    isAuthenticated: true,
+    role: "platform-admin",
+    tenantId: "platform",
+  })
+
+  assert.equal(result.allowed, false)
+  assert.equal(result.reason, "forbidden-role")
+})

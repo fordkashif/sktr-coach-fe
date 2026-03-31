@@ -27,7 +27,7 @@ export default defineConfig({
       VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY,
     },
     port: 3008,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 })

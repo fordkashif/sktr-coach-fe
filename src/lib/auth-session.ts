@@ -5,7 +5,7 @@ export const USER_COOKIE = "pacelab_user"
 export const COACH_TEAM_COOKIE = "pacelab_coach_team"
 
 export function setSessionCookies(
-  role: "athlete" | "coach" | "club-admin",
+  role: "athlete" | "coach" | "club-admin" | "platform-admin",
   tenantId: string,
   userEmail: string,
   coachTeamId?: string
