@@ -33,6 +33,40 @@ export async function requestPasswordReset(email: string) {
     return { ok: false as const, message: "Supabase client is not configured." }
   }
 
+  const isLocalOrigin =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+
+  if (isLocalOrigin) {
+    const { data, error } = await supabase.functions.invoke("local-preview-password-reset", {
+      body: {
+        email: normalizedEmail,
+        appBaseUrl: window.location.origin,
+      },
+    })
+
+    if (error) {
+      const contextualMessage =
+        typeof (error as { context?: { json?: { error?: string } } }).context?.json?.error === "string"
+          ? (error as { context?: { json?: { error?: string } } }).context!.json!.error!
+          : error.message
+      return { ok: false as const, message: contextualMessage }
+    }
+
+    const response = (data ?? {}) as { actionLink?: string; error?: string }
+    if (response.error) return { ok: false as const, message: response.error }
+    if (!response.actionLink) {
+      return { ok: false as const, message: "Local reset preview did not return an action link." }
+    }
+
+    return {
+      ok: true as const,
+      mode: "supabase" as const,
+      message: "Local dev generated a reset link instead of sending email.",
+      actionLink: response.actionLink,
+    }
+  }
+
   const redirectTo = `${window.location.origin}/reset-password`
   const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo })
 

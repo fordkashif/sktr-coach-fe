@@ -72,6 +72,7 @@ jobs:
           supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
 
@@ -129,6 +130,7 @@ jobs:
           supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
 

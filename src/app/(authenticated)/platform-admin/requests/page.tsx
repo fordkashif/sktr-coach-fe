@@ -96,6 +96,7 @@ export default function PlatformAdminRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [localInviteLinks, setLocalInviteLinks] = useState<Record<string, string>>({})
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [submittingId, setSubmittingId] = useState<string | null>(null)
@@ -229,11 +230,19 @@ export default function PlatformAdminRequestsPage() {
             : item,
         ),
       )
+      if (result.data.accessInviteActionLink) {
+        setLocalInviteLinks((current) => ({
+          ...current,
+          [requestId]: result.data.accessInviteActionLink!,
+        }))
+      }
       setError(result.data.accessInviteError)
       setInfo(
         result.data.accessInviteError
           ? `Tenant provisioned, but initial invite delivery still needs attention for ${target.requestorEmail}.`
-          : `Tenant provisioned and initial access invite sent to ${target.requestorEmail}.`,
+          : result.data.accessInviteActionLink
+            ? `Tenant provisioned for ${target.requestorEmail}. Local dev generated a clickable initial access link instead of sending email.`
+            : `Tenant provisioned and initial access invite sent to ${target.requestorEmail}.`,
       )
       setSubmittingId(null)
       return
@@ -308,10 +317,20 @@ export default function PlatformAdminRequestsPage() {
               accessInviteLastError: null,
             }
           : item,
-      ),
-    )
+        ),
+      )
+    if (result.data.actionLink) {
+      setLocalInviteLinks((current) => ({
+        ...current,
+        [requestId]: result.data.actionLink!,
+      }))
+    }
     setError(null)
-    setInfo(`Initial access invite re-sent to ${target.requestorEmail}.`)
+    setInfo(
+      result.data.actionLink
+        ? `Local dev generated a fresh initial access link for ${target.requestorEmail}.`
+        : `Initial access invite re-sent to ${target.requestorEmail}.`,
+    )
     setSubmittingId(null)
   }
 
@@ -344,6 +363,12 @@ export default function PlatformAdminRequestsPage() {
     }
 
     setSubmittingId(null)
+  }
+
+  const handleOpenLocalInviteLink = (requestId: string) => {
+    const actionLink = localInviteLinks[requestId]
+    if (!actionLink) return
+    window.open(actionLink, "_blank", "noopener,noreferrer")
   }
 
   const handleDispatchPendingEmails = async () => {
@@ -590,6 +615,29 @@ export default function PlatformAdminRequestsPage() {
               : "Invite has not been confirmed as sent yet."}
           </p>
           {request.accessInviteLastError ? <p className="mt-2 text-sm text-rose-700">{request.accessInviteLastError}</p> : null}
+          {localInviteLinks[request.id] ? (
+            <div className="mt-3 space-y-3 rounded-[18px] border border-[#cfe2ff] bg-white px-3 py-3">
+              <p className="text-xs font-medium text-slate-950">Local dev access link</p>
+              <p className="break-all font-mono text-xs text-slate-600">{localInviteLinks[request.id]}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-full border-slate-200 px-4"
+                  onClick={() => void handleCopyInviteLink(request.id)}
+                >
+                  Copy link
+                </Button>
+                <Button
+                  type="button"
+                  className="h-9 rounded-full px-4"
+                  onClick={() => handleOpenLocalInviteLink(request.id)}
+                >
+                  Open link
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

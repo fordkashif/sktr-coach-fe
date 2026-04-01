@@ -487,11 +487,6 @@ export default function LoginPage() {
                           <Link to="/reset-password" className="text-sm font-medium text-[#1368ff] hover:underline">
                             Forgot password?
                           </Link>
-                          <p className="text-xs leading-5 text-slate-500 sm:max-w-[220px] sm:text-right sm:text-sm">
-                            {isSupabaseMode
-                              ? "Supabase mode enabled. Use your real account credentials."
-                              : "Demo build. Use the access panel below for role-specific credentials."}
-                          </p>
                         </div>
                       </div>
 

@@ -82,7 +82,7 @@ export default function ResetPasswordPage() {
     }
 
     setMessage(result.message)
-    if (result.mode === "mock" && result.actionLink) {
+    if (result.actionLink) {
       setLocalResetLink(result.actionLink)
       setCopyStatus("idle")
       setStage("success")
@@ -148,7 +148,7 @@ export default function ResetPasswordPage() {
         {absoluteLocalResetLink ? (
           <div className="mt-5 rounded-[22px] border border-sky-200 bg-sky-50/80 px-4 py-4 text-sm text-slate-700">
             <p className="font-medium text-slate-950">Local reset link</p>
-            <p className="mt-1 text-slate-600">Mock mode does not send email, so copy or open the generated reset link directly.</p>
+            <p className="mt-1 text-slate-600">Local development does not send email, so copy or open the generated reset link directly.</p>
             <div className="mt-3 rounded-[16px] border border-sky-100 bg-white px-3 py-3 font-mono text-xs text-slate-700 break-all" data-testid="local-reset-link">
               {absoluteLocalResetLink}
             </div>

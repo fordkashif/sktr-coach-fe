@@ -215,7 +215,7 @@ async function invokePlatformAdminInviteFunction(
     tenantId: string
     appBaseUrl: string | null
   },
-): Promise<Result<{ sentAt: string }>> {
+): Promise<Result<{ sentAt: string; actionLink?: string }>> {
   const { data, error } = await client.functions.invoke("platform-admin-send-club-admin-invite", {
     body: payload,
   })
@@ -228,10 +228,10 @@ async function invokePlatformAdminInviteFunction(
     return err("UNKNOWN", contextualMessage, error)
   }
 
-  const response = (data ?? {}) as { sentAt?: string; error?: string }
+  const response = (data ?? {}) as { sentAt?: string; actionLink?: string; error?: string }
   if (response.error) return err("UNKNOWN", response.error)
   if (!response.sentAt) return err("UNKNOWN", "Invite function did not return a sent timestamp.")
-  return ok({ sentAt: response.sentAt })
+  return ok({ sentAt: response.sentAt, actionLink: response.actionLink })
 }
 
 export async function sendInitialClubAdminAccessInvite(params: {
@@ -239,7 +239,7 @@ export async function sendInitialClubAdminAccessInvite(params: {
   requestorEmail: string
   requestorName: string
   tenantId: string
-}): Promise<Result<{ sentAt: string }>> {
+}): Promise<Result<{ sentAt: string; actionLink?: string }>> {
   if (isMockMode()) {
     const preview = resendMockInitialAccessInvite({ requestId: params.requestId })
     return preview ? ok(preview) : err("NOT_FOUND", "Provisioned request not found.")
@@ -258,7 +258,7 @@ export async function sendInitialClubAdminAccessInvite(params: {
 
   if (!inviteResult.ok) return inviteResult
 
-  return ok({ sentAt: inviteResult.data.sentAt })
+  return ok({ sentAt: inviteResult.data.sentAt, actionLink: inviteResult.data.actionLink })
 }
 
 export async function previewInitialClubAdminAccessInvite(params: {
@@ -305,7 +305,7 @@ export async function approveAndProvisionTenantRequest(params: {
   requestorEmail: string
   requestorName: string
   reviewNotes?: string
-}): Promise<Result<{ tenantId: string; accessInviteSentAt: string | null; accessInviteError: string | null }>> {
+}): Promise<Result<{ tenantId: string; accessInviteSentAt: string | null; accessInviteError: string | null; accessInviteActionLink?: string }>> {
   if (isMockMode()) {
     const provisioned = approveAndProvisionMockTenantRequest({
       requestId: params.requestId,
@@ -347,6 +347,7 @@ export async function approveAndProvisionTenantRequest(params: {
     tenantId,
     accessInviteSentAt: inviteResult.data.sentAt,
     accessInviteError: null,
+    accessInviteActionLink: inviteResult.data.actionLink,
   })
 }
 

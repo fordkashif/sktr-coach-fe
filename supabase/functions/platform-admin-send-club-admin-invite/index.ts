@@ -34,6 +34,17 @@ function normalizeRedirectBaseUrl(value: string | null | undefined) {
   }
 }
 
+function isLocalOrigin(origin: string | null) {
+  if (!origin) return false
+
+  try {
+    const url = new URL(origin)
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1"
+  } catch {
+    return false
+  }
+}
+
 async function sendWithResend(params: {
   apiKey: string
   fromEmail: string
@@ -95,13 +106,6 @@ Deno.serve(async (request) => {
 
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     return new Response(JSON.stringify({ error: "Missing Supabase function environment." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    })
-  }
-
-  if (!resendApiKey || !fromEmail) {
-    return new Response(JSON.stringify({ error: "Missing invite email provider environment." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
@@ -180,6 +184,13 @@ Deno.serve(async (request) => {
     })
   }
 
+  if ((!resendApiKey || !fromEmail) && !isLocalOrigin(redirectBaseUrl)) {
+    return new Response(JSON.stringify({ error: "Missing invite email provider environment." }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    })
+  }
+
   const generateResult = await serviceClient.auth.admin.generateLink({
     type: "magiclink",
     email: requestorEmail,
@@ -227,6 +238,22 @@ Deno.serve(async (request) => {
   }
 
   const appLink = `${redirectBaseUrl}/club-admin/claim?token_hash=${encodeURIComponent(tokenHash)}&type=magiclink`
+
+  if (isLocalOrigin(redirectBaseUrl)) {
+    await serviceClient
+      .from("tenant_provision_requests")
+      .update({
+        access_invite_sent_at: sentAt,
+        access_invite_sent_by_user_id: authData.user.id,
+        access_invite_last_error: null,
+      })
+      .eq("id", requestId)
+
+    return new Response(JSON.stringify({ sentAt, actionLink: appLink }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    })
+  }
 
   try {
     await sendWithResend({
