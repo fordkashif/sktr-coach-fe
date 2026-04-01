@@ -392,7 +392,19 @@ export async function getCurrentPlatformAdminIdentity(): Promise<Result<{ email:
 export async function dispatchPendingNotificationEmails(params?: {
   limit?: number
   eventIds?: string[]
-}): Promise<Result<{ processed: number; results: Array<{ id: string; status: "sent" | "failed"; error?: string }> }>> {
+}): Promise<
+  Result<{
+    processed: number
+    results: Array<{
+      id: string
+      status: "sent" | "failed"
+      error?: string
+      actionLink?: string
+      recipientEmail?: string
+      subject?: string
+    }>
+  }>
+> {
   if (isMockMode()) return ok(dispatchMockPendingNotificationEmails(params))
 
   const clientResult = requireSupabaseClient("dispatchPendingNotificationEmails")
@@ -411,7 +423,14 @@ export async function dispatchPendingNotificationEmails(params?: {
 
   const payload = (data ?? {}) as {
     processed?: number
-    results?: Array<{ id: string; status: "sent" | "failed"; error?: string }>
+    results?: Array<{
+      id: string
+      status: "sent" | "failed"
+      error?: string
+      actionLink?: string
+      recipientEmail?: string
+      subject?: string
+    }>
     error?: string
   }
 

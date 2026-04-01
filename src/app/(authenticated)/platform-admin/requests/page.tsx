@@ -97,6 +97,9 @@ export default function PlatformAdminRequestsPage() {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [localInviteLinks, setLocalInviteLinks] = useState<Record<string, string>>({})
+  const [localNotificationLinks, setLocalNotificationLinks] = useState<
+    Array<{ id: string; recipientEmail?: string; subject?: string; actionLink?: string }>
+  >([])
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [submittingId, setSubmittingId] = useState<string | null>(null)
@@ -383,9 +386,39 @@ export default function PlatformAdminRequestsPage() {
     }
 
     const failedCount = result.data.results.filter((item) => item.status === "failed").length
+    const localPreviewResults = result.data.results.filter(
+      (item) => item.actionLink || item.recipientEmail || item.subject,
+    )
+    setLocalNotificationLinks(
+      localPreviewResults.map((item) => ({
+        id: item.id,
+        recipientEmail: item.recipientEmail,
+        subject: item.subject,
+        actionLink: item.actionLink,
+      })),
+    )
     setError(failedCount > 0 ? `${failedCount} email notification deliveries failed. Review function logs and event rows.` : null)
-    setInfo(`Processed ${result.data.processed} pending email notification event(s).`)
+    setInfo(
+      localPreviewResults.length > 0
+        ? `Processed ${result.data.processed} pending email notification event(s). Local dev generated previews instead of sending email.`
+        : `Processed ${result.data.processed} pending email notification event(s).`,
+    )
     setSubmittingId(null)
+  }
+
+  const handleCopyNotificationLink = async (actionLink: string) => {
+    try {
+      await navigator.clipboard.writeText(actionLink)
+      setError(null)
+      setInfo("Copied notification action link.")
+    } catch {
+      setError("Notification preview generated, but clipboard copy failed.")
+      setInfo(actionLink)
+    }
+  }
+
+  const handleOpenNotificationLink = (actionLink: string) => {
+    window.open(actionLink, "_blank", "noopener,noreferrer")
   }
 
   const handleExportQueueCsv = async () => {
@@ -696,6 +729,58 @@ export default function PlatformAdminRequestsPage() {
       {info ? (
         <section className="rounded-[22px] border border-[#cfe2ff] bg-[#f6faff] px-4 py-3 text-sm text-[#1553b7]">
           {info}
+        </section>
+      ) : null}
+      {isLocalPreviewEnabled && localNotificationLinks.length > 0 ? (
+        <section className="rounded-[24px] border border-[#cfe2ff] bg-[#f8fbff] p-4 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1553b7]">
+                Local notification previews
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Local development does not send notification email. Use these generated previews instead.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {localNotificationLinks.map((preview) => (
+              <div key={preview.id} className="rounded-[20px] border border-slate-200 bg-white px-4 py-4">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {preview.recipientEmail ?? "Notification preview"}
+                    </p>
+                    {preview.subject ? <p className="text-sm font-medium text-slate-950">{preview.subject}</p> : null}
+                    {preview.actionLink ? (
+                      <p className="break-all font-mono text-xs text-slate-600">{preview.actionLink}</p>
+                    ) : (
+                      <p className="text-sm text-slate-500">This notification has no actionable link in the body.</p>
+                    )}
+                  </div>
+                  {preview.actionLink ? (
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-full border-slate-200 px-4"
+                        onClick={() => void handleCopyNotificationLink(preview.actionLink!)}
+                      >
+                        Copy link
+                      </Button>
+                      <Button
+                        type="button"
+                        className="h-9 rounded-full px-4"
+                        onClick={() => handleOpenNotificationLink(preview.actionLink!)}
+                      >
+                        Open link
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
 

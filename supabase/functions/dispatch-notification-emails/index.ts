@@ -21,6 +21,23 @@ type EmailEventRow = {
   delivery_attempt_count: number
 }
 
+function isLocalAppBaseUrl(value: string | null) {
+  if (!value) return false
+
+  try {
+    const url = new URL(value)
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1"
+  } catch {
+    return false
+  }
+}
+
+function extractFirstLink(body: string | null) {
+  if (!body) return null
+  const match = body.match(/https?:\/\/[^\s)]+/i)
+  return match?.[0] ?? null
+}
+
 async function sendWithResend(params: {
   apiKey: string
   fromEmail: string
@@ -74,6 +91,8 @@ Deno.serve(async (request) => {
   const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
   const resendApiKey = Deno.env.get("RESEND_API_KEY")
   const fromEmail = Deno.env.get("NOTIFICATION_FROM_EMAIL")
+  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL")
+  const isLocalPreview = isLocalAppBaseUrl(publicAppUrl)
 
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     return new Response(JSON.stringify({ error: "Missing Supabase function environment." }), {
@@ -82,7 +101,7 @@ Deno.serve(async (request) => {
     })
   }
 
-  if (!resendApiKey || !fromEmail) {
+  if (!isLocalPreview && (!resendApiKey || !fromEmail)) {
     return new Response(JSON.stringify({ error: "Missing notification email provider environment." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -152,7 +171,14 @@ Deno.serve(async (request) => {
   }
 
   const rows = ((data as EmailEventRow[] | null) ?? []).filter((row) => Boolean(row.recipient_email))
-  const results: Array<{ id: string; status: "sent" | "failed"; error?: string }> = []
+  const results: Array<{
+    id: string
+    status: "sent" | "failed"
+    error?: string
+    actionLink?: string
+    recipientEmail?: string
+    subject?: string
+  }> = []
 
   for (const row of rows) {
     const { data: emailEnabled, error: preferenceError } = await serviceClient.rpc("notification_channel_enabled", {
@@ -183,10 +209,10 @@ Deno.serve(async (request) => {
           status: "suppressed",
           last_error: "Suppressed by notification preferences.",
           processing_started_at: null,
-        })
-        .eq("id", row.id)
+      })
+      .eq("id", row.id)
 
-      results.push({ id: row.id, status: "sent" })
+      results.push({ id: row.id, status: "sent", recipientEmail: row.recipient_email ?? undefined, subject: row.subject })
       continue
     }
 
@@ -200,13 +226,18 @@ Deno.serve(async (request) => {
       .eq("id", row.id)
 
     try {
-      const providerResponse = await sendWithResend({
-        apiKey: resendApiKey,
-        fromEmail,
-        toEmail: row.recipient_email!,
-        subject: row.subject,
-        body: row.body,
-      })
+      let providerResponse: { id?: string } | null = null
+      const actionLink = extractFirstLink(row.body)
+
+      if (!isLocalPreview) {
+        providerResponse = await sendWithResend({
+          apiKey: resendApiKey!,
+          fromEmail: fromEmail!,
+          toEmail: row.recipient_email!,
+          subject: row.subject,
+          body: row.body,
+        })
+      }
 
       await serviceClient
         .from("notification_events")
@@ -214,12 +245,18 @@ Deno.serve(async (request) => {
           status: "sent",
           delivered_at: new Date().toISOString(),
           last_error: null,
-          provider_message_id: providerResponse.id ?? null,
+          provider_message_id: providerResponse?.id ?? null,
           processing_started_at: null,
         })
         .eq("id", row.id)
 
-      results.push({ id: row.id, status: "sent" })
+      results.push({
+        id: row.id,
+        status: "sent",
+        actionLink: actionLink ?? undefined,
+        recipientEmail: row.recipient_email ?? undefined,
+        subject: row.subject,
+      })
     } catch (dispatchError) {
       const message = dispatchError instanceof Error ? dispatchError.message : "Unknown email dispatch failure"
 
