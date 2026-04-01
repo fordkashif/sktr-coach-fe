@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { setSessionCookies } from "@/lib/auth-session"
+import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import { submitMockTenantProvisionRequest } from "@/lib/mock-platform-admin"
 import type { AccountRequest } from "@/lib/mock-club-admin"
 import { loadAccountRequests, saveAccountRequests } from "@/lib/mock-club-admin"
@@ -87,6 +88,12 @@ const MOCK_ROLE_STORAGE_KEY = "pacelab:mock-role"
 const MOCK_USER_EMAIL_STORAGE_KEY = "pacelab:mock-user-email"
 const MOCK_COACH_TEAM_STORAGE_KEY = "pacelab:mock-coach-team"
 
+async function resolveInitialCoachTeamId() {
+  const snapshot = await getCoachTeamsSnapshotForCurrentUser()
+  if (!snapshot.ok) return undefined
+  return snapshot.data.teams[0]?.id
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -136,6 +143,18 @@ export default function LoginPage() {
       window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
       window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
       window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
+
+      let coachTeamId: string | undefined
+      if (actor.role === "coach") {
+        coachTeamId = await resolveInitialCoachTeamId()
+      }
+
+      setSessionCookies(
+        actor.role,
+        actor.tenantId ?? "platform-admin",
+        actor.userEmail ?? session.user.email ?? "",
+        actor.role === "coach" ? coachTeamId : undefined,
+      )
 
       if (safeRedirect) {
         navigate(safeRedirect, { replace: true })
@@ -237,6 +256,18 @@ export default function LoginPage() {
       window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
       window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
       window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
+
+      let coachTeamId: string | undefined
+      if (actor.role === "coach") {
+        coachTeamId = await resolveInitialCoachTeamId()
+      }
+
+      setSessionCookies(
+        actor.role,
+        actor.tenantId ?? "platform-admin",
+        actor.userEmail ?? data.session.user.email ?? "",
+        actor.role === "coach" ? coachTeamId : undefined,
+      )
 
       setError("")
       if (safeRedirect) {

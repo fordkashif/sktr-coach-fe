@@ -27,7 +27,7 @@ import { getCoachScope } from "@/lib/coach-scope"
 import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
-import { clearSessionCookies } from "@/lib/auth-session"
+import { clearSessionCookies, COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_ROLE_STORAGE_KEY,
@@ -132,7 +132,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/platform-admin")
 
   const coachTeamsHref = useMemo(() => {
-    if (role !== "coach" || typeof window === "undefined" || getBackendMode() !== "mock") return "/coach/teams"
+    if (role !== "coach" || typeof window === "undefined") return "/coach/teams"
+
+    const scopedTeamId = getCookieValue(COACH_TEAM_COOKIE)
+    if (scopedTeamId) {
+      return `/coach/teams/${scopedTeamId}`
+    }
+
+    if (getBackendMode() !== "mock") return "/coach/teams"
     const coachScope = getCoachScope(role)
     const coachTeamId = window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId
 
