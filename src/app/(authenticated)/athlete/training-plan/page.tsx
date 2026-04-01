@@ -112,7 +112,7 @@ function formatDayDate(date: string) {
 const typeToneMap: Record<TrainingPlanDay["sessionType"], string> = {
   Track: "bg-[#dbeafe] text-[#1d4ed8]",
   Gym: "bg-[#ede9fe] text-[#6d28d9]",
-  Recovery: "bg-[#dcfce7] text-[#15803d]",
+  Recovery: "bg-[#e0f2fe] text-[#0369a1]",
   Technical: "bg-[#fef3c7] text-[#b45309]",
   Mixed: "bg-[#fee2e2] text-[#be123c]",
 }
@@ -352,7 +352,7 @@ export default function AthleteTrainingPlanPage() {
                 const isSelected = week.weekNumber === selectedWeek.weekNumber
                 const statusTone =
                   week.status === "completed"
-                    ? "text-emerald-700"
+                    ? "text-[#1f5fd1]"
                     : week.status === "current"
                       ? "text-[#1368ff]"
                       : "text-slate-400"
@@ -391,7 +391,7 @@ export default function AthleteTrainingPlanPage() {
             {selectedWeek.days.map((day) => {
               const statusTone =
                 day.status === "completed"
-                  ? "bg-emerald-100 text-emerald-700"
+                  ? "bg-[#e0edff] text-[#1f5fd1]"
                   : day.status === "scheduled"
                     ? "bg-amber-100 text-amber-700"
                     : "bg-slate-200 text-slate-700"

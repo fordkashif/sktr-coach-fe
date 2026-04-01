@@ -66,7 +66,7 @@ const blockToneMap: Record<SessionBlock["type"], string> = {
   Sprint: "bg-[#dbeafe] text-[#1d4ed8]",
   Run: "bg-[#fef3c7] text-[#b45309]",
   Strength: "bg-[#ede9fe] text-[#6d28d9]",
-  Jumps: "bg-[#dcfce7] text-[#15803d]",
+  Jumps: "bg-[#e0f2fe] text-[#0369a1]",
   Throws: "bg-[#fee2e2] text-[#be123c]",
 }
 
@@ -372,7 +372,7 @@ export default function AthleteLogPage() {
                   <span
                     className={cn(
                       "font-semibold",
-                      status === "completed" ? "text-emerald-700" : status === "in-progress" ? "text-[#1368ff]" : "text-slate-400",
+                      status === "completed" ? "text-[#1f5fd1]" : status === "in-progress" ? "text-[#1368ff]" : "text-slate-400",
                     )}
                   >
                     {status === "completed" ? "Done" : status === "in-progress" ? "Active" : "Up next"}
@@ -491,8 +491,8 @@ export default function AthleteLogPage() {
 
         {allComplete ? (
           <section className="status-panel-success">
-            <p className="text-sm font-semibold text-emerald-700">Session complete</p>
-            <p className="mt-1 text-sm text-emerald-700/80">All programmed blocks are logged. You can review the session or return home.</p>
+            <p className="status-text-success text-sm font-semibold">Session complete</p>
+            <p className="status-text-success-muted mt-1 text-sm">All programmed blocks are logged. You can review the session or return home.</p>
           </section>
         ) : null}
       </form>

@@ -297,11 +297,11 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
               {joinState.joinedAt ? (
                 <div className="status-panel-success">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
+                  <div className="status-text-success flex items-center gap-2 text-sm font-semibold">
                     <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
                     Joined {isSupabaseMode ? joinState.joinedTeamName : joinedMockTeam?.name}
                   </div>
-                  <p className="mt-2 text-sm text-emerald-700/80">
+                  <p className="status-text-success-muted mt-2 text-sm">
                     Confirmed {joinState.joinedAt}. Your athlete view can now use this team for plan, progress, and testing context.
                   </p>
                 </div>

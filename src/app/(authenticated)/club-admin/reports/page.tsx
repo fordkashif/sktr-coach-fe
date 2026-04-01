@@ -220,7 +220,7 @@ export default function ClubAdminReportsPage() {
   )
   const readinessTotal = readinessSummary.green + readinessSummary.yellow + readinessSummary.red
   const readinessPieData = [
-    { id: "ready", value: readinessSummary.green, label: "Ready", color: "#10b981" },
+    { id: "ready", value: readinessSummary.green, label: "Ready", color: "#3b82f6" },
     { id: "watch", value: readinessSummary.yellow, label: "Watch", color: "#fbbf24" },
     { id: "review", value: readinessSummary.red, label: "Review", color: "#f43f5e" },
   ]
@@ -338,7 +338,7 @@ export default function ClubAdminReportsPage() {
               )}
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {[
-                  { label: "Ready", value: readinessSummary.green, tone: "bg-emerald-500" },
+                  { label: "Ready", value: readinessSummary.green, tone: "bg-[#3b82f6]" },
                   { label: "Watch", value: readinessSummary.yellow, tone: "bg-amber-400" },
                   { label: "Review", value: readinessSummary.red, tone: "bg-rose-500" },
                 ].map((item) => (

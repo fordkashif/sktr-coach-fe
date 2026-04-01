@@ -628,9 +628,9 @@ export default function PlatformAdminRequestsPage() {
       ) : null}
 
       {request.provisionedTenantId ? (
-        <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Provisioned tenant</p>
-          <p className="mt-2 break-all text-sm leading-6 text-emerald-800">{request.provisionedTenantId}</p>
+        <div className="status-panel-success px-4 py-4">
+          <p className="status-text-success text-[11px] font-semibold uppercase tracking-[0.16em]">Provisioned tenant</p>
+          <p className="status-text-success mt-2 break-all text-sm leading-6">{request.provisionedTenantId}</p>
         </div>
       ) : null}
 

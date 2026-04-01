@@ -143,7 +143,7 @@ export default function ResetPasswordPage() {
           <div className="mt-5 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
         ) : null}
         {message && !error ? (
-          <div className="status-panel-success mt-5 text-sm text-emerald-700">{message}</div>
+          <div className="status-panel-success status-text-success mt-5 text-sm">{message}</div>
         ) : null}
         {absoluteLocalResetLink ? (
           <div className="mt-5 rounded-[22px] border border-sky-200 bg-sky-50/80 px-4 py-4 text-sm text-slate-700">

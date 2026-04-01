@@ -292,7 +292,7 @@ function sessionTypeClassName(sessionType: SessionType) {
 const AVATAR_SWATCHES = [
   "bg-[#dbeafe] text-[#1d4ed8]",
   "bg-[#ede9fe] text-[#6d28d9]",
-  "bg-[#dcfce7] text-[#15803d]",
+  "bg-[#e0f2fe] text-[#0369a1]",
   "bg-[#fee2e2] text-[#b91c1c]",
   "bg-[#fef3c7] text-[#b45309]",
 ]

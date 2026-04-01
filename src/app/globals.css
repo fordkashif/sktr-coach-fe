@@ -255,4 +255,12 @@
   .status-panel-info {
     @apply rounded-[20px] border border-[#cfe2ff] bg-[#eef5ff] px-4 py-4;
   }
+
+  .status-text-success {
+    @apply text-emerald-700;
+  }
+
+  .status-text-success-muted {
+    @apply text-emerald-700/80;
+  }
 }

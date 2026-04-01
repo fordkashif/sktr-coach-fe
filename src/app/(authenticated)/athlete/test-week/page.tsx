@@ -281,11 +281,11 @@ export default function AthleteTestWeekPage() {
             <div className="mt-4 space-y-3">
               {submittedAt ? (
                 <div className="status-panel-success">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
+                  <div className="status-text-success flex items-center gap-2 text-sm font-semibold">
                     <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
                     Results submitted
                   </div>
-                  <p className="mt-2 text-sm text-emerald-700/80">Submitted {submittedAt}. Your coach can now review the testing block and compare any PR movement.</p>
+                  <p className="status-text-success-muted mt-2 text-sm">Submitted {submittedAt}. Your coach can now review the testing block and compare any PR movement.</p>
                 </div>
               ) : (
                 <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
