@@ -1,7 +1,7 @@
 "use client"
 
 import { HugeiconsIcon } from "@hugeicons/react"
-import { FilePasteIcon, Link01Icon, QrCodeIcon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
+import { FilePasteIcon, Link01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
 import { Link, Navigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import { EventGroupBadge } from "@/components/badges"
@@ -51,6 +51,7 @@ export default function CoachTeamsPage() {
   const [backendAthletes, setBackendAthletes] = useState<Athlete[]>([])
   const [generatedInviteLinks, setGeneratedInviteLinks] = useState<Record<string, string>>({})
   const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({})
+  const [inviteExpiryDays, setInviteExpiryDays] = useState<Record<string, string>>({})
   const [assignableCoaches, setAssignableCoaches] = useState<ClubAdminAssignableCoachOption[]>([])
   const [newTeamName, setNewTeamName] = useState("")
   const [newTeamEventGroup, setNewTeamEventGroup] = useState<EventGroup>("Sprint")
@@ -388,7 +389,9 @@ export default function CoachTeamsPage() {
 
         <section className="grid gap-5 xl:grid-cols-2">
           {visibleTeams.map((team) => {
-            const inviteLink = generatedInviteLinks[team.id] ?? `/athlete/claim/${team.id}`
+            const inviteLink = generatedInviteLinks[team.id] ?? null
+            const fullInviteLink =
+              typeof window !== "undefined" && inviteLink ? new URL(inviteLink, window.location.origin).toString() : inviteLink
             const roster = athletesSource.filter((athlete) => athlete.teamId === team.id)
             const lowAdherenceCount = roster.filter((athlete) => athlete.adherence < 75).length
             const teamReadinessAlerts = roster.filter((athlete) => athlete.readiness !== "green").length
@@ -441,7 +444,9 @@ export default function CoachTeamsPage() {
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle>Invite to {team.name}</DialogTitle>
-                          <DialogDescription>Share link or QR to add athletes to this group.</DialogDescription>
+                          <DialogDescription>
+                            Enter the athlete email, choose the invite lifetime, then generate a one-time claim link.
+                          </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
                           <div className="space-y-2">
@@ -457,53 +462,78 @@ export default function CoachTeamsPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`invite-link-${team.id}`}>Invite link</Label>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                id={`invite-link-${team.id}`}
-                                value={inviteLink}
-                                readOnly
-                                className="text-slate-950 selection:bg-[#dbeafe] selection:text-slate-950"
-                              />
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                onClick={() => navigator.clipboard.writeText(inviteLink)}
-                                aria-label="Copy invite link"
-                              >
-                                <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
                             <Label>Invite expiration</Label>
-                            <Select defaultValue="7d">
+                            <Select
+                              value={inviteExpiryDays[team.id] ?? "7"}
+                              onValueChange={(value) =>
+                                setInviteExpiryDays((current) => ({
+                                  ...current,
+                                  [team.id]: value,
+                                }))
+                              }
+                            >
                               <SelectTrigger className="w-full">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="24h">24h</SelectItem>
-                                <SelectItem value="7d">7d</SelectItem>
-                                <SelectItem value="30d">30d</SelectItem>
+                                <SelectItem value="1">24 hours</SelectItem>
+                                <SelectItem value="7">7 days</SelectItem>
+                                <SelectItem value="30">30 days</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="flex h-24 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-                            <HugeiconsIcon icon={QrCodeIcon} className="mr-2 size-4" />
-                            QR placeholder
-                          </div>
+                          {fullInviteLink ? (
+                            <div className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  Generated invite
+                                </p>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  Send this link to{" "}
+                                  <span className="font-medium text-slate-950">
+                                    {(inviteEmails[team.id] ?? "").trim().toLowerCase()}
+                                  </span>
+                                  .
+                                </p>
+                              </div>
+                              <Input
+                                id={`invite-link-${team.id}`}
+                                value={fullInviteLink}
+                                readOnly
+                                className="text-slate-950 selection:bg-[#dbeafe] selection:text-slate-950"
+                              />
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-10 rounded-full border-slate-200 px-4"
+                                  onClick={() => navigator.clipboard.writeText(fullInviteLink)}
+                                >
+                                  <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
+                                  Copy link
+                                </Button>
+                                <Button
+                                  type="button"
+                                  className="h-10 rounded-full px-4"
+                                  onClick={() => window.open(fullInviteLink, "_blank", "noopener,noreferrer")}
+                                >
+                                  Open link
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                         <DialogFooter>
                           <Button
                             type="button"
                             className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                            disabled={!(inviteEmails[team.id] ?? "").trim()}
                             onClick={async () => {
                               if (isSupabaseMode) {
                                 const result = await createAthleteInviteForCurrentCoach({
                                   teamId: team.id,
                                   email: inviteEmails[team.id] ?? "",
-                                  expiresInDays: 7,
+                                  expiresInDays: Number.parseInt(inviteExpiryDays[team.id] ?? "7", 10),
                                 })
                                 if (!result.ok) {
                                   setBackendError(result.error.message)
