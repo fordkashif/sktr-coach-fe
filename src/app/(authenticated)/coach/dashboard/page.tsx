@@ -8,11 +8,13 @@ import {
   Alert02Icon,
   ChartHistogramIcon,
   CheckmarkCircle02Icon,
+  Search01Icon,
 } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { BarChart, LineChart } from "@mui/x-charts"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import type { Athlete, PR, Team, TestWeekResult, TrendPoint } from "@/lib/mock-data"
 import {
   getCoachDashboardSnapshotForCurrentUser,
@@ -542,7 +544,17 @@ export default function CoachDashboardPage() {
                         <div className="w-6 text-right text-sm font-semibold text-slate-950">{count}</div>
                       </div>
                     ))}
-                    {prMomentum.length === 0 ? <p className="text-sm text-slate-500">No recent PR activity.</p> : null}
+                    {prMomentum.length === 0 ? (
+                      <EmptyStateCard
+                        eyebrow="PR momentum"
+                        title="No recent PR activity."
+                        description="No category-level PR movement is available for this team scope yet."
+                        hint="Once marks are logged, the leading PR categories will appear here."
+                        icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                        className="rounded-[18px] bg-white px-4 py-4 shadow-none"
+                        contentClassName="gap-2"
+                      />
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -615,9 +627,15 @@ export default function CoachDashboardPage() {
                 </div>
               ))
             ) : (
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                No active alerts.
-              </div>
+              <EmptyStateCard
+                eyebrow="Flags"
+                title="No active alerts."
+                description="No athlete in the current scope is currently flagged for readiness or adherence review."
+                hint="This panel will populate automatically when a coach needs to intervene."
+                icon={<HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-5" />}
+                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-3"
+              />
             )}
           </div>
         </div>
@@ -660,9 +678,15 @@ export default function CoachDashboardPage() {
                 </div>
               </>
             ) : (
-              <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                No trend data available for this scope.
-              </div>
+              <EmptyStateCard
+                eyebrow="Team trend"
+                title="No trend data available for this scope."
+                description="No readiness or training-load history has been recorded yet for the current coach scope."
+                hint="Trend lines start to matter after wellness and training data accumulate across multiple check-ins."
+                icon={<HugeiconsIcon icon={ChartHistogramIcon} className="size-5" />}
+                className="rounded-[22px] bg-slate-50 px-4 py-6 shadow-none"
+                contentClassName="gap-3"
+              />
             )}
           </div>
         </div>
@@ -707,9 +731,15 @@ export default function CoachDashboardPage() {
                 />
               </div>
             ) : (
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                No recent PRs in the current scope.
-              </div>
+              <EmptyStateCard
+                eyebrow="PR momentum"
+                title="No recent PRs in the current scope."
+                description="There are no recent PR entries to graph for this team right now."
+                hint="Once record entries are logged, this chart will show where the most improvement is happening."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-3"
+              />
             )}
           </div>
         </div>
@@ -758,9 +788,20 @@ export default function CoachDashboardPage() {
                 </div>
               ))
             ) : (
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                No current test week results.
-              </div>
+              <EmptyStateCard
+                eyebrow="Test snapshot"
+                title="No current test week results."
+                description="No test-week results are available for the current squad scope yet."
+                hint="Create and publish a test week first, then this panel will summarize the latest movement."
+                icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
+                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-3"
+                actions={
+                  <Button asChild variant="outline" className="h-10 rounded-full border-slate-200 px-4">
+                    <Link to="/coach/test-week">Open test weeks</Link>
+                  </Button>
+                }
+              />
             )}
           </div>
         </div>

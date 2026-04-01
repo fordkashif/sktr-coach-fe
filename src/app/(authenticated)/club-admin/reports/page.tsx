@@ -2,16 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { BarChart, PieChart } from "@mui/x-charts"
+import { FileDownloadIcon, PrinterIcon, Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Button } from "@/components/ui/button"
 import { useClubAdmin } from "@/lib/club-admin-context"
 import { loadClubInvites, loadClubTeams, loadClubUsers } from "../state"
 import type { Athlete, PR } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
-import {
-  insertAuditEvent,
-} from "@/lib/data/club-admin/ops-data"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { FileDownloadIcon, PrinterIcon } from "@hugeicons/core-free-icons"
+import { insertAuditEvent } from "@/lib/data/club-admin/ops-data"
 import { cn } from "@/lib/utils"
 
 const chartSx = {
@@ -233,6 +232,7 @@ export default function ClubAdminReportsPage() {
     }, {}),
   ).sort((left, right) => right[1] - left[1])
   const prChartRows = prByCategory.map(([category, count]) => ({ category, count }))
+  const hasSnapshotData = users.length > 0 || teams.length > 0 || invites.length > 0 || prRows.length > 0 || athleteRows.length > 0
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-5 p-4 sm:space-y-6 sm:p-6 print:p-0">
@@ -308,22 +308,34 @@ export default function ClubAdminReportsPage() {
                 <p className="text-sm font-medium text-slate-950">Readiness Distribution</p>
                 <p className="text-xs text-slate-500">{readinessTotal} athletes</p>
               </div>
-              <div className="relative h-[220px] overflow-hidden rounded-[18px] border border-slate-200 bg-[radial-gradient(circle_at_top,rgba(31,140,255,0.10),transparent_48%),linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]">
-                <PieChart
-                  series={[
-                    { innerRadius: 52, outerRadius: 82, paddingAngle: 3, cornerRadius: 6, data: readinessPieData, cx: 110, cy: 108 },
-                  ]}
-                  hideLegend
-                  margin={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  height={220}
-                  sx={pieSx}
+              {readinessTotal === 0 ? (
+                <EmptyStateCard
+                  eyebrow="Readiness"
+                  title="No athlete readiness data is available yet."
+                  description="This report will populate once athletes are attached to teams and begin submitting wellness or training activity."
+                  hint="You can still export the tenant structure while athlete reporting is empty."
+                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                  className="rounded-[18px] bg-white px-4 py-5 shadow-none"
+                  contentClassName="gap-2"
                 />
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">In Scope</p>
-                  <p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-slate-950">{readinessTotal}</p>
-                  <p className="mt-1 text-sm text-slate-500">athletes</p>
+              ) : (
+                <div className="relative h-[220px] overflow-hidden rounded-[18px] border border-slate-200 bg-[radial-gradient(circle_at_top,rgba(31,140,255,0.10),transparent_48%),linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]">
+                  <PieChart
+                    series={[
+                      { innerRadius: 52, outerRadius: 82, paddingAngle: 3, cornerRadius: 6, data: readinessPieData, cx: 110, cy: 108 },
+                    ]}
+                    hideLegend
+                    margin={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    height={220}
+                    sx={pieSx}
+                  />
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">In Scope</p>
+                    <p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-slate-950">{readinessTotal}</p>
+                    <p className="mt-1 text-sm text-slate-500">athletes</p>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {[
                   { label: "Ready", value: readinessSummary.green, tone: "bg-emerald-500" },
@@ -346,25 +358,41 @@ export default function ClubAdminReportsPage() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">PR Distribution</p>
                 <h3 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Event Mix</h3>
               </div>
-              <div className="mt-4 overflow-hidden rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-2.5">
-                <BarChart
-                  dataset={prChartRows}
-                  xAxis={[{ scaleType: "band", dataKey: "category" }]}
-                  series={[{ dataKey: "count", label: "PR count", color: "#4759ff" }]}
-                  grid={{ horizontal: true }}
-                  margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-                  height={220}
-                  sx={chartSx}
-                />
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {prChartRows.slice(0, 3).map((item) => (
-                  <div key={item.category} className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{item.category}</p>
-                    <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-slate-950">{item.count}</p>
+              {prChartRows.length === 0 ? (
+                <div className="mt-4">
+                  <EmptyStateCard
+                    eyebrow="PRs"
+                    title="No PR records are available for this tenant."
+                    description="The event mix chart will populate after athletes record benchmark or PR data."
+                    hint="Use the export actions once data begins to accumulate."
+                    icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                    className="rounded-[18px] bg-white px-4 py-5 shadow-none"
+                    contentClassName="gap-2"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="mt-4 overflow-hidden rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-2.5">
+                    <BarChart
+                      dataset={prChartRows}
+                      xAxis={[{ scaleType: "band", dataKey: "category" }]}
+                      series={[{ dataKey: "count", label: "PR count", color: "#4759ff" }]}
+                      grid={{ horizontal: true }}
+                      margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
+                      height={220}
+                      sx={chartSx}
+                    />
                   </div>
-                ))}
-              </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    {prChartRows.slice(0, 3).map((item) => (
+                      <div key={item.category} className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{item.category}</p>
+                        <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-slate-950">{item.count}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -375,6 +403,17 @@ export default function ClubAdminReportsPage() {
             <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Output Actions</h2>
           </div>
           <div className="mt-4 space-y-3">
+            {!hasSnapshotData ? (
+              <EmptyStateCard
+                eyebrow="Exports"
+                title="There is no tenant data to export yet."
+                description="Exports become useful after users, teams, invites, or athlete reporting exist in this workspace."
+                hint="This page is still the correct place to return once setup is complete."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+              />
+            ) : null}
             {[
               { title: "Users CSV", body: "All users with role, status, and current team assignment.", action: exportClubUsers, primary: true },
               { title: "Teams CSV", body: "Team structure, event group, status, and coach assignment.", action: exportTeams, primary: false },

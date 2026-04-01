@@ -1,12 +1,13 @@
 "use client"
 
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight01Icon, FilePasteIcon, Link01Icon } from "@hugeicons/core-free-icons"
+import { ArrowRight01Icon, FilePasteIcon, Link01Icon, Search01Icon } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { useEffect, useState } from "react"
 import { ReadinessBadge } from "@/components/badges"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Dialog,
   DialogContent,
@@ -258,7 +259,22 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
             </div>
 
             <div className="space-y-3 md:hidden">
-              {teamAthletes.map((athlete) => (
+              {teamAthletes.length === 0 ? (
+                <EmptyStateCard
+                  eyebrow="Roster"
+                  title="No athletes are on this roster yet."
+                  description="This team exists, but no athletes are currently attached to it."
+                  hint="Generate an athlete invite or add athletes from the team-management flow."
+                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                  className="rounded-[24px] bg-white px-4 py-5 shadow-none"
+                  contentClassName="gap-3"
+                  actions={
+                    <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => setActiveTab("invites")}>
+                      Open invites
+                    </Button>
+                  }
+                />
+              ) : teamAthletes.map((athlete) => (
                 <div
                   key={athlete.id}
                   className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.05)]"
@@ -299,12 +315,16 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                       <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Latest PR</p>
-                          <p className="mt-1 text-sm text-slate-600">
-                          PR:{" "}
-                          {latestPrByAthlete.get(athlete.id)
-                            ? `${latestPrByAthlete.get(athlete.id)?.event} ${latestPrByAthlete.get(athlete.id)?.bestValue}`
-                            : "No PR yet"}
-                          </p>
+                          {latestPrByAthlete.get(athlete.id) ? (
+                            <p className="mt-1 text-sm text-slate-600">
+                              PR: {latestPrByAthlete.get(athlete.id)?.event} {latestPrByAthlete.get(athlete.id)?.bestValue}
+                            </p>
+                          ) : (
+                            <div className="mt-1 rounded-[14px] border border-dashed border-slate-200 bg-white/80 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Latest PR</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">No PR is recorded for this athlete yet.</p>
+                            </div>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Plan Adherence</p>
@@ -318,6 +338,24 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
             </div>
 
             <div className="hidden overflow-hidden rounded-[24px] border border-slate-200 md:block">
+              {teamAthletes.length === 0 ? (
+                <div className="bg-white p-4">
+                  <EmptyStateCard
+                    eyebrow="Roster"
+                    title="No athletes are on this roster yet."
+                    description="This team exists, but the roster has not been populated with any athletes."
+                    hint="Use invites to add new athletes, then return here to review readiness and adherence."
+                    icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                    className="rounded-[24px] bg-slate-50 px-4 py-5 shadow-none"
+                    contentClassName="gap-3"
+                    actions={
+                      <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => setActiveTab("invites")}>
+                        Open invites
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -363,6 +401,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                   ))}
                 </TableBody>
               </Table>
+              )}
             </div>
           </section>
         </TabsContent>
@@ -481,14 +520,26 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
 
             <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Status</p>
-              <p className="mt-3 text-sm text-slate-600">
-                {generatedInviteLink ? "Latest invite generated and ready to share." : "No active invites yet."}
-              </p>
               {generatedInviteLink ? (
-                <div className="mt-4 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                  {generatedInviteLink}
+                <>
+                  <p className="mt-3 text-sm text-slate-600">Latest invite generated and ready to share.</p>
+                  <div className="mt-4 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    {generatedInviteLink}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3">
+                  <EmptyStateCard
+                    eyebrow="Invite status"
+                    title="No active invites yet."
+                    description="No current athlete invite has been generated for this team yet."
+                    hint="Create an invite when a new athlete needs direct claim access into this roster."
+                    icon={<HugeiconsIcon icon={Link01Icon} className="size-5" />}
+                    className="rounded-[20px] bg-white px-4 py-5 shadow-none"
+                    contentClassName="gap-3"
+                  />
                 </div>
-              ) : null}
+              )}
             </div>
           </section>
         </TabsContent>

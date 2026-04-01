@@ -1,8 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Calendar03Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { getCurrentAthleteProfileSnapshot } from "@/lib/data/athlete/profile-data"
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
@@ -446,9 +449,18 @@ export default function AthleteTrainingPlanPage() {
           </section>
         </>
       ) : (
-        <section className="rounded-[26px] border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-[0_18px_48px_rgba(15,23,42,0.06)] sm:rounded-[30px]">
-          No assigned plans available yet.
-        </section>
+        <EmptyStateCard
+          eyebrow="Training plan"
+          title="No assigned plans available yet."
+          description="No assigned plans available yet. Your coach has not published or assigned a live plan into your current team scope."
+          hint="Check back after the next programming update or contact your coach if you expected a plan to be visible already."
+          icon={<HugeiconsIcon icon={Calendar03Icon} className="size-5" />}
+          actions={
+            <Button asChild variant="outline" className="h-11 rounded-full border-slate-200 px-5">
+              <Link to="/athlete/home">Back to home</Link>
+            </Button>
+          }
+        />
       )}
     </div>
   )

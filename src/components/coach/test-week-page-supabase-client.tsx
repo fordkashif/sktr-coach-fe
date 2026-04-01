@@ -1,7 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -227,7 +230,17 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
           <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Published Test Weeks</h2>
           <div className="mt-4 space-y-3">
             {isLoading ? <p className="text-sm text-slate-500">Loading...</p> : null}
-            {!isLoading && weeks.length === 0 ? <p className="text-sm text-slate-500">No test weeks yet.</p> : null}
+            {!isLoading && weeks.length === 0 ? (
+              <EmptyStateCard
+                eyebrow="Published test weeks"
+                title="No test weeks have been created yet."
+                description="This coach scope does not have any published test windows in Supabase yet."
+                hint="Use the publish form to define the window, add tests, and send the first test week to the team."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[18px] border-dashed bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+              />
+            ) : null}
             {weeks.map((week) => (
               <div key={week.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="font-medium text-slate-950">{week.name}</p>

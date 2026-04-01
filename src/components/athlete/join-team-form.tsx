@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowRight01Icon, CheckmarkCircle02Icon, QrCodeIcon, SearchAddIcon } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { acceptAthleteInviteForCurrentUser, getAthleteInvitePreviewForCurrentUser } from "@/lib/data/athlete/invite-data"
@@ -305,9 +306,15 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                   </p>
                 </div>
               ) : (
-                <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-                  <p className="text-sm text-slate-500">No team joined yet. Recognize the invite first, then confirm.</p>
-                </div>
+                <EmptyStateCard
+                  eyebrow="Join state"
+                  title="No team has been joined yet."
+                  description="Paste a valid invite link or invite id first, then confirm the team to attach this athlete session."
+                  hint="If you already received an invite by email or message, open that link directly for the fastest path."
+                  icon={<HugeiconsIcon icon={SearchAddIcon} className="size-5" />}
+                  className="rounded-[20px] bg-slate-50 px-4 py-6 text-left shadow-none"
+                  contentClassName="gap-2"
+                />
               )}
 
               <div className="grid gap-3">

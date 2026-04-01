@@ -1,7 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -87,6 +90,8 @@ export default function ClubAdminBillingPage() {
     { id: "INV-2026-002", amount: "$299.00", status: "Paid", date: "2026-02-01" },
     { id: "INV-2026-001", amount: "$299.00", status: "Paid", date: "2026-01-01" },
   ]
+  const hasPaymentMethod = billing.paymentMethodLast4.trim().length > 0
+  const hasActivePlan = billing.plan.trim().length > 0
 
   return (
     <div className="mx-auto w-full max-w-8xl space-y-5 p-4 sm:space-y-6 sm:p-6">
@@ -204,20 +209,46 @@ export default function ClubAdminBillingPage() {
             <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Current Plan</h2>
           </div>
           <div className="mt-4 grid gap-2">
-            {[
-              { label: "Plan", value: billing.plan },
-              { label: "Seats", value: billing.seats },
-              { label: "Renews", value: billing.renewalDate },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950 capitalize">{item.value}</p>
+            {!hasActivePlan ? (
+              <EmptyStateCard
+                eyebrow="Subscription"
+                title="No active billing plan is configured."
+                description="This workspace does not currently show an active plan summary."
+                hint="Select a plan and save the billing settings to establish the subscription baseline."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+              />
+            ) : (
+              <>
+                {[
+                  { label: "Plan", value: billing.plan },
+                  { label: "Seats", value: billing.seats },
+                  { label: "Renews", value: billing.renewalDate },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                    <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950 capitalize">{item.value}</p>
+                  </div>
+                ))}
+              </>
+            )}
+            {hasPaymentMethod ? (
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Payment method</p>
+                <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950">**** {billing.paymentMethodLast4}</p>
               </div>
-            ))}
-            <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Payment method</p>
-              <p className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-slate-950">**** {billing.paymentMethodLast4}</p>
-            </div>
+            ) : (
+              <EmptyStateCard
+                eyebrow="Payment method"
+                title="No payment method is stored."
+                description="Billing is configured without a card reference or payment method summary."
+                hint="Enter the card last four digits and save to make the billing record complete."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+              />
+            )}
           </div>
         </div>
       </section>
@@ -228,18 +259,30 @@ export default function ClubAdminBillingPage() {
           <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Billing History</h2>
         </div>
         <div className="mt-4 space-y-3">
-          {invoices.map((invoice) => (
-            <div key={invoice.id} className="flex items-center justify-between rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <div>
-                <p className="font-semibold text-slate-950">{invoice.id}</p>
-                <p className="text-sm text-slate-500">{invoice.date}</p>
+          {invoices.length === 0 ? (
+            <EmptyStateCard
+              eyebrow="Invoices"
+              title="No invoices have been generated yet."
+              description="Invoice history will appear here after the first successful billing cycle."
+              hint="This is normal for a newly provisioned club or a workspace that has not been billed yet."
+              icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+              className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+              contentClassName="gap-2"
+            />
+          ) : (
+            invoices.map((invoice) => (
+              <div key={invoice.id} className="flex items-center justify-between rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
+                <div>
+                  <p className="font-semibold text-slate-950">{invoice.id}</p>
+                  <p className="text-sm text-slate-500">{invoice.date}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-slate-950">{invoice.amount}</p>
+                  <p className={cn("text-sm font-medium", invoice.status === "Paid" ? "text-emerald-600" : "text-amber-600")}>{invoice.status}</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="font-semibold text-slate-950">{invoice.amount}</p>
-                <p className={cn("text-sm font-medium", invoice.status === "Paid" ? "text-emerald-600" : "text-amber-600")}>{invoice.status}</p>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </section>
     </div>

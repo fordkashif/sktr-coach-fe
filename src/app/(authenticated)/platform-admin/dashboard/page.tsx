@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { Notification01Icon, Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   getPlatformAdminRequestQueue,
   getPlatformAuditEvents,
@@ -127,9 +130,23 @@ export default function PlatformAdminDashboardPage() {
 
             <div className="mt-5 space-y-3">
               {recentPending.length === 0 ? (
-                <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                  No pending tenant requests right now.
-                </div>
+                <EmptyStateCard
+                  eyebrow="Request queue"
+                  title="No pending tenant requests right now."
+                  description="The intake queue is clear. New organization requests will appear here before a tenant is provisioned."
+                  hint="Check the full queue for approved or rejected history, or wait for the next public request submission."
+                  icon={<HugeiconsIcon icon={Notification01Icon} className="size-5" />}
+                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
+                  contentClassName="gap-3"
+                  actions={
+                    <Link
+                      to="/platform-admin/requests"
+                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
+                    >
+                      Open full queue
+                    </Link>
+                  }
+                />
               ) : (
                 recentPending.map((request) => (
                   <div key={request.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
@@ -178,9 +195,23 @@ export default function PlatformAdminDashboardPage() {
 
             <div className="mt-5 space-y-3">
               {recentAudit.length === 0 ? (
-                <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                  No platform audit events recorded yet.
-                </div>
+                <EmptyStateCard
+                  eyebrow="Platform audit"
+                  title="No platform audit events recorded yet."
+                  description="System-level request submission, review, and provisioning actions will show up here once the intake flow is used."
+                  hint="This feed is the pre-tenant audit trail. It should stay separate from club-admin audit history."
+                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
+                  contentClassName="gap-3"
+                  actions={
+                    <Link
+                      to="/platform-admin/audit"
+                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
+                    >
+                      Open audit feed
+                    </Link>
+                  }
+                />
               ) : (
                 recentAudit.map((event) => (
                   <div key={event.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">

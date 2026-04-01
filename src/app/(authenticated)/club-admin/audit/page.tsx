@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import {
   createColumnHelper,
   flexRender,
@@ -8,6 +10,8 @@ import {
   useReactTable,
 } from "@tanstack/react-table"
 import { ClubAdminNav } from "@/components/club-admin/admin-nav"
+import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { AuditEvent } from "@/lib/mock-audit"
@@ -81,6 +85,7 @@ export default function ClubAdminAuditPage() {
   }, [actionFilter, entries, query])
 
   const actions = Array.from(new Set(entries.map((entry) => entry.action)))
+  const hasFilters = query.trim().length > 0 || actionFilter !== "all"
   const columns = useMemo(
     () => [
       columnHelper.accessor("action", {
@@ -159,9 +164,36 @@ export default function ClubAdminAuditPage() {
         </div>
         <div className="mt-4 space-y-3 md:hidden">
           {filtered.length === 0 ? (
-            <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-              No activity logs yet.
-            </div>
+            <EmptyStateCard
+              eyebrow="Entries"
+              title={hasFilters ? "No activity logs match this view." : "No activity logs yet."}
+              description={
+                hasFilters
+                  ? "No activity logs yet. The current search or action filter returned zero matches."
+                  : "No activity logs yet. Invite sends, role changes, billing updates, and team operations will appear here once they happen."
+              }
+              hint={
+                hasFilters
+                  ? "Clear the search or switch the action filter back to all actions."
+                  : "Use this page to verify who changed what inside the tenant once real admin activity begins."
+              }
+              icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+              actions={
+                hasFilters ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-full border-slate-200 px-5"
+                    onClick={() => {
+                      setQuery("")
+                      setActionFilter("all")
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             filtered.map((entry) => (
               <div key={entry.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
@@ -177,7 +209,38 @@ export default function ClubAdminAuditPage() {
         </div>
         <div className="mt-4 hidden overflow-hidden rounded-[18px] border border-slate-200 md:block">
           {filtered.length === 0 ? (
-            <div className="bg-slate-50 px-4 py-6 text-sm text-slate-500">No activity logs yet.</div>
+            <div className="bg-white p-4">
+              <EmptyStateCard
+                eyebrow="Entries"
+                title={hasFilters ? "No activity logs match this view." : "No activity logs yet."}
+                description={
+                  hasFilters
+                    ? "No activity logs yet. The current search or action filter returned zero matches."
+                    : "No activity logs yet. Invite sends, role changes, billing updates, and team operations will appear here once they happen."
+                }
+                hint={
+                  hasFilters
+                    ? "Clear the search or switch the action filter back to all actions."
+                    : "Use this page to verify who changed what inside the tenant once real admin activity begins."
+                }
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                actions={
+                  hasFilters ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-full border-slate-200 px-5"
+                      onClick={() => {
+                        setQuery("")
+                        setActionFilter("all")
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
           ) : (
             <table className="w-full border-collapse bg-white">
               <thead className="bg-slate-50">

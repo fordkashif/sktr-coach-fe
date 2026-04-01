@@ -7,6 +7,7 @@ import { BarChart, LineChart } from "@mui/x-charts"
 import { ReadinessBadge } from "@/components/badges"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Drawer,
   DrawerClose,
@@ -251,7 +252,17 @@ export function CoachAthleteDetailContent({ athlete, data }: CoachAthleteDetailC
                       <p className="text-xs text-slate-500">{pr.date}</p>
                     </div>
                   ))}
-                  {topPrs.length === 0 ? <p className="text-sm text-slate-500">No PRs recorded yet.</p> : null}
+                  {topPrs.length === 0 ? (
+                    <EmptyStateCard
+                      eyebrow="Performance summary"
+                      title="No PRs recorded yet."
+                      description="No personal-record entries are available for this athlete yet."
+                      hint="Once coach or athlete PR data is logged, the top marks will appear here."
+                      icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+                      className="rounded-[18px] bg-white px-4 py-5 shadow-none sm:col-span-2"
+                      contentClassName="gap-3"
+                    />
+                  ) : null}
                 </div>
               </div>
 
@@ -273,7 +284,17 @@ export function CoachAthleteDetailContent({ athlete, data }: CoachAthleteDetailC
                       sx={chartSx}
                     />
                   ) : (
-                    <div className="px-4 py-6 text-sm text-slate-500">No recent logs available.</div>
+                    <div className="p-3">
+                      <EmptyStateCard
+                        eyebrow="Recent work mix"
+                        title="No recent logs available."
+                        description="No logged strength, running, or event-work entries are available for this athlete yet."
+                        hint="This chart will populate after the athlete begins logging sessions."
+                        icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+                        className="rounded-[18px] bg-white px-4 py-5 shadow-none"
+                        contentClassName="gap-3"
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -324,7 +345,17 @@ export function CoachAthleteDetailContent({ athlete, data }: CoachAthleteDetailC
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-4 text-sm text-slate-500">No test week results found for this athlete.</p>
+                  <div className="mt-4">
+                    <EmptyStateCard
+                      eyebrow="Test week snapshot"
+                      title="No test week results found for this athlete."
+                      description="There is no current test-week result set attached to this athlete yet."
+                      hint="Testing summaries appear here after the athlete submits or is assigned a benchmark window."
+                      icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+                      className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+                      contentClassName="gap-3"
+                    />
+                  </div>
                 )}
               </div>
             </div>
@@ -495,7 +526,15 @@ export function CoachAthleteDetailContent({ athlete, data }: CoachAthleteDetailC
                   </div>
                 </>
               ) : (
-                <p className="text-sm text-slate-500">No test week results found for this athlete.</p>
+                <EmptyStateCard
+                  eyebrow="Test weeks"
+                  title="No test week results found for this athlete."
+                  description="No benchmark result rows are available for this athlete in the current tab."
+                  hint="Once a test week is completed, this tab will show result values and trend arrows."
+                  icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+                  className="rounded-[18px] bg-white px-4 py-5 shadow-none"
+                  contentClassName="gap-3"
+                />
               )}
             </div>
           </section>

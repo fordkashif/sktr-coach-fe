@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
+import { Alert02Icon, ArrowLeft01Icon, Link01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -287,12 +290,6 @@ export default function AthleteClaimPage() {
         </div>
       </section>
 
-      {error ? (
-        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </section>
-      ) : null}
-
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
         <div className="mobile-card-primary">
           <div className="space-y-1 border-b border-slate-200 pb-4">
@@ -301,6 +298,31 @@ export default function AthleteClaimPage() {
           </div>
 
           <div className="mt-4 space-y-4 text-sm text-slate-600">
+            {stage === "error" ? (
+              <EmptyStateCard
+                eyebrow="Invite issue"
+                title="This athlete invite cannot continue yet."
+                description={error ?? message}
+                hint="Use the latest athlete invite link, or sign in with the exact invited athlete email if the account already exists."
+                icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
+                className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+                actions={
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline" className="h-11 rounded-full px-5">
+                      <Link to="/login">
+                        <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                        Back to login
+                      </Link>
+                    </Button>
+                    <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => window.location.reload()}>
+                      <HugeiconsIcon icon={Link01Icon} className="size-4" />
+                      Retry invite
+                    </Button>
+                  </div>
+                }
+              />
+            ) : null}
             <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Team access</p>
               <p className="mt-1 text-sm font-medium text-slate-950">{preview?.teamName ?? "Loading..."}</p>
@@ -336,13 +358,6 @@ export default function AthleteClaimPage() {
               </div>
             ) : null}
 
-            {stage === "error" ? (
-              <div className="flex flex-wrap gap-3">
-                <Button asChild variant="outline" className="h-11 rounded-full px-5">
-                  <Link to="/login">Back to login</Link>
-                </Button>
-              </div>
-            ) : null}
           </div>
         </div>
 

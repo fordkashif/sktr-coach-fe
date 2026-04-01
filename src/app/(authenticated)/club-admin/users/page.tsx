@@ -1,7 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { Mail01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Dialog,
   DialogContent,
@@ -344,9 +347,24 @@ export default function ClubAdminUsersPage() {
           <div className="mt-4 space-y-3">
             <div className="space-y-2">
               {invites.length === 0 ? (
-                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                  No coach invites yet.
-                </div>
+                <EmptyStateCard
+                  eyebrow="Invite access"
+                  title="No coach invites yet."
+                  description="Coach access begins from an invite, not by creating accounts manually. Send the first coach invite when a new staff member is ready to join."
+                  hint="You can optionally assign the invite to a team so the coach lands in the correct scope immediately."
+                  icon={<HugeiconsIcon icon={Mail01Icon} className="size-5" />}
+                  className="rounded-[18px] bg-slate-50 px-4 py-6 shadow-none"
+                  contentClassName="gap-3"
+                  actions={
+                    <Button
+                      type="button"
+                      className="h-10 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-4 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                      onClick={() => setInviteComposerOpen(true)}
+                    >
+                      Send first coach invite
+                    </Button>
+                  }
+                />
               ) : (
                 invites.map((invite) => (
                   <div key={invite.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">

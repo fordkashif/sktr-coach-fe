@@ -12,6 +12,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -184,7 +185,6 @@ export default function PlatformAdminRequestsPage() {
         .includes(query)
     })
   }, [requests, search, statusFilter])
-
   useEffect(() => {
     if (filteredRequests.length === 0) {
       setExpandedRequestId(null)
@@ -791,9 +791,13 @@ export default function PlatformAdminRequestsPage() {
       ) : null}
 
       {!loading && requests.length === 0 ? (
-        <section className="rounded-[28px] border border-dashed border-slate-300 bg-white px-5 py-8 text-sm text-slate-500 shadow-sm">
-          No tenant provisioning requests have been submitted yet.
-        </section>
+        <EmptyStateCard
+          eyebrow="Request queue"
+          title="No tenant provisioning requests yet."
+          description="No tenant provisioning requests have been submitted yet. This queue will populate when an organization completes the public request intake flow."
+          hint="Use this page to review, approve, provision, and resend initial access once the first intake arrives."
+          icon={<HugeiconsIcon icon={Notification01Icon} className="size-5" />}
+        />
       ) : null}
 
       <section className="flex justify-end">
@@ -949,7 +953,30 @@ export default function PlatformAdminRequestsPage() {
         </div>
       </section>
 
-      <section className={cn("space-y-4", desktopViewMode === "table" && "lg:hidden")}>
+      {!loading && requests.length > 0 && filteredRequests.length === 0 ? (
+        <EmptyStateCard
+          eyebrow="Request queue"
+          title="No requests match the current filters."
+          description="Your queue has data, but the current search or status filter returned zero matches."
+          hint="Clear the search box or switch the status filter back to all statuses."
+          icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-full border-slate-200 px-5"
+              onClick={() => {
+                setSearch("")
+                setStatusFilter("all")
+              }}
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : null}
+
+      <section className={cn("space-y-4", (desktopViewMode === "table" || filteredRequests.length === 0) && "lg:hidden")}>
         {filteredRequests.map((request) => {
           const isExpanded = expandedRequestId === request.id
 
@@ -1002,7 +1029,7 @@ export default function PlatformAdminRequestsPage() {
         })}
       </section>
 
-      <section className={cn("hidden", desktopViewMode === "table" && "lg:block")}>
+      <section className={cn("hidden", desktopViewMode === "table" && filteredRequests.length > 0 && "lg:block")}>
         <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] xl:px-5">
           <Table>
             <TableHeader>

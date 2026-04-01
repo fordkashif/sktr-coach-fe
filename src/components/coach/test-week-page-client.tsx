@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Drawer,
   DrawerClose,
@@ -473,9 +474,18 @@ export default function CoachTestWeekPageClient({
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-3">
             {listedTestWeeks.length === 0 ? (
-              <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-                <p className="text-sm text-muted-foreground">No test weeks yet.</p>
-              </div>
+              <EmptyStateCard
+                eyebrow="Test weeks"
+                title="No test weeks yet."
+                description="No testing windows have been created for this team scope yet."
+                hint="Start with a first test week so coaches can compare athlete movement across repeated benchmarks."
+                icon={<HugeiconsIcon icon={Add01Icon} className="size-5" />}
+                actions={
+                  <Button type="button" className={PRIMARY_ACTION} onClick={openWizard}>
+                    Create first test week
+                  </Button>
+                }
+              />
             ) : null}
             {listedTestWeeks.map((testWeek) => {
               const teamName = mockTeams.find((team) => team.id === testWeek.teamId)?.name ?? "Assigned team"

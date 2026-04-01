@@ -6,6 +6,7 @@ import {
   ChartAverageIcon,
   CheckmarkCircle02Icon,
   FileDownloadIcon,
+  Search01Icon,
   NoteEditIcon,
   PrinterIcon,
   WorkoutRunIcon,
@@ -13,6 +14,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { BarChart } from "@mui/x-charts"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import type { Athlete, PR, Team, WellnessEntry } from "@/lib/mock-data"
 import {
@@ -498,9 +500,15 @@ export default function CoachReportsPage() {
                 />
               </div>
             ) : (
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                No adherence risks in the current scope.
-              </div>
+              <EmptyStateCard
+                eyebrow="Adherence risk"
+                title="No adherence risks in the current scope."
+                description="No athlete in the current reporting scope is below the follow-up threshold right now."
+                hint="That usually means plan completion is healthy enough that a manual intervention list is not needed."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-3"
+              />
             )}
           </div>
         </div>
@@ -524,9 +532,15 @@ export default function CoachReportsPage() {
                 />
               </div>
             ) : (
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                No PR movement in the current scope.
-              </div>
+              <EmptyStateCard
+                eyebrow="PR movement"
+                title="No PR movement in the current scope."
+                description="No personal-record activity is available for the current team scope yet."
+                hint="PR charts begin to populate after coaches or athletes log measurable improvements."
+                icon={<HugeiconsIcon icon={WorkoutRunIcon} className="size-5" />}
+                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-3"
+              />
             )}
           </div>
 
@@ -555,7 +569,15 @@ export default function CoachReportsPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-500">No PR records available.</p>
+                <EmptyStateCard
+                  eyebrow="Recent records"
+                  title="No PR records available."
+                  description="There are no recent PR entries to show in this summary panel."
+                  hint="Once marks are logged, the latest improvements will appear here automatically."
+                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                  className="rounded-[20px] bg-white px-4 py-5 shadow-none"
+                  contentClassName="gap-3"
+                />
               )}
             </div>
           </div>

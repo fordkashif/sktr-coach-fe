@@ -3,11 +3,15 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { FirstAccessSetupPanel } from "@/components/club-admin/first-access-setup-panel"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
+import { Button } from "@/components/ui/button"
 import {
   completeClubAdminFirstAccessSetup,
   getClubAdminProfileRecord,
   type ClubAdminProfileRecord,
 } from "@/lib/data/club-admin/ops-data"
+import { Alert02Icon, ArrowLeft01Icon, Link01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { resolveSessionActor } from "@/lib/supabase/actor"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -196,13 +200,46 @@ export default function ClubAdminClaimPage() {
     <section className="mx-auto mt-10 w-full max-w-4xl rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
       Loading claim flow...
     </section>
+  ) : error ? (
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 sm:p-6">
+      <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Club-admin claim</p>
+          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">First access could not continue</h1>
+          <p className="max-w-2xl text-sm leading-6 text-slate-600">
+            This claim flow needs an approved tenant request, a valid first-access session, and a fresh claim link.
+          </p>
+        </div>
+      </section>
+
+      <EmptyStateCard
+        eyebrow="Claim issue"
+        title="Club-admin first access is not ready."
+        description={error}
+        hint="Use the latest claim link after platform-admin approval, or return to login if the session has expired."
+        icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
+        className="rounded-[28px] bg-white px-5 py-6 shadow-sm"
+        actions={
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => navigate("/login")}>
+              <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+              Back to login
+            </Button>
+            <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => window.location.reload()}>
+              <HugeiconsIcon icon={Link01Icon} className="size-4" />
+              Retry claim
+            </Button>
+          </div>
+        }
+      />
+    </main>
   ) : (
     <FirstAccessSetupPanel
       profile={profile}
       password={password}
       confirmPassword={confirmPassword}
       saving={saving}
-      error={error}
+      error={null}
       loadingCopy="Claiming account..."
       submitLabel="Claim account and continue"
       title="Claim your club-admin account"

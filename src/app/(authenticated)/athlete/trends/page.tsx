@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import { LineChart } from "@mui/x-charts"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight01Icon, ArrowUp01Icon, StarAward02Icon } from "@hugeicons/core-free-icons"
+import { ArrowRight01Icon, ArrowUp01Icon, Search01Icon, StarAward02Icon } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { getCurrentAthletePrRecords } from "@/lib/data/pr/pr-data"
 import type { PrRecord } from "@/lib/data/pr/types"
 import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
@@ -207,9 +208,25 @@ export default function AthleteTrendsPage() {
                 />
               </div>
             ) : (
-              <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                No trend data available.
-              </div>
+              <EmptyStateCard
+                eyebrow="Trend lines"
+                title="No trend data available yet."
+                description="No trend data available. Trend lines begin to populate after wellness check-ins, workout logs, or benchmark results are recorded over time."
+                hint="Start with today's session or submit the next test week entry so your progress view has real history to chart."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[22px] bg-slate-50 px-4 py-6 shadow-none"
+                contentClassName="gap-3"
+                actions={
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline" className="h-10 rounded-full border-slate-200 px-4">
+                      <Link to="/athlete/log">Open workout log</Link>
+                    </Button>
+                    <Button asChild className="h-10 rounded-full px-4">
+                      <Link to="/athlete/test-week">Open test week</Link>
+                    </Button>
+                  </div>
+                }
+              />
             )}
           </div>
         </div>

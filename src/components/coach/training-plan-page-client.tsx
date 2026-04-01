@@ -1,6 +1,6 @@
 "use client"
 
-import { Add01Icon, ArrowLeft01Icon, ArrowRight01Icon, Delete01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons"
+import { Add01Icon, ArrowLeft01Icon, ArrowRight01Icon, Delete01Icon, MoreHorizontalIcon, Search01Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { EventGroupBadge } from "@/components/badges"
@@ -35,6 +35,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -1234,6 +1235,22 @@ export default function CoachTrainingPlanPageClient({
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-3">
+            {listedPlans.length === 0 ? (
+              <EmptyStateCard
+                eyebrow="Plans"
+                title="No training plans exist yet."
+                description="This team has not published or drafted any plan in the current workspace."
+                hint="Start with a blank plan or use the create action to build the first week structure."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[26px] bg-white px-5 py-6 shadow-[0_14px_40px_rgba(15,23,42,0.05)]"
+                contentClassName="gap-3"
+                actions={
+                  <Button type="button" className="h-10 rounded-full px-4" onClick={openWizard}>
+                    Create first plan
+                  </Button>
+                }
+              />
+            ) : null}
             {listedPlans.map((plan) => {
               const teamName = mockTeams.find((team) => team.id === plan.teamId)?.name ?? "Assigned team"
               const isSelected = previewPlan?.id === plan.id
@@ -2101,7 +2118,12 @@ export default function CoachTrainingPlanPageClient({
                               ))}
                               {day.exerciseRows.length > 2 ? <Badge variant="outline">+{day.exerciseRows.length - 2} more</Badge> : null}
                             </>
-                          ) : <p className="text-xs text-muted-foreground">No exercises yet</p>
+                          ) : (
+                            <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">No exercises yet</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">Add exercise rows to turn this day into a structured session.</p>
+                            </div>
+                          )
                         ) : (
                           <>
                             {day.blocks.slice(0, 3).map((block) => (
@@ -2110,7 +2132,12 @@ export default function CoachTrainingPlanPageClient({
                               </Badge>
                             ))}
                             {day.blocks.length > 3 ? <Badge variant="outline">+{day.blocks.length - 3} more</Badge> : null}
-                            {day.blocks.length === 0 ? <p className="text-xs text-muted-foreground">No sections yet</p> : null}
+                            {day.blocks.length === 0 ? (
+                              <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">No sections yet</p>
+                                <p className="mt-1 text-xs leading-5 text-slate-500">Add blocks to define the main parts of this session.</p>
+                              </div>
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -2175,7 +2202,12 @@ export default function CoachTrainingPlanPageClient({
                           </Badge>
                         ))}
                       </>
-                    ) : <p className="text-xs text-muted-foreground">No exercises yet</p>
+                    ) : (
+                      <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">No exercises yet</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">Add exercise rows before publishing this day.</p>
+                      </div>
+                    )
                   ) : (
                     <>
                       {day.blocks.slice(0, 3).map((block) => (
@@ -2183,7 +2215,12 @@ export default function CoachTrainingPlanPageClient({
                           {block.type}
                         </Badge>
                       ))}
-                      {day.blocks.length === 0 ? <p className="text-xs text-muted-foreground">No blocks yet</p> : null}
+                      {day.blocks.length === 0 ? (
+                        <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">No blocks yet</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">Add blocks to define the flow of this session.</p>
+                        </div>
+                      ) : null}
                     </>
                   )}
                 </div>
@@ -2475,7 +2512,15 @@ export default function CoachTrainingPlanPageClient({
                     </tbody>
                   </table>
                   {editingDay.exerciseRows.length === 0 ? (
-                    <p className="py-6 text-sm text-slate-500">No exercises yet. Add the day row by row.</p>
+                    <EmptyStateCard
+                      eyebrow="Session rows"
+                      title="No exercises have been added yet."
+                      description="This day is still empty at the row level, so it will not show a structured exercise list."
+                      hint="Use the fields above to add the first exercise row."
+                      icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                      className="rounded-[18px] border-dashed bg-slate-50 px-4 py-5 shadow-none"
+                      contentClassName="gap-2"
+                    />
                   ) : null}
                 </div>
               </div>
@@ -2967,9 +3012,14 @@ export default function CoachTrainingPlanPageClient({
                       </div>
                     ))}
                     {block.exerciseRows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        No exercise rows yet. Add them only when this block needs exact structured detail.
-                      </p>
+                      <EmptyStateCard
+                        eyebrow="Block detail"
+                        title="No exercise rows are attached to this block."
+                        description="That is valid when the block only needs summary guidance, but add rows when you need exact sets, reps, or loads."
+                        icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                        className="rounded-[18px] border-dashed bg-slate-50 px-4 py-4 shadow-none"
+                        contentClassName="gap-2"
+                      />
                     ) : null}
                   </div>
                 </div>

@@ -1,7 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Search01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -197,7 +200,17 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
           <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Published Plans</h2>
           <div className="mt-4 space-y-3">
             {isLoading ? <p className="text-sm text-slate-500">Loading...</p> : null}
-            {!isLoading && plans.length === 0 ? <p className="text-sm text-slate-500">No plans yet.</p> : null}
+            {!isLoading && plans.length === 0 ? (
+              <EmptyStateCard
+                eyebrow="Published plans"
+                title="No training plans have been published yet."
+                description="This coach scope does not have any published plans available in Supabase yet."
+                hint="Use the publish form to create the first structured plan for this team."
+                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                className="rounded-[18px] border-dashed bg-slate-50 px-4 py-5 shadow-none"
+                contentClassName="gap-2"
+              />
+            ) : null}
             {plans.map((plan) => (
               <div key={plan.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="font-medium text-slate-950">{plan.name}</p>

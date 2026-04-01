@@ -4,6 +4,7 @@ import { ArrowDown01Icon, FilePasteIcon, FilterHorizontalIcon, TextCreationIcon 
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,6 +125,7 @@ export default function PlatformAdminAuditPage() {
         .includes(query)
     })
   }, [events, search, actionFilter])
+  const hasFilters = search.trim().length > 0 || actionFilter !== "all"
 
   useEffect(() => {
     if (filteredEvents.length === 0) {
@@ -350,9 +352,36 @@ export default function PlatformAdminAuditPage() {
       ) : null}
 
       {!loading && filteredEvents.length === 0 ? (
-        <section className="rounded-[28px] border border-dashed border-slate-300 bg-white px-5 py-8 text-sm text-slate-500 shadow-sm">
-          No platform audit events matched the current filter.
-        </section>
+        <EmptyStateCard
+          eyebrow="Audit feed"
+          title={hasFilters ? "No platform audit events matched this filter." : "No platform audit events recorded yet."}
+          description={
+            hasFilters
+              ? "No platform audit events matched the current filter. Adjust the event filter or search terms to inspect a different slice of platform activity."
+              : "No platform audit events matched the current filter. New request submissions, reviews, and provisioning actions will appear here once the intake pipeline is used."
+          }
+          hint={
+            hasFilters
+              ? "This page should distinguish between no data and no results. Right now you are in the no-results branch."
+              : "Use this feed to verify request intake and provisioning actions before tenant ownership exists."
+          }
+          icon={<HugeiconsIcon icon={FilterHorizontalIcon} className="size-5" />}
+          actions={
+            hasFilters ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-full border-slate-200 px-5"
+                onClick={() => {
+                  setSearch("")
+                  setActionFilter("all")
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : null}
 
       <section className="space-y-4">

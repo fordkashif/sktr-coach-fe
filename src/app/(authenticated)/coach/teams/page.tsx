@@ -1,11 +1,12 @@
 "use client"
 
 import { HugeiconsIcon } from "@hugeicons/react"
-import { FilePasteIcon, Link01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
+import { FilePasteIcon, Link01Icon, Search01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
 import { Link, Navigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import { EventGroupBadge } from "@/components/badges"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Dialog,
   DialogContent,
@@ -146,9 +147,18 @@ export default function CoachTeamsPage() {
 
     return (
       <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-        <section className="rounded-[28px] border border-dashed border-slate-300 bg-white px-5 py-8 text-sm text-slate-500 shadow-sm">
-          No team is assigned for this coach profile.
-        </section>
+        <EmptyStateCard
+          eyebrow="Coach teams"
+          title="No team is assigned for this coach profile."
+          description="Your coach account is active, but no team has been attached to it yet. Team access is required before roster, plans, reports, or invites can load."
+          hint="Ask the club admin to assign you to a team or reopen the latest coach invite if onboarding was not completed."
+          icon={<HugeiconsIcon icon={UserMultiple02Icon} className="size-5" />}
+          actions={
+            <Button asChild variant="outline" className="h-11 rounded-full border-slate-200 px-5">
+              <Link to="/coach/dashboard">Back to dashboard</Link>
+            </Button>
+          }
+        />
       </div>
     )
   }
@@ -574,7 +584,22 @@ export default function CoachTeamsPage() {
                           </div>
                         </div>
                       ))}
-                      {roster.length === 0 ? <p className="text-sm text-slate-500">No athletes assigned yet.</p> : null}
+                      {roster.length === 0 ? (
+                        <EmptyStateCard
+                          eyebrow="Roster preview"
+                          title="No athletes assigned yet."
+                          description="This team exists, but no athletes are currently attached to its roster."
+                          hint="Generate an athlete invite now or have the club admin move athletes into this team."
+                          icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+                          className="rounded-[20px] bg-white px-4 py-5 shadow-none"
+                          contentClassName="gap-3"
+                          actions={
+                            <Button asChild variant="outline" className="h-10 rounded-full border-slate-200 px-4">
+                              <Link to={`/coach/teams/${team.id}`}>Open team workspace</Link>
+                            </Button>
+                          }
+                        />
+                      ) : null}
                     </div>
                   </div>
                 </div>

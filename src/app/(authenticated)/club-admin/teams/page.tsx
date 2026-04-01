@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Archive01Icon, Edit02Icon, Link01Icon, RestoreBinIcon } from "@hugeicons/core-free-icons"
+import { Archive01Icon, Edit02Icon, Link01Icon, RestoreBinIcon, UserMultiple02Icon } from "@hugeicons/core-free-icons"
 import { Link } from "react-router-dom"
 import { ClubAdminNav } from "@/components/club-admin/admin-nav"
 import { EventGroupBadge } from "@/components/badges"
 import { Button } from "@/components/ui/button"
+import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import {
   Dialog,
   DialogContent,
@@ -564,9 +565,22 @@ export default function ClubAdminTeamsPage() {
       ) : null}
 
       {!backendLoading && teams.length === 0 ? (
-        <section className="rounded-[22px] border border-dashed border-slate-300 bg-white px-4 py-8 text-sm text-slate-500">
-          No teams exist yet.
-        </section>
+        <EmptyStateCard
+          eyebrow="Teams"
+          title="No teams exist yet."
+          description="Teams are the operational container for coach assignments, athlete rosters, plans, and testing. This tenant needs at least one team before daily workflows can start."
+          hint="Create the first team, assign a lead coach if available, and then begin athlete invite flow from that team."
+          icon={<HugeiconsIcon icon={UserMultiple02Icon} className="size-5" />}
+          actions={
+            <Button
+              type="button"
+              className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white hover:opacity-95"
+              onClick={() => setCreateOpen(true)}
+            >
+              Create first team
+            </Button>
+          }
+        />
       ) : null}
 
       {activeTeams.length > 0 ? (
