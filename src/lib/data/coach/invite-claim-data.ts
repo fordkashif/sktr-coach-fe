@@ -10,6 +10,7 @@ export type CoachInvitePreview = {
   organizationName: string
   teamId?: string
   teamName?: string
+  hasExistingAccount: boolean
 }
 
 export type CoachOnboardingState = {
@@ -53,6 +54,7 @@ export async function getPublicCoachInvitePreview(inviteId: string): Promise<Res
     organizationName: row.organization_name,
     teamId: row.team_id ?? undefined,
     teamName: row.team_name ?? undefined,
+    hasExistingAccount: Boolean(row.has_existing_account),
   })
 }
 

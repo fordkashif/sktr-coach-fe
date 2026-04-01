@@ -32,6 +32,7 @@ export default function CoachInviteAcceptPage() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [requiresPassword, setRequiresPassword] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -79,9 +80,17 @@ export default function CoachInviteAcceptPage() {
       const { data: sessionData } = await supabase.auth.getSession()
       if (!sessionData.session) {
         if (!cancelled) {
-          setStage("needs-auth")
-          setMessage("This coach invite is ready. Sign in if you already have an account, or claim your coach account here.")
           setFullName(invitePreview.email.split("@")[0] || "")
+          setError(null)
+          if (invitePreview.hasExistingAccount) {
+            setRequiresPassword(false)
+            setStage("needs-auth")
+            setMessage(`This invite is for ${invitePreview.email}. Sign in with that account to continue.`)
+          } else {
+            setRequiresPassword(true)
+            setStage("setup")
+            setMessage("Complete your coach setup to claim this invite and enter the workspace.")
+          }
         }
         return
       }
@@ -123,6 +132,7 @@ export default function CoachInviteAcceptPage() {
 
       if (!cancelled && (!onboardingResult.data.displayName || !onboardingResult.data.onboardingCompletedAt)) {
         setFullName(onboardingResult.data.displayName || invitePreview.email.split("@")[0] || "")
+        setRequiresPassword(false)
         setStage("setup")
         setMessage("Complete your coach setup before entering the workspace.")
         return
@@ -147,7 +157,7 @@ export default function CoachInviteAcceptPage() {
     return parts.join(" | ")
   }, [preview])
 
-  const handleFirstTimeSetup = async () => {
+  const handleClaimWithPassword = async () => {
     if (!preview) return
     if (password !== confirmPassword) {
       setError("Passwords do not match.")
@@ -270,20 +280,12 @@ export default function CoachInviteAcceptPage() {
             </div>
 
             {stage === "needs-auth" ? (
-              <div className="flex flex-wrap gap-3">
+              <div className="space-y-3">
+                <p className="text-sm text-slate-500">
+                  PaceLab found an existing account for this invited email. Sign in with that account and the invite will attach automatically.
+                </p>
                 <Button asChild className="h-11 rounded-full px-5">
-                  <Link to={`/login?redirect=${encodeURIComponent(`/invite/coach/${inviteId}`)}`}>I already have an account</Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 rounded-full px-5"
-                  onClick={() => {
-                    setStage("setup")
-                    setError(null)
-                  }}
-                >
-                  First-time coach setup
+                  <Link to={`/login?redirect=${encodeURIComponent(`/invite/coach/${inviteId}`)}`}>Sign in to continue</Link>
                 </Button>
               </div>
             ) : null}
@@ -329,33 +331,39 @@ export default function CoachInviteAcceptPage() {
                   onChange={(event) => setFullName(event.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-950">Password</Label>
-                <Input
-                  type="password"
-                  className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-950">Confirm password</Label>
-                <Input
-                  type="password"
-                  className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                />
-              </div>
+              {requiresPassword ? (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-950">Password</Label>
+                    <Input
+                      type="password"
+                      className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-950">Confirm password</Label>
+                    <Input
+                      type="password"
+                      className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                    />
+                  </div>
+                </>
+              ) : null}
               <p className="text-sm text-slate-500">
-                New coaches claim their account directly from this invite. Existing coaches who already signed in only need to complete their profile details.
+                {requiresPassword
+                  ? "No existing account was found for this invited email, so this invite will create the coach account directly."
+                  : "Your account is already attached. Finish the remaining profile details and continue into the coach workspace."}
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button
                   type="button"
                   disabled={submitting}
                   className="h-11 rounded-full px-5"
-                  onClick={() => void (password || confirmPassword ? handleFirstTimeSetup() : handleExistingCoachSetup())}
+                  onClick={() => void (requiresPassword ? handleClaimWithPassword() : handleExistingCoachSetup())}
                 >
                   {submitting ? "Saving..." : "Complete coach setup"}
                 </Button>
@@ -367,12 +375,12 @@ export default function CoachInviteAcceptPage() {
           ) : (
             <div className="mt-4 space-y-3 text-sm text-slate-600">
               <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="font-medium text-slate-950">1. Accept the invite with the correct email</p>
-                <p className="mt-1">The invite is tied to the exact coach email shown on this page.</p>
+                <p className="font-medium text-slate-950">1. PaceLab checks the invited email first</p>
+                <p className="mt-1">If the email already has an account, the invite goes straight to sign-in. If not, the invite goes straight to account setup.</p>
               </div>
               <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="font-medium text-slate-950">2. Complete first-time setup if you are new</p>
-                <p className="mt-1">The invite itself now acts as the claim proof, so first-time setup does not depend on a separate email-confirmation loop.</p>
+                <p className="font-medium text-slate-950">2. Accept the invite with the invited email</p>
+                <p className="mt-1">The team assignment is tied to the exact invited email shown on this page.</p>
               </div>
               <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
                 <p className="font-medium text-slate-950">3. Continue into the coach workspace</p>

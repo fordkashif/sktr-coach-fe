@@ -199,7 +199,7 @@ export default function ClubAdminUsersPage() {
   const inviteComposer = (
     <div className="space-y-4">
       <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
-        Club admins can invite users into the tenant, but they should never create user accounts manually. Account creation begins from the invite flow only.
+        Club admins can invite users into the tenant, but they should never create user accounts manually. PaceLab checks whether the invited email already exists and routes the invite flow automatically.
       </div>
       <div className="space-y-3">
         <div className="space-y-2">
