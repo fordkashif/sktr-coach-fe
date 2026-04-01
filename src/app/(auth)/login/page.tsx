@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useState, type FormEvent } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -483,11 +483,16 @@ export default function LoginPage() {
                           <Checkbox checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
                           <span>Remember me</span>
                         </label>
-                        <p className="text-xs leading-5 text-slate-500 sm:max-w-[220px] sm:text-right sm:text-sm">
-                          {isSupabaseMode
-                            ? "Supabase mode enabled. Use your real account credentials."
-                            : "Demo build. Use the access panel below for role-specific credentials."}
-                        </p>
+                        <div className="flex flex-col items-start gap-1 sm:items-end">
+                          <Link to="/reset-password" className="text-sm font-medium text-[#1368ff] hover:underline">
+                            Forgot password?
+                          </Link>
+                          <p className="text-xs leading-5 text-slate-500 sm:max-w-[220px] sm:text-right sm:text-sm">
+                            {isSupabaseMode
+                              ? "Supabase mode enabled. Use your real account credentials."
+                              : "Demo build. Use the access panel below for role-specific credentials."}
+                          </p>
+                        </div>
                       </div>
 
                       {error ? (
