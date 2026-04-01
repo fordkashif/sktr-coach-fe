@@ -296,7 +296,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
               </div>
 
               {joinState.joinedAt ? (
-                <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-4">
+                <div className="status-panel-success">
                   <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
                     <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
                     Joined {isSupabaseMode ? joinState.joinedTeamName : joinedMockTeam?.name}

@@ -373,7 +373,10 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                       <TableCell className="font-medium">{athlete.name}</TableCell>
                       <TableCell>{athlete.primaryEvent}</TableCell>
                       <TableCell>
-                        <Badge variant={athlete.readiness === "red" ? "destructive" : "secondary"}>
+                        <Badge
+                          variant="outline"
+                          className={athlete.readiness === "red" ? "status-chip-danger" : "status-chip-neutral"}
+                        >
                           {athlete.readiness === "red" ? "Needs Review" : "Active"}
                         </Badge>
                       </TableCell>

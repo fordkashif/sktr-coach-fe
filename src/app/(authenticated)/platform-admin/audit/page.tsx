@@ -62,10 +62,10 @@ function EventBadge({ action }: { action: PlatformAuditEventRecord["action"] }) 
   const label = formatActionLabel(action)
   const tone =
     action === "tenant_provision_request_submitted"
-      ? "bg-amber-100 text-amber-700"
+      ? "status-chip-warning"
       : action === "tenant_provision_request_reviewed"
-        ? "bg-sky-100 text-sky-700"
-        : "bg-emerald-100 text-emerald-700"
+        ? "status-chip-info"
+        : "status-chip-success"
 
   return <span className={cn("rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]", tone)}>{label}</span>
 }

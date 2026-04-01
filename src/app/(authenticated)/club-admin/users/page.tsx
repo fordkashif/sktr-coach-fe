@@ -454,7 +454,7 @@ export default function ClubAdminUsersPage() {
                     </Select>
                     <span className={cn(
                       "inline-flex h-11 items-center justify-center rounded-full px-3 text-sm font-semibold capitalize",
-                      user.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700",
+                      user.status === "active" ? "status-chip-neutral" : "status-chip-danger",
                     )}>
                       {user.status}
                     </span>

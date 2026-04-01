@@ -23,7 +23,7 @@ const CLUB_ADMIN_BILLING_CACHE_KEY = "club-admin-billing-cache"
 export const DEFAULT_CLUB_ADMIN_PROFILE: ClubAdminProfileRecord = {
   clubName: "",
   shortName: "",
-  primaryColor: "#16a34a",
+  primaryColor: "#1368ff",
   seasonYear: "2026",
   seasonStart: "2026-01-10",
   seasonEnd: "2026-10-30",

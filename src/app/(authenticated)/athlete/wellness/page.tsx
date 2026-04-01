@@ -68,7 +68,7 @@ export default function AthleteWellnessPage() {
       ? {
           label: "Ready",
           body: "Recovery is in a good place. Stay on the current training schedule.",
-          tone: "bg-emerald-100 text-emerald-700",
+          tone: "status-chip-info",
         }
       : result === "yellow"
         ? {
@@ -163,9 +163,9 @@ export default function AthleteWellnessPage() {
               <p>Lower soreness, fatigue, and stress with enough sleep produce a stronger readiness signal.</p>
               <div className="grid gap-2">
                 {[
-                  { label: "Ready", body: "Low load score, enough sleep, stable mood.", tone: "bg-emerald-100 text-emerald-700" },
-                  { label: "Watch", body: "Moderate load score or lower sleep.", tone: "bg-amber-100 text-amber-700" },
-                  { label: "Review", body: "High load score or poor recovery markers.", tone: "bg-rose-100 text-rose-700" },
+                  { label: "Ready", body: "Low load score, enough sleep, stable mood.", tone: "status-chip-info" },
+                  { label: "Watch", body: "Moderate load score or lower sleep.", tone: "status-chip-warning" },
+                  { label: "Review", body: "High load score or poor recovery markers.", tone: "status-chip-danger" },
                 ].map((item) => (
                   <div key={item.label} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
                     <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", item.tone)}>{item.label}</span>

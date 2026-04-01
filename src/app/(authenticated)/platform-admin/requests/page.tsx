@@ -72,10 +72,10 @@ function StatusBadge({ status }: { status: PlatformAdminRequestRecord["status"] 
     <span
       className={cn(
         "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
-        status === "pending" && "bg-amber-100 text-amber-700",
-        status === "approved" && "bg-emerald-100 text-emerald-700",
-        status === "rejected" && "bg-rose-100 text-rose-700",
-        status === "cancelled" && "bg-slate-100 text-slate-600",
+        status === "pending" && "status-chip-warning",
+        status === "approved" && "status-chip-success",
+        status === "rejected" && "status-chip-danger",
+        status === "cancelled" && "status-chip-neutral",
       )}
     >
       {status}

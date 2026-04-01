@@ -213,11 +213,11 @@ export default function AthleteLogPage() {
   const allComplete = completedCount === totalBlocks
 
   const sessionState = useMemo(() => {
-    if (allComplete) return { label: "Completed", tone: "bg-emerald-100 text-emerald-700" }
+    if (allComplete) return { label: "Completed", tone: "status-chip-success" }
     if (completedCount > 0 || currentSession.status === "in-progress") {
-      return { label: "In Progress", tone: "bg-amber-100 text-amber-700" }
+      return { label: "In Progress", tone: "status-chip-warning" }
     }
-    return { label: "Not Started", tone: "bg-slate-200 text-slate-700" }
+    return { label: "Not Started", tone: "status-chip-neutral" }
   }, [allComplete, completedCount, currentSession.status])
 
   if (!currentBlock) return null
@@ -490,7 +490,7 @@ export default function AthleteLogPage() {
         </section>
 
         {allComplete ? (
-          <section className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-4">
+          <section className="status-panel-success">
             <p className="text-sm font-semibold text-emerald-700">Session complete</p>
             <p className="mt-1 text-sm text-emerald-700/80">All programmed blocks are logged. You can review the session or return home.</p>
           </section>

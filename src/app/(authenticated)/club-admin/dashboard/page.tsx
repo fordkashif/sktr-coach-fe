@@ -413,7 +413,7 @@ export default function ClubAdminDashboardPage() {
                       className={cn(
                         "inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
                         item.done
-                          ? "bg-emerald-100 text-emerald-700"
+                          ? "status-chip-success"
                           : "bg-slate-100 text-slate-600",
                       )}
                     >

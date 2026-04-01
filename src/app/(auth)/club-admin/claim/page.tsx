@@ -19,7 +19,7 @@ import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 const defaultProfile: ClubAdminProfileRecord = {
   clubName: "",
   shortName: "",
-  primaryColor: "#16a34a",
+  primaryColor: "#1368ff",
   seasonYear: "2026",
   seasonStart: "2026-01-10",
   seasonEnd: "2026-10-30",

@@ -399,7 +399,7 @@ export default function AthleteHomePage() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   {allComplete ? (
-                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-5 text-emerald-600" />
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-5 text-[#1368ff]" />
                   ) : (
                     <div className="flex items-center gap-1">
                       <span className="size-2.5 rounded-full bg-[#1368ff]" />
@@ -420,18 +420,18 @@ export default function AthleteHomePage() {
               </div>
 
               {allComplete ? (
-                <div className="relative mt-4 overflow-hidden rounded-[22px] border border-[#99f6cf] bg-[linear-gradient(140deg,#f7fffb_0%,#ebfff5_48%,#e6fff9_100%)] px-4 py-4 shadow-[0_14px_34px_rgba(16,185,129,0.15)]">
-                  <div className="pointer-events-none absolute -top-10 -right-8 h-24 w-24 rounded-full bg-[#34d399]/20 blur-2xl" />
-                  <div className="pointer-events-none absolute -bottom-10 -left-8 h-24 w-24 rounded-full bg-[#10b981]/15 blur-2xl" />
+                <div className="relative mt-4 overflow-hidden rounded-[22px] border border-[#cfe2ff] bg-[linear-gradient(140deg,#f8fbff_0%,#eef5ff_48%,#eaf2ff_100%)] px-4 py-4 shadow-[0_14px_34px_rgba(31,140,255,0.14)]">
+                  <div className="pointer-events-none absolute -top-10 -right-8 h-24 w-24 rounded-full bg-[#60a5fa]/18 blur-2xl" />
+                  <div className="pointer-events-none absolute -bottom-10 -left-8 h-24 w-24 rounded-full bg-[#1f8cff]/14 blur-2xl" />
                   <div className="relative flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700/80">Completed</p>
-                      <p className="mt-1 text-base font-semibold text-emerald-900">Today&apos;s program is done.</p>
-                      <p className="mt-1.5 max-w-[30ch] text-sm text-emerald-800/85">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#1f5fd1]/80">Completed</p>
+                      <p className="mt-1 text-base font-semibold text-slate-950">Today&apos;s program is done.</p>
+                      <p className="mt-1.5 max-w-[30ch] text-sm text-slate-600">
                         Recovery window started. Next assigned workout will show up here.
                       </p>
                     </div>
-                    <span className="inline-flex rounded-full border border-emerald-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                    <span className="status-chip-info bg-white/80">
                       Locked In
                     </span>
                   </div>
@@ -470,14 +470,14 @@ export default function AthleteHomePage() {
                   <div
                     key={day.key}
                     className={`rounded-[14px] border px-2 py-2 text-center ${
-                      day.completed ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"
+                      day.completed ? "border-[#cfe2ff] bg-[#eef5ff]" : "border-slate-200 bg-slate-50"
                     } ${day.isToday ? "ring-1 ring-[#1f8cff]/40" : ""}`}
                   >
                     <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{day.label}</p>
                     <p className="mt-1 text-sm font-semibold text-slate-950">{day.day}</p>
                     <div className="mt-1 flex justify-center">
                       {day.completed ? (
-                        <HugeiconsIcon icon={CheckmarkCircle01Icon} className="size-4 text-emerald-600" />
+                        <HugeiconsIcon icon={CheckmarkCircle01Icon} className="size-4 text-[#1368ff]" />
                       ) : (
                         <span className="size-4 rounded-full border border-slate-300 bg-white" />
                       )}

@@ -278,7 +278,7 @@ export default function ClubAdminBillingPage() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-slate-950">{invoice.amount}</p>
-                  <p className={cn("text-sm font-medium", invoice.status === "Paid" ? "text-emerald-600" : "text-amber-600")}>{invoice.status}</p>
+                  <span className={cn(invoice.status === "Paid" ? "status-chip-success" : "status-chip-warning")}>{invoice.status}</span>
                 </div>
               </div>
             ))
