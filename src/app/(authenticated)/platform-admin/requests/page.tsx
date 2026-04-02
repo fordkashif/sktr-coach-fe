@@ -10,9 +10,25 @@ import {
   TextCreationIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useEffect, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { DataSurfaceToolbar } from "@/components/ui/data-surface-toolbar"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
 import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { StandardPageHeader } from "@/components/ui/standard-page-header"
 import {
@@ -33,15 +49,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   approveAndProvisionTenantRequest,
   dispatchPendingNotificationEmails,
-  getPlatformAdminPackageUpgradeRequests,
   getPlatformAdminRequestQueue,
   logPlatformAdminExport,
   previewInitialClubAdminAccessInvite,
-  reviewTenantPackageUpgradeRequest,
   reviewTenantProvisionRequest,
   sendInitialClubAdminAccessInvite,
   setTenantRequestLifecycleState,
-  type PlatformAdminPackageUpgradeRequestRecord,
   type PlatformAdminRequestRecord,
 } from "@/lib/data/platform-admin/ops-data"
 import { getPackageById } from "@/lib/billing/package-catalog"
@@ -112,8 +125,8 @@ function StatusBadge({ status }: { status: PlatformAdminRequestRecord["status"] 
 function InfoPill({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-medium text-slate-950">{value}</p>
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-sm font-medium leading-5 text-slate-950">{value}</p>
     </div>
   )
 }
@@ -145,30 +158,12 @@ function LifecycleBadge({ lifecycleStatus }: { lifecycleStatus: PlatformAdminReq
   )
 }
 
-function BillingBadge({ billingStatus }: { billingStatus: PlatformAdminRequestRecord["billingStatus"] }) {
-  if (!billingStatus) {
-    return (
-      <span className="status-chip-neutral rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
-        Billing unknown
-      </span>
-    )
-  }
-
-  return (
-    <span
-      className={cn(
-        "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
-        billingStatus === "pending" && "status-chip-warning",
-        billingStatus === "mocked_complete" && "status-chip-info",
-        billingStatus === "failed" && "status-chip-danger",
-        billingStatus === "active" && "status-chip-success",
-        billingStatus === "past_due" && "status-chip-warning",
-        billingStatus === "cancelled" && "status-chip-neutral",
-      )}
-    >
-      {billingLabels[billingStatus]}
-    </span>
-  )
+function TablePrimaryStatus({ request }: { request: PlatformAdminRequestRecord }) {
+  if (request.status === "pending") return <StatusBadge status="pending" />
+  if (request.status === "rejected") return <StatusBadge status="rejected" />
+  if (request.status === "cancelled") return <StatusBadge status="cancelled" />
+  if (request.lifecycleStatus) return <LifecycleBadge lifecycleStatus={request.lifecycleStatus} />
+  return <StatusBadge status={request.status} />
 }
 
 function RequestMetaCard({
@@ -182,16 +177,48 @@ function RequestMetaCard({
 }) {
   return (
     <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-medium text-slate-950">{value}</p>
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-sm font-medium leading-5 text-slate-950">{value}</p>
       {detail ? <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p> : null}
+    </div>
+  )
+}
+
+function toTitleCaseLabel(value: string | null | undefined, fallback: string) {
+  if (!value?.trim()) return fallback
+  return value
+    .replaceAll("-", " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
+}
+
+function RequestSummaryRow({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  detail?: string | null
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 text-slate-400">{icon}</div>
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className="text-sm font-medium leading-5 text-slate-950">{value}</p>
+        {detail ? <p className="text-xs leading-5 text-slate-500">{detail}</p> : null}
+      </div>
     </div>
   )
 }
 
 export default function PlatformAdminRequestsPage() {
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
-  const [upgradeRequests, setUpgradeRequests] = useState<PlatformAdminPackageUpgradeRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -199,13 +226,16 @@ export default function PlatformAdminRequestsPage() {
   const [localNotificationLinks, setLocalNotificationLinks] = useState<
     Array<{ id: string; recipientEmail?: string; subject?: string; actionLink?: string }>
   >([])
-  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
-  const [upgradeReviewNotes, setUpgradeReviewNotes] = useState<Record<string, string>>({})
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<PlatformAdminRequestRecord["status"] | "all">("all")
   const [desktopViewMode, setDesktopViewMode] = useState<"cards" | "table">("cards")
+  const [useDesktopReviewDialog, setUseDesktopReviewDialog] = useState(() => {
+    if (typeof window === "undefined") return false
+    return window.matchMedia("(min-width: 1024px)").matches
+  })
   const isLocalPreviewEnabled =
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
@@ -222,14 +252,20 @@ export default function PlatformAdminRequestsPage() {
   }, [desktopViewMode])
 
   useEffect(() => {
+    if (typeof window === "undefined") return
+    const mediaQuery = window.matchMedia("(min-width: 1024px)")
+    const sync = (event?: MediaQueryListEvent) => setUseDesktopReviewDialog(event ? event.matches : mediaQuery.matches)
+    sync()
+    mediaQuery.addEventListener("change", sync)
+    return () => mediaQuery.removeEventListener("change", sync)
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
 
     const loadQueue = async () => {
       setLoading(true)
-      const [requestResult, upgradeResult] = await Promise.all([
-        getPlatformAdminRequestQueue(),
-        getPlatformAdminPackageUpgradeRequests(),
-      ])
+      const requestResult = await getPlatformAdminRequestQueue()
       if (cancelled) return
 
       if (!requestResult.ok) {
@@ -238,15 +274,8 @@ export default function PlatformAdminRequestsPage() {
         setLoading(false)
         return
       }
-      if (!upgradeResult.ok) {
-        setError(upgradeResult.error.message)
-        setInfo(null)
-        setLoading(false)
-        return
-      }
 
       setRequests(requestResult.data)
-      setUpgradeRequests(upgradeResult.data)
       setError(null)
       setInfo(null)
       setLoading(false)
@@ -271,10 +300,6 @@ export default function PlatformAdminRequestsPage() {
     { label: "Onboarding", value: summary.onboarding },
     { label: "Active", value: summary.active },
   ]
-  const pendingUpgradeRequests = useMemo(
-    () => upgradeRequests.filter((item) => item.status === "pending"),
-    [upgradeRequests],
-  )
 
   const filteredRequests = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -308,14 +333,14 @@ export default function PlatformAdminRequestsPage() {
   }, [requests, search, statusFilter])
   useEffect(() => {
     if (filteredRequests.length === 0) {
-      setExpandedRequestId(null)
+      setActiveRequestId(null)
       return
     }
 
-    if (expandedRequestId && !filteredRequests.some((item) => item.id === expandedRequestId)) {
-      setExpandedRequestId(null)
+    if (activeRequestId && !filteredRequests.some((item) => item.id === activeRequestId)) {
+      setActiveRequestId(null)
     }
-  }, [expandedRequestId, filteredRequests])
+  }, [activeRequestId, filteredRequests])
 
   const handleReview = async (requestId: string, status: "approved" | "rejected") => {
     const target = requests.find((item) => item.id === requestId)
@@ -615,63 +640,6 @@ export default function PlatformAdminRequestsPage() {
     else setInfo(`Opened print/PDF flow for ${filteredRequests.length} request row(s).`)
   }
 
-  const handleUpgradeRequestReview = async (
-    upgradeRequestId: string,
-    status: PlatformAdminPackageUpgradeRequestRecord["status"],
-  ) => {
-    if (status === "pending") return
-
-    setSubmittingId(`upgrade-${upgradeRequestId}`)
-    const result = await reviewTenantPackageUpgradeRequest({
-      upgradeRequestId,
-      status,
-      reviewNotes: upgradeReviewNotes[upgradeRequestId],
-    })
-
-    if (!result.ok) {
-      setError(result.error.message)
-      setInfo(null)
-      setSubmittingId(null)
-      return
-    }
-
-    const reviewedAt = new Date().toISOString()
-    const target = upgradeRequests.find((item) => item.id === upgradeRequestId) ?? null
-    setUpgradeRequests((current) =>
-      current.map((item) =>
-        item.id === upgradeRequestId
-          ? {
-              ...item,
-              status,
-              reviewNotes: upgradeReviewNotes[upgradeRequestId]?.trim() || null,
-              reviewedAt,
-            }
-          : item,
-      ),
-    )
-
-    if (status === "approved" && target) {
-      setRequests((current) =>
-        current.map((item) =>
-          item.provisionedTenantId === target.tenantId
-            ? {
-                ...item,
-                requestedPlan: target.requestedPackage,
-              }
-            : item,
-        ),
-      )
-    }
-
-    setError(null)
-    setInfo(
-      target
-        ? `Package upgrade ${status} for ${target.organizationName}.`
-        : "Package upgrade request updated.",
-    )
-    setSubmittingId(null)
-  }
-
   const handleLifecycleTransition = async (
     requestId: string,
     lifecycleStatus: PlatformAdminRequestRecord["lifecycleStatus"],
@@ -718,177 +686,6 @@ export default function PlatformAdminRequestsPage() {
     setError(null)
     setInfo(successMessage ?? `${target.organizationName} moved to ${lifecycleLabels[lifecycleStatus]}.`)
     setSubmittingId(null)
-  }
-
-  const renderRequestActionPanel = (request: PlatformAdminRequestRecord, isExpanded: boolean) => {
-    const isPending = request.status === "pending"
-    const isSubmitting = submittingId === request.id
-
-    return (
-      <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          {isExpanded ? "Decision" : "Quick review"}
-        </p>
-        {!isExpanded ? (
-          <div className="mt-3 space-y-3">
-            <p className="text-sm leading-6 text-slate-600">
-              {isPending ? "Open this request to review and decide." : "Open this request to inspect the full lifecycle."}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 w-full rounded-full border-slate-200"
-              onClick={() => setExpandedRequestId(request.id)}
-            >
-              {isPending ? "Review request" : "View details"}
-              <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-3">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-full rounded-full border-slate-200"
-              onClick={() => setExpandedRequestId(null)}
-            >
-              Collapse request
-              <HugeiconsIcon icon={ArrowDown01Icon} className="size-4 rotate-180" />
-            </Button>
-            <Textarea
-              rows={5}
-              value={reviewNotes[request.id] ?? request.reviewNotes ?? ""}
-              onChange={(event) =>
-                setReviewNotes((current) => ({
-                  ...current,
-                  [request.id]: event.target.value,
-                }))
-              }
-              disabled={!isPending || isSubmitting}
-              placeholder="Add the review note or provisioning instruction."
-              className="rounded-[20px] border-slate-200 bg-white"
-            />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button
-                type="button"
-                disabled={!isPending || isSubmitting}
-                className="h-11 rounded-full bg-[linear-gradient(135deg,#0f9b63_0%,#18b977_100%)] text-white hover:opacity-95"
-                onClick={() => void handleReview(request.id, "approved")}
-              >
-                Approve and provision
-              </Button>
-              <Button
-                type="button"
-                disabled={!isPending || isSubmitting}
-                variant="outline"
-                className="h-11 rounded-full border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
-                onClick={() => void handleReview(request.id, "rejected")}
-              >
-                Reject
-              </Button>
-            </div>
-
-            {request.provisionedTenantId ? (
-              <div className="grid gap-3">
-                <Button
-                  type="button"
-                  disabled={isSubmitting}
-                  variant="outline"
-                  className="h-11 w-full rounded-full border-slate-200"
-                  onClick={() => void handleResendInvite(request.id)}
-                >
-                  Resend initial access invite
-                </Button>
-                {isLocalPreviewEnabled ? (
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    variant="outline"
-                    className="h-11 w-full rounded-full border-slate-200"
-                    onClick={() => void handleCopyInviteLink(request.id)}
-                  >
-                    Copy initial access link
-                  </Button>
-                ) : null}
-                {request.lifecycleStatus === "approved_pending_billing" ? (
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    variant="outline"
-                    className="h-11 w-full rounded-full border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-700"
-                    onClick={() =>
-                      void handleLifecycleTransition(
-                        request.id,
-                        "billing_failed",
-                        "failed",
-                        `Billing marked as failed for ${request.organizationName}.`,
-                      )
-                    }
-                  >
-                    Mark billing failed
-                  </Button>
-                ) : null}
-                {request.lifecycleStatus === "billing_failed" ? (
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    variant="outline"
-                    className="h-11 w-full rounded-full border-slate-200"
-                    onClick={() =>
-                      void handleLifecycleTransition(
-                        request.id,
-                        "approved_pending_billing",
-                        "pending",
-                        `Billing reset to pending for ${request.organizationName}.`,
-                      )
-                    }
-                  >
-                    Retry billing
-                  </Button>
-                ) : null}
-                {(request.lifecycleStatus === "active_onboarding" || request.lifecycleStatus === "active") ? (
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    variant="outline"
-                    className="h-11 w-full rounded-full border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
-                    onClick={() =>
-                      void handleLifecycleTransition(
-                        request.id,
-                        "suspended",
-                        request.billingStatus,
-                        `Tenant suspended for ${request.organizationName}.`,
-                      )
-                    }
-                  >
-                    Suspend tenant
-                  </Button>
-                ) : null}
-                {request.lifecycleStatus === "suspended" ? (
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    variant="outline"
-                    className="h-11 w-full rounded-full border-slate-200"
-                    onClick={() =>
-                      void handleLifecycleTransition(
-                        request.id,
-                        request.previousLifecycleStatus ?? "active",
-                        request.billingStatus === "pending" ? "active" : request.billingStatus,
-                        `Tenant reactivated for ${request.organizationName}.`,
-                      )
-                    }
-                  >
-                    Reactivate tenant
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-    )
   }
 
   const renderExpandedRequestDetails = (request: PlatformAdminRequestRecord) => (
@@ -1008,6 +805,185 @@ export default function PlatformAdminRequestsPage() {
     </div>
   )
 
+  const activeRequest = activeRequestId ? requests.find((item) => item.id === activeRequestId) ?? null : null
+
+  const renderReviewDecisionContent = (request: PlatformAdminRequestRecord) => {
+    const isPending = request.status === "pending"
+    const isSubmitting = submittingId === request.id
+
+    return (
+      <div className="space-y-5">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              {getPackageById(request.requestedPlan)?.label ?? toTitleCaseLabel(request.requestedPlan, "Package")}
+            </span>
+            <TablePrimaryStatus request={request} />
+          </div>
+          <div>
+            <h3 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{request.organizationName}</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {request.requestorName} · {request.requestorEmail}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <RequestMetaCard
+              label="Organization"
+              value={toTitleCaseLabel(request.organizationType, "Not specified")}
+              detail={request.region ? `Region: ${request.region}` : "Region not provided"}
+            />
+            <RequestMetaCard
+              label="Requestor"
+              value={request.jobTitle ?? "Title not provided"}
+              detail={`Contact: ${request.requestorEmail}`}
+            />
+            <RequestMetaCard
+              label="Requested package"
+              value={getPackageById(request.requestedPlan)?.label ?? toTitleCaseLabel(request.requestedPlan, "Package")}
+              detail={`${request.expectedCoachCount ?? 0} coaches · ${request.expectedAthleteCount ?? 0} athletes`}
+            />
+          </div>
+          {renderExpandedRequestDetails(request)}
+        </div>
+
+        <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Decision</p>
+          <div className="mt-3 space-y-3">
+            <Textarea
+              rows={5}
+              value={reviewNotes[request.id] ?? request.reviewNotes ?? ""}
+              onChange={(event) =>
+                setReviewNotes((current) => ({
+                  ...current,
+                  [request.id]: event.target.value,
+                }))
+              }
+              disabled={!isPending || isSubmitting}
+              placeholder="Add the review note or provisioning instruction."
+              className="rounded-[20px] border-slate-200 bg-white"
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button
+                type="button"
+                disabled={!isPending || isSubmitting}
+                className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] text-white hover:opacity-95"
+                onClick={() => void handleReview(request.id, "approved")}
+              >
+                Approve and provision
+              </Button>
+              <Button
+                type="button"
+                disabled={!isPending || isSubmitting}
+                variant="outline"
+                className="h-11 rounded-full border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                onClick={() => void handleReview(request.id, "rejected")}
+              >
+                Reject
+              </Button>
+            </div>
+
+            {request.provisionedTenantId ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  disabled={isSubmitting}
+                  variant="outline"
+                  className="h-11 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                  onClick={() => void handleResendInvite(request.id)}
+                >
+                  Resend initial access invite
+                </Button>
+                {isLocalPreviewEnabled ? (
+                  <Button
+                    type="button"
+                    disabled={isSubmitting}
+                    variant="outline"
+                    className="h-11 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                    onClick={() => void handleCopyInviteLink(request.id)}
+                  >
+                    Copy initial access link
+                  </Button>
+                ) : null}
+                {request.lifecycleStatus === "approved_pending_billing" ? (
+                  <Button
+                    type="button"
+                    disabled={isSubmitting}
+                    variant="outline"
+                    className="h-11 rounded-full border-amber-200 bg-white text-amber-700 hover:bg-amber-50 hover:text-amber-700"
+                    onClick={() =>
+                      void handleLifecycleTransition(
+                        request.id,
+                        "billing_failed",
+                        "failed",
+                        `Billing marked as failed for ${request.organizationName}.`,
+                      )
+                    }
+                  >
+                    Mark billing failed
+                  </Button>
+                ) : null}
+                {request.lifecycleStatus === "billing_failed" ? (
+                  <Button
+                    type="button"
+                    disabled={isSubmitting}
+                    variant="outline"
+                    className="h-11 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                    onClick={() =>
+                      void handleLifecycleTransition(
+                        request.id,
+                        "approved_pending_billing",
+                        "pending",
+                        `Billing reset to pending for ${request.organizationName}.`,
+                      )
+                    }
+                  >
+                    Retry billing
+                  </Button>
+                ) : null}
+                {(request.lifecycleStatus === "active_onboarding" || request.lifecycleStatus === "active") ? (
+                  <Button
+                    type="button"
+                    disabled={isSubmitting}
+                    variant="outline"
+                    className="h-11 rounded-full border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                    onClick={() =>
+                      void handleLifecycleTransition(
+                        request.id,
+                        "suspended",
+                        request.billingStatus,
+                        `Tenant suspended for ${request.organizationName}.`,
+                      )
+                    }
+                  >
+                    Suspend tenant
+                  </Button>
+                ) : null}
+                {request.lifecycleStatus === "suspended" ? (
+                  <Button
+                    type="button"
+                    disabled={isSubmitting}
+                    className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] text-white hover:opacity-95"
+                    onClick={() =>
+                      void handleLifecycleTransition(
+                        request.id,
+                        request.previousLifecycleStatus ?? "active",
+                        request.billingStatus === "pending" ? "active" : request.billingStatus,
+                        `Tenant reactivated for ${request.organizationName}.`,
+                      )
+                    }
+                  >
+                    Reactivate tenant
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
       <StandardPageHeader
@@ -1017,97 +993,6 @@ export default function PlatformAdminRequestsPage() {
         description="New tenant creation now stops here first. Review the request, provision the tenant, and verify the initial access invite actually went out."
         stats={headerStats}
       />
-
-      <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Commercial changes</p>
-            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Package upgrade requests</h2>
-            <p className="text-sm text-slate-500">Club-admin upgrade requests appear here when tenants hit package limits and ask for a higher tier.</p>
-          </div>
-          <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500">
-            Pending upgrades: <span className="ml-1 font-medium text-slate-700">{pendingUpgradeRequests.length}</span>
-          </div>
-        </div>
-        <div className="mt-4 space-y-3">
-          {upgradeRequests.length === 0 ? (
-            <EmptyStateCard
-              eyebrow="Upgrade queue"
-              title="No package upgrade requests yet."
-              description="Upgrade requests appear here when club-admins hit team, coach, or athlete package caps and ask for a higher tier."
-              className="rounded-[20px] bg-slate-50 px-4 py-6 shadow-none"
-              contentClassName="gap-3"
-            />
-          ) : (
-            upgradeRequests.slice(0, 6).map((request) => (
-              <article key={request.id} className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {request.status}
-                      </span>
-                      <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {getPackageById(request.currentPackage)?.label ?? request.currentPackage} to {getPackageById(request.requestedPackage)?.label ?? request.requestedPackage}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-950">{request.organizationName}</h3>
-                      <p className="text-sm text-slate-500">Requested {new Date(request.createdAt).toLocaleString()}</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <RequestMetaCard
-                        label="Current package"
-                        value={getPackageById(request.currentPackage)?.label ?? request.currentPackage}
-                        detail={`Requested package: ${getPackageById(request.requestedPackage)?.label ?? request.requestedPackage}`}
-                      />
-                      <RequestMetaCard
-                        label="Reason"
-                        value={request.reason?.trim() || "No reason provided"}
-                        detail={request.reviewNotes ? `Review notes: ${request.reviewNotes}` : request.reviewedAt ? `Reviewed ${formatDateLabel(request.reviewedAt)}` : "Awaiting review"}
-                      />
-                    </div>
-                  </div>
-                  {request.status === "pending" ? (
-                    <div className="w-full max-w-[360px] space-y-3 lg:justify-end">
-                      <Textarea
-                        value={upgradeReviewNotes[request.id] ?? ""}
-                        onChange={(event) =>
-                          setUpgradeReviewNotes((current) => ({
-                            ...current,
-                            [request.id]: event.target.value,
-                          }))
-                        }
-                        placeholder="Optional review notes for the upgrade decision."
-                        className="min-h-[96px] rounded-[18px] border-slate-200 bg-white"
-                      />
-                      <div className="flex flex-wrap gap-2 lg:justify-end">
-                        <Button
-                          type="button"
-                          className="h-10 rounded-full px-4"
-                          disabled={submittingId === `upgrade-${request.id}`}
-                          onClick={() => void handleUpgradeRequestReview(request.id, "approved")}
-                        >
-                          Approve upgrade
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-10 rounded-full border-slate-200 px-4"
-                          disabled={submittingId === `upgrade-${request.id}`}
-                          onClick={() => void handleUpgradeRequestReview(request.id, "rejected")}
-                        >
-                          Reject
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
 
       {error ? (
         <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -1354,82 +1239,85 @@ export default function PlatformAdminRequestsPage() {
         />
       ) : null}
 
-      <section className={cn("space-y-4", (desktopViewMode === "table" || filteredRequests.length === 0) && "lg:hidden")}>
+      <section className={cn("grid gap-4 lg:grid-cols-3", (desktopViewMode === "table" || filteredRequests.length === 0) && "lg:hidden")}>
         {filteredRequests.map((request) => {
-          const isExpanded = expandedRequestId === request.id
+          const packageLabel = getPackageById(request.requestedPlan)?.label ?? toTitleCaseLabel(request.requestedPlan, "Package")
+          const organizationTypeLabel = toTitleCaseLabel(request.organizationType, "Not specified")
+          const expectedSeatSummary = `${request.expectedCoachCount ?? 0} coaches • ${request.expectedAthleteCount ?? 0} athletes`
 
           return (
             <article
               key={request.id}
-              className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6"
+              className="flex h-full flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6"
             >
-              <div className="space-y-4">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0 flex-1 space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                        {request.requestedPlan}
-                      </span>
-                      <StatusBadge status={request.status} />
-                      <LifecycleBadge lifecycleStatus={request.lifecycleStatus} />
-                      <BillingBadge billingStatus={request.billingStatus} />
-                      {request.accessInviteSentAt ? (
-                        <span className="rounded-full bg-[#dbeafe] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1368ff]">
-                          Invite sent
-                        </span>
-                      ) : null}
-                    </div>
+              <div className="flex h-full flex-col">
+                <div className="min-w-0 flex-1 space-y-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                      {packageLabel}
+                    </span>
+                    <TablePrimaryStatus request={request} />
+                  </div>
 
-                    <div>
-                      <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{request.organizationName}</h2>
-                      <p className="mt-1 text-sm text-slate-500">{request.requestorName} - {request.requestorEmail}</p>
-                    </div>
+                  <div className="space-y-1">
+                    <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{request.organizationName}</h2>
+                    <p className="text-sm text-slate-500">{request.requestorName} - {request.requestorEmail}</p>
+                  </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <RequestMetaCard
-                        label="Organization"
-                        value={request.organizationType ?? "Not specified"}
+                  <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+                    <div className="space-y-4">
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={SquareIcon} className="size-4" />}
+                        label="Organization:"
+                        value={organizationTypeLabel}
                         detail={request.region ? `Region: ${request.region}` : "Region not provided"}
                       />
-                      <RequestMetaCard
-                        label="Requestor"
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={TextCreationIcon} className="size-4" />}
+                        label="Role:"
                         value={request.jobTitle ?? "Title not provided"}
-                        detail={`Contact: ${request.requestorEmail}`}
+                        detail={
+                          request.desiredStartDate
+                            ? `Target start: ${new Date(request.desiredStartDate).toLocaleDateString()}`
+                            : "Target start is flexible"
+                        }
                       />
-                      <RequestMetaCard
-                        label="Delivery"
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={Notification01Icon} className="size-4" />}
+                        label="Seat-mail:"
                         value={request.accessInviteSentAt ? "Initial access sent" : "Awaiting invite"}
                         detail={request.provisionedTenantId ? `Tenant: ${request.provisionedTenantId}` : "Tenant not provisioned yet"}
                       />
-                      <RequestMetaCard
-                        label="Lifecycle"
+                    </div>
+                    <div className="space-y-4">
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />}
+                        label="Plan-history:"
                         value={request.lifecycleStatus ? lifecycleLabels[request.lifecycleStatus] : "Not set"}
                         detail={request.billingStatus ? `Billing: ${billingLabels[request.billingStatus]}` : "Billing not started"}
                       />
-                      <RequestMetaCard
-                        label="Requested package"
-                        value={request.requestedPlan}
-                        detail={`${request.expectedCoachCount ?? 0} coaches · ${request.expectedAthleteCount ?? 0} athletes`}
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={FilePasteIcon} className="size-4" />}
+                        label="Package:"
+                        value={packageLabel}
+                        detail={expectedSeatSummary}
+                      />
+                      <RequestSummaryRow
+                        icon={<HugeiconsIcon icon={TableIcon} className="size-4" />}
+                        label="Expected seats"
+                        value={String(request.expectedSeats)}
                       />
                     </div>
-
-                    <div className={cn("grid gap-3 xl:grid-cols-4", isExpanded ? "grid-cols-1 sm:grid-cols-2" : "hidden sm:grid sm:grid-cols-2")}>
-                      <InfoPill label="Expected seats" value={String(request.expectedSeats)} />
-                      <InfoPill
-                        label="Roster mix"
-                        value={`${request.expectedCoachCount ?? 0} coaches - ${request.expectedAthleteCount ?? 0} athletes`}
-                      />
-                      <InfoPill label="Submitted" value={formatDateLabel(request.createdAt, "Not submitted")} />
-                      <InfoPill
-                        label="Target start"
-                        value={request.desiredStartDate ? new Date(request.desiredStartDate).toLocaleDateString() : "Flexible"}
-                      />
-                    </div>
-
-                    {isExpanded ? renderExpandedRequestDetails(request) : null}
                   </div>
-
-                  <div className="w-full max-w-[360px] xl:sticky xl:top-24">{renderRequestActionPanel(request, isExpanded)}</div>
+                </div>
+                <div className="mt-5 border-t border-slate-100 pt-4">
+                  <Button
+                    type="button"
+                    className="h-11 w-full rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] px-5 text-white hover:opacity-95"
+                    onClick={() => setActiveRequestId(request.id)}
+                  >
+                    {request.status === "pending" ? "Review request" : "Open request"}
+                  </Button>
                 </div>
               </div>
             </article>
@@ -1454,7 +1342,6 @@ export default function PlatformAdminRequestsPage() {
             </TableHeader>
             <TableBody>
               {filteredRequests.flatMap((request) => {
-                const isExpanded = expandedRequestId === request.id
                 return [
                   <TableRow key={request.id}>
                     <TableCell className="px-5 py-4 align-top">
@@ -1480,17 +1367,19 @@ export default function PlatformAdminRequestsPage() {
                     <TableCell className="px-5 py-4 align-top">
                       <div className="space-y-2">
                         <div className="flex flex-wrap gap-2">
-                          <StatusBadge status={request.status} />
-                          <LifecycleBadge lifecycleStatus={request.lifecycleStatus} />
-                          <BillingBadge billingStatus={request.billingStatus} />
-                          {request.accessInviteSentAt ? (
-                            <span className="rounded-full bg-[#dbeafe] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1368ff]">
-                              Invite sent
-                            </span>
-                          ) : null}
+                          <TablePrimaryStatus request={request} />
                         </div>
                         <p className="text-xs text-slate-500">
-                          {request.provisionedTenantId ? `Tenant ${request.provisionedTenantId}` : "Provisioning not completed"}
+                          {request.status === "approved" && request.billingStatus
+                            ? `Billing: ${billingLabels[request.billingStatus]}`
+                            : request.provisionedTenantId
+                              ? `Tenant ${request.provisionedTenantId}`
+                              : "Provisioning not completed"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {request.accessInviteSentAt
+                            ? `Invite sent ${formatDateLabel(request.accessInviteSentAt, "recently")}`
+                            : "Invite not sent yet"}
                         </p>
                       </div>
                     </TableCell>
@@ -1498,7 +1387,7 @@ export default function PlatformAdminRequestsPage() {
                       <div className="space-y-1.5">
                         <p className="text-sm font-medium text-slate-900">{request.requestedPlan}</p>
                         <p className="text-xs text-slate-500">
-                          {request.lifecycleStatus ? lifecycleLabels[request.lifecycleStatus] : "Lifecycle not set"}
+                          {request.expectedSeats} projected seats
                         </p>
                       </div>
                     </TableCell>
@@ -1526,39 +1415,82 @@ export default function PlatformAdminRequestsPage() {
                       <div className="flex flex-col items-end gap-2">
                         <Button
                           type="button"
-                          variant="outline"
-                          className="h-10 rounded-full border-slate-200"
-                          onClick={() => setExpandedRequestId(isExpanded ? null : request.id)}
+                          className="h-10 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] px-4 text-white hover:opacity-95"
+                          onClick={() => setActiveRequestId(request.id)}
                         >
-                          {isExpanded ? "Collapse" : request.status === "pending" ? "Review" : "Details"}
+                          {request.status === "pending" ? "Review" : "Details"}
                         </Button>
-                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                          {isExpanded ? "Expanded" : "Closed"}
-                        </p>
                       </div>
                     </TableCell>
                   </TableRow>,
-                  ...(isExpanded
-                    ? [
-                        <TableRow key={`${request.id}-expanded`} className="bg-slate-50/60">
-                          <TableCell colSpan={8} className="px-5 py-5">
-                            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                              {renderExpandedRequestDetails(request)}
-                              <div>{renderRequestActionPanel(request, true)}</div>
-                            </div>
-                          </TableCell>
-                        </TableRow>,
-                      ]
-                    : []),
                 ]
               })}
             </TableBody>
           </Table>
         </div>
       </section>
+
+      {useDesktopReviewDialog ? (
+        <Dialog open={Boolean(activeRequest)} onOpenChange={(open) => (!open ? setActiveRequestId(null) : null)}>
+          <DialogContent className="max-h-[88vh] overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-0 sm:max-w-[960px]" showCloseButton={false}>
+            {activeRequest ? (
+              <>
+                <DialogHeader className="border-b border-slate-200 px-6 py-5 text-left">
+                  <DialogTitle className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+                    Review request
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-slate-500">
+                    Review the organization details and decide whether to provision access.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="px-6 py-6">{renderReviewDecisionContent(activeRequest)}</div>
+                <DialogFooter className="border-t border-slate-200 px-6 py-4 sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                    onClick={() => setActiveRequestId(null)}
+                  >
+                    Close
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Drawer open={Boolean(activeRequest)} onOpenChange={(open) => (!open ? setActiveRequestId(null) : null)}>
+          <DrawerContent className="max-h-[88vh] rounded-t-[28px] border-slate-200 bg-white">
+            {activeRequest ? (
+              <>
+                <DrawerHeader className="px-5 pt-5 text-left">
+                  <DrawerTitle className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+                    Review request
+                  </DrawerTitle>
+                  <DrawerDescription className="text-sm text-slate-500">
+                    Review the organization details and decide whether to provision access.
+                  </DrawerDescription>
+                </DrawerHeader>
+                <div className="overflow-y-auto px-5 pb-4">{renderReviewDecisionContent(activeRequest)}</div>
+                <DrawerFooter className="border-t border-slate-200 bg-white px-5 pb-5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                    onClick={() => setActiveRequestId(null)}
+                  >
+                    Close
+                  </Button>
+                </DrawerFooter>
+              </>
+            ) : null}
+          </DrawerContent>
+        </Drawer>
+      )}
     </div>
   )
 }
+
 
 
 

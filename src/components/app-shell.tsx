@@ -76,6 +76,9 @@ const clubAdminLinks: ShellLink[] = [
 const platformAdminLinks: ShellLink[] = [
   { href: "/platform-admin/dashboard", label: "Dashboard", icon: Table03Icon },
   { href: "/platform-admin/requests", label: "Requests", icon: Notification01Icon },
+  { href: "/platform-admin/tenants", label: "Tenants", icon: UserGroupIcon },
+  { href: "/platform-admin/billing", label: "Billing", icon: Fire03Icon },
+  { href: "/platform-admin/commercial", label: "Commercial", icon: TextCreationIcon },
   { href: "/platform-admin/audit", label: "Audit", icon: PieChartSquareIcon },
 ]
 

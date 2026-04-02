@@ -42,6 +42,9 @@ const ClubAdminReportsPage = lazy(() => import("@/app/(authenticated)/club-admin
 const ClubAdminBillingPage = lazy(() => import("@/app/(authenticated)/club-admin/billing/page"))
 const ClubAdminAuditPage = lazy(() => import("@/app/(authenticated)/club-admin/audit/page"))
 const PlatformAdminRequestsPage = lazy(() => import("@/app/(authenticated)/platform-admin/requests/page"))
+const PlatformAdminTenantsPage = lazy(() => import("@/app/(authenticated)/platform-admin/tenants/page"))
+const PlatformAdminBillingPage = lazy(() => import("@/app/(authenticated)/platform-admin/billing/page"))
+const PlatformAdminCommercialPage = lazy(() => import("@/app/(authenticated)/platform-admin/commercial/page"))
 const PlatformAdminAuditPage = lazy(() => import("@/app/(authenticated)/platform-admin/audit/page"))
 const PlatformAdminDashboardPage = lazy(() => import("@/app/(authenticated)/platform-admin/dashboard/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
@@ -111,6 +114,9 @@ export function AppRouter() {
             <Route path="/platform-admin" element={<PlatformAdminRedirectPage />} />
             <Route path="/platform-admin/dashboard" element={routeElement(PlatformAdminDashboardPage)} />
             <Route path="/platform-admin/requests" element={routeElement(PlatformAdminRequestsPage)} />
+            <Route path="/platform-admin/tenants" element={routeElement(PlatformAdminTenantsPage)} />
+            <Route path="/platform-admin/billing" element={routeElement(PlatformAdminBillingPage)} />
+            <Route path="/platform-admin/commercial" element={routeElement(PlatformAdminCommercialPage)} />
             <Route path="/platform-admin/audit" element={routeElement(PlatformAdminAuditPage)} />
 
             <Route path="/settings/notifications" element={routeElement(NotificationSettingsPage)} />

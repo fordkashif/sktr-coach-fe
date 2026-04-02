@@ -313,7 +313,7 @@ export default function LoginPage() {
         return
       }
       if (actor.role === "platform-admin") {
-        navigate("/platform-admin/requests")
+        navigate("/platform-admin/dashboard")
         return
       }
       navigate("/club-admin/dashboard")
