@@ -35,7 +35,7 @@ test.describe("ui workflow audit", () => {
     await page.goto("/coach/test-week")
     await page.waitForLoadState("networkidle")
     await page.getByRole("button", { name: "Create test" }).click()
-    await expect(page.locator("main")).toContainText("Create test")
+    await expect(page.locator("main")).toContainText("Create Test Week")
     await page.waitForTimeout(250)
     await page.screenshot({
       path: path.join(screenshotDir, "coach-test-week-setup.png"),
