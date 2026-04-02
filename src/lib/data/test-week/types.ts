@@ -23,6 +23,8 @@ export type ActiveTestDefinition = {
   name: string
   unit: TestDefinitionUnit
   isRequired: boolean
+  scheduledDate: string
+  dayIndex: number
 }
 
 export type CurrentAthleteTestWeekContext = {

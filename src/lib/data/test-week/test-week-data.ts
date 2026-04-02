@@ -198,8 +198,9 @@ async function getLatestPublishedTestWeekForTeam(client: SupabaseClient, teamId:
 async function getTestDefinitionsForWeek(client: SupabaseClient, testWeekId: string): Promise<Result<ActiveTestDefinition[]>> {
   const { data, error } = await client
     .from("test_definitions")
-    .select("id, name, unit, is_required, sort_order")
+    .select("id, name, unit, is_required, sort_order, scheduled_date, day_index")
     .eq("test_week_id", testWeekId)
+    .order("day_index", { ascending: true })
     .order("sort_order", { ascending: true })
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
@@ -211,11 +212,15 @@ async function getTestDefinitionsForWeek(client: SupabaseClient, testWeekId: str
       unit: ActiveTestDefinition["unit"]
       is_required: boolean
       sort_order: number
+      scheduled_date: string
+      day_index: number
     }> | null) ?? []).map((row) => ({
       id: row.id,
       name: row.name,
       unit: row.unit,
       isRequired: row.is_required,
+      scheduledDate: row.scheduled_date,
+      dayIndex: row.day_index,
     })),
   )
 }
@@ -317,7 +322,7 @@ export async function getCurrentAthleteActiveTestWeekContext(): Promise<Result<C
 }
 
 export async function submitCurrentAthleteTestWeekResults(
-  valuesByTestName: Record<string, string>,
+  valuesByDefinitionId: Record<string, string>,
 ): Promise<Result<TestWeekSubmissionResult>> {
   const clientResult = requireSupabaseClient("submitCurrentAthleteTestWeekResults")
   if (!clientResult.ok) return clientResult
@@ -327,28 +332,27 @@ export async function submitCurrentAthleteTestWeekResults(
   if (!contextResult.data) return err("NOT_FOUND", "No active published test week found for current athlete.")
 
   const context = contextResult.data
-  const trimmedEntries = Object.entries(valuesByTestName).map(([name, value]) => [name.trim(), value.trim()] as const)
+  const trimmedEntries = Object.entries(valuesByDefinitionId).map(([definitionId, value]) => [definitionId.trim(), value.trim()] as const)
   const nonEmptyEntries = trimmedEntries.filter(([, value]) => value.length > 0)
   if (nonEmptyEntries.length === 0) {
     return err("VALIDATION", "Enter at least one test result before submitting.")
   }
 
-  const definitionByName = new Map(context.tests.map((test) => [test.name.toLowerCase(), test]))
   const requiredMissing = context.tests
     .filter((test) => test.isRequired)
     .filter((test) => {
-      const input = valuesByTestName[test.name] ?? valuesByTestName[test.name.toLowerCase()] ?? ""
+      const input = valuesByDefinitionId[test.id] ?? ""
       return !input.trim()
     })
-    .map((test) => test.name)
+    .map((test) => `${test.name} (${test.scheduledDate})`)
 
   if (requiredMissing.length > 0) {
     return err("VALIDATION", `Missing required tests: ${requiredMissing.join(", ")}`)
   }
 
   const toPersist = nonEmptyEntries
-    .map(([name, value]) => {
-      const definition = definitionByName.get(name.toLowerCase())
+    .map(([definitionId, value]) => {
+      const definition = context.tests.find((test) => test.id === definitionId)
       if (!definition) return null
       return {
         test_week_id: context.testWeekId,
@@ -525,7 +529,7 @@ export async function createPublishedTestWeekForCurrentCoach(input: {
   teamId: string
   startDate: string
   endDate: string
-  tests: Array<{ name: string; unit: TestDefinitionUnit }>
+  tests: Array<{ name: string; unit: TestDefinitionUnit; scheduledDate: string; dayIndex: number }>
 }): Promise<Result<{ testWeekId: string }>> {
   const clientResult = requireSupabaseClient("createPublishedTestWeekForCurrentCoach")
   if (!clientResult.ok) return clientResult
@@ -557,6 +561,8 @@ export async function createPublishedTestWeekForCurrentCoach(input: {
       name: test.name,
       unit: test.unit,
       is_required: true,
+      scheduled_date: test.scheduledDate,
+      day_index: test.dayIndex,
     })),
   )
   if (definitionError) return { ok: false, error: mapPostgrestError(definitionError) }

@@ -1,6 +1,6 @@
 "use client"
 
-import { Add01Icon, Search01Icon } from "@hugeicons/core-free-icons"
+import { Add01Icon, ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -33,10 +33,14 @@ type TeamOption = {
   athleteCount: number
 }
 
+type Step = 1 | 2 | 3
+
 type DraftTest = {
   id: string
   name: string
   unit: TestDefinitionUnit
+  scheduledDate: string
+  dayIndex: number
 }
 
 const AVATAR_SWATCHES = [
@@ -55,6 +59,17 @@ function addDays(dateIso: string, days: number) {
   const date = new Date(`${dateIso}T00:00:00`)
   date.setDate(date.getDate() + days)
   return toInputDate(date)
+}
+
+function getDateRange(startDateIso: string, endDateIso: string) {
+  const dates: string[] = []
+  const cursor = new Date(`${startDateIso}T00:00:00`)
+  const end = new Date(`${endDateIso}T00:00:00`)
+  while (cursor <= end) {
+    dates.push(toInputDate(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
 }
 
 function makeId() {
@@ -82,20 +97,22 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
   const [isPublishing, setIsPublishing] = useState(false)
   const [activeWeekActionId, setActiveWeekActionId] = useState<string | null>(null)
   const [view, setView] = useState<"list" | "create">("list")
+  const [step, setStep] = useState<Step>(1)
   const [teams, setTeams] = useState<TeamOption[]>([])
   const [weeks, setWeeks] = useState<CoachTestWeekListItem[]>([])
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null)
   const [selectedDefinitions, setSelectedDefinitions] = useState<ActiveTestDefinition[]>([])
+  const [activeBuildDayIndex, setActiveBuildDayIndex] = useState(0)
   const [name, setName] = useState("New Test Week")
   const [teamId, setTeamId] = useState("")
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(addDays(today, 4))
   const [tests, setTests] = useState<DraftTest[]>([
-    { id: makeId(), name: "30m", unit: "time" },
-    { id: makeId(), name: "Flying 30m", unit: "time" },
-    { id: makeId(), name: "150m", unit: "time" },
-    { id: makeId(), name: "Squat 1RM", unit: "weight" },
-    { id: makeId(), name: "CMJ", unit: "height" },
+    { id: makeId(), name: "30m", unit: "time", scheduledDate: today, dayIndex: 0 },
+    { id: makeId(), name: "Flying 30m", unit: "time", scheduledDate: today, dayIndex: 0 },
+    { id: makeId(), name: "150m", unit: "time", scheduledDate: today, dayIndex: 0 },
+    { id: makeId(), name: "Squat 1RM", unit: "weight", scheduledDate: today, dayIndex: 0 },
+    { id: makeId(), name: "CMJ", unit: "height", scheduledDate: today, dayIndex: 0 },
   ])
 
   const scopedTeamId = useMemo(
@@ -108,7 +125,42 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     () => teams.find((team) => team.id === selectedWeek?.teamId) ?? null,
     [selectedWeek?.teamId, teams],
   )
+  const effectiveTeam = useMemo(() => teams.find((team) => team.id === teamId) ?? null, [teamId, teams])
   const selectedWeekCounts = useMemo(() => countByUnit(selectedDefinitions), [selectedDefinitions])
+  const draftDays = useMemo(() => getDateRange(startDate, endDate), [endDate, startDate])
+  const activeBuildDate = draftDays[Math.min(activeBuildDayIndex, Math.max(draftDays.length - 1, 0))] ?? startDate
+  const testsForActiveDay = useMemo(
+    () => tests.filter((test) => test.dayIndex === activeBuildDayIndex),
+    [activeBuildDayIndex, tests],
+  )
+  const draftTestCounts = useMemo(
+    () =>
+      tests.reduce<Record<TestDefinitionUnit, number>>(
+        (acc, test) => {
+          acc[test.unit] += 1
+          return acc
+        },
+        { time: 0, distance: 0, weight: 0, height: 0, score: 0 },
+      ),
+    [tests],
+  )
+
+  const resetCreateState = useCallback(() => {
+    const nextToday = toInputDate(new Date())
+    setStep(1)
+    setActiveBuildDayIndex(0)
+    setName("New Test Week")
+    setTeamId(scopedTeamId || teams[0]?.id || "")
+    setStartDate(nextToday)
+    setEndDate(addDays(nextToday, 4))
+    setTests([
+      { id: makeId(), name: "30m", unit: "time", scheduledDate: nextToday, dayIndex: 0 },
+      { id: makeId(), name: "Flying 30m", unit: "time", scheduledDate: nextToday, dayIndex: 0 },
+      { id: makeId(), name: "150m", unit: "time", scheduledDate: nextToday, dayIndex: 0 },
+      { id: makeId(), name: "Squat 1RM", unit: "weight", scheduledDate: nextToday, dayIndex: 0 },
+      { id: makeId(), name: "CMJ", unit: "height", scheduledDate: nextToday, dayIndex: 0 },
+    ])
+  }, [scopedTeamId, teams])
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -166,8 +218,23 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     }
   }, [selectedWeekId])
 
+  useEffect(() => {
+    setActiveBuildDayIndex((current) => Math.min(current, Math.max(draftDays.length - 1, 0)))
+    setTests((current) =>
+      current
+        .filter((test) => test.dayIndex < draftDays.length)
+        .map((test) => ({
+          ...test,
+          scheduledDate: draftDays[test.dayIndex] ?? test.scheduledDate,
+        })),
+    )
+  }, [draftDays])
+
   const addTest = () => {
-    setTests((current) => [...current, { id: makeId(), name: "", unit: "time" }])
+    setTests((current) => [
+      ...current,
+      { id: makeId(), name: "", unit: "time", scheduledDate: activeBuildDate, dayIndex: activeBuildDayIndex },
+    ])
   }
 
   const updateTest = (id: string, next: Partial<DraftTest>) => {
@@ -185,7 +252,12 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     }
 
     const sanitizedTests = tests
-      .map((test) => ({ name: test.name.trim(), unit: test.unit }))
+      .map((test) => ({
+        name: test.name.trim(),
+        unit: test.unit,
+        scheduledDate: test.scheduledDate,
+        dayIndex: test.dayIndex,
+      }))
       .filter((test) => test.name.length > 0)
     if (!sanitizedTests.length) {
       setError("Add at least one test before publishing.")
@@ -252,7 +324,10 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
           trailing={
             <Button
               type="button"
-              onClick={() => setView("create")}
+              onClick={() => {
+                resetCreateState()
+                setView("create")
+              }}
               className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
             >
               <HugeiconsIcon icon={Add01Icon} className="size-4" />
@@ -275,7 +350,14 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
                 hint="Start with a first test week so coaches can compare athlete movement across repeated benchmarks."
                 icon={<HugeiconsIcon icon={Add01Icon} className="size-5" />}
                 actions={
-                  <Button type="button" className="h-10 rounded-full px-4" onClick={() => setView("create")}>
+                  <Button
+                    type="button"
+                    className="h-10 rounded-full px-4"
+                    onClick={() => {
+                      resetCreateState()
+                      setView("create")
+                    }}
+                  >
                     Create first test week
                   </Button>
                 }
@@ -402,9 +484,17 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
       <StandardPageHeader
         eyebrow="Coach testing"
         title="Create test"
-        description="Define the testing window, add tests, and publish it to the selected team."
+        description={`Set up the testing window, build the assessment mix, then publish it to ${effectiveTeam?.name ?? "the selected team"}.`}
         trailing={
-          <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5" onClick={() => setView("list")}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 rounded-full border-slate-200 px-5"
+            onClick={() => {
+              resetCreateState()
+              setView("list")
+            }}
+          >
             Back to test weeks
           </Button>
         }
@@ -414,102 +504,300 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</section>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Publish</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Create test</h2>
+      <div className="rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { value: 1, label: "Setup" },
+            { value: 2, label: "Build" },
+            { value: 3, label: "Publish" },
+          ].map(({ value, label }) => (
+            <div key={value} className="space-y-1">
+              <div className={cn("h-1.5 rounded-full", step >= value ? "bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)]" : "bg-slate-200")} />
+              <div className="text-center">
+                <p className="text-xs font-medium text-slate-950">{label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Name</Label>
-              <Input value={name} onChange={(event) => setName(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Team</Label>
-              <Select value={teamId} onValueChange={setTeamId} disabled={Boolean(scopedTeamId)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.map((team) => (
-                    <SelectItem key={team.id} value={team.id}>
-                      {team.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Start date</Label>
-              <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>End date</Label>
-              <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-            </div>
-          </div>
+      {step === 1 ? (
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Step 1</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Setup</h2>
+            <p className="mt-1 text-sm text-slate-500">Define the testing window and target team first.</p>
 
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-950">Tests</p>
-              <Button type="button" variant="outline" onClick={addTest}>
-                Add test
-              </Button>
-            </div>
-            {tests.map((test) => (
-              <div key={test.id} className="grid gap-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_180px_auto]">
-                <Input value={test.name} onChange={(event) => updateTest(test.id, { name: event.target.value })} placeholder="Test name" />
-                <Select value={test.unit} onValueChange={(value) => updateTest(test.id, { unit: value as TestDefinitionUnit })}>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Name</Label>
+                <Input value={name} onChange={(event) => setName(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Team</Label>
+                <Select value={teamId} onValueChange={setTeamId} disabled={Boolean(scopedTeamId)}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="time">time</SelectItem>
-                    <SelectItem value="distance">distance</SelectItem>
-                    <SelectItem value="weight">weight</SelectItem>
-                    <SelectItem value="height">height</SelectItem>
-                    <SelectItem value="score">score</SelectItem>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <Button type="button" variant="outline" onClick={() => removeTest(test.id)}>
-                  Remove
-                </Button>
               </div>
-            ))}
+              <div className="space-y-2">
+                <Label>Start date</Label>
+                <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>End date</Label>
+                <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-sm text-slate-500">
+                {effectiveTeam ? `${effectiveTeam.athleteCount} athletes currently in scope` : "Select a team"}
+              </div>
+              <Button
+                type="button"
+                className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                onClick={() => {
+                  if (!name.trim()) {
+                    setError("Name is required before you can continue.")
+                    return
+                  }
+                  if (!teamId) {
+                    setError("Team is required before you can continue.")
+                    return
+                  }
+                  if (endDate < startDate) {
+                    setError("End date cannot be earlier than start date.")
+                    return
+                  }
+                  setError(null)
+                  setStep(2)
+                }}
+              >
+                Continue to Build
+                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+              </Button>
+            </div>
           </div>
 
-          <Button className="mt-4" onClick={publish} disabled={isPublishing || isLoading}>
-            {isPublishing ? "Publishing..." : "Publish test week"}
-          </Button>
-        </div>
-
-        <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Recent</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Published Test Weeks</h2>
-          <div className="mt-4 space-y-3">
-            {isLoading ? <p className="text-sm text-slate-500">Loading...</p> : null}
-            {!isLoading && weeks.length === 0 ? (
-              <EmptyStateCard
-                eyebrow="Published test weeks"
-                title="No test weeks have been created yet."
-                description="This coach scope does not have any published test windows in Supabase yet."
-                hint="Use the publish form to define the window, add tests, and send the first test week to the team."
-                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                className="rounded-[18px] border-dashed bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-2"
-              />
-            ) : null}
-            {weeks.map((week) => (
-              <div key={week.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="font-medium text-slate-950">{week.name}</p>
-                <p className="text-xs text-slate-500">
-                  {week.startDate} to {week.endDate} | {week.testCount} tests | {formatStatus(week.status)}
-                </p>
+          <aside className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Summary</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Context</h2>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-500">Team</p>
+                <p className="font-medium text-slate-950">{effectiveTeam?.name ?? "Assigned team"}</p>
               </div>
-            ))}
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-500">Window</p>
+                <p className="font-medium text-slate-950">{startDate} to {endDate}</p>
+              </div>
+            </div>
+          </aside>
+        </section>
+      ) : null}
+
+      {step === 2 ? (
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Step 2</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Build</h2>
+                <p className="mt-1 text-sm text-slate-500">Define the tests for each day in this testing block.</p>
+              </div>
+              <Button type="button" variant="outline" className="border-slate-200" onClick={addTest}>
+                <HugeiconsIcon icon={Add01Icon} className="size-4" />
+                Add test
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {draftDays.map((date, index) => (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => setActiveBuildDayIndex(index)}
+                    className={cn(
+                      "rounded-full border px-3 py-2 text-sm font-medium transition-colors",
+                      index === activeBuildDayIndex
+                        ? "border-[#1f8cff] bg-[#eef5ff] text-[#1f5fd1]"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                    )}
+                  >
+                    Day {index + 1}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active day</p>
+                <p className="mt-1 font-medium text-slate-950">{activeBuildDate}</p>
+              </div>
+
+              {testsForActiveDay.length === 0 ? (
+                <EmptyStateCard
+                  eyebrow={`Day ${activeBuildDayIndex + 1}`}
+                  title="No tests set for this day."
+                  description="Add the assessments that should be completed on the selected testing day."
+                  hint="You can repeat the same test on multiple days. Each scheduled day is stored separately."
+                  icon={<HugeiconsIcon icon={Add01Icon} className="size-5" />}
+                  actions={
+                    <Button type="button" className="h-10 rounded-full px-4" onClick={addTest}>
+                      Add first test
+                    </Button>
+                  }
+                />
+              ) : null}
+
+              {testsForActiveDay.map((test) => (
+                <div key={test.id} className="grid gap-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_180px_auto]">
+                  <Input value={test.name} onChange={(event) => updateTest(test.id, { name: event.target.value })} placeholder="Test name" />
+                  <Select value={test.unit} onValueChange={(value) => updateTest(test.id, { unit: value as TestDefinitionUnit })}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="time">time</SelectItem>
+                      <SelectItem value="distance">distance</SelectItem>
+                      <SelectItem value="weight">weight</SelectItem>
+                      <SelectItem value="height">height</SelectItem>
+                      <SelectItem value="score">score</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" className="border-rose-200 text-rose-700 hover:bg-rose-50" onClick={() => removeTest(test.id)}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex items-center justify-between">
+              <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5 text-slate-950" onClick={() => setStep(1)}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                Back
+              </Button>
+              <Button
+                type="button"
+                className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                onClick={() => {
+                  const validTests = tests.filter((test) => test.name.trim().length > 0)
+                  if (validTests.length === 0) {
+                    setError("Add at least one test before continuing.")
+                    return
+                  }
+                  setError(null)
+                  setStep(3)
+                }}
+              >
+                Continue to Publish
+                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      </section>
+
+          <aside className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Assessment mix</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[0.03em] text-slate-950">Current template</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
+                <p className="text-slate-500">Time tests</p>
+                <p className="mt-1 text-lg font-semibold text-slate-950">{draftTestCounts.time}</p>
+              </div>
+              <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
+                <p className="text-slate-500">Distance tests</p>
+                <p className="mt-1 text-lg font-semibold text-slate-950">{draftTestCounts.distance}</p>
+              </div>
+              <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
+                <p className="text-slate-500">Strength / jump tests</p>
+                <p className="mt-1 text-lg font-semibold text-slate-950">{draftTestCounts.weight + draftTestCounts.height}</p>
+              </div>
+            </div>
+          </aside>
+        </section>
+      ) : null}
+
+      {step === 3 ? (
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Step 3</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Publish</h2>
+            <p className="mt-1 text-sm text-slate-500">Confirm the testing block and publish it to the assigned team.</p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
+                <p className="text-sm text-slate-500">Test week</p>
+                <p className="mt-1 text-xl font-semibold text-slate-950">{name || "Untitled test week"}</p>
+              </div>
+              <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
+                <p className="text-sm text-slate-500">Window</p>
+                <p className="mt-1 text-xl font-semibold text-slate-950">{startDate} to {endDate}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-4">
+              <p className="text-sm text-slate-500">Included tests by day</p>
+              <div className="mt-3 space-y-4">
+                {draftDays.map((date, index) => {
+                  const scheduled = tests.filter((test) => test.dayIndex === index && test.name.trim().length > 0)
+                  if (scheduled.length === 0) return null
+                  return (
+                    <div key={date} className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Day {index + 1} · {date}</p>
+                      {scheduled.map((test) => (
+                        <div key={test.id} className="flex items-center justify-between rounded-[16px] border border-slate-200 bg-white px-3 py-3">
+                          <p className="font-medium text-slate-950">{test.name}</p>
+                          <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1f5fd1]">
+                            {test.unit}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between">
+              <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5 text-slate-950" onClick={() => setStep(2)}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                Back to Build
+              </Button>
+              <Button className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95" onClick={publish} disabled={isPublishing || isLoading}>
+                {isPublishing ? "Publishing..." : "Publish test week"}
+              </Button>
+            </div>
+          </div>
+
+          <aside className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Publish check</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Scope</h2>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-500">Team</p>
+                <p className="font-medium text-slate-950">{effectiveTeam?.name ?? "Assigned team"}</p>
+              </div>
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-500">Athletes in scope</p>
+                <p className="font-medium text-slate-950">{effectiveTeam?.athleteCount ?? 0}</p>
+              </div>
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-500">Assessment mix</p>
+                <p className="font-medium text-slate-950">{tests.filter((test) => test.name.trim().length > 0).length} configured tests</p>
+              </div>
+            </div>
+          </aside>
+        </section>
+      ) : null}
     </div>
   )
 }

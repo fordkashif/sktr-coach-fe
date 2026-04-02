@@ -17,7 +17,6 @@ import {
   getCoachTrainingPlansForCurrentUser,
   getTrainingPlanDetail,
   publishTrainingPlanForCurrentCoach,
-  type PublishTrainingPlanInput,
 } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
 import type { Role } from "@/lib/mock-data"
@@ -32,9 +31,82 @@ type TeamOption = {
   id: string
   name: string
   athleteCount: number
+  eventGroup: "Sprint" | "Mid" | "Distance" | "Jumps" | "Throws"
 }
 
 type CreateStep = 1 | 2 | 3
+type SessionType = TrainingPlanDay["sessionType"]
+type EventGroup = TeamOption["eventGroup"]
+
+type ExerciseRowDraft = {
+  id: string
+  name: string
+  sets: string
+  reps: string
+  load: string
+  notes: string
+}
+
+type SessionBlockDraft = {
+  id: string
+  title: string
+  detail: string
+}
+
+type SessionDayDraft = {
+  id: string
+  weekNumber: number
+  dayIndex: number
+  dayLabel: string
+  date: string
+  title: string
+  sessionType: SessionType
+  location: string
+  notes: string
+  exerciseRows: ExerciseRowDraft[]
+  exerciseDraft: {
+    name: string
+    sets: string
+    reps: string
+    load: string
+    notes: string
+  }
+  blocks: SessionBlockDraft[]
+  blockDraft: {
+    title: string
+    detail: string
+  }
+}
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const SESSION_TYPE_OPTIONS: SessionType[] = ["Track", "Gym", "Recovery", "Technical", "Mixed"]
+const ADVANCED_BLOCK_LIBRARY: Record<EventGroup, Array<{ title: string; detail: string }>> = {
+  Sprint: [
+    { title: "Acceleration", detail: "Short starts, projection work, and sled progression." },
+    { title: "Weights", detail: "High-force lift pairing with low-volume accessories." },
+    { title: "Tempo", detail: "Restore rhythm and tissue quality between high days." },
+  ],
+  Mid: [
+    { title: "Threshold", detail: "Controlled aerobic power intervals." },
+    { title: "Gym", detail: "Strength support with low residual fatigue." },
+    { title: "Race Pace", detail: "Specific rhythm and pacing work." },
+  ],
+  Distance: [
+    { title: "Long Run", detail: "Aerobic support and capillary work." },
+    { title: "Intervals", detail: "VO2 / economy-focused interval set." },
+    { title: "Mobility", detail: "Tissue maintenance and range support." },
+  ],
+  Jumps: [
+    { title: "Approach", detail: "Run-up consistency and check-mark rhythm." },
+    { title: "Takeoff", detail: "Penultimate and vertical impulse work." },
+    { title: "Power", detail: "Explosive lift support for jumping qualities." },
+  ],
+  Throws: [
+    { title: "Technical Drills", detail: "Patterning and position work." },
+    { title: "Full Throws", detail: "Competition rhythm and release consistency." },
+    { title: "Special Strength", detail: "Rotational or linear force support." },
+  ],
+}
 
 const AVATAR_SWATCHES = [
   "bg-[#dbeafe] text-[#1d4ed8]",
@@ -84,30 +156,88 @@ function formatDraftWeekRange(days: Array<{ dayLabel: string; date: string; dayI
   return `${startLabel} - ${endLabel}`
 }
 
-function buildSimpleStructure(startDate: string, weeks: number, trainingDaysPerWeek: number): PublishTrainingPlanInput["structure"] {
-  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].slice(0, trainingDaysPerWeek)
-  return Array.from({ length: weeks }, (_, weekIndex) => {
-    const weekNumber = weekIndex + 1
-    return {
-      weekNumber,
-      emphasis: `Week ${weekNumber} build`,
-      status: weekIndex === 0 ? ("current" as const) : ("up-next" as const),
-      days: dayLabels.map((dayLabel, dayIndex) => ({
+function makeDraftId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createDraftStructure(
+  startDate: string,
+  weeks: number,
+  trainingDaysPerWeek: number,
+  buildMode: "simple" | "advanced",
+  eventGroup: EventGroup,
+): SessionDayDraft[] {
+  const dayLabels = DAY_LABELS.slice(0, trainingDaysPerWeek)
+  const templates = ADVANCED_BLOCK_LIBRARY[eventGroup]
+
+  return Array.from({ length: weeks }, (_, weekIndex) =>
+    dayLabels.map((dayLabel, dayIndex) => {
+      const template = templates[(weekIndex + dayIndex) % templates.length]
+      const isSimple = buildMode === "simple"
+
+      const sessionType: SessionType = dayIndex % 2 === 0 ? "Track" : "Gym"
+
+      return {
+        id: makeDraftId("day"),
+        weekNumber: weekIndex + 1,
         dayIndex,
         dayLabel,
         date: addDays(startDate, weekIndex * 7 + dayIndex),
-        title: `${dayLabel} session`,
-        sessionType: dayIndex % 2 === 0 ? ("Track" as const) : ("Gym" as const),
-        focus: "Programmed by coach",
-        status: "scheduled" as const,
-        durationMinutes: 75,
+        title: isSimple ? `${dayLabel} session` : template.title,
+        sessionType,
         location: dayIndex % 2 === 0 ? "Track" : "Weight Room",
-        coachNote: null,
-        isTrainingDay: true,
-        blockPreview: ["Main set", "Accessory work", "Cooldown"],
-      })),
-    }
-  })
+        notes: "",
+        exerciseRows: isSimple
+          ? [
+              {
+                id: makeDraftId("exercise"),
+                name: "Primary set",
+                sets: "4",
+                reps: "4",
+                load: "",
+                notes: "",
+              },
+            ]
+          : [],
+        exerciseDraft: {
+          name: "",
+          sets: "",
+          reps: "",
+          load: "",
+          notes: "",
+        },
+        blocks: isSimple
+          ? []
+          : [
+              {
+                id: makeDraftId("block"),
+                title: template.title,
+                detail: template.detail,
+              },
+            ],
+        blockDraft: {
+          title: "",
+          detail: "",
+        },
+      }
+    }),
+  ).flat()
+}
+
+function draftDayConfigured(day: SessionDayDraft, buildMode: "simple" | "advanced") {
+  if (!day.title.trim()) return false
+  if (buildMode === "simple") return day.exerciseRows.length > 0
+  return day.blocks.length > 0
+}
+
+function summarizeDraftDay(day: SessionDayDraft, buildMode: "simple" | "advanced") {
+  if (buildMode === "simple") {
+    return day.exerciseRows
+      .map((row) => [row.name, row.sets && row.reps ? `${row.sets} x ${row.reps}` : row.reps || row.sets, row.load ? `@ ${row.load}` : ""].filter(Boolean).join(" "))
+      .filter(Boolean)
+      .slice(0, 6)
+  }
+  return day.blocks.map((block) => `${block.title}${block.detail ? `: ${block.detail}` : ""}`).slice(0, 6)
 }
 
 export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initialCoachTeamId }: Props) {
@@ -133,6 +263,9 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
   const [notes, setNotes] = useState("")
   const [visibilityStart, setVisibilityStart] = useState<"immediate" | "scheduled">("immediate")
   const [athletePermissions, setAthletePermissions] = useState<"none" | "read-only">("none")
+  const [draftDays, setDraftDays] = useState<SessionDayDraft[]>([])
+  const [activeBuildWeek, setActiveBuildWeek] = useState(1)
+  const [editingDraftDayId, setEditingDraftDayId] = useState<string | null>(null)
 
   const scopedTeamId = useMemo(
     () => (initialRole === "coach" ? initialCoachTeamId : null),
@@ -161,14 +294,19 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
     const parsed = Number.parseInt(trainingDaysPerWeek, 10)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
   }, [trainingDaysPerWeek])
-  const draftStructure = useMemo(
-    () => (weekCount > 0 && trainingDayCount > 0 ? buildSimpleStructure(startDate, weekCount, trainingDayCount) : []),
-    [startDate, trainingDayCount, weekCount],
-  )
   const activeDraftWeek = useMemo(
-    () => draftStructure.find((week) => week.weekNumber === 1)?.days ?? [],
-    [draftStructure],
+    () => draftDays.filter((day) => day.weekNumber === activeBuildWeek),
+    [activeBuildWeek, draftDays],
   )
+  const editingDraftDay = useMemo(
+    () => activeDraftWeek.find((day) => day.id === editingDraftDayId) ?? activeDraftWeek[0] ?? null,
+    [activeDraftWeek, editingDraftDayId],
+  )
+  const completenessRatio = useMemo(() => {
+    if (draftDays.length === 0) return 0
+    const configured = draftDays.filter((day) => draftDayConfigured(day, buildMode)).length
+    return configured / draftDays.length
+  }, [buildMode, draftDays])
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -192,6 +330,7 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
       id: team.id,
       name: team.name,
       athleteCount: team.athleteCount,
+      eventGroup: team.eventGroup,
     }))
     setTeams(teamOptions)
     setPlans(plansResult.data)
@@ -248,6 +387,44 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
     }
   }, [previewSelectedDayId, previewWeekDays])
 
+  useEffect(() => {
+    if (!activeDraftWeek.length) {
+      setEditingDraftDayId(null)
+      return
+    }
+    if (!editingDraftDayId || !activeDraftWeek.some((day) => day.id === editingDraftDayId)) {
+      setEditingDraftDayId(activeDraftWeek[0]?.id ?? null)
+    }
+  }, [activeDraftWeek, editingDraftDayId])
+
+  const resetCreateState = useCallback(() => {
+    setCreateStep(1)
+    setDraftDays([])
+    setActiveBuildWeek(1)
+    setEditingDraftDayId(null)
+    setName("New Training Plan")
+    setTeamId((current) => scopedTeamId || current || teams[0]?.id || "")
+    setStartDate(toInputDate(new Date()))
+    setWeeks("4")
+    setTrainingDaysPerWeek("5")
+    setBuildMode("simple")
+    setNotes("")
+    setVisibilityStart("immediate")
+    setAthletePermissions("none")
+  }, [scopedTeamId, teams])
+
+  const initializeDraftDays = useCallback(() => {
+    if (!effectiveTeam || weekCount <= 0 || trainingDayCount <= 0) return
+    const nextDraftDays = createDraftStructure(startDate, weekCount, trainingDayCount, buildMode, effectiveTeam.eventGroup)
+    setDraftDays(nextDraftDays)
+    setActiveBuildWeek(1)
+    setEditingDraftDayId(nextDraftDays[0]?.id ?? null)
+  }, [buildMode, effectiveTeam, startDate, trainingDayCount, weekCount])
+
+  const updateDraftDay = useCallback((dayId: string, updater: (day: SessionDayDraft) => SessionDayDraft) => {
+    setDraftDays((current) => current.map((day) => (day.id === dayId ? updater(day) : day)))
+  }, [])
+
   const publish = async () => {
     if (!teamId) {
       setError("Select a team before publishing.")
@@ -264,14 +441,42 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
       name,
       startDate,
       weeks: weekCount,
-      notes: null,
+      notes: notes.trim() || null,
       teamId,
-      visibilityStart: "immediate",
+      visibilityStart,
       visibilityDate: null,
       assignTarget: "team",
       assignSubgroup: null,
       selectedAthleteIds: [],
-      structure: buildSimpleStructure(startDate, weekCount, trainingDayCount || 5),
+      structure: Array.from({ length: weekCount }, (_, index) => {
+        const weekNumber = index + 1
+        const weekDays = draftDays
+          .filter((day) => day.weekNumber === weekNumber)
+          .sort((left, right) => left.dayIndex - right.dayIndex)
+
+        return {
+          weekNumber,
+          emphasis: `Week ${weekNumber} build`,
+          status: weekNumber === 1 ? ("current" as const) : ("up-next" as const),
+          days: weekDays.map((day) => ({
+            dayIndex: day.dayIndex,
+            dayLabel: day.dayLabel,
+            date: day.date,
+            title: day.title || `${day.dayLabel} session`,
+            sessionType: day.sessionType,
+            focus:
+              buildMode === "simple"
+                ? day.exerciseRows[0]?.name || "Programmed session"
+                : day.blocks[0]?.title || "Programmed session",
+            status: draftDayConfigured(day, buildMode) ? ("scheduled" as const) : ("up-next" as const),
+            durationMinutes: 75,
+            location: day.location || null,
+            coachNote: day.notes.trim() || null,
+            isTrainingDay: true,
+            blockPreview: summarizeDraftDay(day, buildMode),
+          })),
+        }
+      }),
     })
     setIsPublishing(false)
 
@@ -327,7 +532,7 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
             <Button
               type="button"
               onClick={() => {
-                setCreateStep(1)
+                resetCreateState()
                 setView("create")
               }}
               className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
@@ -358,7 +563,7 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
                     type="button"
                     className="h-10 rounded-full px-4"
                     onClick={() => {
-                      setCreateStep(1)
+                      resetCreateState()
                       setView("create")
                     }}
                   >
@@ -622,7 +827,7 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
         description={`Set up the plan, shape the week structure, then review before publishing.${effectiveTeam ? ` Scoped to ${effectiveTeam.name}.` : ""}`}
         trailing={
           <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5" onClick={() => {
-            setCreateStep(1)
+            resetCreateState()
             setView("list")
           }}>
             Back to plans
@@ -760,10 +965,46 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5 text-slate-950">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-full border-slate-200 px-5 text-slate-950"
+                onClick={() => {
+                  window.localStorage.setItem(
+                    "pacelab:supabase-training-plan-draft",
+                    JSON.stringify({
+                      name,
+                      teamId,
+                      startDate,
+                      weeks,
+                      trainingDaysPerWeek,
+                      buildMode,
+                      notes,
+                      visibilityStart,
+                      athletePermissions,
+                    }),
+                  )
+                }}
+              >
                 Save Draft
               </Button>
-              <Button type="button" className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95" onClick={() => setCreateStep(2)}>
+              <Button
+                type="button"
+                className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                onClick={() => {
+                  if (!name.trim()) {
+                    setError("Plan name is required before you can build.")
+                    return
+                  }
+                  if (!effectiveTeam) {
+                    setError("A scoped team is required before the builder can start.")
+                    return
+                  }
+                  initializeDraftDays()
+                  setError(null)
+                  setCreateStep(2)
+                }}
+              >
                 Continue to Build
                 <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
               </Button>
@@ -795,26 +1036,184 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Step 2</p>
               <h2 className="text-lg font-semibold text-slate-950">Build</h2>
-              <p className="text-sm text-slate-500">Review the generated week structure before publishing.</p>
+              <p className="text-sm text-slate-500">
+                {buildMode === "simple"
+                  ? "Use direct exercise rows to build each day."
+                  : "Use structured blocks to shape each training day before review."}
+              </p>
             </div>
-            <div className="rounded-[22px] border border-slate-200 bg-[#fbfcfe] p-4">
-              <div className="border-b border-slate-200 pb-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Week 1</p>
-                <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{formatDraftWeekRange(activeDraftWeek)}</p>
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: weekCount }, (_, index) => index + 1).map((weekNumber) => (
+                <Button
+                  key={weekNumber}
+                  type="button"
+                  size="sm"
+                  variant={activeBuildWeek === weekNumber ? "default" : "outline"}
+                  className={cn("h-10 rounded-full px-4", activeBuildWeek === weekNumber ? "bg-slate-950 text-white hover:bg-slate-950" : "")}
+                  onClick={() => setActiveBuildWeek(weekNumber)}
+                >
+                  Week {weekNumber}
+                </Button>
+              ))}
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-[22px] border border-slate-200 bg-[#fbfcfe] p-4">
+                <div className="border-b border-slate-200 pb-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Week {activeBuildWeek}</p>
+                  <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{formatDraftWeekRange(activeDraftWeek)}</p>
+                </div>
+                <div className="mt-4 grid grid-cols-5 gap-2">
+                  {activeDraftWeek.map((day) => {
+                    const isSelected = editingDraftDay?.id === day.id
+                    const configured = draftDayConfigured(day, buildMode)
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => setEditingDraftDayId(day.id)}
+                        className={cn(
+                          "rounded-[18px] border px-2 py-3 text-left transition",
+                          isSelected ? "border-[#1f8cff] bg-[#eaf3ff] shadow-[0_10px_24px_rgba(31,140,255,0.12)]" : "border-slate-200 bg-white hover:border-slate-300",
+                        )}
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{day.dayLabel}</p>
+                        <p className="mt-1 text-base font-semibold tracking-[-0.03em] text-slate-950">{new Date(`${day.date}T00:00:00`).getDate()}</p>
+                        <div className="mt-3 space-y-1">
+                          <div className={cn("h-1.5 rounded-full", configured ? "bg-[#1f8cff]" : "bg-slate-200")} />
+                          <p className="text-[11px] text-slate-500">
+                            {buildMode === "simple" ? `${day.exerciseRows.length} rows` : `${day.blocks.length} blocks`}
+                          </p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-              <div className="mt-4 grid grid-cols-5 gap-2">
-                {activeDraftWeek.map((day) => (
-                  <div key={`${day.dayLabel}-${day.date}`} className="rounded-[18px] border border-slate-200 bg-white px-2 py-3 text-left">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{day.dayLabel}</p>
-                    <p className="mt-1 text-base font-semibold tracking-[-0.03em] text-slate-950">
-                      {new Date(`${day.date}T00:00:00`).getDate()}
-                    </p>
-                    <div className="mt-3 space-y-1">
-                      <div className="h-1.5 rounded-full bg-[#1f8cff]" />
-                      <p className="text-[11px] text-slate-500">{day.blockPreview.length} blocks</p>
+
+              <div className="space-y-4 rounded-[22px] border border-slate-200 bg-white p-4">
+                {editingDraftDay ? (
+                  <>
+                    <div className="border-b border-slate-200 pb-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        {editingDraftDay.dayLabel} | {formatShortDate(editingDraftDay.date)}
+                      </p>
+                      <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">Day Builder</p>
                     </div>
-                  </div>
-                ))}
+                    <div className="grid gap-3">
+                      <div className="space-y-2">
+                        <Label>Session title</Label>
+                        <Input value={editingDraftDay.title} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, title: event.target.value }))} />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Session type</Label>
+                          <Select value={editingDraftDay.sessionType} onValueChange={(value) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, sessionType: value as SessionType }))}>
+                            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {SESSION_TYPE_OPTIONS.map((option) => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Location</Label>
+                          <Input value={editingDraftDay.location} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, location: event.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Coach note</Label>
+                        <Textarea rows={3} value={editingDraftDay.notes} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, notes: event.target.value }))} />
+                      </div>
+
+                      {buildMode === "simple" ? (
+                        <div className="space-y-3 rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-4">
+                          <div>
+                            <p className="font-semibold text-slate-950">Exercise rows</p>
+                            <p className="text-sm text-slate-500">Add exact sets, reps, and loads for this day.</p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Input placeholder="Exercise" value={editingDraftDay.exerciseDraft.name} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseDraft: { ...day.exerciseDraft, name: event.target.value } }))} />
+                            <Input placeholder="Sets" value={editingDraftDay.exerciseDraft.sets} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseDraft: { ...day.exerciseDraft, sets: event.target.value } }))} />
+                            <Input placeholder="Reps" value={editingDraftDay.exerciseDraft.reps} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseDraft: { ...day.exerciseDraft, reps: event.target.value } }))} />
+                            <Input placeholder="Load / Target" value={editingDraftDay.exerciseDraft.load} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseDraft: { ...day.exerciseDraft, load: event.target.value } }))} />
+                          </div>
+                          <Input placeholder="Notes / Cue" value={editingDraftDay.exerciseDraft.notes} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseDraft: { ...day.exerciseDraft, notes: event.target.value } }))} />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-10 rounded-full border-slate-200 px-4"
+                            onClick={() => updateDraftDay(editingDraftDay.id, (day) => {
+                              if (!day.exerciseDraft.name.trim()) return day
+                              return {
+                                ...day,
+                                exerciseRows: [...day.exerciseRows, { id: makeDraftId("exercise"), ...day.exerciseDraft, name: day.exerciseDraft.name.trim() }],
+                                exerciseDraft: { name: "", sets: "", reps: "", load: "", notes: "" },
+                              }
+                            })}
+                          >
+                            Add row
+                          </Button>
+                          <div className="space-y-2">
+                            {editingDraftDay.exerciseRows.map((row) => (
+                              <div key={row.id} className="flex items-start justify-between gap-3 rounded-[16px] border border-slate-200 bg-white px-3 py-3">
+                                <div>
+                                  <p className="font-medium text-slate-950">{row.name}</p>
+                                  <p className="text-xs text-slate-500">
+                                    {row.sets || "-"} sets | {row.reps || "-"} reps {row.load ? `| ${row.load}` : ""}
+                                  </p>
+                                  {row.notes ? <p className="mt-1 text-xs text-slate-500">{row.notes}</p> : null}
+                                </div>
+                                <Button type="button" variant="outline" size="sm" className="rounded-full border-rose-200 px-3 text-rose-700 hover:bg-rose-50" onClick={() => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, exerciseRows: day.exerciseRows.filter((item) => item.id !== row.id) }))}>
+                                  Remove
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3 rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-4">
+                          <div>
+                            <p className="font-semibold text-slate-950">Structured blocks</p>
+                            <p className="text-sm text-slate-500">Build the day with guided blocks instead of flat rows.</p>
+                          </div>
+                          <div className="grid gap-3">
+                            <Input placeholder="Block title" value={editingDraftDay.blockDraft.title} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, blockDraft: { ...day.blockDraft, title: event.target.value } }))} />
+                            <Textarea rows={3} placeholder="Block detail" value={editingDraftDay.blockDraft.detail} onChange={(event) => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, blockDraft: { ...day.blockDraft, detail: event.target.value } }))} />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-10 rounded-full border-slate-200 px-4"
+                              onClick={() => updateDraftDay(editingDraftDay.id, (day) => {
+                                if (!day.blockDraft.title.trim()) return day
+                                return {
+                                  ...day,
+                                  blocks: [...day.blocks, { id: makeDraftId("block"), title: day.blockDraft.title.trim(), detail: day.blockDraft.detail.trim() }],
+                                  blockDraft: { title: "", detail: "" },
+                                }
+                              })}
+                            >
+                              Add block
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {editingDraftDay.blocks.map((block) => (
+                              <div key={block.id} className="flex items-start justify-between gap-3 rounded-[16px] border border-slate-200 bg-white px-3 py-3">
+                                <div>
+                                  <p className="font-medium text-slate-950">{block.title}</p>
+                                  <p className="text-xs text-slate-500">{block.detail || "No detail added."}</p>
+                                </div>
+                                <Button type="button" variant="outline" size="sm" className="rounded-full border-rose-200 px-3 text-rose-700 hover:bg-rose-50" onClick={() => updateDraftDay(editingDraftDay.id, (day) => ({ ...day, blocks: day.blocks.filter((item) => item.id !== block.id) }))}>
+                                  Remove
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center justify-between">
@@ -822,7 +1221,18 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
                 <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
                 Back
               </Button>
-              <Button type="button" className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95" onClick={() => setCreateStep(3)}>
+              <Button
+                type="button"
+                className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
+                onClick={() => {
+                  if (completenessRatio < 0.6) {
+                    setError("Build at least 60% of the programmed days before moving to review.")
+                    return
+                  }
+                  setError(null)
+                  setCreateStep(3)
+                }}
+              >
                 Continue to Review
                 <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
               </Button>
@@ -836,12 +1246,12 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
             </div>
             <div className="mt-4 space-y-3 text-sm">
               <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
-                <p className="text-slate-500">Weeks</p>
-                <p className="mt-1 font-medium text-slate-950">{weekCount}</p>
+                <p className="text-slate-500">Configured days</p>
+                <p className="mt-1 font-medium text-slate-950">{draftDays.filter((day) => draftDayConfigured(day, buildMode)).length} / {draftDays.length}</p>
               </div>
               <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
-                <p className="text-slate-500">Training days / week</p>
-                <p className="mt-1 font-medium text-slate-950">{trainingDayCount}</p>
+                <p className="text-slate-500">Readiness</p>
+                <p className="mt-1 font-medium text-slate-950">{Math.round(completenessRatio * 100)}%</p>
               </div>
             </div>
           </aside>
@@ -863,15 +1273,37 @@ export default function CoachTrainingPlanPageSupabaseClient({ initialRole, initi
               </div>
               <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-3">
                 <p className="text-sm text-slate-500">Structure</p>
-                <p className="mt-1 text-xl font-semibold text-slate-950">{weekCount} weeks</p>
+                <p className="mt-1 text-xl font-semibold text-slate-950">{weekCount} weeks | {buildMode === "simple" ? "Simple" : "Advanced"}</p>
               </div>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] p-4">
+              <p className="text-sm text-slate-500">Build readiness</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-950">{Math.round(completenessRatio * 100)}%</p>
+              <p className="mt-2 text-sm text-slate-500">At least 60% of planned days need usable structure before publishing.</p>
+            </div>
+            <div className="space-y-3 rounded-[20px] border border-slate-200 bg-white p-4">
+              {draftDays
+                .filter((day) => day.weekNumber === 1)
+                .map((day) => (
+                  <div key={day.id} className="rounded-[16px] border border-slate-200 bg-[#fbfcfe] px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-slate-950">{day.dayLabel} | {formatShortDate(day.date)}</p>
+                        <p className="text-sm text-slate-500">{day.title || "No session title"}</p>
+                      </div>
+                      <span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold", draftDayConfigured(day, buildMode) ? "bg-[#eef5ff] text-[#1f5fd1]" : "bg-slate-100 text-slate-500")}>
+                        {draftDayConfigured(day, buildMode) ? "Ready" : "Draft"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
             </div>
             <div className="flex items-center justify-between">
               <Button type="button" variant="outline" className="h-11 rounded-full border-slate-200 px-5 text-slate-950" onClick={() => setCreateStep(2)}>
                 <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
                 Back to Build
               </Button>
-              <Button className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95" onClick={publish} disabled={isPublishing || isLoading}>
+              <Button className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95" onClick={publish} disabled={isPublishing || isLoading || completenessRatio < 0.6}>
                 {isPublishing ? "Publishing..." : "Publish"}
               </Button>
             </div>

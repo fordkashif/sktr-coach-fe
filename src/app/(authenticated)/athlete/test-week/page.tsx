@@ -16,6 +16,7 @@ import {
   getCurrentAthleteActiveTestWeekContext,
   submitCurrentAthleteTestWeekResults
 } from "@/lib/data/test-week/test-week-data"
+import type { ActiveTestDefinition } from "@/lib/data/test-week/types"
 
 type TestSubmission = Record<string, string>
 
@@ -40,8 +41,19 @@ const fallbackBenchmarks = {
 export default function AthleteTestWeekPage() {
   const backendMode = getBackendMode()
   const athlete = fallbackAthlete
-  const [activeTests, setActiveTests] = useState<string[]>([...fallbackTestDefinitions])
-  const [values, setValues] = useState<TestSubmission>(Object.fromEntries(fallbackTestDefinitions.map((test) => [test, ""])))
+  const [activeTests, setActiveTests] = useState<ActiveTestDefinition[]>(
+    fallbackTestDefinitions.map((test, index) => ({
+      id: `fallback-${index}`,
+      name: test,
+      unit: "time",
+      isRequired: true,
+      scheduledDate: new Date().toISOString().slice(0, 10),
+      dayIndex: 0,
+    })),
+  )
+  const [values, setValues] = useState<TestSubmission>(
+    Object.fromEntries(fallbackTestDefinitions.map((test, index) => [`fallback-${index}`, ""])),
+  )
   const [prUpdates, setPrUpdates] = useState<string[]>([])
   const [backendPrs, setBackendPrs] = useState<PrRecord[]>([])
   const [backendBenchmarks, setBackendBenchmarks] = useState<Record<string, string>>({})
@@ -62,13 +74,13 @@ export default function AthleteTestWeekPage() {
           .filter((pr) => pr.athleteId === athlete.id)
           .map((pr) => ({ event: pr.event, bestValue: pr.bestValue }))
   const lastBenchmarks = backendMode === "supabase" ? null : fallbackBenchmarks
-  const completionCount = activeTests.filter((test) => values[test]?.trim()).length
+  const completionCount = activeTests.filter((test) => values[test.id]?.trim()).length
 
   useEffect(() => {
     setValues((current) => {
       const next: TestSubmission = {}
       activeTests.forEach((test) => {
-        next[test] = current[test] ?? ""
+        next[test.id] = current[test.id] ?? ""
       })
       return next
     })
@@ -94,7 +106,7 @@ export default function AthleteTestWeekPage() {
         return
       }
 
-      setActiveTests(contextResult.data.tests.map((test) => test.name))
+      setActiveTests(contextResult.data.tests)
       if (contextResult.data.lastSubmittedAt) {
         setSubmittedAt(new Date(contextResult.data.lastSubmittedAt).toLocaleString())
       }
@@ -160,15 +172,20 @@ export default function AthleteTestWeekPage() {
     const updates: string[] = []
 
     athletePrs.forEach((pr) => {
-      const next = values[pr.event]
-      if (!next) return
-      if (next !== pr.bestValue) {
-        updates.push(`${pr.event}: ${pr.bestValue} -> ${next}`)
-      }
+      activeTests
+        .filter((test) => test.name === pr.event)
+        .forEach((test) => {
+          const next = values[test.id]
+          if (!next) return
+          if (next !== pr.bestValue) {
+            updates.push(`${pr.event} (${test.scheduledDate}): ${pr.bestValue} -> ${next}`)
+          }
+        })
     })
 
-    if (values["CMJ"] && !athletePrs.some((pr) => pr.event === "CMJ")) {
-      updates.push(`CMJ: added new benchmark ${values["CMJ"]}`)
+    const cmjEntry = activeTests.find((test) => test.name === "CMJ" && values[test.id]?.trim())
+    if (cmjEntry && !athletePrs.some((pr) => pr.event === "CMJ")) {
+      updates.push(`CMJ (${cmjEntry.scheduledDate}): added new benchmark ${values[cmjEntry.id]}`)
     }
 
     if (backendMode === "supabase") {
@@ -182,9 +199,10 @@ export default function AthleteTestWeekPage() {
       const key = tenantStorageKey(PR_OVERRIDE_STORAGE_KEY)
       const existing = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, string>
       const nextOverrides = { ...existing }
-      Object.entries(values).forEach(([eventName, value]) => {
+      activeTests.forEach((test) => {
+        const value = values[test.id]
         if (value.trim()) {
-          nextOverrides[eventName] = value.trim()
+          nextOverrides[test.name] = value.trim()
         }
       })
       window.localStorage.setItem(key, JSON.stringify(nextOverrides))
@@ -232,22 +250,41 @@ export default function AthleteTestWeekPage() {
                 {submissionError}
               </div>
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-2">
-              {activeTests.map((test) => (
-                <div key={test} className="mobile-card-utility space-y-2">
-                  <Label htmlFor={test} className="text-sm font-medium text-slate-950">{test}</Label>
-                  <Input
-                    id={test}
-                    placeholder="4.01s or 6.51m"
-                    value={values[test]}
-                    onChange={(event) =>
-                      setValues((current) => ({
-                        ...current,
-                        [test]: event.target.value,
-                      }))
-                    }
-                    className="h-12 rounded-[16px] border-slate-200 bg-white text-slate-950"
-                  />
+            <div className="space-y-5">
+              {Object.entries(
+                activeTests.reduce<Record<string, ActiveTestDefinition[]>>((acc, test) => {
+                  ;(acc[test.scheduledDate] ??= []).push(test)
+                  return acc
+                }, {}),
+              ).map(([scheduledDate, testsForDay]) => (
+                <div key={scheduledDate} className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-950">
+                      Day {testsForDay[0]?.dayIndex + 1}: {scheduledDate}
+                    </p>
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      {testsForDay.length} test{testsForDay.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {testsForDay.map((test) => (
+                      <div key={test.id} className="mobile-card-utility space-y-2">
+                        <Label htmlFor={test.id} className="text-sm font-medium text-slate-950">{test.name}</Label>
+                        <Input
+                          id={test.id}
+                          placeholder="4.01s or 6.51m"
+                          value={values[test.id] ?? ""}
+                          onChange={(event) =>
+                            setValues((current) => ({
+                              ...current,
+                              [test.id]: event.target.value,
+                            }))
+                          }
+                          className="h-12 rounded-[16px] border-slate-200 bg-white text-slate-950"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
