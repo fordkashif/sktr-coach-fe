@@ -143,6 +143,24 @@
 
 }
 
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (min-width: 1280px) {
+    .auth-login-shell {
+      height: 100dvh;
+      overflow: hidden;
+    }
+  }
+}
+
 @layer components {
   .mobile-hero-surface {
     @apply rounded-[30px] border border-[#d7e5f8] bg-[linear-gradient(135deg,#ffffff_0%,#f4f8fc_58%,#eef5ff_100%)] p-4 shadow-[0_18px_48px_rgba(15,23,42,0.06)] sm:p-5;

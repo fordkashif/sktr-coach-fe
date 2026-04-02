@@ -1,0 +1,16 @@
+
+> pacelab@0.1.0 dev
+> vite --host 127.0.0.1 --port 3007
+
+
+  [32m[1mVITE[22m v6.4.1[39m  [2mready in [0m[1m2707[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m3007[22m/[39m
+[2m2:12:45 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles/globals.css[22m
+[2m2:13:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/(auth)/login/page.tsx, /src/styles/globals.css[22m
+[2m2:18:02 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/(auth)/login/page.tsx, /src/styles/globals.css[22m
+[2m2:19:20 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/(auth)/login/page.tsx, /src/styles/globals.css[22m
+[2m2:20:29 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/(auth)/login/page.tsx, /src/styles/globals.css[22m
+[2m2:25:14 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/(auth)/login/page.tsx, /src/styles/globals.css[22m
+[2m2:25:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles/globals.css[22m
+[2m2:25:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles/globals.css[22m

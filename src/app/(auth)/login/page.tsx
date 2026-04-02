@@ -481,11 +481,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050b16] text-white">
-      <div className="relative isolate min-h-screen overflow-hidden">
+    <main className="auth-login-shell min-h-screen bg-[#050b16] text-white xl:h-screen xl:overflow-hidden">
+      <div className="relative isolate min-h-screen overflow-hidden xl:h-screen">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(31,140,255,0.22),_transparent_36%),linear-gradient(180deg,_rgba(8,15,28,0.96)_0%,_rgba(4,9,18,1)_58%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:72px_72px] opacity-[0.16]" />
-        <div className="relative mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1.15fr)_minmax(440px,520px)] xl:gap-10 xl:px-8 2xl:px-12">
+        <div className="relative mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-1 overflow-hidden xl:h-screen xl:grid-cols-[minmax(0,1.15fr)_minmax(440px,520px)] xl:gap-10 xl:px-8 2xl:px-12">
           <section className="flex min-h-[160px] flex-col justify-between px-6 pb-5 pt-8 sm:min-h-[176px] sm:px-8 sm:pb-6 md:pb-8 xl:sticky xl:top-0 xl:h-screen xl:px-6 xl:pb-14 xl:pt-12 2xl:px-10">
             <div className="space-y-6 md:space-y-8 xl:max-w-[620px] xl:space-y-10">
               <div className="space-y-4">
@@ -521,9 +521,14 @@ export default function LoginPage() {
             </div>
           </section>
 
-          <section className="relative flex items-end md:px-6 md:pb-8 xl:min-h-screen xl:items-center xl:justify-end xl:px-0 xl:py-10">
-            <div className="w-full rounded-t-[36px] border-x border-t border-white/10 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-5 pb-8 pt-6 text-slate-950 shadow-[0_-24px_80px_rgba(0,0,0,0.24)] sm:px-8 sm:pb-10 sm:pt-8 md:mx-auto md:max-w-[760px] md:rounded-[36px] md:border md:px-8 md:shadow-[0_24px_80px_rgba(0,0,0,0.24)] xl:mx-0 xl:w-full xl:max-w-[500px] xl:px-8 xl:pb-8 2xl:max-w-[520px] 2xl:px-10">
-              <div className="space-y-6">
+          <section
+            className={`relative flex items-end md:px-6 md:pb-8 xl:min-h-0 xl:h-screen xl:justify-end xl:px-0 xl:py-10 ${
+              mode === "request" ? "xl:items-start xl:overflow-y-auto" : "xl:items-center xl:overflow-hidden"
+            }`}
+          >
+            <div className="w-full md:mx-auto md:max-w-[760px] xl:mx-0 xl:flex xl:justify-end">
+              <div className="w-full rounded-t-[36px] border-x border-t border-white/10 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-5 pb-8 pt-6 text-slate-950 shadow-[0_-24px_80px_rgba(0,0,0,0.24)] sm:px-8 sm:pb-10 sm:pt-8 md:rounded-[36px] md:border md:px-8 md:shadow-[0_24px_80px_rgba(0,0,0,0.24)] xl:w-full xl:max-w-[500px] xl:px-8 xl:pb-8 2xl:max-w-[520px] 2xl:px-10">
+                <div className="space-y-6">
                 <div className="space-y-4">
                   <div className="inline-flex w-full max-w-[340px] rounded-full border border-slate-200 bg-slate-100 p-1 text-sm font-medium text-slate-600 sm:w-auto">
                     <button
@@ -981,6 +986,7 @@ export default function LoginPage() {
                 )}
               </div>
             </div>
+          </div>
           </section>
         </div>
       </div>
