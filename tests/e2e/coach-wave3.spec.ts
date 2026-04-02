@@ -41,10 +41,10 @@ test("coach can review athlete detail, export reports, and publish a test week",
   await page.goto("/coach/test-week")
   await expect(page).toHaveURL(/\/coach\/test-week$/)
   await expect(page.getByRole("heading", { name: "Test Weeks" })).toBeVisible()
-  await page.getByRole("button", { name: /Create test week/i }).click()
-  await expect(page.getByRole("heading", { name: "Create Test Week" })).toBeVisible()
+  await page.getByRole("button", { name: /Create test/i }).click()
+  await expect(page.getByRole("heading", { name: "Create test" })).toBeVisible()
 
-  await page.getByPlaceholder("Week 4 Testing").fill("Throws Benchmark Week")
+  await page.getByLabel("Name").fill("Throws Benchmark Week")
   await page.getByRole("button", { name: /Continue to build/i }).click()
   await expect(page.getByRole("heading", { name: "Build" })).toBeVisible()
   await page.getByRole("button", { name: /Continue to publish/i }).click()

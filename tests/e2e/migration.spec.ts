@@ -166,9 +166,9 @@ test("coach can complete the training plan setup-build-review-publish flow", asy
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/training-plan")
 
-  await page.getByRole("button", { name: "Create training plan" }).click()
+  await page.getByRole("button", { name: "Create program" }).click()
 
-  await page.getByPlaceholder("U20 Outdoor Base 1").fill("Throws Preseason Block")
+  await page.getByLabel("Plan Name").fill("Throws Preseason Block")
   await page.getByPlaceholder("Optional plan notes").fill("High emphasis on power and technical rhythm.")
   const buildModeCombobox = page
     .locator("label:has-text('Build Mode')")
