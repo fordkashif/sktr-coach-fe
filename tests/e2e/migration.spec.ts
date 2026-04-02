@@ -148,7 +148,7 @@ test("desktop shell shows the sidebar navigation", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/dashboard")
 
-  await expect(page.locator("aside")).toContainText("PaceLab")
+  await expect(page.locator("aside")).toContainText("SKTR Coach")
   await expect(page.locator("aside")).toContainText("Dashboard")
 })
 
