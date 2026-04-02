@@ -18,6 +18,7 @@ playwright/.auth/
 .tmp-tests/
 .legacy-next/
 *.tsbuildinfo
+*.log
 
 # Local planning / status docs
 /*.md
