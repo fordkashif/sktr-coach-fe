@@ -168,7 +168,10 @@ test("coach can complete the training plan setup-build-review-publish flow", asy
 
   await page.getByRole("button", { name: "Create program" }).click()
 
-  await page.getByLabel("Plan Name").fill("Throws Preseason Block")
+  await page
+    .locator("label:has-text('Plan Name')")
+    .locator("xpath=following::input[1]")
+    .fill("Throws Preseason Block")
   await page.getByPlaceholder("Optional plan notes").fill("High emphasis on power and technical rhythm.")
   const buildModeCombobox = page
     .locator("label:has-text('Build Mode')")

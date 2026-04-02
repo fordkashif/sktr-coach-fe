@@ -44,7 +44,10 @@ test("coach can review athlete detail, export reports, and publish a test week",
   await page.getByRole("button", { name: /Create test/i }).click()
   await expect(page.getByRole("heading", { name: "Create test" })).toBeVisible()
 
-  await page.getByLabel("Name").fill("Throws Benchmark Week")
+  await page
+    .locator("label:has-text('Name')")
+    .locator("xpath=following::input[1]")
+    .fill("Throws Benchmark Week")
   await page.getByRole("button", { name: /Continue to build/i }).click()
   await expect(page.getByRole("heading", { name: "Build" })).toBeVisible()
   await page.getByRole("button", { name: /Continue to publish/i }).click()
