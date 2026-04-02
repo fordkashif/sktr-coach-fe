@@ -321,6 +321,7 @@ export async function getCoachTrainingPlansForCurrentUser(params?: {
     .from("training_plans")
     .select("id, name, team_id, start_date, weeks, status")
     .eq("tenant_id", contextResult.data.tenantId)
+    .neq("status", "archived")
     .order("start_date", { ascending: false })
     .limit(100)
 
@@ -348,6 +349,40 @@ export async function getCoachTrainingPlansForCurrentUser(params?: {
       status: row.status,
     })),
   )
+}
+
+export async function archiveTrainingPlanForCurrentCoach(planId: string): Promise<Result<{ planId: string }>> {
+  const clientResult = requireSupabaseClient("archiveTrainingPlanForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentCoachContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { error } = await clientResult.client
+    .from("training_plans")
+    .update({ status: "archived" })
+    .eq("id", planId)
+    .eq("tenant_id", contextResult.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok({ planId })
+}
+
+export async function deleteTrainingPlanForCurrentCoach(planId: string): Promise<Result<{ planId: string }>> {
+  const clientResult = requireSupabaseClient("deleteTrainingPlanForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentCoachContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { error } = await clientResult.client
+    .from("training_plans")
+    .delete()
+    .eq("id", planId)
+    .eq("tenant_id", contextResult.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok({ planId })
 }
 
 export async function getAssignedTrainingPlansForCurrentAthlete(): Promise<Result<TrainingPlanSummary[]>> {

@@ -39,6 +39,7 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { StandardPageHeader } from "@/components/ui/standard-page-header"
 import { Textarea } from "@/components/ui/textarea"
 import { publishTrainingPlanForCurrentCoach } from "@/lib/data/training-plan/training-plan-data"
 import { mockAthletes, mockTeams, mockTrainingPlans } from "@/lib/mock-data"
@@ -1212,26 +1213,21 @@ export default function CoachTrainingPlanPageClient({
   if (view === "list") {
     return (
       <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-        <section className="space-y-4 pt-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2">
-              <h1 className="text-[2.35rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.8rem]">Training Plans</h1>
-              <p className="max-w-xl text-[0.95rem] leading-6 text-slate-600">
-                Browse plans and create a new one.
-                {effectiveTeam ? ` Viewing ${effectiveTeam.name}.` : ""}
-              </p>
-            </div>
+        <StandardPageHeader
+          eyebrow="Coach programs"
+          title="Training Plans"
+          description={`Browse plans and create a new one.${effectiveTeam ? ` Viewing ${effectiveTeam.name}.` : ""}`}
+          trailing={
             <Button
               type="button"
-              size="icon"
-              aria-label="Create training plan"
               onClick={openWizard}
-              className="mt-0.5 flex size-14 shrink-0 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.14),0_14px_34px_rgba(31,140,255,0.32),0_0_28px_rgba(71,89,255,0.18)] hover:opacity-95"
+              className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
             >
-              <HugeiconsIcon icon={Add01Icon} className="size-5" />
+              <HugeiconsIcon icon={Add01Icon} className="size-4" />
+              Create program
             </Button>
-          </div>
-        </section>
+          }
+        />
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-3">

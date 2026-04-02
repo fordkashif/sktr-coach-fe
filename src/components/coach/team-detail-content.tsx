@@ -423,14 +423,20 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                     Generate invite
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
+                <DialogContent className="max-w-xl rounded-[28px] border border-slate-200 bg-white p-0">
+                  <DialogHeader className="border-b border-slate-200 px-6 pb-4 pt-6 text-left">
                     <DialogTitle>Invite athletes to {team.name}</DialogTitle>
                     <DialogDescription>
                       Enter the athlete email, choose the invite lifetime, then generate a one-time claim link for that athlete.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4">
+                  <div className="space-y-4 px-6 py-5">
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Invite flow</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        PaceLab checks whether this athlete email already exists and routes sign-in or first-time setup automatically.
+                      </p>
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="detail-invite-email">Athlete email</Label>
                       <Input
@@ -490,7 +496,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                       </div>
                     ) : null}
                   </div>
-                  <DialogFooter>
+                  <DialogFooter className="border-t border-slate-200 px-6 py-4">
                     <Button
                       type="button"
                       className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
@@ -516,7 +522,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                       Generate Invite
                     </Button>
                   </DialogFooter>
-                  {inviteError ? <p className="text-sm text-rose-600">{inviteError}</p> : null}
+                  {inviteError ? <p className="px-6 pb-5 text-sm text-rose-600">{inviteError}</p> : null}
                 </DialogContent>
               </Dialog>
             </div>

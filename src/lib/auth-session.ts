@@ -22,6 +22,15 @@ export function setSessionCookies(
   }
 }
 
+export function setCoachTeamCookie(coachTeamId?: string) {
+  const maxAge = 60 * 60 * 8
+  if (coachTeamId) {
+    document.cookie = `${COACH_TEAM_COOKIE}=${coachTeamId}; Path=/; Max-Age=${maxAge}; SameSite=Lax`
+  } else {
+    document.cookie = `${COACH_TEAM_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`
+  }
+}
+
 export function clearSessionCookies() {
   document.cookie = `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`
   document.cookie = `${ROLE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`

@@ -510,6 +510,16 @@ export async function getCoachTestWeeksForCurrentUser(params?: {
   )
 }
 
+export async function getCoachTestWeekDefinitions(testWeekId: string): Promise<Result<ActiveTestDefinition[]>> {
+  const clientResult = requireSupabaseClient("getCoachTestWeekDefinitions")
+  if (!clientResult.ok) return clientResult
+
+  const coachContext = await getCurrentCoachContext(clientResult.client)
+  if (!coachContext.ok) return coachContext
+
+  return getTestDefinitionsForWeek(clientResult.client, testWeekId)
+}
+
 export async function createPublishedTestWeekForCurrentCoach(input: {
   name: string
   teamId: string
@@ -551,5 +561,39 @@ export async function createPublishedTestWeekForCurrentCoach(input: {
   )
   if (definitionError) return { ok: false, error: mapPostgrestError(definitionError) }
 
+  return ok({ testWeekId })
+}
+
+export async function archiveTestWeekForCurrentCoach(testWeekId: string): Promise<Result<{ testWeekId: string }>> {
+  const clientResult = requireSupabaseClient("archiveTestWeekForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const coachContext = await getCurrentCoachContext(clientResult.client)
+  if (!coachContext.ok) return coachContext
+
+  const { error } = await clientResult.client
+    .from("test_weeks")
+    .update({ is_archived: true, archived_at: new Date().toISOString() })
+    .eq("id", testWeekId)
+    .eq("tenant_id", coachContext.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok({ testWeekId })
+}
+
+export async function deleteTestWeekForCurrentCoach(testWeekId: string): Promise<Result<{ testWeekId: string }>> {
+  const clientResult = requireSupabaseClient("deleteTestWeekForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const coachContext = await getCurrentCoachContext(clientResult.client)
+  if (!coachContext.ok) return coachContext
+
+  const { error } = await clientResult.client
+    .from("test_weeks")
+    .delete()
+    .eq("id", testWeekId)
+    .eq("tenant_id", coachContext.data.tenantId)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok({ testWeekId })
 }

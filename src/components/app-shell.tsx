@@ -27,7 +27,7 @@ import { getCoachScope } from "@/lib/coach-scope"
 import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
-import { clearSessionCookies, COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
+import { clearSessionCookies, COACH_TEAM_COOKIE, getCookieValue, setCoachTeamCookie } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_ROLE_STORAGE_KEY,
@@ -160,6 +160,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
+  const [resolvedCoachTeamId, setResolvedCoachTeamId] = useState<string | null>(() =>
+    role === "coach" ? getCookieValue(COACH_TEAM_COOKIE) : null,
+  )
   const useAthleteHomeActionNav = pathname.startsWith("/athlete/home")
   const hideMobileNav = mobileDetailMode
   const useSectionBoundTopTone =
@@ -172,10 +175,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/club-admin") ||
     pathname.startsWith("/platform-admin")
 
+  useEffect(() => {
+    if (role !== "coach" || typeof window === "undefined") {
+      setResolvedCoachTeamId(null)
+      return
+    }
+
+    const scopedTeamId = getCookieValue(COACH_TEAM_COOKIE)
+    if (scopedTeamId) {
+      setResolvedCoachTeamId(scopedTeamId)
+      return
+    }
+
+    if (getBackendMode() !== "supabase") {
+      const coachScope = getCoachScope(role)
+      const mockTeamId = window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? null
+      setResolvedCoachTeamId(mockTeamId)
+      return
+    }
+
+    const supabase = getBrowserSupabaseClient()
+    if (!supabase) {
+      setResolvedCoachTeamId(null)
+      return
+    }
+
+    let cancelled = false
+
+    const resolveCoachTeamId = async () => {
+      const { data: authSession } = await supabase.auth.getSession()
+      const userId = authSession.session?.user.id
+      if (!userId) {
+        if (!cancelled) setResolvedCoachTeamId(null)
+        return
+      }
+
+      const profileResult = await supabase.from("profiles").select("tenant_id, role").eq("user_id", userId).maybeSingle()
+      if (cancelled || profileResult.error || !profileResult.data || profileResult.data.role !== "coach") {
+        if (!cancelled) setResolvedCoachTeamId(null)
+        return
+      }
+
+      const membershipResult = await supabase
+        .from("team_coaches")
+        .select("team_id")
+        .eq("tenant_id", profileResult.data.tenant_id)
+        .eq("user_id", userId)
+
+      if (cancelled || membershipResult.error) {
+        if (!cancelled) setResolvedCoachTeamId(null)
+        return
+      }
+
+      const teamId = ((membershipResult.data as Array<{ team_id: string }> | null) ?? []).map((row) => row.team_id)[0] ?? null
+      if (!cancelled) {
+        setResolvedCoachTeamId(teamId)
+        setCoachTeamCookie(teamId ?? undefined)
+      }
+    }
+
+    void resolveCoachTeamId()
+    return () => {
+      cancelled = true
+    }
+  }, [role, pathname])
+
   const coachTeamsHref = useMemo(() => {
     if (role !== "coach" || typeof window === "undefined") return "/coach/teams"
 
-    const scopedTeamId = getCookieValue(COACH_TEAM_COOKIE)
+    const scopedTeamId = resolvedCoachTeamId ?? getCookieValue(COACH_TEAM_COOKIE)
     if (scopedTeamId) {
       return `/coach/teams/${scopedTeamId}`
     }
@@ -189,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     return "/coach/teams"
-  }, [role])
+  }, [resolvedCoachTeamId, role])
 
   const links = useMemo(() => {
     if (role === "athlete") return athleteLinks

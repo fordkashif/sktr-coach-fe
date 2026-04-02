@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { StandardPageHeader } from "@/components/ui/standard-page-header"
 import { Textarea } from "@/components/ui/textarea"
 import { EventGroup, mockAthletes, mockTeams, mockTestWeekResults, onCreateTestWeek, type Role } from "@/lib/mock-data"
 import { tenantStorageKey } from "@/lib/tenant-storage"
@@ -450,26 +451,21 @@ export default function CoachTestWeekPageClient({
   if (view === "list") {
     return (
       <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-        <section className="space-y-4 pt-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2">
-              <h1 className="text-[2.35rem] leading-[0.95] font-semibold tracking-[-0.07em] text-slate-950 sm:text-[2.8rem]">Test Weeks</h1>
-              <p className="max-w-xl text-[0.95rem] leading-6 text-slate-600">
-                Build and publish testing blocks.
-                {effectiveTeam ? ` Viewing ${effectiveTeam.name}.` : ""}
-              </p>
-            </div>
+        <StandardPageHeader
+          eyebrow="Coach testing"
+          title="Test Weeks"
+          description={`Build and publish testing blocks.${effectiveTeam ? ` Viewing ${effectiveTeam.name}.` : ""}`}
+          trailing={
             <Button
               type="button"
-              aria-label="Create test week"
               onClick={openWizard}
-              className="mt-0.5 flex size-14 shrink-0 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.14),0_14px_34px_rgba(31,140,255,0.32),0_0_28px_rgba(71,89,255,0.18)] hover:opacity-95"
+              className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
             >
-              <HugeiconsIcon icon={Add01Icon} className="size-5" />
+              <HugeiconsIcon icon={Add01Icon} className="size-4" />
+              Create test
             </Button>
-          </div>
-
-        </section>
+          }
+        />
 
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-3">
