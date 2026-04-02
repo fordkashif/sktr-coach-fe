@@ -9,7 +9,7 @@ function isTenantRole(value: string): value is "athlete" | "coach" | "club-admin
 }
 
 async function resolveCoachTeamId(
-  supabase: ReturnType<typeof getBrowserSupabaseClient>,
+  supabase: NonNullable<ReturnType<typeof getBrowserSupabaseClient>>,
   userId: string,
   tenantId: string,
 ) {
