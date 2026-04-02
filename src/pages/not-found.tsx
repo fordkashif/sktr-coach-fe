@@ -9,8 +9,9 @@ export function NotFoundPage() {
       <div className="mx-auto flex min-h-dvh w-full max-w-7xl items-center px-4 py-10 sm:px-6">
         <div className="grid w-full gap-6 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-center">
           <div className="rounded-[32px] border border-white/10 bg-[#091223]/90 p-6 text-white shadow-[0_28px_80px_rgba(2,6,23,0.35)] backdrop-blur">
-            <div className="inline-flex rounded-2xl bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-4 py-3 text-sm font-semibold tracking-[0.18em] uppercase">
-              PaceLab
+            <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <img src="/app-icon.png" alt="PaceLab" className="h-8 w-8 rounded-xl object-cover" />
+              <span className="text-sm font-semibold tracking-[0.18em] uppercase">PaceLab</span>
             </div>
             <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7ea6ff]">Route issue</p>
             <h1 className="mt-3 text-[3rem] font-semibold leading-[0.9] tracking-[-0.07em]">404</h1>

@@ -17,7 +17,6 @@ import {
   TextCreationIcon,
   UserGroupIcon,
   UserStoryIcon,
-  ZapIcon,
 } from "@hugeicons/core-free-icons"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
@@ -358,8 +357,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside className="hidden w-[320px] shrink-0 border-r border-white/10 bg-[linear-gradient(180deg,rgba(7,17,34,0.98)_0%,rgba(9,21,41,0.96)_100%)] text-white lg:flex lg:flex-col">
         <div className="flex items-center gap-3 px-7 pb-6 pt-7">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] shadow-[0_12px_40px_rgba(31,140,255,0.35)]">
-            <HugeiconsIcon icon={ZapIcon} className="size-5 text-white" />
+          <div className="flex size-11 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_12px_40px_rgba(31,140,255,0.25)]">
+            <img src="/app-icon.png" alt="PaceLab" className="size-full object-cover" />
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">PaceLab</p>
