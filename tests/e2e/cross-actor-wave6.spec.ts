@@ -61,6 +61,8 @@ test("tenant audit and platform audit remain separated", async ({ page }) => {
   await page.getByRole("combobox", { name: "Organization type" }).click()
   await page.locator('[role="option"]').filter({ hasText: "Club" }).first().click()
   await page.getByLabel("Country or region").fill("Colombia")
+  await page.getByRole("combobox", { name: "Package" }).click()
+  await page.locator('[role="option"]').filter({ hasText: "Starter" }).first().click()
   await page.getByLabel("Expected coaches").fill("3")
   await page.getByLabel("Expected athletes").fill("30")
   await page.getByLabel("Notes").fill("Wave 6 audit separation validation.")
@@ -74,7 +76,7 @@ test("tenant audit and platform audit remain separated", async ({ page }) => {
   await requestCard.getByRole("button", { name: "Review request" }).click()
   await page.getByPlaceholder("Add the review note or provisioning instruction.").first().fill("Wave 6 provision.")
   await requestCard.getByRole("button", { name: "Approve and provision" }).click()
-  await expect(page.locator("body")).toContainText(`Tenant provisioned and initial access invite sent to ${requestorEmail}.`)
+  await expect(page.locator("body")).toContainText(`Tenant approved and initial billing/setup access invite sent to ${requestorEmail}.`)
 
   await seedMockSession(page, { role: "club-admin", tenantId: "tenant-alpha" })
   await page.goto("/club-admin/billing")

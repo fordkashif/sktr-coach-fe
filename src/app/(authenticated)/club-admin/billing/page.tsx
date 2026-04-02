@@ -10,9 +10,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClubAdmin } from "@/lib/club-admin-context"
 import {
+  getClubAdminPackageUpgradeRequests,
   insertAuditEvent,
   upsertClubAdminBillingRecord,
+  type ClubAdminPackageUpgradeRequest,
 } from "@/lib/data/club-admin/ops-data"
+import { getPackageById } from "@/lib/billing/package-catalog"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { cn } from "@/lib/utils"
@@ -56,6 +59,7 @@ export default function ClubAdminBillingPage() {
   const [saved, setSaved] = useState(false)
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode && !clubAdmin.billingRecord)
   const [backendError, setBackendError] = useState<string | null>(clubAdmin.billingError)
+  const [upgradeRequests, setUpgradeRequests] = useState<ClubAdminPackageUpgradeRequest[]>([])
   const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
     actor: string
     action: string
@@ -69,6 +73,20 @@ export default function ClubAdminBillingPage() {
     setBackendError(clubAdmin.billingError)
     if (clubAdmin.billingRecord) setBilling(clubAdmin.billingRecord)
   }, [clubAdmin.billingError, clubAdmin.billingLoading, clubAdmin.billingRecord, isSupabaseMode])
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    let cancelled = false
+
+    void getClubAdminPackageUpgradeRequests().then((result) => {
+      if (cancelled || !result.ok) return
+      setUpgradeRequests(result.data)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -279,6 +297,51 @@ export default function ClubAdminBillingPage() {
                 <div className="text-right">
                   <p className="font-semibold text-slate-950">{invoice.amount}</p>
                   <span className={cn(invoice.status === "Paid" ? "status-chip-success" : "status-chip-warning")}>{invoice.status}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="mobile-card-primary">
+        <div className="space-y-1 border-b border-slate-200 pb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Package changes</p>
+          <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Upgrade history</h2>
+        </div>
+        <div className="mt-4 space-y-3">
+          {upgradeRequests.length === 0 ? (
+            <EmptyStateCard
+              eyebrow="Upgrades"
+              title="No package upgrade requests yet."
+              description="Commercial package changes and review decisions will appear here once this tenant requests more capacity."
+              hint="This history becomes useful once the tenant grows beyond its current team, coach, or athlete limits."
+              icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
+              className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
+              contentClassName="gap-2"
+            />
+          ) : (
+            upgradeRequests.map((request) => (
+              <div key={request.id} className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {request.status}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {getPackageById(request.currentPackage)?.label ?? request.currentPackage} to {getPackageById(request.requestedPackage)?.label ?? request.requestedPackage}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-slate-950">
+                      Requested {new Date(request.createdAt).toLocaleString()}
+                    </p>
+                    {request.reason ? <p className="text-sm text-slate-600">{request.reason}</p> : null}
+                    {request.reviewNotes ? <p className="text-sm text-slate-600">Review notes: {request.reviewNotes}</p> : null}
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    {request.reviewedAt ? `Reviewed ${new Date(request.reviewedAt).toLocaleString()}` : "Awaiting platform review"}
+                  </div>
                 </div>
               </div>
             ))

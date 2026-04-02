@@ -12,6 +12,8 @@ test("public club-admin request flow submits successfully", async ({ page }) => 
   await page.getByRole("combobox", { name: "Organization type" }).click()
   await page.locator('[role="option"]').filter({ hasText: "Club" }).first().click()
   await page.getByLabel("Country or region").fill("Jamaica")
+  await page.getByRole("combobox", { name: "Package" }).click()
+  await page.locator('[role="option"]').filter({ hasText: "Pro" }).first().click()
   await page.getByLabel("Expected coaches").fill("4")
   await page.getByLabel("Expected athletes").fill("60")
   await page.getByLabel("Notes").fill("Wave 4 request flow validation.")

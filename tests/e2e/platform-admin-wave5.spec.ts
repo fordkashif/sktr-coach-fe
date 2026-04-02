@@ -14,6 +14,8 @@ test("platform-admin can review, provision, invite, export, and audit a tenant r
   await page.getByRole("combobox", { name: "Organization type" }).click()
   await page.locator('[role="option"]').filter({ hasText: "Club" }).first().click()
   await page.getByLabel("Country or region").fill("Colombia")
+  await page.getByRole("combobox", { name: "Package" }).click()
+  await page.locator('[role="option"]').filter({ hasText: "Pro" }).first().click()
   await page.getByLabel("Expected coaches").fill("5")
   await page.getByLabel("Expected athletes").fill("42")
   await page.getByLabel("Notes").fill("Wave 5 platform-admin flow validation.")
@@ -49,7 +51,7 @@ test("platform-admin can review, provision, invite, export, and audit a tenant r
   await page.getByPlaceholder("Add the review note or provisioning instruction.").first().fill("Provision immediately for Wave 5.")
   await requestCard.getByRole("button", { name: "Approve and provision" }).click()
 
-  await expect(page.locator("body")).toContainText(`Tenant provisioned and initial access invite sent to ${requestorEmail}.`)
+  await expect(page.locator("body")).toContainText(`Tenant approved and initial billing/setup access invite sent to ${requestorEmail}.`)
   await expect(requestCard).toContainText("approved")
   await expect(requestCard).toContainText("Invite sent")
 

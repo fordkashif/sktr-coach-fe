@@ -201,6 +201,7 @@ export default function PlatformAdminRequestsPage() {
   >([])
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
+  const [upgradeReviewNotes, setUpgradeReviewNotes] = useState<Record<string, string>>({})
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<PlatformAdminRequestRecord["status"] | "all">("all")
@@ -621,7 +622,11 @@ export default function PlatformAdminRequestsPage() {
     if (status === "pending") return
 
     setSubmittingId(`upgrade-${upgradeRequestId}`)
-    const result = await reviewTenantPackageUpgradeRequest({ upgradeRequestId, status })
+    const result = await reviewTenantPackageUpgradeRequest({
+      upgradeRequestId,
+      status,
+      reviewNotes: upgradeReviewNotes[upgradeRequestId],
+    })
 
     if (!result.ok) {
       setError(result.error.message)
@@ -638,6 +643,7 @@ export default function PlatformAdminRequestsPage() {
           ? {
               ...item,
               status,
+              reviewNotes: upgradeReviewNotes[upgradeRequestId]?.trim() || null,
               reviewedAt,
             }
           : item,
@@ -1063,24 +1069,37 @@ export default function PlatformAdminRequestsPage() {
                     </div>
                   </div>
                   {request.status === "pending" ? (
-                    <div className="flex flex-wrap gap-2 lg:max-w-[260px] lg:justify-end">
-                      <Button
-                        type="button"
-                        className="h-10 rounded-full px-4"
-                        disabled={submittingId === `upgrade-${request.id}`}
-                        onClick={() => void handleUpgradeRequestReview(request.id, "approved")}
-                      >
-                        Approve upgrade
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 rounded-full border-slate-200 px-4"
-                        disabled={submittingId === `upgrade-${request.id}`}
-                        onClick={() => void handleUpgradeRequestReview(request.id, "rejected")}
-                      >
-                        Reject
-                      </Button>
+                    <div className="w-full max-w-[360px] space-y-3 lg:justify-end">
+                      <Textarea
+                        value={upgradeReviewNotes[request.id] ?? ""}
+                        onChange={(event) =>
+                          setUpgradeReviewNotes((current) => ({
+                            ...current,
+                            [request.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Optional review notes for the upgrade decision."
+                        className="min-h-[96px] rounded-[18px] border-slate-200 bg-white"
+                      />
+                      <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <Button
+                          type="button"
+                          className="h-10 rounded-full px-4"
+                          disabled={submittingId === `upgrade-${request.id}`}
+                          onClick={() => void handleUpgradeRequestReview(request.id, "approved")}
+                        >
+                          Approve upgrade
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 rounded-full border-slate-200 px-4"
+                          disabled={submittingId === `upgrade-${request.id}`}
+                          onClick={() => void handleUpgradeRequestReview(request.id, "rejected")}
+                        >
+                          Reject
+                        </Button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
