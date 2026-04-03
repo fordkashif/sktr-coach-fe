@@ -62,11 +62,9 @@ test("tenant audit and platform audit remain separated", async ({ page }) => {
   await page.getByRole("combobox", { name: "Organization type" }).click()
   await page.locator('[role="option"]').filter({ hasText: "Club" }).first().click()
   await page.getByLabel("Country or region").fill("Colombia")
-  await page.getByRole("combobox", { name: "Package" }).click()
-  await page.locator('[role="option"]').filter({ hasText: "Starter" }).first().click()
+  await page.getByRole("radio", { name: /Starter/i }).click()
   await page.getByLabel("Expected coaches").fill("3")
   await page.getByLabel("Expected athletes").fill("30")
-  await page.getByLabel("Notes").fill("Wave 6 audit separation validation.")
   await page.getByRole("button", { name: "Submit request" }).click()
   await expect(page.locator("body")).toContainText("We have your access request.")
 
