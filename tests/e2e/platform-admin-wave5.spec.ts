@@ -7,7 +7,8 @@ test("platform-admin can review, provision, invite, export, and audit a tenant r
   const requestorEmail = `platform-wave5-${nonce}@pacelab.local`
 
   await page.goto("/login?mode=request")
-  await page.getByLabel("Full name").fill("Platform Wave Five")
+  await page.getByLabel("First name").fill("Platform")
+  await page.getByLabel("Last name").fill("Wave Five")
   await page.getByLabel("Work email").fill(requestorEmail)
   await page.getByLabel("Job title").fill("Director of Performance")
   await page.getByPlaceholder("Elite Track Club").fill(organizationName)

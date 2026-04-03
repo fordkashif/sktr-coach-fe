@@ -5,7 +5,8 @@ test("public club-admin request flow submits successfully", async ({ page }) => 
   await page.goto("/login")
   await page.getByRole("button", { name: "Request account" }).click()
 
-  await page.getByLabel("Full name").fill("Jordan Davis")
+  await page.getByLabel("First name").fill("Jordan")
+  await page.getByLabel("Last name").fill("Davis")
   await page.getByLabel("Work email").fill(`club-admin-${Date.now()}@pacelab.local`)
   await page.getByLabel("Job title").fill("Head coach")
   await page.getByPlaceholder("Elite Track Club").fill("Elite Track Club")

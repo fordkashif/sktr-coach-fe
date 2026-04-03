@@ -54,7 +54,8 @@ test("tenant audit and platform audit remain separated", async ({ page }) => {
   const requestorEmail = `platform-wave6-${nonce}@pacelab.local`
 
   await page.goto("/login?mode=request")
-  await page.getByLabel("Full name").fill("Platform Wave Six")
+  await page.getByLabel("First name").fill("Platform")
+  await page.getByLabel("Last name").fill("Wave Six")
   await page.getByLabel("Work email").fill(requestorEmail)
   await page.getByLabel("Job title").fill("Program Director")
   await page.getByPlaceholder("Elite Track Club").fill(organizationName)
