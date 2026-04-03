@@ -203,7 +203,7 @@ export default function PlatformAdminRequestsPage() {
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<PlatformAdminRequestRecord["status"] | "all">("all")
+  const [statusFilter, setStatusFilter] = useState<PlatformAdminRequestRecord["status"] | "all">("pending")
   const [desktopViewMode, setDesktopViewMode] = useState<"cards" | "table">("cards")
   const [useDesktopReviewDialog, setUseDesktopReviewDialog] = useState(() => {
     if (typeof window === "undefined") return false
@@ -1129,7 +1129,7 @@ export default function PlatformAdminRequestsPage() {
               className="h-11 rounded-full border-slate-200 px-5"
               onClick={() => {
                 setSearch("")
-                setStatusFilter("all")
+                setStatusFilter("pending")
               }}
             >
               Clear filters
