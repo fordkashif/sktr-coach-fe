@@ -4,6 +4,7 @@ import {
   ArrowDown01Icon,
   FilePasteIcon,
   FilterHorizontalIcon,
+  MoreHorizontalIcon,
   Notification01Icon,
   SquareIcon,
   TableIcon,
@@ -977,37 +978,8 @@ export default function PlatformAdminRequestsPage() {
         title="Queue filters"
         controls={
           <>
-            <div className="flex items-center justify-between gap-3 sm:hidden">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className={toolbarIconButtonClassName}
-                    aria-label="Open request queue actions"
-                  >
-                    <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Queue actions</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setStatusFilter("all")}>Show all requests</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setStatusFilter("pending")}>Show pending only</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void handleExportQueueCsv()}>Export CSV</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void handleExportQueuePdf()}>Export PDF</DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={submittingId === "dispatch-email-queue"}
-                    onClick={() => void handleDispatchPendingEmails()}
-                  >
-                    Dispatch pending emails
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <div className="hidden items-center gap-3 sm:flex">
-              <div className="flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
+            <div className="flex w-full items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center rounded-full border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
                 <div className="flex items-center gap-3">
                   <HugeiconsIcon
                     icon={SquareIcon}
@@ -1029,74 +1001,106 @@ export default function PlatformAdminRequestsPage() {
                     <Button
                       type="button"
                       variant="ghost"
-                      className="h-10 rounded-full px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-950"
+                      className="h-10 rounded-full px-4 text-sm font-medium text-slate-700 hover:bg-[#eef5ff] hover:text-[#1553b7]"
                       aria-label={`Filter requests by status. Current filter: ${statusFilterLabels[statusFilter]}`}
                     >
                       <HugeiconsIcon icon={FilterHorizontalIcon} className="mr-2 size-4" />
                       Status: {statusFilterLabels[statusFilter]}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuContent align="end" className="w-52 border-slate-200 bg-white text-slate-900">
                     <DropdownMenuLabel>Status filter</DropdownMenuLabel>
                     <DropdownMenuRadioGroup
                       value={statusFilter}
                       onValueChange={(value) => setStatusFilter(value as PlatformAdminRequestRecord["status"] | "all")}
                     >
-                      <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="pending">Pending</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="approved">Approved</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="rejected">Rejected</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="cancelled">Cancelled</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" value="all">All</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" value="pending">Pending</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" value="approved">Approved</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" value="rejected">Rejected</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" value="cancelled">Cancelled</DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
+              <div className="hidden items-center gap-2 sm:flex">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={toolbarIconButtonClassName}
+                      aria-label="Export request queue as CSV"
+                      onClick={() => void handleExportQueueCsv()}
+                    >
+                      <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Export CSV</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={toolbarIconButtonClassName}
+                      aria-label="Open print or PDF export for request queue"
+                      onClick={() => void handleExportQueuePdf()}
+                    >
+                      <HugeiconsIcon icon={TextCreationIcon} className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Export PDF</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className={toolbarIconButtonClassName}
+                      disabled={submittingId === "dispatch-email-queue"}
+                      aria-label="Dispatch pending notification emails"
+                      onClick={() => void handleDispatchPendingEmails()}
+                    >
+                      <HugeiconsIcon icon={Notification01Icon} className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Dispatch pending emails</TooltipContent>
+                </Tooltip>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
-                    className={toolbarIconButtonClassName}
-                    aria-label="Export request queue as CSV"
-                    onClick={() => void handleExportQueueCsv()}
+                    className={cn(toolbarIconButtonClassName, "sm:hidden")}
+                    aria-label="Open queue actions"
                   >
-                    <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
+                    <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Export CSV</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className={toolbarIconButtonClassName}
-                    aria-label="Open print or PDF export for request queue"
-                    onClick={() => void handleExportQueuePdf()}
-                  >
-                    <HugeiconsIcon icon={TextCreationIcon} className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Export PDF</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className={toolbarIconButtonClassName}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 border-slate-200 bg-white text-slate-900">
+                  <DropdownMenuLabel>Queue actions</DropdownMenuLabel>
+                  <DropdownMenuItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" onClick={() => void handleExportQueueCsv()}>
+                    Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="focus:bg-[#eef5ff] focus:text-[#1553b7]" onClick={() => void handleExportQueuePdf()}>
+                    Export PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="focus:bg-[#eef5ff] focus:text-[#1553b7]"
                     disabled={submittingId === "dispatch-email-queue"}
-                    aria-label="Dispatch pending notification emails"
                     onClick={() => void handleDispatchPendingEmails()}
                   >
-                    <HugeiconsIcon icon={Notification01Icon} className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Dispatch pending emails</TooltipContent>
-              </Tooltip>
+                    Dispatch pending emails
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </>
         }
