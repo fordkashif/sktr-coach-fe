@@ -892,6 +892,7 @@ export default function PlatformAdminRequestsPage() {
         title="Request intake with real review control."
         description="New tenant creation now stops here first. Review the request, provision the tenant, and verify the initial access invite actually went out."
         stats={headerStats}
+        statsClassName="hidden md:grid"
       />
 
       {error ? (

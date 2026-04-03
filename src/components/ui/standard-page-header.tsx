@@ -14,6 +14,7 @@ interface StandardPageHeaderProps {
   meta?: ReactNode
   trailing?: ReactNode
   stats?: HeaderStat[]
+  statsClassName?: string
   className?: string
   contentClassName?: string
 }
@@ -26,6 +27,7 @@ export function StandardPageHeader({
   meta,
   trailing,
   stats,
+  statsClassName,
   className,
   contentClassName,
 }: StandardPageHeaderProps) {
@@ -40,7 +42,7 @@ export function StandardPageHeader({
             {meta}
           </div>
           {stats?.length ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className={cn("grid grid-cols-2 gap-3", statsClassName)}>
               {stats.map((item) => (
                 <div
                   key={item.label}
@@ -78,7 +80,7 @@ export function StandardPageHeader({
             </div>
             {meta}
             {stats?.length ? (
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className={cn("grid gap-3 sm:grid-cols-3", statsClassName)}>
                 {stats.map((item) => (
                   <div key={item.label} className="rounded-[24px] border border-white/12 bg-white/[0.06] px-4 py-4 backdrop-blur-sm">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">{item.label}</p>
@@ -108,7 +110,7 @@ export function StandardPageHeader({
         {trailing ? <div className="lg:justify-self-end">{trailing}</div> : null}
       </div>
       {stats?.length ? (
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={cn("mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4", statsClassName)}>
           {stats.map((item) => (
             <div
               key={item.label}
