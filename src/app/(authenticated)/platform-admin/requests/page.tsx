@@ -192,6 +192,8 @@ function RequestSummaryRow({
 }
 
 export default function PlatformAdminRequestsPage() {
+  const [confirmAction, setConfirmAction] = useState<{ requestId: string; status: "approved" | "rejected" } | null>(null)
+  const [completionNotice, setCompletionNotice] = useState<{ title: string; description: string } | null>(null)
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -362,6 +364,12 @@ export default function PlatformAdminRequestsPage() {
             ? `Tenant approved for ${target.requestorEmail}. Local dev generated a clickable billing/setup access link instead of sending email.`
             : `Tenant approved and initial billing/setup access invite sent to ${target.requestorEmail}.`,
       )
+      setConfirmAction(null)
+      setActiveRequestId(null)
+      setCompletionNotice({
+        title: "Request approved",
+        description: `${target.organizationName} was approved and moved into billing setup.`,
+      })
       setSubmittingId(null)
       return
     }
@@ -394,6 +402,12 @@ export default function PlatformAdminRequestsPage() {
     )
     setError(null)
     setInfo(`Request ${status} for ${target.requestorEmail}.`)
+    setConfirmAction(null)
+    setActiveRequestId(null)
+    setCompletionNotice({
+      title: "Request rejected",
+      description: `${target.organizationName} was rejected and removed from the active intake workload.`,
+    })
     setSubmittingId(null)
   }
 
@@ -469,6 +483,10 @@ export default function PlatformAdminRequestsPage() {
       await navigator.clipboard.writeText(result.data.actionLink)
       setError(null)
       setInfo(`Copied initial access link for ${target.requestorEmail}.`)
+      setCompletionNotice({
+        title: "Link copied",
+        description: `Initial access link copied for ${target.organizationName}.`,
+      })
     } catch {
       setError("Invite preview generated, but clipboard copy failed.")
       setInfo(result.data.actionLink)
@@ -514,6 +532,10 @@ export default function PlatformAdminRequestsPage() {
       await navigator.clipboard.writeText(actionLink)
       setError(null)
       setInfo("Copied notification action link.")
+      setCompletionNotice({
+        title: "Link copied",
+        description: "Notification action link copied successfully.",
+      })
     } catch {
       setError("Notification preview generated, but clipboard copy failed.")
       setInfo(actionLink)
@@ -644,6 +666,7 @@ export default function PlatformAdminRequestsPage() {
   }
 
   const activeRequest = activeRequestId ? requests.find((item) => item.id === activeRequestId) ?? null : null
+  const confirmTarget = confirmAction ? requests.find((item) => item.id === confirmAction.requestId) ?? null : null
 
   const renderReviewDecisionContent = (request: PlatformAdminRequestRecord) => {
     const isPending = request.status === "pending"
@@ -749,6 +772,12 @@ export default function PlatformAdminRequestsPage() {
         </div>
 
         <div className="space-y-3 border-t border-slate-200 pt-5">
+          {isSubmitting ? (
+            <div className="flex items-center gap-3 rounded-[18px] border border-[#cfe2ff] bg-[#f6faff] px-4 py-3 text-sm text-[#1553b7]">
+              <span className="size-3 animate-pulse rounded-full bg-[#1368ff]" />
+              Processing review decision. Do not close this window.
+            </div>
+          ) : null}
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Decision</p>
           <Textarea
             rows={5}
@@ -769,18 +798,18 @@ export default function PlatformAdminRequestsPage() {
               type="button"
               disabled={!isPending || isSubmitting}
               className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] text-white hover:opacity-95"
-              onClick={() => void handleReview(request.id, "approved")}
+              onClick={() => setConfirmAction({ requestId: request.id, status: "approved" })}
             >
-              Approve and provision
+              {isSubmitting ? "Processing..." : "Approve and provision"}
             </Button>
             <Button
               type="button"
               disabled={!isPending || isSubmitting}
               variant="outline"
               className="h-11 rounded-full border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
-              onClick={() => void handleReview(request.id, "rejected")}
+              onClick={() => setConfirmAction({ requestId: request.id, status: "rejected" })}
             >
-              Reject
+              {isSubmitting ? "Processing..." : "Reject"}
             </Button>
           </div>
 
@@ -894,6 +923,92 @@ export default function PlatformAdminRequestsPage() {
         stats={headerStats}
         statsClassName="hidden md:grid"
       />
+
+      <Dialog
+        open={Boolean(confirmAction && confirmTarget)}
+        onOpenChange={(open) => (!open && !submittingId ? setConfirmAction(null) : null)}
+      >
+        <DialogContent className="rounded-[28px] border border-slate-200 bg-white sm:max-w-[560px]">
+          {confirmAction && confirmTarget ? (
+            <>
+              <DialogHeader className="text-left">
+                <DialogTitle className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+                  {confirmAction.status === "approved" ? "Approve request?" : "Reject request?"}
+                </DialogTitle>
+                <DialogDescription className="text-sm leading-6 text-slate-500">
+                  {confirmAction.status === "approved"
+                    ? `This will provision ${confirmTarget.organizationName} and move it into billing setup.`
+                    : `This will reject ${confirmTarget.organizationName}. You should only continue if you are sure.`}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-sm font-semibold text-slate-950">{confirmTarget.organizationName}</p>
+                <p className="mt-1 text-sm text-slate-500">{confirmTarget.requestorName} - {confirmTarget.requestorEmail}</p>
+              </div>
+              {submittingId === confirmAction.requestId ? (
+                <div className="flex items-center gap-3 rounded-[18px] border border-[#cfe2ff] bg-[#f6faff] px-4 py-3 text-sm text-[#1553b7]">
+                  <span className="size-3 animate-pulse rounded-full bg-[#1368ff]" />
+                  Processing decision. Please wait.
+                </div>
+              ) : null}
+              <DialogFooter className="sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-full border-slate-200 bg-white text-slate-900 hover:border-[#cfe2ff] hover:bg-[#eef5ff] hover:text-[#1553b7]"
+                  disabled={Boolean(submittingId)}
+                  onClick={() => setConfirmAction(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={submittingId === confirmAction.requestId}
+                  className={cn(
+                    "h-11 rounded-full text-white",
+                    confirmAction.status === "approved"
+                      ? "bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] hover:opacity-95"
+                      : "bg-rose-600 hover:bg-rose-700",
+                  )}
+                  onClick={() => void handleReview(confirmAction.requestId, confirmAction.status)}
+                >
+                  {submittingId === confirmAction.requestId
+                    ? "Processing..."
+                    : confirmAction.status === "approved"
+                      ? "Confirm approval"
+                      : "Confirm rejection"}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(completionNotice)} onOpenChange={(open) => (!open ? setCompletionNotice(null) : null)}>
+        <DialogContent className="rounded-[28px] border border-slate-200 bg-white sm:max-w-[520px]">
+          {completionNotice ? (
+            <>
+              <DialogHeader className="text-left">
+                <DialogTitle className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+                  {completionNotice.title}
+                </DialogTitle>
+                <DialogDescription className="text-sm leading-6 text-slate-500">
+                  {completionNotice.description}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="sm:justify-end">
+                <Button
+                  type="button"
+                  className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] text-white hover:opacity-95"
+                  onClick={() => setCompletionNotice(null)}
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {error ? (
         <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

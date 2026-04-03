@@ -241,7 +241,11 @@ export default function ClubAdminClaimPage() {
               <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
               Back to login
             </Button>
-            <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => window.location.reload()}>
+            <Button
+              type="button"
+              className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] px-5 text-white hover:opacity-95"
+              onClick={() => window.location.reload()}
+            >
               <HugeiconsIcon icon={Link01Icon} className="size-4" />
               Retry claim
             </Button>
