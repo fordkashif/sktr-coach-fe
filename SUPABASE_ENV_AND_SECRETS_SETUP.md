@@ -114,6 +114,17 @@ Rules worth knowing:
 - Every send is written to the club's activity log (`audit_events`), and the invite row keeps `last_email_sent_at`, `email_send_count` and `last_email_error`.
 - Tests for the function: `deno test supabase/functions/send-invite-email/` (no network needed).
 
+### Public Club Request Form (no secret, nothing to set up)
+
+The "Request access for your club" form is protected inside the database by migration `20261006181000_request_form_protection.sql`. It needs no secret, no environment variable, no dashboard setting and no outside service.
+
+- The limits (3 requests per email per 24 hours, 5 per network address per 24 hours, 30 per hour and 150 per day from everyone together) and the minimum fill time are columns of the one row in `public.request_form_settings`. To change one, run a single statement in the Supabase SQL editor, for example `update public.request_form_settings set per_ip_max = 10;`. It takes effect at once.
+- That row also holds `ip_salt`, a random value the migration generates once, the first time it runs. It is mixed into the hashes stored in `public.request_form_attempts`, so the table never holds a visitor's IP address or email in readable form. It is not a secret you manage: it never leaves the database, no API role can read it, and it is different on dev and prod because each database generates its own. If it is ever changed, the only effect is that the counters start again from zero.
+- Nobody outside the platform admins is emailed when a request comes in. `dispatch-notification-emails` escapes the request's text before putting it in the email.
+- Testing by hand or with the Supabase e2e suite from one machine counts towards the per-address limit. When "Too many requests right now" shows up on a test project, run `delete from public.request_form_attempts;` in the SQL editor.
+- A captcha is not used. One can be added later in front of the same function without changing these limits.
+- Shared edge function code lives in `supabase/functions/_shared/` (currently `club-access.ts`). It is bundled into the functions that import it by `supabase functions deploy`; it is not a function itself and is not listed in the workflow or in `supabase/config.toml`. Tests: `deno test supabase/functions/_shared/`.
+
 ## Rotation Policy
 
 - Rotate anon and service-role keys on:

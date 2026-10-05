@@ -114,6 +114,12 @@ const demoAccounts: Array<{ key: DemoAccountKey; label: string; hint: string; ic
 ]
 
 const MAX_HEADCOUNT = 100000
+/**
+ * A person cannot read and fill this form in under three seconds; a script can. A request sent sooner
+ * than this after the form appeared is held back until the time is up (nobody is turned away), and the
+ * real time taken is sent along. The database drops requests that report less (20261006181000).
+ */
+const REQUEST_MIN_FILL_MS = 3000
 const MOCK_ROLE_STORAGE_KEY = "pacelab:mock-role"
 const MOCK_USER_EMAIL_STORAGE_KEY = "pacelab:mock-user-email"
 const MOCK_COACH_TEAM_STORAGE_KEY = "pacelab:mock-coach-team"
@@ -231,6 +237,9 @@ export default function LoginPage() {
   const [demoCredentials, setDemoCredentials] = useState<DemoCredentialMap | null>(null)
   const signInLock = useRef(false)
   const requestLock = useRef(false)
+  // Honeypot: a field people never see or reach. Only a script fills it. See the form markup below.
+  const [referenceCode, setReferenceCode] = useState("")
+  const requestShownAt = useRef<number | null>(null)
   const formId = useId()
   const parsedCoachCount = Number.parseInt(requestForm.expectedCoachCount || "0", 10)
   const parsedAthleteCount = Number.parseInt(requestForm.expectedAthleteCount || "0", 10)
@@ -259,6 +268,11 @@ export default function LoginPage() {
     const candidate = searchParams.get("redirect")
     return candidate && candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : null
   })()
+
+  // Start the clock when the request form appears (again after a sent request, too).
+  useEffect(() => {
+    requestShownAt.current = mode === "request" && !requestSubmitted ? performance.now() : null
+  }, [mode, requestSubmitted])
 
   // Mock helpers are only loaded in mock mode so they stay out of the live sign-in path.
   useEffect(() => {
@@ -574,6 +588,14 @@ export default function LoginPage() {
     requestLock.current = true
     setIsSubmittingRequest(true)
     try {
+      const shownAt = requestShownAt.current ?? performance.now()
+      const remainingMs = REQUEST_MIN_FILL_MS - (performance.now() - shownAt)
+      if (remainingMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingMs))
+      }
+      const fillMs = Math.round(performance.now() - shownAt)
+      const honeypot = referenceCode.trim()
+
       if (isSupabaseMode) {
         const supabase = getBrowserSupabaseClient()
         if (!supabase) {
@@ -581,7 +603,7 @@ export default function LoginPage() {
           return
         }
 
-        const result = await supabase.rpc("submit_tenant_provision_request", {
+        const requestArgs = {
           p_requestor_name: requestorName,
           p_requestor_email: normalizedEmail,
           p_organization_name: requestForm.organization.trim(),
@@ -595,13 +617,26 @@ export default function LoginPage() {
           p_expected_coach_count: Math.max(0, coachCount),
           p_expected_athlete_count: Math.max(0, athleteCount),
           p_desired_start_date: requestForm.desiredStartDate || null,
+        }
+        // The database decides what to do with a filled honeypot or a too-fast form (it reports success
+        // and stores nothing), so a script learns nothing from this page's code.
+        let result = await supabase.rpc("submit_tenant_provision_request", {
+          ...requestArgs,
+          p_reference_code: honeypot || null,
+          p_fill_ms: fillMs,
         })
+        // PGRST202: the database does not have the two new arguments yet (the app was deployed before
+        // the migration ran). Send the request the old way rather than lose it.
+        if (result.error?.code === "PGRST202" && !honeypot) {
+          result = await supabase.rpc("submit_tenant_provision_request", requestArgs)
+        }
 
         if (result.error) {
           setError(describeAccessRequestError(result.error))
           return
         }
-      } else {
+      } else if (!honeypot) {
+        // Demo mode has no database, so the honeypot rule is applied here: report success, store nothing.
         const [{ submitMockTenantProvisionRequest }, { loadAccountRequests, saveAccountRequests }] = await Promise.all([
           import("@/lib/mock-platform-admin"),
           import("@/lib/mock-club-admin"),
@@ -639,6 +674,7 @@ export default function LoginPage() {
       setRequestErrors({})
       setSubmittedEmail(normalizedEmail)
       setRequestForm(emptyRequestForm)
+      setReferenceCode("")
       setRequestSubmitted(true)
       window.scrollTo({ top: 0 })
     } catch (caught) {
@@ -873,6 +909,7 @@ export default function LoginPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField
                   id="request-first-name"
+                  maxLength={60}
                   label="First name"
                   autoComplete="given-name"
                   placeholder="Jordan"
@@ -882,6 +919,7 @@ export default function LoginPage() {
                 />
                 <TextField
                   id="request-last-name"
+                  maxLength={60}
                   label="Last name"
                   autoComplete="family-name"
                   placeholder="Davis"
@@ -892,6 +930,7 @@ export default function LoginPage() {
               </div>
               <TextField
                 id="request-email"
+                maxLength={254}
                 label="Work email"
                 type="email"
                 autoComplete="email"
@@ -906,6 +945,7 @@ export default function LoginPage() {
               />
               <TextField
                 id="request-job-title"
+                maxLength={120}
                 label="Job title"
                 autoComplete="organization-title"
                 placeholder="Head coach"
@@ -920,6 +960,7 @@ export default function LoginPage() {
               <TextField
                 id="request-organization"
                 label="Club or organization name"
+                maxLength={160}
                 autoComplete="organization"
                 placeholder="Elite Track Club"
                 value={requestForm.organization}
@@ -952,6 +993,7 @@ export default function LoginPage() {
                 </FieldShell>
                 <TextField
                   id="request-region"
+                  maxLength={120}
                   label="Country or region"
                   autoComplete="country-name"
                   placeholder="Jamaica"
@@ -962,6 +1004,7 @@ export default function LoginPage() {
               </div>
               <TextField
                 id="request-organization-website"
+                maxLength={290}
                 label="Website"
                 optional
                 type="url"
@@ -1098,6 +1141,29 @@ export default function LoginPage() {
                 onChange={(event) => updateRequestField("notes", event.target.value)}
               />
             </FieldShell>
+
+            {/*
+              Honeypot. Scripts that fill every input fill this one; the database then reports success
+              and stores nothing. People never meet it: it is off screen (not display:none, which some
+              scripts skip), hidden from screen readers, out of the tab order, and named so that browsers
+              and password managers have no reason to autofill it.
+            */}
+            <div aria-hidden="true" className="pointer-events-none absolute -left-[9999px] top-auto size-px overflow-hidden">
+              <label htmlFor="request-reference-code">Reference code (leave this empty)</label>
+              <input
+                id="request-reference-code"
+                name="club_reference_code"
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                value={referenceCode}
+                onChange={(event) => setReferenceCode(event.target.value)}
+              />
+            </div>
 
             <div className="space-y-4">
               {error ? <FormAlert>{error}</FormAlert> : null}

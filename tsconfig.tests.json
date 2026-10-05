@@ -8,5 +8,5 @@
     "moduleResolution": "NodeNext",
     "types": ["node"]
   },
-  "include": ["src/lib/access-control.ts", "tests/**/*.ts"]
+  "include": ["src/lib/access-control.ts", "src/lib/access-paused.ts", "src/lib/auth-errors.ts", "tests/**/*.ts"]
 }

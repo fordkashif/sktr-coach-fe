@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4"
+import { CLUB_ACCESS_PAUSED_CODE, CLUB_ACCESS_PAUSED_MESSAGE, isClubAccessPaused } from "../_shared/club-access.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,6 +67,12 @@ Deno.serve(async (request) => {
   }
   if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
     return json(400, { error: "Athlete invite has expired." })
+  }
+
+  // A suspended or cancelled club is closed to everyone, so no account is created for its invites.
+  // The database refuses to accept such an invite anyway (accept_athlete_invite); this stops one step earlier.
+  if (await isClubAccessPaused(serviceClient, invite.tenant_id)) {
+    return json(403, { error: CLUB_ACCESS_PAUSED_MESSAGE, code: CLUB_ACCESS_PAUSED_CODE })
   }
 
   const listUsersResult = await serviceClient.auth.admin.listUsers()

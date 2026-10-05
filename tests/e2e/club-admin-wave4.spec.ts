@@ -21,6 +21,59 @@ test("public club-admin request flow submits successfully", async ({ page }) => 
   await expect(page.locator("body")).toContainText("We have your access request.")
 })
 
+// The form holds a request back until three seconds after it appeared (a script fills it in one), and
+// a filled honeypot is answered with the same success page while nothing is stored. Demo mode applies
+// the honeypot rule in the browser; in Supabase mode the database does (20261006181000).
+test("public request form: a too-fast submit is held back, and a filled honeypot stores nothing", async ({ page }) => {
+  const fill = async (organization: string) => {
+    await page.goto("/login?mode=request")
+    await page.getByLabel("First name").fill("Quick")
+    await page.getByLabel("Last name").fill("Sender")
+    await page.getByLabel("Work email").fill(`quick-${Date.now()}@pacelab.local`)
+    await page.getByLabel("Job title").fill("Head coach")
+    await page.getByPlaceholder("Elite Track Club").fill(organization)
+    await page.getByRole("combobox", { name: "Organization type" }).click()
+    await page.locator('[role="option"]').filter({ hasText: "Club" }).first().click()
+    await page.getByLabel("Country or region").fill("Jamaica")
+    await page.locator("#request-package-starter").click()
+    await page.getByLabel("Expected coaches").fill("2")
+    await page.getByLabel("Expected athletes").fill("20")
+  }
+
+  const realOrganization = `Honest Club ${Date.now()}`
+  // The clock starts when the form appears, which is after this moment, so the whole thing can never
+  // take less than the three seconds however fast the fields are filled.
+  const startedAt = Date.now()
+  await fill(realOrganization)
+  await page.getByRole("button", { name: "Submit request" }).click()
+  await expect(page.locator("body")).toContainText("We have your access request.")
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(3000)
+
+  // People cannot reach the honeypot: off screen, hidden from assistive technology, not a tab stop.
+  const botOrganization = `Bot Club ${Date.now()}`
+  await fill(botOrganization)
+  const honeypot = page.locator("#request-reference-code")
+  await expect(honeypot).toHaveAttribute("tabindex", "-1")
+  await expect(honeypot).toHaveAttribute("autocomplete", "off")
+  expect(await honeypot.evaluate((element) => element.closest('[aria-hidden="true"]') !== null)).toBe(true)
+  expect(await honeypot.evaluate((element) => element.getBoundingClientRect().right)).toBeLessThan(0)
+  // A script fills it anyway.
+  await honeypot.evaluate((element) => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+    setValue?.call(element, "http://spam.example")
+    element.dispatchEvent(new Event("input", { bubbles: true }))
+  })
+  await page.getByRole("button", { name: "Submit request" }).click()
+  await expect(page.locator("body")).toContainText("We have your access request.")
+
+  await seedMockSession(page, { role: "platform-admin", tenantId: "platform" })
+  await page.goto("/platform-admin/requests")
+  await page.getByLabel("Search requests").fill(realOrganization)
+  await expect(page.locator("[data-request-row]").filter({ hasText: realOrganization })).toHaveCount(1)
+  await page.getByLabel("Search requests").fill(botOrganization)
+  await expect(page.locator("[data-request-row]").filter({ hasText: botOrganization })).toHaveCount(0)
+})
+
 test("club-admin can send coach invite and manage user access", async ({ page }) => {
   await seedMockSession(page, { role: "club-admin", tenantId: "tenant-alpha" })
   await page.setViewportSize({ width: 1440, height: 900 })

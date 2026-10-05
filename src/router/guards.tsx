@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { evaluateAccess, type AccessResult } from "@/lib/access-control"
+import { ACCESS_PAUSED_EVENT } from "@/lib/access-paused"
 import { SESSION_UPDATED_EVENT } from "@/lib/auth-session"
 import { AccessPausedPage } from "@/pages/access-paused"
 import { getCurrentGuardAuthContext } from "@/router/guard-auth-context"
@@ -45,12 +46,16 @@ export function GuardedAuthenticatedLayout() {
     window.addEventListener("focus", handleWindowFocus)
     document.addEventListener("visibilitychange", handleVisibilityChange)
     window.addEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated as EventListener)
+    // The database refused a request because this member was deactivated or the club was paused
+    // while the app was open: look again, which swaps the screen for the notice.
+    window.addEventListener(ACCESS_PAUSED_EVENT, handleSessionUpdated)
 
     return () => {
       cancelled = true
       window.removeEventListener("focus", handleWindowFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
       window.removeEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated as EventListener)
+      window.removeEventListener(ACCESS_PAUSED_EVENT, handleSessionUpdated)
     }
   }, [location.pathname])
 
