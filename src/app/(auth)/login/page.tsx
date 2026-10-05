@@ -353,7 +353,7 @@ export default function LoginPage() {
     const { actor, noAccessReason } = await resolveSessionAccess(supabase, data.session)
     if (!actor) {
       // Signed in, but nothing to open: the database found no club this account belongs to. Do not leave a half signed-in session behind.
-      await supabase.auth.signOut().catch(() => undefined)
+      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined)
       setError(describeNoAccessError(noAccessReason))
       return
     }

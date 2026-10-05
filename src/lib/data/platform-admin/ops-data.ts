@@ -1,3 +1,4 @@
+import { invokeSignedIn } from "@/lib/supabase/invoke"
 import {
   approveAndProvisionMockTenantRequest,
   dispatchMockPendingNotificationEmails,
@@ -339,7 +340,7 @@ async function invokePlatformAdminInviteFunction(
     appBaseUrl: string | null
   },
 ): Promise<Result<{ sentAt: string; actionLink?: string }>> {
-  const { data, error } = await client.functions.invoke("platform-admin-send-club-admin-invite", {
+  const { data, error } = await invokeSignedIn(client, "platform-admin-send-club-admin-invite", {
     body: payload,
   })
 
@@ -394,7 +395,7 @@ export async function previewInitialClubAdminAccessInvite(params: {
   const clientResult = requireSupabaseClient("previewInitialClubAdminAccessInvite")
   if (!clientResult.ok) return clientResult
 
-  const { data, error } = await clientResult.client.functions.invoke("platform-admin-preview-club-admin-invite", {
+  const { data, error } = await invokeSignedIn(clientResult.client, "platform-admin-preview-club-admin-invite", {
     body: {
       requestId: params.requestId,
       requestorEmail: params.requestorEmail.trim().toLowerCase(),
@@ -576,7 +577,7 @@ export async function dispatchPendingNotificationEmails(params?: {
   const clientResult = requireSupabaseClient("dispatchPendingNotificationEmails")
   if (!clientResult.ok) return clientResult
 
-  const { data, error } = await clientResult.client.functions.invoke("dispatch-notification-emails", {
+  const { data, error } = await invokeSignedIn(clientResult.client, "dispatch-notification-emails", {
     body: {
       limit: params?.limit ?? 25,
       eventIds: params?.eventIds,

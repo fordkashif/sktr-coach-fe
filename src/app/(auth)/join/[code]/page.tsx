@@ -186,7 +186,7 @@ export default function TeamJoinCodePage() {
   }
 
   const signOutAndRetry = async () => {
-    if (isSupabaseMode) await getBrowserSupabaseClient()?.auth.signOut()
+    if (isSupabaseMode) await getBrowserSupabaseClient()?.auth.signOut({ scope: "local" })
     setError(null)
     setStage({ kind: "loading" })
     if (isSupabaseMode) void check()

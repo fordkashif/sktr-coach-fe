@@ -456,34 +456,6 @@ export function loadMockAthletePrivateDetails(): AthletePrivateDetails {
    Leaving a team
 --------------------------------------------------------------------------- */
 
-/**
- * The athlete takes themselves off their team (leave_current_athlete_team()). Their history is
- * kept, they stop seeing the team's plans and test weeks, and the team's coaches are told.
- */
-export async function leaveCurrentAthleteTeam(): Promise<Result<void>> {
-  if (getBackendMode() !== "supabase") {
-    try {
-      window.localStorage.setItem(
-        tenantStorageKey(MOCK_JOIN_TEAM_STORAGE_KEY),
-        JSON.stringify({ joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null, leftTeam: true }),
-      )
-    } catch {
-      return err("UNKNOWN", "Could not save on this device. Check that storage is not blocked.")
-    }
-    return ok(undefined)
-  }
-
-  const clientResult = requireSupabaseClient("leaveCurrentAthleteTeam")
-  if (!clientResult.ok) return clientResult
-
-  const { error } = await clientResult.client.rpc("leave_current_athlete_team")
-  if (error) {
-    if (error.message.toLowerCase().includes("not on a team")) return err("CONFLICT", "You are not on a team any more.")
-    return { ok: false, error: mapPostgrestError(error) }
-  }
-  return ok(undefined)
-}
-
 /** Mock mode: true after the demo athlete left their team and has not joined another one since. */
 export function hasMockAthleteLeftTeam(): boolean {
   if (typeof window === "undefined") return false

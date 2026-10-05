@@ -47,7 +47,7 @@ export function AccessPausedPage({ block, isClubAdmin }: { block: AccessBlock; i
     const backendMode = getBackendMode()
     if (backendMode === "supabase") {
       const supabase = getBrowserSupabaseClient()
-      if (supabase) await supabase.auth.signOut().catch(() => undefined)
+      if (supabase) await supabase.auth.signOut({ scope: "local" }).catch(() => undefined)
     }
     if (backendMode === "mock") {
       window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)

@@ -122,7 +122,7 @@ test("an under 18 athlete adds private details and a guardian, and bad contact d
   await expect(page.locator("section", { has: page.getByRole("heading", { name: "Emergency contact" }) })).toContainText("+1 (876) 555-0101")
 })
 
-test("athlete leaves their team after an inline confirm and can join another by code", async ({ page }) => {
+test("an athlete cannot leave their team themselves", async ({ page }) => {
   await seedMockSession(page, { role: "athlete" })
   await page.goto("/athlete/profile")
 
@@ -132,27 +132,9 @@ test("athlete leaves their team after an inline confirm and can join another by 
   // The coach has not chosen to show their email.
   await expect(team.getByRole("link", { name: /Email Andre Campbell/ })).toHaveCount(0)
 
-  await team.getByRole("button", { name: "Leave this team" }).click()
-  await expect(team).toContainText("Your history is kept. You stop seeing this team's plans and test weeks, and your coach is told.")
-  await team.getByRole("button", { name: "Stay" }).click()
-  await expect(team).toContainText("Sprint Group")
-
-  await team.getByRole("button", { name: "Leave this team" }).click()
-  await team.getByRole("button", { name: "Leave team" }).click()
-  await expect(team).toContainText("You are not on a team")
-  await expect(team).not.toContainText("Sprint Group")
-
-  await page.reload()
-  await expect(page.locator("section", { has: page.getByRole("heading", { name: "Your team" }) })).toContainText("You are not on a team")
-
-  await page.goto("/athlete/join")
-  await expect(page.locator("main")).toContainText("You are not on a team yet")
-  await page.getByLabel("Invite link or code").fill("t2")
-  await page.getByRole("button", { name: "Join Distance Group" }).click()
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("You are on Distance Group")
-
-  await page.goto("/athlete/profile")
-  await expect(page.locator("section", { has: page.getByRole("heading", { name: "Your team" }) })).toContainText("Distance Group")
+  // Membership is the club's call: no leave button, and the athlete is told who to ask.
+  await expect(team.getByRole("button", { name: /Leave/ })).toHaveCount(0)
+  await expect(team).toContainText("To move to another team or come off this one, ask your coach or club admin.")
 })
 
 test("a coach who opts in shows their email to their athletes", async ({ page }) => {
