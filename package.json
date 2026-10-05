@@ -19,11 +19,13 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@fontsource-variable/outfit": "^5.3.0",
     "@hookform/resolvers": "^3.9.1",
     "@hugeicons/core-free-icons": "^3.1.1",
     "@hugeicons/react": "^1.1.5",
     "@mui/material": "^7.3.9",
     "@mui/x-charts": "^8.27.5",
+    "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-accordion": "1.2.12",
     "@radix-ui/react-alert-dialog": "1.1.15",
     "@radix-ui/react-aspect-ratio": "1.1.8",

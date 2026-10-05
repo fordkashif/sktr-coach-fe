@@ -1,21 +1,9 @@
 import { useEffect, useState } from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  ArrowRight01Icon,
-  BitcoinDown02Icon,
-  BitcoinUp02Icon,
-  MinusSignIcon,
-  Alert02Icon,
-  ChartHistogramIcon,
-  CheckmarkCircle02Icon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons"
+import { ArrowDown, ArrowRight, ArrowUp, CheckCircle, ClipboardText, Minus, Timer, Trophy } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { BarChart, LineChart } from "@mui/x-charts"
+import { LineChart } from "@mui/x-charts"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
-import { Button } from "@/components/ui/button"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { StandardPageHeader } from "@/components/ui/standard-page-header"
+import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Stat, scoreTone } from "@/components/sk"
 import type { Athlete, PR, Team, TestWeekResult, TrendPoint } from "@/lib/mock-data"
 import {
   getCoachDashboardSnapshotForCurrentUser,
@@ -29,43 +17,22 @@ import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 
 const chartSx = {
-  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
-    stroke: "#cbd5e1",
-  },
-  "& .MuiChartsAxis-tickLabel": {
-    fill: "#64748b",
-    fontSize: 11,
-    fontFamily: "inherit",
-  },
-  "& .MuiChartsGrid-line": {
-    stroke: "#dbe4f0",
-    strokeDasharray: "4 6",
-  },
-  "& .MuiMarkElement-root": {
-    strokeWidth: 0,
-  },
-  "& .MuiLineElement-root": {
-    strokeLinecap: "round",
-  },
+  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "transparent" },
+  "& .MuiChartsAxis-tickLabel": { fill: "#6a7385", fontSize: 12, fontFamily: "inherit", fontWeight: 600 },
+  "& .MuiChartsGrid-line": { stroke: "#e3e6ee" },
+  "& .MuiMarkElement-root": { strokeWidth: 2, fill: "#ffffff" },
+  "& .MuiLineElement-root": { strokeLinecap: "round", strokeWidth: 3 },
 }
 
-function ChangeIcon({ change }: { change: "up" | "down" | "same" }) {
-  if (change === "up") {
-    return <HugeiconsIcon icon={BitcoinUp02Icon} className="size-4 text-[#1f5fd1]" />
-  }
-  if (change === "down") {
-    return <HugeiconsIcon icon={BitcoinDown02Icon} className="size-4 text-rose-600" />
-  }
-  return <HugeiconsIcon icon={MinusSignIcon} className="size-4 text-slate-400" />
+function Change({ change }: { change: "up" | "down" | "same" }) {
+  if (change === "up") return <ArrowUp className="size-4 text-sk-green" weight="bold" aria-label="Improved" />
+  if (change === "down") return <ArrowDown className="size-4 text-sk-coral" weight="bold" aria-label="Dropped" />
+  return <Minus className="size-4 text-sk-mute" weight="bold" aria-label="No change" />
 }
 
-function athleteInitials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase()
+function shortDay(date: string) {
+  const parsed = new Date(date)
+  return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { weekday: "short" })
 }
 
 export default function CoachDashboardPage() {
@@ -192,625 +159,356 @@ export default function CoachDashboardPage() {
     if (!dayPoints.length) return 0
     return Math.round(dayPoints.reduce((sum, point) => sum + point.trainingLoad, 0) / dayPoints.length)
   })
-  const fallbackTrendBars = [
-    { label: "Mon", value: 74 },
-    { label: "Tue", value: 81 },
-    { label: "Wed", value: 77 },
-    { label: "Thu", value: 84 },
-    { label: "Fri", value: 79 },
-  ]
+  const readinessTotal = scopedAthletes.length
+  const prTotal = scopedPrs.length
+  const coachNeedsGuide =
+    backendMode === "supabase" && (sourceTeams.length === 0 || scopedAthletes.length === 0 || scopedTests.length === 0)
+  const latestReadiness = readinessTrendValues.at(-1)
 
-  const readinessTotal = readinessSummary.green + readinessSummary.yellow + readinessSummary.red
-  const adherenceChartRows = adherenceRows.map((athlete) => ({
-    name: athlete.name.split(" ")[0],
-    adherence: athlete.adherence,
-  }))
-  const prChartRows = prMomentum.map(([category, count]) => ({ category, count }))
-  const summaryBars =
-    trendDates.length > 0
-      ? trendDates.map((date, index) => ({
-          label: date,
-          short: new Date(date).toLocaleDateString(undefined, { weekday: "short" }),
-          value: readinessTrendValues[index] ?? 0,
-          tone: index === trendDates.length - 1 ? "bg-[#0f172a]" : "bg-[#1f8cff]",
-        }))
-      : fallbackTrendBars.map((item, index) => ({
-          label: item.label,
-          short: item.label,
-          value: item.value,
-          tone: index === fallbackTrendBars.length - 1 ? "bg-[#0f172a]" : "bg-[#1f8cff]",
-        }))
-  const maxSummaryValue = Math.max(...summaryBars.map((item) => item.value), 1)
-  const readinessSegments = [
-    { label: "Ready", value: readinessSummary.green, tone: "bg-[#1f8cff]", text: "text-[#1f5fd1]", surface: "bg-[#eef5ff]" },
-    { label: "Watch", value: readinessSummary.yellow, tone: "bg-amber-400", text: "text-amber-700", surface: "bg-amber-50" },
-    { label: "Review", value: readinessSummary.red, tone: "bg-rose-500", text: "text-rose-700", surface: "bg-rose-50" },
-  ]
-  const coachNeedsGuide = backendMode === "supabase" && (
-    sourceTeams.length === 0 ||
-    scopedAthletes.length === 0 ||
-    scopedTests.length === 0
-  )
+  const toggleGuide = async (dismissed: boolean) => {
+    setSetupGuideSaving(true)
+    const result = await setCurrentCoachSetupGuideDismissed(dismissed)
+    setSetupGuideSaving(false)
+    if (!result.ok) {
+      setBackendError((current) => current ?? result.error.message)
+      return
+    }
+    setSetupGuideDismissedAt(dismissed ? new Date().toISOString() : null)
+  }
+
+  const lede =
+    readinessTotal === 0
+      ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
+      : alertRows.length === 0
+        ? `${readinessTotal} ${readinessTotal === 1 ? "athlete" : "athletes"}, all on track today.`
+        : `${readinessTotal} ${readinessTotal === 1 ? "athlete" : "athletes"}. ${alertRows.length} ${alertRows.length === 1 ? "needs" : "need"} a look today.`
 
   return (
-    <div className="mx-auto w-full max-w-8xl space-y-5 p-4 sm:space-y-6 sm:p-6">
-      <section className="space-y-4 pt-1">
-        {backendError ? (
-          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Backend sync issue: {backendError}
+    <div className="sk-page">
+      {backendError ? (
+        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+          Could not load the latest data: {backendError}
+        </p>
+      ) : null}
+
+      <PageHeader
+        title={scopedTeam?.name ?? "Your squad"}
+        lede={lede}
+        actions={
+          <>
+            <Link to="/coach/test-week" className="sk-btn sk-btn-quiet">
+              <Timer className="size-5" weight="bold" />
+              New test week
+            </Link>
+            <Link to="/coach/training-plan" className="sk-btn sk-btn-primary">
+              <ClipboardText className="size-5" weight="bold" />
+              Build a plan
+            </Link>
+          </>
+        }
+      />
+
+      {coachNeedsGuide && !setupGuideDismissedAt ? (
+        <section className="rounded-[20px] bg-sk-yellow p-5 sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="sk-h2">Get set up in three steps</h2>
+              <p className="mt-1 max-w-[56ch] text-sk-ink-2">Do these in order and your dashboard fills itself in.</p>
+            </div>
+            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm self-start" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
+              {setupGuideSaving ? "Saving..." : "Hide for now"}
+            </button>
           </div>
-        ) : null}
-        <StandardPageHeader
-          eyebrow="Coach dashboard"
-          title="Dashboard"
-          description={`Monitor readiness, plan adherence, progress, and testing across the current squad.${scopedTeam ? ` Viewing ${scopedTeam.name}.` : ""}`}
-          stats={[
-            { label: "Athletes", value: scopedAthletes.length },
-            { label: "Ready", value: readinessSummary.green },
-            { label: "Flags", value: alertRows.length },
-            { label: "PR Rows", value: scopedPrs.length },
-          ]}
-        />
-
-        {coachNeedsGuide && !setupGuideDismissedAt ? (
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-2xl space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">First steps</p>
-                <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Use this workspace in the right order</h2>
-                <p className="text-sm leading-6 text-slate-600">
-                  A new coach should not have to guess the next move. Confirm the assigned team, review the roster, and then build the first training plan or test week from the team surfaces.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 rounded-full px-5"
-                disabled={setupGuideSaving}
-                onClick={async () => {
-                  setSetupGuideSaving(true)
-                  const result = await setCurrentCoachSetupGuideDismissed(true)
-                  setSetupGuideSaving(false)
-                  if (!result.ok) {
-                    setBackendError((current) => current ?? result.error.message)
-                    return
-                  }
-                  setSetupGuideDismissedAt(new Date().toISOString())
-                }}
-              >
-                {setupGuideSaving ? "Saving..." : "Dismiss for now"}
-              </Button>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-medium text-slate-950">1. Confirm team scope</p>
-                <p className="mt-1 text-sm text-slate-500">Open the team surface first so you know exactly which roster and discipline groups you own.</p>
-                <Button asChild variant="outline" className="mt-3 h-10 rounded-full px-4">
-                  <Link to="/coach/teams">Open teams</Link>
-                </Button>
-              </div>
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-medium text-slate-950">2. Review roster + invites</p>
-                <p className="mt-1 text-sm text-slate-500">Check the current athlete roster, identify gaps, and use the team workflow for new athlete invite links.</p>
-                <Button asChild variant="outline" className="mt-3 h-10 rounded-full px-4">
-                  <Link to={rosterHref}>Open roster</Link>
-                </Button>
-              </div>
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-medium text-slate-950">3. Build the first cycle</p>
-                <p className="mt-1 text-sm text-slate-500">Move into training plans or test weeks only after the team and roster context are confirmed.</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button asChild variant="outline" className="h-10 rounded-full px-4">
-                    <Link to="/coach/training-plan">Training plans</Link>
-                  </Button>
-                  <Button asChild variant="outline" className="h-10 rounded-full px-4">
-                    <Link to="/coach/test-week">Test weeks</Link>
-                  </Button>
+          <ol className="mt-5 grid gap-3 md:grid-cols-3">
+            {[
+              { step: 1, title: "Check your team", body: "See which squad and event groups you coach.", links: [{ to: "/coach/teams", label: "Open teams" }] },
+              { step: 2, title: "Invite your athletes", body: "Review the roster and send invite links to anyone missing.", links: [{ to: rosterHref, label: "Open roster" }] },
+              {
+                step: 3,
+                title: "Build the first cycle",
+                body: "Publish a training plan or set up a test week.",
+                links: [
+                  { to: "/coach/training-plan", label: "Training plans" },
+                  { to: "/coach/test-week", label: "Test weeks" },
+                ],
+              },
+            ].map((item) => (
+              <li key={item.step} className="flex flex-col gap-3 rounded-2xl bg-white p-4">
+                <span className="flex size-9 items-center justify-center rounded-full bg-sk-ink text-sm font-extrabold text-white">{item.step}</span>
+                <div>
+                  <p className="sk-h3">{item.title}</p>
+                  <p className="mt-1 text-sm text-sk-mute">{item.body}</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {coachNeedsGuide && setupGuideDismissedAt ? (
-          <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-950">Continue coach setup</p>
-                <p className="text-sm text-slate-500">Reopen the first-steps guide if you still need orientation in the workspace.</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 rounded-full px-5"
-                disabled={setupGuideSaving}
-                onClick={async () => {
-                  setSetupGuideSaving(true)
-                  const result = await setCurrentCoachSetupGuideDismissed(false)
-                  setSetupGuideSaving(false)
-                  if (!result.ok) {
-                    setBackendError((current) => current ?? result.error.message)
-                    return
-                  }
-                  setSetupGuideDismissedAt(null)
-                }}
-              >
-                {setupGuideSaving ? "Saving..." : "Resume guide"}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex size-10 items-center justify-center rounded-full bg-[#e8f2ff]">
-                  <HugeiconsIcon icon={ChartHistogramIcon} className="size-4 text-slate-950" />
-                </div>
-                <p className="text-base font-medium text-slate-950">Readiness Trend</p>
-              </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
-                Last {summaryBars.length} check-ins
-              </span>
-            </div>
-
-            <div className="mt-4 rounded-[24px] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-end gap-3">
-                {summaryBars.map((item) => (
-                  <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
-                    <div className="flex h-28 w-full items-end justify-center">
-                      <div
-                        className={cn("flex w-full max-w-[56px] items-start justify-center rounded-[16px] pt-2 text-[11px] font-semibold text-white", item.tone)}
-                        style={{ height: `${Math.max((item.value / maxSummaryValue) * 100, 22)}%` }}
-                      >
-                        {item.value}
-                      </div>
-                    </div>
-                    <p className="text-[11px] font-medium text-slate-400">{item.label.slice(5)}</p>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">{item.short}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
-            <div className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center gap-2.5">
-                <div className="flex size-10 items-center justify-center rounded-full bg-[#f0e9ff]">
-                  <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4 text-slate-950" />
-                </div>
-                <p className="text-sm font-medium leading-5 text-slate-700">Plan Adherence</p>
-              </div>
-              <div className="mt-2 flex items-end gap-1">
-                <p className="text-[2rem] font-semibold leading-none tracking-[-0.06em] text-slate-950">{adherenceAverage}</p>
-                <p className="pb-1 text-sm text-slate-500">% avg</p>
-              </div>
-            </div>
-
-            <div className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center gap-2.5">
-                <div className="flex size-10 items-center justify-center rounded-full bg-[#fff0e5]">
-                  <HugeiconsIcon icon={Alert02Icon} className="size-4 text-slate-950" />
-                </div>
-                <p className="text-sm font-medium leading-5 text-slate-700">Open Flags</p>
-              </div>
-              <div className="mt-2 flex items-end gap-1">
-                <p className="text-[2rem] font-semibold leading-none tracking-[-0.06em] text-slate-950">{alertRows.length}</p>
-                <p className="pb-1 text-sm text-slate-500">to review</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.9fr)]">
-        <div className="mobile-card-primary">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Team State</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Squad Snapshot</h2>
-              <p className="text-sm text-slate-500">{scopedTeam?.name ?? "All current athletes"}</p>
-            </div>
-            <div className="hidden -space-x-2 sm:flex">
-              {scopedAthletes.slice(0, 5).map((athlete, index) => (
-                <div
-                  key={athlete.id}
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-full border-2 border-white text-[11px] font-semibold shadow-sm",
-                    [
-                      "bg-[#dbeafe] text-[#1d4ed8]",
-                      "bg-[#ede9fe] text-[#6d28d9]",
-                      "bg-[#e0f2fe] text-[#0369a1]",
-                      "bg-[#fee2e2] text-[#b91c1c]",
-                      "bg-[#fef3c7] text-[#b45309]",
-                    ][index % 5],
-                  )}
-                  title={athlete.name}
-                >
-                  {athleteInitials(athlete.name)}
-                </div>
-              ))}
-              {scopedAthletes.length > 5 ? (
-                <div className="flex size-9 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-[11px] font-semibold text-white shadow-sm">
-                  +{scopedAthletes.length - 5}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:mt-5 lg:gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-            <div className="space-y-3 sm:space-y-4">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.05)] sm:p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-medium text-slate-950">Readiness Status</p>
-                  <p className="text-xs text-slate-500">{readinessTotal} athletes</p>
-                </div>
-                <div className="mt-3 space-y-2.5">
-                  {readinessSegments.map((item) => (
-                    <div key={item.label} className="rounded-[18px] border border-slate-200 bg-[#fbfcfe] px-4 py-3.5 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className={cn("size-2.5 rounded-full", item.tone)} />
-                          <div>
-                            <p className="text-sm font-medium text-slate-950">{item.label}</p>
-                            <p className="text-xs text-slate-500">
-                              {item.label === "Ready"
-                                ? "Available to train"
-                                : item.label === "Watch"
-                                  ? "Monitor workload"
-                                  : "Needs review"}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-2xl font-semibold tracking-[-0.05em] text-slate-950">{item.value}</p>
-                      </div>
-                    </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  {item.links.map((link) => (
+                    <Link key={link.to} to={link.to} className="sk-btn sk-btn-quiet sk-btn-sm">
+                      {link.label}
+                    </Link>
                   ))}
                 </div>
-              </div>
-            </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.05)] sm:p-4">
-              <div className="space-y-1 border-b border-slate-200 pb-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Live Signals</p>
-                <h3 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Coaching Focus</h3>
-              </div>
-
-              <div className="mt-4 rounded-[18px] border border-[#d7e5f8] bg-white px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Plan Adherence</p>
-                    <p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-slate-950">{adherenceAverage}%</p>
-                  </div>
-                  <div
-                    className="relative size-16 shrink-0 rounded-full"
-                    style={{
-                      background: `conic-gradient(from 180deg, #1f8cff 0deg, #4759ff ${adherenceAverage * 3.6}deg, #e2e8f0 ${adherenceAverage * 3.6}deg, #e2e8f0 360deg)`,
-                    }}
-                  >
-                    <div className="absolute inset-[7px] rounded-full bg-white" />
-                    <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-slate-600">{adherenceAverage}%</div>
-                  </div>
-                </div>
-                <div className="mt-3 h-2 rounded-full bg-slate-200">
-                  <div
-                    className="h-2 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)]"
-                    style={{ width: `${adherenceAverage}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-sm text-slate-500">{scopedAthletes.length} athletes currently in scope.</p>
-              </div>
-
-              <div className="mt-3 space-y-2.5">
-                <div className="mobile-card-utility bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Alerts</p>
-                      <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">{alertRows.length} need review</p>
-                    </div>
-                    <span className={cn(
-                      "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                      alertRows.length > 0 ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600",
-                    )}>
-                      {alertRows.length > 0 ? "Open" : "Clear"}
-                    </span>
-                  </div>
-                  {alertRows[0] ? (
-                    <p className="mt-2 text-sm text-slate-500">
-                      Lowest adherence: <span className="font-medium text-slate-700">{alertRows[0].name}</span> at {alertRows[0].adherence}%.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-500">No current readiness or adherence flags.</p>
-                  )}
-                </div>
-
-                <div className="mobile-card-utility bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">PR Momentum</p>
-                      <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">{scopedPrs.length} records logged</p>
-                    </div>
-                    <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-[#1f5fd1]">
-                      {prMomentum[0]?.[0] ?? "No trend"}
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {prMomentum.slice(0, 3).map(([category, count]) => (
-                      <div key={category} className="flex items-center gap-3">
-                        <div className="w-20 shrink-0 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{category}</div>
-                        <div className="h-2 flex-1 rounded-full bg-slate-200">
-                          <div
-                            className="h-2 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)]"
-                            style={{ width: `${Math.max((count / Math.max(scopedPrs.length, 1)) * 100, 12)}%` }}
-                          />
-                        </div>
-                        <div className="w-6 text-right text-sm font-semibold text-slate-950">{count}</div>
-                      </div>
-                    ))}
-                    {prMomentum.length === 0 ? (
-                      <EmptyStateCard
-                        eyebrow="PR momentum"
-                        title="No recent PR activity."
-                        description="No category-level PR movement is available for this team scope yet."
-                        hint="Once marks are logged, the leading PR categories will appear here."
-                        icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                        className="rounded-[18px] bg-white px-4 py-4 shadow-none"
-                        contentClassName="gap-2"
-                      />
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      {coachNeedsGuide && setupGuideDismissedAt ? (
+        <div className="flex flex-col gap-3 rounded-[20px] border border-sk-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-semibold text-sk-ink">Setup is not finished yet.</p>
+          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(false)}>
+            {setupGuideSaving ? "Saving..." : "Show setup steps"}
+          </button>
         </div>
+      ) : null}
 
-        <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)] sm:p-5">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Athletes To Review</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Flags</h2>
-            </div>
-            <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-[#1f5fd1]">
-              {alertRows.length} open
-            </span>
-          </div>
-          <div className="mt-4 space-y-3">
-            {alertRows.length > 0 ? (
-              alertRows.slice(0, 3).map((athlete) => (
-                <div key={athlete.id} className="rounded-[22px] border border-slate-200 bg-[#fbfcfe] px-3.5 py-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-4 sm:py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] text-sm font-semibold text-white shadow-[0_10px_20px_rgba(31,140,255,0.22)]">
-                        {athleteInitials(athlete.name)}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-950">{athlete.name}</p>
-                        <p className="text-sm text-slate-500">{athlete.primaryEvent}</p>
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                        athlete.readiness === "green"
-                          ? "bg-[#eef5ff] text-[#1f5fd1]"
-                          : athlete.readiness === "yellow"
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-rose-100 text-rose-700",
-                      )}
-                    >
-                      {athlete.readiness === "green" ? "Ready" : athlete.readiness === "yellow" ? "Watch" : "Review"}
-                    </span>
-                  </div>
-                  <div className="mt-3 rounded-[14px] border border-slate-200 bg-white px-3 py-3">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="font-medium text-slate-950">Plan Adherence</span>
-                      <span className="text-slate-500">{athlete.adherence}%</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-slate-200">
-                      <div
-                        className={cn(
-                          "h-2 rounded-full",
-                          athlete.adherence >= 85
-                            ? "bg-[#1f8cff]"
-                            : athlete.adherence >= 75
-                              ? "bg-amber-400"
-                              : "bg-rose-500",
-                        )}
-                        style={{ width: `${athlete.adherence}%` }}
-                      />
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-500">
-                      <span>Last wellness: {athlete.lastWellness}</span>
-                      <Link to={rosterHref} className="font-medium text-[#1f5fd1] hover:text-[#194fb0]">
-                        Review
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyStateCard
-                eyebrow="Flags"
-                title="No active alerts."
-                description="No athlete in the current scope is currently flagged for readiness or adherence review."
-                hint="This panel will populate automatically when a coach needs to intervene."
-                icon={<HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-5" />}
-                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-3"
-              />
-            )}
-          </div>
-        </div>
+      <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat tone="blue" label="Plan adherence" value={adherenceAverage} unit="%" hint="Squad average" />
+        <Stat tone="green" label="Ready to train" value={readinessSummary.green} hint={`of ${readinessTotal}`} />
+        <Stat
+          tone={alertRows.length > 0 ? "coral" : "plain"}
+          label="Need a look"
+          value={alertRows.length}
+          hint={alertRows.length > 0 ? "Readiness or adherence" : "Nobody flagged"}
+        />
+        <Stat tone="yellow" label="PRs logged" value={prTotal} hint={prMomentum[0] ? `Most in ${prMomentum[0][0]}` : "None yet"} />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="mobile-card-primary">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Readiness Trend</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Team Trend</h2>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#1f8cff]" /> Readiness</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-slate-900" /> Training load</span>
-            </div>
-          </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <Panel
+          title="Who needs you"
+          hint="Athletes flagged on readiness, or under 75% adherence."
+          action={
+            <Link to={rosterHref} className="sk-btn sk-btn-ghost sk-btn-sm">
+              Full roster
+              <ArrowRight className="size-4" weight="bold" />
+            </Link>
+          }
+        >
+          {alertRows.length > 0 ? (
+            <ul>
+              {alertRows.map((athlete) => (
+                <li key={athlete.id}>
+                  <Link
+                    to={`/coach/athletes/${athlete.id}`}
+                    className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-sk-line py-4 last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_minmax(140px,200px)_auto]"
+                  >
+                    <Initials name={athlete.name} />
+                    <span className="min-w-0">
+                      <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
+                      <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>
+                    </span>
+                    <span className="col-span-3 row-start-2 sm:col-span-1 sm:row-start-auto">
+                      <span className="mb-1.5 flex items-baseline justify-between text-sm">
+                        <span className="text-sk-mute">Adherence</span>
+                        <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
+                      </span>
+                      <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
+                    </span>
+                    <ReadinessTag status={athlete.readiness} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={<CheckCircle className="size-6" weight="fill" />}
+              title="Nobody is flagged"
+              body="When an athlete reports low readiness or falls behind on the plan, they show up here."
+              className="border-0 bg-sk-canvas"
+            />
+          )}
+        </Panel>
 
-          <div className="mt-5">
-            {readinessTrendValues.length > 0 ? (
-              <>
-                <div className="mobile-card-secondary overflow-hidden p-2.5 sm:p-3">
-                  <LineChart
-                    xAxis={[
-                      {
-                        scaleType: "point",
-                        data: trendDates.map((date) => new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
-                      },
-                    ]}
-                    yAxis={[{ min: 0, max: 100 }]}
-                    series={[
-                      { data: readinessTrendValues, label: "Readiness", color: "#1f8cff", curve: "monotoneX" },
-                      { data: trainingLoadValues, label: "Training load", color: "#0f172a", curve: "monotoneX" },
-                    ]}
-                    grid={{ horizontal: true }}
-                    margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-                    height={220}
-                    sx={chartSx}
-                  />
-                </div>
-              </>
-            ) : (
-              <EmptyStateCard
-                eyebrow="Team trend"
-                title="No trend data available for this scope."
-                description="No readiness or training-load history has been recorded yet for the current coach scope."
-                hint="Trend lines start to matter after wellness and training data accumulate across multiple check-ins."
-                icon={<HugeiconsIcon icon={ChartHistogramIcon} className="size-5" />}
-                className="rounded-[22px] bg-slate-50 px-4 py-6 shadow-none"
-                contentClassName="gap-3"
-              />
-            )}
-          </div>
-        </div>
+        <Panel title="Readiness" hint={readinessTrendValues.length > 0 ? `Squad average, last ${readinessTrendValues.length} check-ins` : undefined}>
+          {readinessTrendValues.length > 0 ? (
+            <>
+              <p className="sk-num text-[3.5rem]">
+                {latestReadiness}
+                <span className="ml-1 text-base font-bold tracking-normal text-sk-mute">/ 100 latest</span>
+              </p>
+              <div className="mt-5 flex h-36 items-end gap-2" role="img" aria-label={`Readiness by check-in: ${readinessTrendValues.join(", ")}`}>
+                {readinessTrendValues.map((value, index) => {
+                  const isLatest = index === readinessTrendValues.length - 1
+                  return (
+                    <div key={trendDates[index]} className="flex h-full flex-1 flex-col justify-end gap-2">
+                      <div
+                        className={cn("flex items-start justify-center rounded-xl pt-2 text-xs font-bold", isLatest ? "bg-sk-blue text-white" : "bg-sk-blue-tint text-[#1638b8]")}
+                        style={{ height: `${Math.max(value, 18)}%` }}
+                      >
+                        {value}
+                      </div>
+                      <p className={cn("text-center text-xs font-semibold", isLatest ? "text-sk-ink" : "text-sk-mute")}>{shortDay(trendDates[index])}</p>
+                    </div>
+                  )
+                })}
+              </div>
+              <dl className="mt-5 grid grid-cols-3 gap-2 border-t border-sk-line pt-4 text-center">
+                {[
+                  { label: "Ready", value: readinessSummary.green, dot: "bg-sk-green" },
+                  { label: "Watch", value: readinessSummary.yellow, dot: "bg-sk-yellow" },
+                  { label: "Review", value: readinessSummary.red, dot: "bg-sk-coral" },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <dd className="sk-num text-2xl">{item.value}</dd>
+                    <dt className="mt-1 inline-flex items-center gap-1.5 text-sm text-sk-mute">
+                      <span className={cn("size-2 rounded-full", item.dot)} />
+                      {item.label}
+                    </dt>
+                  </div>
+                ))}
+              </dl>
+            </>
+          ) : (
+            <EmptyState
+              title="No check-ins yet"
+              body="Readiness appears once athletes start submitting their daily wellness check-in."
+              className="border-0 bg-sk-canvas"
+            />
+          )}
+        </Panel>
+      </div>
 
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Adherence Distribution</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Top Adherence</h2>
-          </div>
-          <div className="mobile-card-secondary overflow-hidden p-2.5 sm:p-3">
-            <BarChart
-              dataset={adherenceChartRows}
-              xAxis={[{ scaleType: "band", dataKey: "name" }]}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <Panel
+          title="Readiness against training load"
+          action={
+            <div className="flex items-center gap-4 text-sm font-semibold text-sk-ink-2">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1 w-4 rounded-full bg-sk-blue" /> Readiness
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1 w-4 rounded-full bg-sk-ink" /> Load
+              </span>
+            </div>
+          }
+        >
+          {readinessTrendValues.length > 1 ? (
+            <LineChart
+              xAxis={[
+                {
+                  scaleType: "point",
+                  data: trendDates.map((date) => new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
+                },
+              ]}
               yAxis={[{ min: 0, max: 100 }]}
-              series={[{ dataKey: "adherence", label: "Plan Adherence", color: "#1f8cff" }]}
+              series={[
+                { data: readinessTrendValues, label: "Readiness", color: "#2152ff", curve: "monotoneX" },
+                { data: trainingLoadValues, label: "Training load", color: "#0e1320", curve: "monotoneX" },
+              ]}
               grid={{ horizontal: true }}
-              margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-              height={260}
+              margin={{ left: 28, right: 16, top: 12, bottom: 24 }}
+              height={240}
+              hideLegend
               sx={chartSx}
             />
-          </div>
-        </div>
-      </section>
+          ) : (
+            <EmptyState
+              title="Not enough history yet"
+              body="This chart needs at least two days of wellness and session data."
+              className="border-0 bg-sk-canvas"
+            />
+          )}
+        </Panel>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">PR Momentum</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Where Progress Is Happening</h2>
-          </div>
-          <div className="mt-4">
-            {prMomentum.length > 0 ? (
-              <div className="mobile-card-secondary overflow-hidden p-2.5 sm:p-3">
-                <BarChart
-                  dataset={prChartRows}
-                  xAxis={[{ scaleType: "band", dataKey: "category" }]}
-                  series={[{ dataKey: "count", label: "PR count", color: "#4759ff" }]}
-                  grid={{ horizontal: true }}
-                  margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-                  height={260}
-                  sx={chartSx}
-                />
-              </div>
-            ) : (
-              <EmptyStateCard
-                eyebrow="PR momentum"
-                title="No recent PRs in the current scope."
-                description="There are no recent PR entries to graph for this team right now."
-                hint="Once record entries are logged, this chart will show where the most improvement is happening."
-                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-3"
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="mobile-card-primary">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Test Snapshot</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Latest Testing Movement</h2>
-            </div>
-            <Button asChild className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95">
-              <Link to="/coach/test-week">
-                Create Test Week
-                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-              </Link>
-            </Button>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {scopedTests.length > 0 ? (
-              scopedTests.map((row) => (
-                <div key={row.athleteId} className="mobile-card-secondary bg-slate-50 px-3.5 py-3.5 sm:px-4 sm:py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-950">{row.athleteName}</p>
-                      <p className="text-xs text-slate-500">Latest test week results</p>
-                    </div>
+        <Panel title="Adherence by athlete" hint="Share of planned sessions completed.">
+          {adherenceRows.length > 0 ? (
+            <ul className="space-y-4">
+              {adherenceRows.map((athlete) => (
+                <li key={athlete.id}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <Link to={`/coach/athletes/${athlete.id}`} className="truncate font-semibold text-sk-ink hover:text-sk-blue">
+                      {athlete.name}
+                    </Link>
+                    <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
                   </div>
-                  <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                    {[
-                      { label: "30m", metric: row.thirtyM },
-                      { label: "Flying 30m", metric: row.flyingThirtyM },
-                      { label: "150m", metric: row.oneHundredFiftyM },
-                      { label: "Squat 1RM", metric: row.squat1RM },
-                      { label: "CMJ", metric: row.cmj },
-                    ].map((item) => (
-                      <div key={item.label} className="mobile-stat-card bg-white">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="font-semibold text-slate-950">{item.metric?.value ?? "-"}</span>
-                          {item.metric ? <ChangeIcon change={item.metric.change} /> : null}
-                        </div>
-                      </div>
+                  <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState title="No athletes yet" body="Adherence shows up once athletes are on your roster and have a plan." className="border-0 bg-sk-canvas" />
+          )}
+        </Panel>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+        <Panel title="Where the PRs are" hint={prTotal > 0 ? `${prTotal} logged in total` : undefined}>
+          {prMomentum.length > 0 ? (
+            <ul className="space-y-4">
+              {prMomentum.map(([category, count]) => (
+                <li key={category} className="grid grid-cols-[minmax(72px,auto)_minmax(0,1fr)_auto] items-center gap-3">
+                  <span className="font-semibold text-sk-ink">{category}</span>
+                  <span className="h-7 rounded-lg bg-sk-canvas">
+                    <span className="block h-full rounded-lg bg-sk-yellow" style={{ width: `${Math.max((count / Math.max(prMomentum[0][1], 1)) * 100, 8)}%` }} />
+                  </span>
+                  <span className="sk-num w-6 text-right text-xl">{count}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={<Trophy className="size-6" weight="fill" />}
+              title="No PRs logged yet"
+              body="Personal records land here by category as athletes hit them."
+              className="border-0 bg-sk-canvas"
+            />
+          )}
+        </Panel>
+
+        <Panel
+          title="Latest test results"
+          action={
+            <Link to="/coach/test-week" className="sk-btn sk-btn-ghost sk-btn-sm">
+              Test weeks
+              <ArrowRight className="size-4" weight="bold" />
+            </Link>
+          }
+        >
+          {scopedTests.length > 0 ? (
+            <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
+              <table className="w-full min-w-[560px] text-left">
+                <thead>
+                  <tr className="border-b border-sk-line text-sm text-sk-mute">
+                    <th scope="col" className="py-2 pr-4 font-semibold">Athlete</th>
+                    {["30m", "Flying 30m", "150m", "Squat 1RM", "CMJ"].map((label) => (
+                      <th key={label} scope="col" className="px-2 py-2 text-right font-semibold">{label}</th>
                     ))}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyStateCard
-                eyebrow="Test snapshot"
-                title="No current test week results."
-                description="No test-week results are available for the current squad scope yet."
-                hint="Create and publish a test week first, then this panel will summarize the latest movement."
-                icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
-                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-3"
-                actions={
-                  <Button asChild variant="outline" className="h-10 rounded-full border-slate-200 px-4">
-                    <Link to="/coach/test-week">Open test weeks</Link>
-                  </Button>
-                }
-              />
-            )}
-          </div>
-        </div>
-      </section>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scopedTests.map((row) => (
+                    <tr key={row.athleteId} className="border-b border-sk-line last:border-b-0">
+                      <th scope="row" className="py-3.5 pr-4 font-bold text-sk-ink">
+                        <Link to={`/coach/athletes/${row.athleteId}`} className="hover:text-sk-blue">{row.athleteName}</Link>
+                      </th>
+                      {[row.thirtyM, row.flyingThirtyM, row.oneHundredFiftyM, row.squat1RM, row.cmj].map((metric, index) => (
+                        <td key={index} className="px-2 py-3.5 text-right">
+                          <span className="inline-flex items-center justify-end gap-1 font-semibold tabular-nums text-sk-ink">
+                            {metric?.value ?? <span className="text-sk-mute">n/a</span>}
+                            {metric ? <Change change={metric.change} /> : null}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              icon={<Timer className="size-6" weight="fill" />}
+              title="No test results yet"
+              body="Publish a test week and results appear here as athletes submit them."
+              action={
+                <Link to="/coach/test-week" className="sk-btn sk-btn-ink sk-btn-sm">
+                  Set up a test week
+                </Link>
+              }
+              className="border-0 bg-sk-canvas"
+            />
+          )}
+        </Panel>
+      </div>
     </div>
   )
 }
