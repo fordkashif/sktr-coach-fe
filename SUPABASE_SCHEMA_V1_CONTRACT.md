@@ -210,6 +210,69 @@ Added to both `coach_invites` and `athlete_invites`. Written only by the `send-i
 
 `protect_invite_email_delivery_columns()` trigger function, attached to both tables before insert or update.
 
+## Account Basics and Profile Photos (migration `20261007100000_account_basics_and_avatars.sql`)
+
+New table `account_avatars` (one row per account that has a photo):
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | `uuid primary key references auth.users on delete cascade` | the owner |
+| `avatar_path` | `text not null` | object name in the `avatars` bucket; check constraint `account_avatars_path_own_folder`: `<user_id>/<8 to 64 of A-Z a-z 0-9 _ ->.<jpg\|png\|webp>` |
+| `updated_at` | `timestamptz not null default now()` | |
+
+New column `platform_admin_contacts.display_name text null` (120 characters at most). A platform admin has no `profiles` row; this is their name.
+
+Storage: bucket `avatars`, public, `file_size_limit` 2097152, `allowed_mime_types` `image/jpeg`, `image/png`, `image/webp`. Created by the migration; nothing to set up by hand. The browser crops to a centred square and resizes to 512px JPEG before upload. The public address is `<project url>/storage/v1/object/public/avatars/<avatar_path>`.
+
+Functions: `avatar_path_is_valid_for(uuid, text)`, `caller_can_manage_own_avatar()`, `avatar_object_is_callers(text)`, `set_current_avatar(text) returns text`, `update_current_display_name(text) returns text`, `get_current_account()`, `get_visible_avatars()`, trigger function `sync_platform_admin_contact_email()` on `auth.users` (after update of email). Redefined with an `email_confirmed_at` check: `current_athlete_email()`, `get_athlete_invite_preview(uuid)`, `accept_athlete_invite(uuid)`, `accept_coach_invite(uuid)`. Who may call what is in `SUPABASE_RLS_POLICY_MATRIX.md`.
+
+## Notifications That Reach People (migration `20261007090000_notifications_delivery.sql`)
+
+Additive. No table or column is dropped, no existing row is changed, nothing is created for past events.
+
+New column `notification_events.next_attempt_at timestamptz null`: email rows only, "do not retry before".
+
+New indexes: `notification_events_email_queue_idx` (partial: email rows still waiting), `notification_events_recipient_type_created_idx`, `user_notifications_recipient_created_idx`.
+
+New table `notification_dispatch_config` (exactly one row, private: row level security on, no policies, no API grants):
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | `boolean primary key default true check (id)` | makes it a single row |
+| `scheduler_token` | `text not null` | 64 random hex characters made by the migration the first time it runs. The database sends it in the `x-sktr-scheduler-token` header when it calls `dispatch-notification-emails`; the function asks the database whether it matches. Never leaves the database otherwise |
+| `function_url` | `text null` | address of the edge function. Learned on its own (see `SUPABASE_ENV_AND_SECRETS_SETUP.md`) |
+| `last_requested_at`, `last_request_source` | | when the database last asked for a run, and why (`cron`, `insert`) |
+| `last_run_at`, `last_run_mode`, `last_run_summary` | | what the edge function last reported |
+
+Event types (`notification_events.event_type`). The recipient is always an active member of the club the event belongs to, never the person who caused it:
+
+| Event | Who is told | Written by (trigger on) | Channels and default |
+|---|---|---|---|
+| `training_plan_published` | athletes the published plan reaches (immediate assignments) | `training_plan_assignments` insert, or `visibility_start` becoming `immediate`; `training_plans` when status becomes `published` | in-app and email |
+| `training_plan_updated` | the same athletes | `training_plans` update of a published plan (name, start date, weeks, notes or builder state changed) | in-app; email off by default |
+| `test_week_published` | active athletes of the team | `test_weeks` insert as published, or status becoming `published` | in-app and email |
+| `session_note_added` | the athlete | `sessions` update of `coach_note` to a non-empty value | in-app and email |
+| `athlete_team_added`, `athlete_team_removed` | the athlete | `athletes` update of `team_id` by someone else | in-app and email |
+| `athlete_session_completed` | coaches assigned to the athlete's team | `session_completions` insert | in-app only, one growing row per team per day |
+| `athlete_test_results_submitted` | coaches assigned to the test week's team | `test_results` insert (statement level), results entered by the athlete | in-app only, one growing row per test week |
+| `athlete_low_readiness` | coaches assigned to the athlete's team | `wellness_entries` insert or update to `readiness = 'red'` for today | in-app; email off by default |
+| `coach_team_assigned`, `coach_team_removed` | the coach | `team_coaches` insert or delete by someone else | in-app and email |
+| `package_request_reviewed` | the club's admins | `tenant_package_upgrade_requests` status leaving `pending` for `approved` or `rejected` | in-app and email |
+| `club_suspended` | the club's admins | `tenant_provision_requests.lifecycle_status` becoming `suspended` | email only |
+| `club_reactivated` | the club's admins | `lifecycle_status` going from `suspended` to `active` or `active_onboarding` | in-app and email |
+
+The earlier events are unchanged: `tenant_provision_request_submitted` / `_reviewed` / `_provisioned`, `coach_invite_created` / `_accepted`, `athlete_invite_created` / `_accepted`.
+
+`notification_events.metadata` carries ids only (`plan_id`, `team_id`, `test_week_id`, `session_id`, `session_date`, `athlete_id`, `athlete_ids`, `athlete_names`, `dedupe_key`, `rollup_key`). The screen a notification opens is derived from the event type and these ids in one place, `supabase/functions/_shared/notification-target.ts`, used by both the app and the emails.
+
+Email queue states (`notification_events` rows with `channel = 'email'`): `pending` (waiting, or claimed when `processing_started_at` is set), `sent`, `failed` (will be retried while `delivery_attempt_count < 5`, not before `next_attempt_at`), `suppressed` (held back for good; the reason is in `last_error`). An email more than 72 hours old is not sent: it is marked `suppressed` when delivery runs.
+
+Functions: `notification_default_enabled(text, text)`, `notification_channel_enabled(text, text, uuid, text)` (redefined: whole channel off wins, then the person's choice, then the default), `enqueue_notification(...)`, `enqueue_rollup_notification(...)`, `notify_training_plan_audience(uuid, text, uuid)`, `notification_team_coach_user_ids(uuid)`, `notification_club_admin_user_ids(uuid)`, `notification_athlete_name(uuid)`, `notification_date_label(date)`, `claim_notification_emails(integer, uuid, uuid[], boolean)`, `complete_notification_email(uuid, boolean, text, text, boolean)`, `notification_email_queue_due()`, `notification_email_max_age()`, `request_notification_email_dispatch(text)`, `verify_notification_scheduler_token(text)`, `register_notification_dispatch_url(text)`, `record_notification_dispatch_run(text, jsonb)`, `get_platform_notification_email_stats()`, and the trigger functions `enqueue_training_plan_change_notifications`, `enqueue_session_note_notifications`, `enqueue_athlete_team_change_notifications`, `enqueue_session_completed_notifications`, `enqueue_test_results_submitted_notifications`, `enqueue_low_readiness_notifications`, `enqueue_team_coach_change_notifications`, `enqueue_package_request_reviewed_notifications`, `enqueue_club_lifecycle_notifications`, `notification_events_request_dispatch`. Rewritten: `enqueue_training_plan_assignment_notifications`, `enqueue_test_week_published_notifications`. Who may call what is in `SUPABASE_RLS_POLICY_MATRIX.md`.
+
+Scheduler (both guarded, the migration applies without them): extensions `pg_net` and `pg_cron`; jobs `sktr-dispatch-notification-emails` (every minute, `select public.request_notification_email_dispatch('cron')`) and `sktr-trim-cron-run-history` (daily, keeps a week of `cron.job_run_details`).
+
+Realtime: `user_notifications` is added to the `supabase_realtime` publication (guarded).
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

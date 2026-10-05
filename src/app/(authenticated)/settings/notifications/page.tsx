@@ -1,14 +1,16 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
-import { ArrowLeft, CheckCircle, WarningCircle } from "@phosphor-icons/react"
-import { PageHeader, Panel } from "@/components/sk"
+import { useEffect, useState } from "react"
+import { List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { NOTIFICATION_PREFERENCE_CATEGORIES } from "@/lib/notification-categories"
+import {
+  NOTIFICATION_PREFERENCE_CATEGORIES,
+  notificationCategoriesForRole,
+  type NotificationCategoryRole,
+} from "@/lib/notification-categories"
 import {
   getCurrentNotificationPreferenceMatrix,
   upsertCurrentNotificationCategoryPreference,
@@ -17,16 +19,14 @@ import {
   type NotificationChannel,
 } from "@/lib/data/notification-preferences-data"
 
+/** Nothing chosen yet: both channels on, and each kind of update at its own default. */
 const defaultState: NotificationPreferenceMatrix = {
   global: {
     email: true,
     "in-app": true,
   },
   categories: NOTIFICATION_PREFERENCE_CATEGORIES.reduce<Record<string, Record<NotificationChannel, boolean>>>((acc, category) => {
-    acc[category.key] = {
-      email: true,
-      "in-app": true,
-    }
+    acc[category.key] = { ...category.defaults }
     return acc
   }, {}),
 }
@@ -56,38 +56,13 @@ function saveMockPreferences(next: NotificationPreferenceMatrix) {
   }
 }
 
-type AppRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+const SAVE_ERROR = "That change could not be saved. Check your connection and try again."
+const LOAD_ERROR = "Your notification settings could not be loaded. Check your connection and reload the page."
 
-/** Plain-language wording per category. Athletes and coaches only see the ones that can reach them. */
-const CATEGORY_COPY: Record<string, { title: string; body: (role: AppRole) => string; roles: AppRole[] }> = {
-  "tenant-provisioning": {
-    title: "New club requests",
-    body: () => "When a club asks to join, is reviewed or is set up.",
-    roles: ["club-admin", "platform-admin"],
-  },
-  "coach-invites": {
-    title: "Coach invites",
-    body: () => "When a coach is invited or accepts an invite.",
-    roles: ["coach", "club-admin", "platform-admin"],
-  },
-  "athlete-invites": {
-    title: "Team invites",
-    body: (role) =>
-      role === "athlete" ? "When a coach invites you to a team." : "When an athlete is invited or joins a team.",
-    roles: ["athlete", "coach", "club-admin", "platform-admin"],
-  },
-  "training-plans": {
-    title: "Training plans",
-    body: (role) =>
-      role === "athlete" ? "When your coach publishes a plan for you." : "When a published plan goes live for an athlete.",
-    roles: ["athlete", "coach", "club-admin", "platform-admin"],
-  },
-  "test-weeks": {
-    title: "Test weeks",
-    body: (role) => (role === "athlete" ? "When a test week opens for your team." : "When a published test week opens for a team."),
-    roles: ["athlete", "coach", "club-admin", "platform-admin"],
-  },
-}
+const CHANNELS: Array<{ channel: NotificationChannel; label: string; title: string; body: string }> = [
+  { channel: "in-app", label: "In app", title: "In the app", body: "Shows under the bell when you open SKTR Coach." },
+  { channel: "email", label: "Email", title: "By email", body: "Sent to the email address you sign in with." },
+]
 
 function Toggle({
   checked,
@@ -109,7 +84,7 @@ function Toggle({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-11 w-[52px] shrink-0 items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue disabled:opacity-50",
+        "relative inline-flex h-11 w-[52px] shrink-0 cursor-pointer items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue disabled:cursor-default disabled:opacity-50",
       )}
     >
       <span className={cn("h-7 w-[52px] rounded-full transition-colors", checked ? "bg-sk-blue" : "bg-[#c9cedb]")} />
@@ -148,7 +123,7 @@ export default function NotificationSettingsPage() {
       if (cancelled) return
 
       if (!result.ok) {
-        setError(result.error.message)
+        setError(LOAD_ERROR)
         setLoading(false)
         return
       }
@@ -164,144 +139,77 @@ export default function NotificationSettingsPage() {
     }
   }, [isMockMode])
 
-  const rows = useMemo(
-    () => [
-      {
-        channel: "in-app" as const,
-        title: "In the app",
-        body: "Shows under the bell when you open SKTR Coach.",
-      },
-      {
-        channel: "email" as const,
-        title: "By email",
-        body: "Sent to the email address you sign in with.",
-      },
-    ],
-    [],
-  )
-
   const handleToggle = async (channel: NotificationChannel, enabled: boolean) => {
     setSavingKey(`global:${channel}`)
+    const savedMessage = `${channel === "email" ? "Email" : "In-app"} notifications turned ${enabled ? "on" : "off"}.`
+    const next = { ...preferences, global: { ...preferences.global, [channel]: enabled } }
     if (isMockMode) {
-      const next = { ...preferences, global: { ...preferences.global, [channel]: enabled } }
       saveMockPreferences(next)
-      setPreferences(next)
-      setError(null)
-      setInfo(`${channel === "email" ? "Email" : "In-app"} notifications turned ${enabled ? "on" : "off"}.`)
-      setSavingKey(null)
-      return
-    }
-    const result = await upsertCurrentNotificationPreference({ channel, enabled, eventType: "*" })
-
-    if (!result.ok) {
-      setError(result.error.message)
-      setInfo(null)
-      setSavingKey(null)
-      return
-    }
-
-    setPreferences((current) => ({
-      ...current,
-      global: { ...current.global, [channel]: enabled },
-    }))
-    setError(null)
-    setInfo(`${channel === "email" ? "Email" : "In-app"} notifications turned ${enabled ? "on" : "off"}.`)
-    setSavingKey(null)
-  }
-
-  const handleCategoryToggle = async (categoryKey: string, channel: NotificationChannel, enabled: boolean) => {
-    setSavingKey(`${categoryKey}:${channel}`)
-    const categoryTitle = CATEGORY_COPY[categoryKey]?.title ?? "Category"
-    const savedMessage = `${categoryTitle}: ${channel === "email" ? "email" : "in-app"} turned ${enabled ? "on" : "off"}.`
-    if (isMockMode) {
-      const next = {
-        ...preferences,
-        categories: {
-          ...preferences.categories,
-          [categoryKey]: { ...preferences.categories[categoryKey], [channel]: enabled },
-        },
+    } else {
+      const result = await upsertCurrentNotificationPreference({ channel, enabled, eventType: "*" })
+      if (!result.ok) {
+        setError(SAVE_ERROR)
+        setInfo(null)
+        setSavingKey(null)
+        return
       }
-      saveMockPreferences(next)
-      setPreferences(next)
-      setError(null)
-      setInfo(savedMessage)
-      setSavingKey(null)
-      return
     }
-    const result = await upsertCurrentNotificationCategoryPreference({
-      categoryKey,
-      channel,
-      enabled,
-    })
-
-    if (!result.ok) {
-      setError(result.error.message)
-      setInfo(null)
-      setSavingKey(null)
-      return
-    }
-
-    setPreferences((current) => ({
-      ...current,
-      categories: {
-        ...current.categories,
-        [categoryKey]: {
-          ...current.categories[categoryKey],
-          [channel]: enabled,
-        },
-      },
-    }))
+    setPreferences(next)
     setError(null)
     setInfo(savedMessage)
     setSavingKey(null)
   }
 
-  const appRole = role as AppRole
-  const categories = NOTIFICATION_PREFERENCE_CATEGORIES.filter((category) => {
-    const copy = CATEGORY_COPY[category.key]
-    return copy ? copy.roles.includes(appRole) : true
-  })
-  const channels = [
-    { channel: "in-app" as const, label: "In app" },
-    { channel: "email" as const, label: "Email" },
-  ]
+  const handleCategoryToggle = async (categoryKey: string, categoryTitle: string, channel: NotificationChannel, enabled: boolean) => {
+    setSavingKey(`${categoryKey}:${channel}`)
+    const savedMessage = `${categoryTitle}: ${channel === "email" ? "email" : "in-app"} turned ${enabled ? "on" : "off"}.`
+    const next = {
+      ...preferences,
+      categories: {
+        ...preferences.categories,
+        [categoryKey]: { ...preferences.categories[categoryKey], [channel]: enabled },
+      },
+    }
+    if (isMockMode) {
+      saveMockPreferences(next)
+    } else {
+      const result = await upsertCurrentNotificationCategoryPreference({ categoryKey, channel, enabled })
+      if (!result.ok) {
+        setError(SAVE_ERROR)
+        setInfo(null)
+        setSavingKey(null)
+        return
+      }
+    }
+    setPreferences(next)
+    setError(null)
+    setInfo(savedMessage)
+    setSavingKey(null)
+  }
+
+  const categories = notificationCategoriesForRole(role as NotificationCategoryRole)
 
   return (
-    <div className="sk-page">
-      {role === "athlete" ? (
-        <Link to="/athlete/profile" className="sk-btn sk-btn-ghost sk-btn-sm -ml-2">
-          <ArrowLeft className="size-4" weight="bold" />
-          Profile
-        </Link>
-      ) : null}
-      <PageHeader title="Notifications" lede="Choose what SKTR Coach tells you about and where it reaches you." />
+    <Screen width="narrow">
+      <ScreenHeader
+        title="Notification settings"
+        lede="Choose what SKTR Coach tells you about and where it reaches you."
+        back={role === "athlete" ? { to: "/athlete/profile", label: "Profile" } : { to: "/notifications", label: "Notifications" }}
+      />
 
-      <div aria-live="polite" className="max-w-[860px] empty:hidden">
-        {error ? (
-          <p role="alert" className="flex items-start gap-2 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-            <WarningCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
-            {error}
-          </p>
-        ) : info ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-bold text-[#07673f]">
-            <CheckCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
-            {info}
-          </p>
-        ) : null}
-      </div>
+      {error ? <Notice tone="error">{error}</Notice> : info ? <Notice tone="success">{info}</Notice> : null}
 
-      <div className="max-w-[860px] space-y-6 lg:space-y-8">
-        <Panel title="How we reach you" hint="Turn a whole channel off here and nothing is sent that way.">
-          {loading ? (
-            <p className="py-3 text-sm text-sk-mute">Loading your settings...</p>
-          ) : (
-            <div>
-              {rows.map((row) => (
-                <div key={row.channel} className="sk-row">
-                  <div className="min-w-0">
-                    <p className="font-bold text-sk-ink">{row.title}</p>
-                    <p className="text-sm text-sk-mute">{row.body}</p>
-                  </div>
+      <Section title="How we reach you" hint="Turn a whole channel off here and nothing is sent that way.">
+        {loading ? (
+          <SkeletonRows rows={2} label="Loading your settings" />
+        ) : (
+          <List>
+            {CHANNELS.map((row) => (
+              <ListRow
+                key={row.channel}
+                title={row.title}
+                subtitle={row.body}
+                trailing={
                   <Toggle
                     label={row.title}
                     checked={preferences.global[row.channel]}
@@ -310,51 +218,60 @@ export default function NotificationSettingsPage() {
                       void handleToggle(row.channel, checked)
                     }}
                   />
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
+                }
+              />
+            ))}
+          </List>
+        )}
+      </Section>
 
-        <Panel title="What you hear about" hint="Fine tune each kind of update.">
-          <div>
-            {categories.map((category) => {
-              const copy = CATEGORY_COPY[category.key]
-              const title = copy?.title ?? category.title
-              return (
-                <div
-                  key={category.key}
-                  role="group"
-                  aria-label={title}
-                  className="flex flex-col gap-2 border-b border-sk-line py-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
-                >
-                  <div className="min-w-0">
-                    <p className="font-bold text-sk-ink">{title}</p>
-                    <p className="text-sm text-sk-mute">{copy ? copy.body(appRole) : category.description}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-6">
-                    {channels.map(({ channel, label }) => (
-                      <div key={channel} className="flex items-center gap-2.5">
-                        <Toggle
-                          label={`${title}, ${label.toLowerCase()}`}
-                          checked={preferences.categories[category.key]?.[channel] ?? preferences.global[channel]}
-                          disabled={loading || savingKey === `${category.key}:${channel}`}
-                          onChange={(checked) => {
-                            void handleCategoryToggle(category.key, channel, checked)
-                          }}
-                        />
-                        <span aria-hidden className="text-sm font-semibold text-sk-ink-2">
-                          {label}
+      <Section title="What you hear about" hint="Fine tune each kind of update.">
+        {loading ? (
+          <SkeletonRows rows={Math.max(2, categories.length)} label="Loading your settings" />
+        ) : (
+          <List>
+            {categories.map((category) => (
+              <ListRow key={category.key}>
+                <span role="group" aria-label={category.title} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                  <span className="min-w-0">
+                    <span className="sk-list-title">{category.title}</span>
+                    <span className="sk-list-sub">{category.description}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-6">
+                    {CHANNELS.map(({ channel, label }) => {
+                      if (channel === "email" && !category.emailAvailable) {
+                        return (
+                          <span key={channel} className="w-[104px] text-sm font-semibold text-sk-mute">
+                            In app only
+                          </span>
+                        )
+                      }
+                      const channelOn = preferences.global[channel]
+                      const chosen = preferences.categories[category.key]?.[channel] ?? category.defaults[channel]
+                      return (
+                        <span key={channel} className="flex w-[104px] items-center gap-2.5">
+                          <Toggle
+                            label={`${category.title}, ${label.toLowerCase()}${channelOn ? "" : " (the whole channel is off)"}`}
+                            // With the whole channel off nothing is sent, whatever was chosen here.
+                            checked={channelOn && chosen}
+                            disabled={!channelOn || savingKey === `${category.key}:${channel}`}
+                            onChange={(checked) => {
+                              void handleCategoryToggle(category.key, category.title, channel, checked)
+                            }}
+                          />
+                          <span aria-hidden className="text-sm font-semibold text-sk-ink-2">
+                            {label}
+                          </span>
                         </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Panel>
-      </div>
-    </div>
+                      )
+                    })}
+                  </span>
+                </span>
+              </ListRow>
+            ))}
+          </List>
+        )}
+      </Section>
+    </Screen>
   )
 }

@@ -87,6 +87,24 @@ jobs:
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
 
+      # Lets the function tell the database where it lives (so the database scheduler can call it) and
+      # sends anything already waiting. Not required: the address is also learned the first time a
+      # signed-in person queues an email. A failure here never fails the deploy.
+      - name: Start Notification Email Delivery (dev)
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set, skipping. Email delivery still starts on its own."
+            exit 0
+          fi
+          curl --silent --show-error --max-time 60 -X POST "${SUPABASE_URL%/}/functions/v1/dispatch-notification-emails" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"source":"deploy"}' || echo "::warning::Could not reach dispatch-notification-emails. Email delivery still starts on its own."
+
   migrate-prod:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'prod')
     runs-on: ubuntu-latest
@@ -155,4 +173,22 @@ jobs:
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
+
+      # Lets the function tell the database where it lives (so the database scheduler can call it) and
+      # sends anything already waiting. Not required: the address is also learned the first time a
+      # signed-in person queues an email. A failure here never fails the deploy.
+      - name: Start Notification Email Delivery (prod)
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set, skipping. Email delivery still starts on its own."
+            exit 0
+          fi
+          curl --silent --show-error --max-time 60 -X POST "${SUPABASE_URL%/}/functions/v1/dispatch-notification-emails" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"source":"deploy"}' || echo "::warning::Could not reach dispatch-notification-emails. Email delivery still starts on its own."
 

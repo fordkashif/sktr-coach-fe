@@ -1,6 +1,6 @@
 # PaceLab Supabase Environment + Secrets Setup
 
-Last updated: October 6, 2026
+Last updated: October 7, 2026
 
 ## Purpose
 
@@ -38,8 +38,8 @@ Server/CI only (never in browser bundle):
 - `SUPABASE_URL` (for Edge Functions / CI secret sync)
 - `SUPABASE_ANON_KEY` (for Edge Functions using authenticated user context)
 - `RESEND_API_KEY` (email delivery provider)
-- `NOTIFICATION_FROM_EMAIL` (sender identity for queued emails and invite emails)
-- `PUBLIC_APP_URL` (where the app is hosted for that environment, for example `https://app.example.com`; invite email links are built from it)
+- `NOTIFICATION_FROM_EMAIL` (sender identity for notification emails and invite emails)
+- `PUBLIC_APP_URL` (where the app is hosted for that environment, for example `https://app.example.com`; the links in invite emails and notification emails are built from it)
 
 ## Variable Rules
 
@@ -114,6 +114,56 @@ Rules worth knowing:
 - Every send is written to the club's activity log (`audit_events`), and the invite row keeps `last_email_sent_at`, `email_send_count` and `last_email_error`.
 - Tests for the function: `deno test supabase/functions/send-invite-email/` (no network needed).
 
+### Notification Emails (`dispatch-notification-emails`): nothing new to set up
+
+Notification emails ("your coach published a plan", "you now coach Sprints") are queued in the database and sent by the `dispatch-notification-emails` edge function. Since migration `20261007090000_notifications_delivery.sql` nobody has to press anything.
+
+**What the owner has to do by hand: nothing new.** It uses the same three values invite emails already need (`RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL`, `PUBLIC_APP_URL`, see the table above). No new secret, no dashboard setting, no extension to switch on.
+
+How an email leaves, in order:
+
+1. **Straight after it is queued.** A database trigger calls the edge function through the `pg_net` extension as soon as the write that queued the email commits.
+2. **Every minute.** A `pg_cron` job (`sktr-dispatch-notification-emails`) asks again, which picks up retries and anything the first call missed. It makes no HTTP call when nothing is waiting.
+3. **When the app asks (the fallback).** After publishing a plan or a test week, leaving a session note, or changing a team's coaches, the app calls the edge function, which sends only that club's queue. This works with no extension at all.
+4. **By hand, still.** "Send queued emails" on the platform admin Requests screen sends everything, including emails waiting for a retry.
+
+The migration switches `pg_net` and `pg_cron` on itself. Both ship with hosted Supabase projects. If either cannot be created the migration still applies (it prints a notice) and steps 3 and 4 keep email flowing.
+
+How the database proves it is the database: the migration generates a random token once into the private one-row table `public.notification_dispatch_config`. The database sends it in a header; the edge function asks the database whether it matches. It is not a secret you manage: it is different on dev and prod, no API role can read it, and the service role key is never stored in SQL. To rotate it: `update public.notification_dispatch_config set scheduler_token = replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');`.
+
+How the database knows where the function lives: it is not configured. The address is stored the first time either of these happens, whichever comes first: the deploy workflow calls the function once after deploying it; a signed-in person does something that queues an email (the address is derived from the issuer of their sign-in token, `https://<project>.supabase.co`); the function is called by anyone allowed to. Until then the scheduler reports `no_url` and does nothing.
+
+Safety rules the queue applies on every run: an email is claimed by one run only (`for update skip locked`), is never sent twice (the provider also gets an idempotency key per email), is retried after 2, 4, 8 and 16 minutes and given up after five attempts, and is not sent at all when the recipient switched it off, was deactivated, belongs to a suspended or cancelled club, or the email is more than 72 hours old. Those are marked `suppressed` with the reason in `last_error`.
+
+Worth knowing for the first release: emails already sitting in the queue from the last 72 hours go out when the function first runs. Anything older is marked `suppressed`, not sent.
+
+Checking it worked on a project (SQL editor):
+
+```sql
+-- 1. Are the extensions there, and is the job scheduled?
+select extname from pg_extension where extname in ('pg_net', 'pg_cron');
+select jobname, schedule, active from cron.job where jobname like 'sktr-%';
+
+-- 2. Does the database know the function's address, and when did delivery last run?
+select function_url, last_requested_at, last_request_source, last_run_at, last_run_mode, last_run_summary
+from public.notification_dispatch_config;
+
+-- 3. What would the scheduler do right now? 'idle' (nothing waiting), 'requested', 'no_url' or 'no_pg_net'.
+select public.request_notification_email_dispatch('manual');
+
+-- 4. The queue itself.
+select status, count(*), max(last_error) from public.notification_events where channel = 'email' group by 1;
+
+-- 5. What the function answered (pg_net keeps recent responses).
+select id, status_code, left(content, 200), created from net._http_response order by created desc limit 5;
+```
+
+A healthy project shows both extensions, one active `sktr-dispatch-notification-emails` job, a `function_url`, and `last_run_at` moving whenever an email is queued. The platform admin dashboard shows the same in words ("Notification email in the last 24 hours: 14 sent...").
+
+If `function_url` is empty and step 3 says `no_url`: sign in to the app and publish something, or run the workflow again. If step 5 shows `503` with `email_not_configured`: one of the three values in the table above is missing; the response names which. If it shows `401`: the function is an older version, deploy it again.
+
+Tests for the function: `deno test supabase/functions/dispatch-notification-emails/` (no network needed).
+
 ### Public Club Request Form (no secret, nothing to set up)
 
 The "Request access for your club" form is protected inside the database by migration `20261006181000_request_form_protection.sql`. It needs no secret, no environment variable, no dashboard setting and no outside service.
@@ -123,7 +173,7 @@ The "Request access for your club" form is protected inside the database by migr
 - Nobody outside the platform admins is emailed when a request comes in. `dispatch-notification-emails` escapes the request's text before putting it in the email.
 - Testing by hand or with the Supabase e2e suite from one machine counts towards the per-address limit. When "Too many requests right now" shows up on a test project, run `delete from public.request_form_attempts;` in the SQL editor.
 - A captcha is not used. One can be added later in front of the same function without changing these limits.
-- Shared edge function code lives in `supabase/functions/_shared/` (currently `club-access.ts`). It is bundled into the functions that import it by `supabase functions deploy`; it is not a function itself and is not listed in the workflow or in `supabase/config.toml`. Tests: `deno test supabase/functions/_shared/`.
+- Shared edge function code lives in `supabase/functions/_shared/` (`club-access.ts`, and `notification-target.ts`, which the app imports too so emails and the app open the same screens). It is bundled into the functions that import it by `supabase functions deploy`; it is not a function itself and is not listed in the workflow or in `supabase/config.toml`. Tests: `deno test supabase/functions/_shared/`.
 
 ## Rotation Policy
 

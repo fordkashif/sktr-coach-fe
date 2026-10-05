@@ -170,6 +170,8 @@ Built once in `src/components/app-shell.tsx`. Screens never draw navigation.
 | Club admin | Dashboard, People, Teams, Reports, Club, Activity, Billing | Dashboard, People, Teams, Reports, More (Club, Activity, Billing) |
 | Platform admin | Dashboard, Requests, Clubs, Billing, Packages, Activity | Dashboard, Requests, Clubs, Billing, More (Packages, Activity) |
 
+The bell is there for every role. It shows the number of unread notifications and opens the notifications sheet: the ten most recent as list rows (a blue dot and a bold title mean unread, then a relative time), "Mark all read" and "See all", which goes to `/notifications` (the full history grouped by day). A row is a link to the screen it is about and is marked read when followed. Where each kind of notification leads is decided in one file, `supabase/functions/_shared/notification-target.ts`.
+
 The avatar opens the profile menu: Your account, Notification settings, Sign out (athletes also get Join a team).
 
 Detail screens (an athlete, a plan, a test week) use `ScreenHeader` with `back`. A phone screen that takes over the whole view can also ask the shell for a back button and no tab bar by dispatching `pacelab:mobile-detail-mode` (see `app-shell.tsx`).

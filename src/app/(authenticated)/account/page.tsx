@@ -1,21 +1,35 @@
-import { EmptyState, LinkButton, List, ListRow, Screen, ScreenHeader, Section } from "@/components/sk"
+import { List, ListRow, Screen, ScreenHeader, Section } from "@/components/sk"
+import { DevicesSection, HelpSection, NameSection, PhotoSection, SignInSection } from "@/components/account/account-sections"
+import { useCurrentAccount } from "@/lib/account-store"
 import { useRole } from "@/lib/role-context"
 
-/** Placeholder until the account screen is built. It keeps the "Your account" menu entry from being a dead link. */
+/** Your account: photo, name, sign-in details. Every role opens it; athletes reach it from their profile. */
 export default function AccountPage() {
-  const { role, userEmail } = useRole()
-  const roleLabel = role === "platform-admin" ? "Platform admin" : role === "club-admin" ? "Club admin" : role === "coach" ? "Coach" : "Athlete"
+  const { role } = useRole()
+  const { displayName } = useCurrentAccount()
+  const isAthlete = role === "athlete"
 
   return (
     <Screen width="narrow">
-      <ScreenHeader title="Your account" lede="Your sign-in details and how you appear to your club." />
+      <ScreenHeader
+        title={isAthlete ? "Account and security" : "Your account"}
+        lede={isAthlete ? "Your photo and how you sign in." : "Your photo, your name and how you sign in."}
+        back={isAthlete ? { to: "/athlete/profile", label: "Profile" } : undefined}
+      />
 
-      <Section title="Signed in as">
-        <List>
-          <ListRow title="Email" trailing={userEmail ?? "Not available"} />
-          <ListRow title="Role" trailing={roleLabel} />
-        </List>
-      </Section>
+      <PhotoSection hint={role === "platform-admin" ? "Shown in the top bar." : isAthlete ? "Your coaches see this on the roster." : "Your club sees this next to your name."} />
+
+      {isAthlete ? (
+        <Section title="Name">
+          <List>
+            <ListRow to="/athlete/profile" title={displayName} subtitle="Change your name, date of birth and events on your profile." />
+          </List>
+        </Section>
+      ) : (
+        <NameSection />
+      )}
+
+      <SignInSection />
 
       <Section title="Settings">
         <List>
@@ -23,15 +37,8 @@ export default function AccountPage() {
         </List>
       </Section>
 
-      <EmptyState
-        title="More account settings are coming"
-        body="Changing your name, photo and password will live here soon. Until then, a club admin can update your details for you."
-        action={
-          role === "athlete" ? (
-            <LinkButton to="/athlete/profile">Open your profile</LinkButton>
-          ) : undefined
-        }
-      />
+      <DevicesSection />
+      <HelpSection />
     </Screen>
   )
 }

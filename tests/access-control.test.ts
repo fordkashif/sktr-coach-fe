@@ -227,3 +227,14 @@ test("the account screen needs a session and is open to every signed-in role", (
   const paused = evaluateAccess({ pathname: "/account", isAuthenticated: true, role: "athlete", tenantId: "club-1", memberActive: false })
   assert.equal(paused.blocked, "member-inactive")
 })
+
+test("the notifications screen needs a session and is open to every signed-in role", () => {
+  assert.equal(evaluateAccess({ pathname: "/notifications", isAuthenticated: false, role: null, tenantId: null }).redirectTo, "/login")
+  for (const role of ["athlete", "coach", "club-admin"] as const) {
+    assert.equal(evaluateAccess({ pathname: "/notifications", isAuthenticated: true, role, tenantId: "club-1" }).allowed, true)
+  }
+  assert.equal(evaluateAccess({ pathname: "/notifications", isAuthenticated: true, role: "platform-admin", tenantId: null }).allowed, true)
+  assert.equal(evaluateAccess({ pathname: "/notifications", isAuthenticated: true, role: "athlete", tenantId: null }).reason, "missing-tenant")
+  const suspended = evaluateAccess({ pathname: "/notifications", isAuthenticated: true, role: "coach", tenantId: "club-1", tenantLifecycleStatus: "suspended" })
+  assert.equal(suspended.blocked, "club-suspended")
+})

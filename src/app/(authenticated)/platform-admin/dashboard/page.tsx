@@ -6,16 +6,40 @@ import {
   getPlatformAdminPackageUpgradeRequests,
   getPlatformAdminRequestQueue,
   getPlatformAuditEvents,
+  getPlatformNotificationEmailStats,
   getPlatformTenantSizes,
   type PlatformAdminPackageUpgradeRequestRecord,
   type PlatformAdminRequestRecord,
   type PlatformAuditEventRecord,
+  type PlatformNotificationEmailStats,
   type PlatformTenantSize,
 } from "@/lib/data/platform-admin/ops-data"
 import { auditSentence, formatLocalDateTime, isClubRecord, lifecycleOf } from "@/lib/data/platform-admin/tenants-data"
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`
+}
+
+/** One plain sentence about notification email: what went out in the last 24 hours and how it is sent. */
+function emailSentence(stats: PlatformNotificationEmailStats) {
+  const counts = [
+    `${stats.sent24h} sent`,
+    stats.failed24h > 0 ? `${stats.failed24h} failed` : null,
+    stats.retrying > 0 ? `${stats.retrying} being retried` : null,
+    stats.waiting > 0 ? `${stats.waiting} waiting` : null,
+    stats.notSent24h > 0 ? `${stats.notSent24h} held back (switched off, deactivated or paused)` : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
+  const how =
+    stats.deliveryMode === "scheduled"
+      ? "Emails go out on their own within a minute."
+      : stats.deliveryMode === "on_queue"
+        ? "Emails go out on their own as soon as they are queued."
+        : stats.deliveryMode === "waiting_for_address"
+          ? "Automatic sending starts with the first notification after this release. Until then use Send queued emails on the Requests screen."
+          : "Automatic sending is not available on this database, so emails go out when someone in the club acts, or when you press Send queued emails on the Requests screen."
+  return `Notification email in the last 24 hours: ${counts}. ${how}`
 }
 
 /** "Kingston Striders, Bolt Academy and 2 more" */
@@ -30,6 +54,8 @@ export default function PlatformAdminDashboardPage() {
   const [upgradeRequests, setUpgradeRequests] = useState<PlatformAdminPackageUpgradeRequestRecord[]>([])
   /** Live club sizes by tenant id. Null when they cannot be read. */
   const [sizes, setSizes] = useState<Map<string, PlatformTenantSize> | null>(null)
+  /** Notification email counts. Null when they cannot be read. */
+  const [emailStats, setEmailStats] = useState<PlatformNotificationEmailStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,15 +64,17 @@ export default function PlatformAdminDashboardPage() {
 
     const load = async () => {
       setLoading(true)
-      const [requestsResult, auditResult, upgradesResult, sizesResult] = await Promise.all([
+      const [requestsResult, auditResult, upgradesResult, sizesResult, emailStatsResult] = await Promise.all([
         getPlatformAdminRequestQueue(),
         getPlatformAuditEvents(12),
         getPlatformAdminPackageUpgradeRequests(),
         getPlatformTenantSizes(),
+        getPlatformNotificationEmailStats(),
       ])
 
       if (cancelled) return
       setSizes(sizesResult)
+      setEmailStats(emailStatsResult)
 
       // Each list is independent: show what loaded and name what did not.
       if (requestsResult.ok) setRequests(requestsResult.data)
@@ -154,8 +182,16 @@ export default function PlatformAdminDashboardPage() {
         to: "/platform-admin/requests",
         cta: "Send again",
       },
+      {
+        key: "emails",
+        count: emailStats?.failed24h ?? 0,
+        title: emailStats?.failed24h === 1 ? "Notification email failed to send" : "Notification emails failed to send",
+        body: "In the last 24 hours, after five tries each. Check the email provider, then send the queue again.",
+        to: "/platform-admin/requests",
+        cta: "Open requests",
+      },
     ].filter((item) => item.count > 0)
-  }, [clubNames, clubs, requests, upgradeRequests])
+  }, [clubNames, clubs, emailStats, requests, upgradeRequests])
 
   const recentAudit = useMemo(() => auditEvents.slice(0, 8), [auditEvents])
 
@@ -218,10 +254,11 @@ export default function PlatformAdminDashboardPage() {
                 ? `Across these clubs right now: ${plural(people.teams, "team")}, ${plural(people.coaches, "active coach", "active coaches")} and ${plural(people.athletes, "athlete")}.`
                 : "Team, coach and athlete totals are not shown because live counts could not be loaded. Each club's sign-up numbers are on the Clubs screen."}
             </p>
+            {emailStats ? <p className="text-sm text-sk-mute">{emailSentence(emailStats)}</p> : null}
           </section>
 
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-            <Panel title="Needs you today" hint="Requests, unfinished setup, package changes and club admin invites that failed.">
+            <Panel title="Needs you today" hint="Requests, unfinished setup, package changes, club admin invites that failed and notification emails that failed.">
               {needsYou.length > 0 ? (
                 <ul>
                   {needsYou.map((item) => (

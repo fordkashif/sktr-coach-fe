@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -1486,6 +1487,7 @@ export async function setClubAdminTeamCoaches(params: {
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   if (!data || data.length < desired.size) return err("UNKNOWN", "Not every coach assignment was saved. Reload and check the team.")
+  kickNotificationEmails()
   return ok(undefined)
 }
 
@@ -1507,6 +1509,7 @@ export async function removeClubAdminTeamCoach(params: { teamId: string; userId:
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   if (!data || data.length === 0) return err("NOT_FOUND", "This coach is no longer on the team.")
+  kickNotificationEmails()
   return ok(undefined)
 }
 

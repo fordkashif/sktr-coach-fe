@@ -41,3 +41,43 @@ test("athlete profile rejects an empty name and cancel discards edits", async ({
   await page.getByRole("button", { name: "Cancel" }).click()
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Marcus Johnson")
 })
+
+test("athlete adds a profile photo, keeps it after a reload, and their coach sees it on the roster", async ({ page }) => {
+  await seedMockSession(page, { role: "athlete" })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/athlete/profile")
+
+  const heading = page.getByRole("heading", { level: 1 })
+  await expect(heading).toContainText("Marcus Johnson")
+  await expect(heading.locator("img")).toHaveCount(0)
+
+  await page.getByTestId("avatar-file-input").setInputFiles({
+    name: "me.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAHElEQVR42mP832PDQA3AxEAlMGrQqEGjBo1UgwBnLQHnvLPlYgAAAABJRU5ErkJggg==", "base64"),
+  })
+  await expect(page.getByRole("button", { name: "Change photo" })).toBeVisible()
+  await expect(heading.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
+
+  await page.reload()
+  await expect(heading.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
+  await expect(page.locator("header[data-shell='topbar']").getByRole("button", { name: "Open profile menu" }).locator("img")).toHaveCount(1)
+
+  // The rest of the account lives one tap away.
+  await page.getByRole("link", { name: "Account and security" }).click()
+  await expect(page).toHaveURL(/\/account$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Account and security" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Change password" })).toBeVisible()
+
+  // Same browser, now signed in as the coach of that team: the photo is on the roster.
+  await page.evaluate(() => {
+    window.localStorage.setItem("pacelab:mock-role", "coach")
+    window.localStorage.setItem("pacelab:mock-user-email", "coach@pacelab.local")
+    window.localStorage.setItem("pacelab:mock-coach-team", "t1")
+  })
+  await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
+  await page.goto("/coach/teams/t1")
+  const row = page.getByRole("listitem").filter({ hasText: "Marcus Johnson" }).first()
+  await expect(row.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
+  await expect(page.getByRole("listitem").filter({ hasText: "Sarah Chen" }).first().locator("img")).toHaveCount(0)
+})

@@ -82,6 +82,11 @@ export async function getCurrentNotificationPreferences(): Promise<Result<Notifi
   )
 }
 
+/**
+ * What the settings screen shows. Mirrors notification_channel_enabled() in the database:
+ * `global` is the whole-channel switch (off wins over everything), and each category is the
+ * person's own choice for that kind of update or, when they have not chosen, its default.
+ */
 export async function getCurrentNotificationPreferenceMatrix(): Promise<Result<NotificationPreferenceMatrix>> {
   const result = await getCurrentNotificationPreferences()
   if (!result.ok) return result
@@ -91,28 +96,15 @@ export async function getCurrentNotificationPreferenceMatrix(): Promise<Result<N
     "in-app": true,
   }
 
-  const categories = NOTIFICATION_PREFERENCE_CATEGORIES.reduce<Record<string, Record<NotificationChannel, boolean>>>(
-    (acc, category) => {
-      acc[category.key] = {
-        email: global.email,
-        "in-app": global["in-app"],
-      }
-      return acc
-    },
-    {},
-  )
-
   for (const item of result.data) {
     if (item.eventType === "*") {
       global[item.channel] = item.enabled
     }
   }
 
+  const categories: Record<string, Record<NotificationChannel, boolean>> = {}
   for (const category of NOTIFICATION_PREFERENCE_CATEGORIES) {
-    categories[category.key] = {
-      email: global.email,
-      "in-app": global["in-app"],
-    }
+    categories[category.key] = { ...category.defaults }
 
     for (const eventType of category.eventTypes) {
       for (const channel of ["email", "in-app"] as const) {

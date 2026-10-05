@@ -2,7 +2,6 @@
 
 import {
   ArrowLeft,
-  Bell,
   Briefcase,
   Buildings,
   CalendarBlank,
@@ -26,9 +25,10 @@ import { useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
 import { useCoachTeams } from "@/lib/coach-teams"
-import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
+import { NotificationBell, NotificationSheet } from "@/components/notifications/notification-center"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
+import { useCurrentAccount } from "@/lib/account-store"
 import { clearSessionCookies } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
@@ -42,7 +42,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, Button, EmptyState, List, ListRow, Notice, Sheet, SkeletonRows, StatusDot } from "@/components/sk"
+import { Avatar, List, ListRow, Sheet } from "@/components/sk"
 
 /**
  * App shell. See DESIGN.md, "Navigation".
@@ -109,22 +109,6 @@ function getRoleLabel(role: string) {
   return "Athlete"
 }
 
-function formatNotificationTime(value: string) {
-  return new Date(value).toLocaleString()
-}
-
-function displayNameFromEmail(userEmail: string | null, fallbackRole: string) {
-  if (!userEmail) return getRoleLabel(fallbackRole)
-  const localPart = userEmail.split("@")[0] ?? ""
-  const label = localPart
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(" ")
-    .trim()
-  return label || getRoleLabel(fallbackRole)
-}
-
 let coachTeamRoutePrefetchPromise: Promise<unknown> | null = null
 let coachReportsRoutePrefetchPromise: Promise<unknown> | null = null
 let coachTrainingPlanRoutePrefetchPromise: Promise<unknown> | null = null
@@ -173,9 +157,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const [notificationsLoading, setNotificationsLoading] = useState(false)
-  const [notificationsError, setNotificationsError] = useState<string | null>(null)
   const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
   const showTeamSwitcher = role === "coach" && coachTeams.length > 1
   const isRestrictedClubAdminSetupRoute =
@@ -213,36 +194,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const moreLinks = links.length > PHONE_TAB_LIMIT ? links.slice(PHONE_TAB_LIMIT - 1) : []
   const moreActive = moreLinks.some(isLinkActive)
 
-  const isAthlete = role === "athlete"
-  const displayName = displayNameFromEmail(userEmail, role)
-  const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.state === "unread")
+  // The person's real name and photo. The email is only a fallback for an account with no name yet.
+  const { displayName, avatarUrl } = useCurrentAccount()
 
-  useEffect(() => {
-    if (getBackendMode() !== "supabase" || isAthlete) return
-
-    let cancelled = false
-
-    const loadNotifications = async () => {
-      setNotificationsLoading(true)
-      const result = await getNotificationFeed()
-      if (cancelled) return
-
-      if (!result.ok) {
-        setNotificationsError(result.error.message)
-        setNotificationsLoading(false)
-        return
-      }
-
-      setNotifications(result.data)
-      setNotificationsError(null)
-      setNotificationsLoading(false)
-    }
-
-    void loadNotifications()
-    return () => {
-      cancelled = true
-    }
-  }, [pathname, role, isAthlete, userEmail])
   useEffect(() => {
     const scroller = document.getElementById("main-content")
     if (scroller) {
@@ -298,34 +252,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
       : {}
 
-  const markAllRead = async () => {
-    const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
-    const result = await markNotificationsRead(pendingIds)
-    if (!result.ok) {
-      setNotificationsError(result.error.message)
-      return
-    }
-    setNotifications((current) =>
-      current.map((item) => (pendingIds.includes(item.userNotificationId) ? { ...item, state: "read", readAt: new Date().toISOString() } : item)),
-    )
-    setNotificationsError(null)
-  }
-
-
   const showChrome = !isRestrictedClubAdminSetupRoute
-  const showBell = showChrome && !isAthlete
+  // Every role has the notification centre (athletes included). It is only hidden during club setup.
+  const showBell = showChrome
 
-  const bell = showBell ? (
-    <button type="button" className="sk-icon-btn" aria-label="Notifications" onClick={() => setPanelOpen(true)}>
-      <Bell className="size-5" weight="bold" aria-hidden />
-      {unreadNotifications.length > 0 ? (
-        <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral-ink px-1 text-[11px] font-bold leading-5 text-white">
-          {unreadNotifications.length}
-          <span className="sr-only"> unread</span>
-        </span>
-      ) : null}
-    </button>
-  ) : null
+  const bell = showBell ? <NotificationBell onOpen={() => setPanelOpen(true)} /> : null
 
   const menuItem = "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold text-sk-ink focus:bg-sk-soft"
   const profileMenu = (size: "md" | "lg") => (
@@ -336,7 +267,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
           aria-label="Open profile menu"
         >
-          <Avatar name={displayName} size={size} />
+          <Avatar name={displayName} src={avatarUrl} size={size} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="w-64 rounded-2xl border-sk-line-strong bg-white p-1.5">
@@ -525,44 +456,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Sheet>
       ) : null}
 
-      {showBell ? (
-        <Sheet
-          open={panelOpen}
-          onOpenChange={setPanelOpen}
-          title="Notifications"
-          footer={
-            unreadNotifications.length > 0 ? (
-              <Button size="sm" onClick={() => void markAllRead()}>
-                Mark all read
-              </Button>
-            ) : undefined
-          }
-        >
-          {notificationsError ? <Notice tone="error">{notificationsError}</Notice> : null}
-          {notificationsLoading && notifications.length === 0 ? <SkeletonRows rows={4} label="Loading notifications" /> : null}
-          {!notificationsLoading && !notificationsError && notifications.length === 0 ? (
-            <EmptyState title="You are all caught up" body="New invites, plans and test weeks show up here." />
-          ) : null}
-          {notifications.length > 0 ? (
-            <List aria-label="Notifications">
-              {notifications.map((item) => (
-                <ListRow
-                  key={item.id}
-                  className="items-start"
-                  leading={<StatusDot tone={item.state === "unread" ? "blue" : "neutral"} className={cn("mt-1.5", item.state !== "unread" && "opacity-0")} />}
-                >
-                  <span className={cn("sk-list-title", item.state === "unread" && "font-bold")}>
-                    {item.subject}
-                    {item.state === "unread" ? <span className="sr-only"> (unread)</span> : null}
-                  </span>
-                  {item.body ? <span className="sk-list-sub mt-0.5 text-sk-ink-2">{item.body}</span> : null}
-                  <span className="sk-list-sub mt-1">{formatNotificationTime(item.createdAt)}</span>
-                </ListRow>
-              ))}
-            </List>
-          ) : null}
-        </Sheet>
-      ) : null}
+      {showBell ? <NotificationSheet open={panelOpen} onOpenChange={setPanelOpen} /> : null}
     </div>
   )
 }

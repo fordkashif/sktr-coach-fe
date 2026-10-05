@@ -15,7 +15,8 @@ import {
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { InviteAthleteDialog } from "@/components/coach/team-detail-content"
-import { EmptyState, Initials, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
+import { EmptyState, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import {
   createClubAdminTeam,
@@ -847,7 +848,7 @@ export default function ClubAdminTeamsPage() {
                                 return (
                                   <li key={coach.userId} className="border-b border-sk-line py-2.5 last:border-b-0">
                                     <div className="flex items-center gap-3">
-                                      <Initials name={coach.name} size="sm" />
+                                      <PersonAvatar name={coach.name} userId={coach.userId} size="sm" />
                                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-sk-ink">
                                         {coach.name}
                                         {coach.isSelf ? <span className="font-normal text-sk-mute"> (you)</span> : null}
@@ -916,7 +917,7 @@ export default function ClubAdminTeamsPage() {
                                 return (
                                   <li key={athlete.id} className="border-b border-sk-line py-2.5 last:border-b-0">
                                     <div className="flex items-center gap-3">
-                                      <Initials name={athlete.name} size="sm" />
+                                      <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
                                       <span className="min-w-0 flex-1">
                                         <span className="block truncate text-sm font-semibold text-sk-ink">{athlete.name}</span>
                                         {athlete.primaryEvent ? <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span> : null}

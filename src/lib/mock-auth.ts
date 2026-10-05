@@ -181,3 +181,15 @@ export function completeMockPasswordReset(token: string, password: string) {
     role: account?.role ?? null,
   }
 }
+
+/** Mock mode: change a signed-in account's password. The current password has to match first. */
+export function changeMockPassword(email: string, currentPassword: string, nextPassword: string) {
+  const account = getMockCredentialByEmail(email)
+  if (!account) return { ok: false as const, reason: "no-account" as const }
+  if (account.password !== currentPassword) return { ok: false as const, reason: "wrong-password" as const }
+
+  const overrides = getMockPasswordOverrides()
+  overrides[account.email] = nextPassword
+  setMockPasswordOverrides(overrides)
+  return { ok: true as const }
+}

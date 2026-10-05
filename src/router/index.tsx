@@ -50,6 +50,7 @@ const PlatformAdminAuditPage = lazy(() => import("@/app/(authenticated)/platform
 const PlatformAdminDashboardPage = lazy(() => import("@/app/(authenticated)/platform-admin/dashboard/page"))
 const AccountPage = lazy(() => import("@/app/(authenticated)/account/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
+const NotificationsPage = lazy(() => import("@/app/(authenticated)/notifications/page"))
 
 function routeElement(Component: ComponentType) {
   return (
@@ -117,6 +118,7 @@ export function AppRouter() {
 
             <Route path="/account" element={routeElement(AccountPage)} />
             <Route path="/settings/notifications" element={routeElement(NotificationSettingsPage)} />
+            <Route path="/notifications" element={routeElement(NotificationsPage)} />
           </Route>
         </Route>
 

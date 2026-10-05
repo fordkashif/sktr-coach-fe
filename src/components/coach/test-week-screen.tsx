@@ -13,7 +13,8 @@ import {
   Trash,
   Trophy,
 } from "@phosphor-icons/react"
-import { EmptyState, Initials, Meter, PageHeader, Panel, Segmented, Stat, Tag, type TagTone } from "@/components/sk"
+import { EmptyState, Meter, PageHeader, Panel, Segmented, Stat, Tag, type TagTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { cn } from "@/lib/utils"
 
 /**
@@ -712,7 +713,7 @@ function DetailBody({ week, detail }: { week: TestWeekRow; detail: TestWeekDetai
                     <tr key={athlete.athleteId} className="border-b border-sk-line last:border-b-0">
                       <th scope="row" className="py-3.5 pr-4 font-normal">
                         <span className="flex items-center gap-3">
-                          <Initials name={athlete.name} size="sm" />
+                          <PersonAvatar name={athlete.name} athleteId={athlete.athleteId} size="sm" />
                           <span className="min-w-0">
                             <span className="block whitespace-nowrap font-bold text-sk-ink">{athlete.name}</span>
                             <span className="block whitespace-nowrap text-sm text-sk-mute">
