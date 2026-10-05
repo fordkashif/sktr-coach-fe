@@ -8,7 +8,10 @@ const support = (
   </a>
 )
 
-/** Terms of use. A plain-language draft that describes how the app works today. Not yet reviewed by a lawyer. */
+/**
+ * Terms of use. They describe how the app works today and set out who does what under Jamaica's
+ * Data Protection Act, 2020. Still a draft until a lawyer has read them (see LEGAL_REVIEWED).
+ */
 export default function TermsPage() {
   return (
     <LegalPage title="Terms" lede="The rules for using SKTR Coach, in plain words.">
@@ -34,10 +37,36 @@ export default function TermsPage() {
         <LegalList
           items={[
             "Inviting only people who belong to the club, and removing access when someone leaves.",
-            "Having the agreement of a parent or guardian before an athlete under 18 uses the app, where that is needed.",
-            "Deciding what its coaches record about athletes, including health information, and making sure the club is allowed to record it.",
+            "Having the consent of a parent or guardian before an athlete under 18 uses the app.",
+            "Having written consent before its coaches record health information about an athlete. For an athlete under 18 that consent comes from a parent or guardian.",
+            "Deciding what its coaches record about athletes, recording only what is needed for training, and keeping it accurate.",
             "Looking after athletes: club admins can read the messages between coaches and athletes in their club and should act on reports.",
             "Keeping its own details and billing contact up to date.",
+          ]}
+        />
+      </LegalSection>
+
+      <LegalSection title="Personal information and the Data Protection Act">
+        <LegalText>
+          Jamaica's Data Protection Act, 2020 applies to the personal information in SKTR Coach. Under the Act the club is the data controller for what it records about its members, and SKTR Labs is the data processor that stores it for the club.
+        </LegalText>
+        <LegalText>The club agrees to:</LegalText>
+        <LegalList
+          items={[
+            "Meet its own duties under the Act as a data controller, including registering with the Information Commissioner where the Act requires it.",
+            "Tell its members and the parents or guardians of young athletes that it uses SKTR Coach, and point them to the privacy page.",
+            "Answer requests from its members to see, correct or delete their information. We will help.",
+            "Tell us straight away if it believes an account in the club has been misused.",
+          ]}
+        />
+        <LegalText>SKTR Labs agrees to:</LegalText>
+        <LegalList
+          items={[
+            "Use a club's information only to provide SKTR Coach to that club, and only on the club's instructions.",
+            "Keep it secure and confidential, and limit which of our own people can reach it.",
+            "Use other companies to store or deliver it only where they are bound to protect it. They are listed on the privacy page.",
+            "Tell the club without delay if there is a security breach that affects its information, so that the club can meet the 72 hour reporting duty in the Act.",
+            "Help the club answer requests from its members, and delete or return the club's information when the club stops using SKTR Coach.",
           ]}
         />
       </LegalSection>
@@ -80,7 +109,7 @@ export default function TermsPage() {
             "A club admin can turn off a member's access to the club.",
             "We can pause or end a club's access, for example if these terms are broken or an agreed payment is not made.",
             "A club can stop using SKTR Coach at any time by emailing us.",
-            "When access is paused or ended the club's information is kept so it can be restored. To have it deleted, email us.",
+            "When access is paused the club's information is kept so it can be restored. When a club tells us it has stopped using SKTR Coach, we delete its information within 90 days.",
           ]}
         />
       </LegalSection>
@@ -89,6 +118,10 @@ export default function TermsPage() {
         <LegalText>
           We work to keep SKTR Coach available and correct, but we cannot promise it will never be down or never contain a mistake. Coaches remain responsible for the training they set, and athletes for how they train. We may change or remove features as the app develops.
         </LegalText>
+      </LegalSection>
+
+      <LegalSection title="The law that applies">
+        <LegalText>These terms are governed by the laws of Jamaica, and the courts of Jamaica deal with any dispute about them.</LegalText>
       </LegalSection>
 
       <LegalSection title="Changes to these terms">
