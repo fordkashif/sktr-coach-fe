@@ -10,7 +10,6 @@ import {
   Fact,
   FactList,
   Field,
-  InlineConfirm,
   Input,
   LinkButton,
   List,
@@ -24,7 +23,6 @@ import {
   SkeletonRows,
   Split,
   Textarea,
-  notify,
 } from "@/components/sk"
 import { PhotoSection } from "@/components/account/account-sections"
 import { PersonAvatar } from "@/components/account/person-avatar"
@@ -41,7 +39,6 @@ import {
   getCurrentAthleteProfileSnapshot,
   hasMockAthleteLeftTeam,
   isMinorDateOfBirth,
-  leaveCurrentAthleteTeam,
   loadMockAthletePrivateDetails,
   loadMockAthleteProfileEdits,
   loadMockAthleteTeamCoaches,
@@ -158,9 +155,6 @@ export default function AthleteProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
-  const [confirmingLeave, setConfirmingLeave] = useState(false)
-  const [leaving, setLeaving] = useState(false)
-  const [leaveError, setLeaveError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -229,7 +223,6 @@ export default function AthleteProfilePage() {
     setFieldErrors({})
     setSaveError(null)
     setSavedNotice(false)
-    setConfirmingLeave(false)
     setEditing(true)
   }
 
@@ -289,26 +282,10 @@ export default function AthleteProfilePage() {
     setSavedNotice(true)
   }
 
-  const handleLeave = async () => {
-    if (!profile?.teamName) return
-    const teamName = profile.teamName
-    setLeaving(true)
-    setLeaveError(null)
-    const result = await leaveCurrentAthleteTeam()
-    setLeaving(false)
-    setConfirmingLeave(false)
-    if (!result.ok && result.error.code !== "CONFLICT") {
-      setLeaveError(`Could not take you off ${teamName}. ${result.error.message}`)
-      return
-    }
-    setProfile({ ...profile, teamName: null, teamEventGroup: null, coaches: [] })
-    notify(`You left ${teamName}`, "Your history is kept.")
-  }
-
   const handleSignOut = async () => {
     if (isSupabaseMode) {
       const supabase = getBrowserSupabaseClient()
-      if (supabase) await supabase.auth.signOut()
+      if (supabase) await supabase.auth.signOut({ scope: "local" })
     } else {
       window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
       window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
@@ -582,11 +559,6 @@ export default function AthleteProfilePage() {
           side={
             <>
               <Section title="Your team">
-                {leaveError ? (
-                  <Notice tone="error" className="mb-2">
-                    {leaveError}
-                  </Notice>
-                ) : null}
                 {profile.teamName ? (
                   <>
                     <List>
@@ -612,23 +584,7 @@ export default function AthleteProfilePage() {
                       ))}
                       {profile.coaches.length === 0 ? <ListRow title="No coach listed yet" subtitle="Your club has not assigned a coach to this team." /> : null}
                     </List>
-                    {confirmingLeave ? (
-                      <InlineConfirm
-                        className="mt-3"
-                        question={`Leave ${profile.teamName}? Your history is kept. You stop seeing this team's plans and test weeks, and your coach is told.`}
-                        confirmLabel="Leave team"
-                        cancelLabel="Stay"
-                        busy={leaving}
-                        onConfirm={() => void handleLeave()}
-                        onCancel={() => setConfirmingLeave(false)}
-                      />
-                    ) : (
-                      <div className="pt-3">
-                        <Button variant="danger" size="sm" onClick={() => setConfirmingLeave(true)}>
-                          Leave this team
-                        </Button>
-                      </div>
-                    )}
+                    <p className="pt-3 text-sm text-sk-mute">To move to another team or come off this one, ask your coach or club admin.</p>
                   </>
                 ) : (
                   <EmptyState

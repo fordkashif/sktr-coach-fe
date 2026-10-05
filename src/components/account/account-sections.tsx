@@ -445,7 +445,7 @@ export function DevicesSection() {
   const handleSignOut = async () => {
     if (getBackendMode() === "supabase") {
       const supabase = getBrowserSupabaseClient()
-      if (supabase) await supabase.auth.signOut()
+      if (supabase) await supabase.auth.signOut({ scope: "local" })
     } else {
       window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
       window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
