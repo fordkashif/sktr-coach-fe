@@ -16,7 +16,11 @@ type World = {
   caller: { id: string } | null
   callerTenant: string | null
   isClubAdmin: boolean
-  isCoachOrAdmin: boolean
+  /** Teams the caller is an assigned coach of, as is_team_coach() would answer. */
+  coachTeamIds: string[]
+  /** Makes the is_team_coach call fail, as it would before the coach team scope migration has run. */
+  teamCoachRpcFails?: boolean
+  rpcCalls: Array<{ name: string; args: unknown }>
   prefEnabled: boolean
   env: Record<string, string | undefined>
   resend: { status: number; body: any } | "throw"
@@ -32,7 +36,7 @@ function makeWorld(over: Partial<World> = {}, invite: Record<string, unknown> = 
       profiles: [{ user_id: "user-1", display_name: "Dana Admin", role: "club-admin" }],
       audit_events: [],
     },
-    caller: { id: "user-1" }, callerTenant: TENANT_A, isClubAdmin: true, isCoachOrAdmin: true, prefEnabled: true,
+    caller: { id: "user-1" }, callerTenant: TENANT_A, isClubAdmin: true, coachTeamIds: [], rpcCalls: [], prefEnabled: true,
     env: { SUPABASE_URL: "https://x.supabase.co", SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc", RESEND_API_KEY: "re_x", NOTIFICATION_FROM_EMAIL: "hello@sktr.test", PUBLIC_APP_URL: "https://app.sktr.test/some/path" },
     resend: { status: 200, body: { id: "msg_1" } }, fetchCalls: [],
     ...over,
@@ -72,7 +76,16 @@ function deps(w: World): HandlerDeps {
     getEnv: (n) => w.env[n],
     createUserClient: () => ({
       auth: { getUser: () => Promise.resolve(w.caller ? { data: { user: w.caller }, error: null } : { data: { user: null }, error: { message: "bad jwt" } }) },
-      rpc: (name: string) => Promise.resolve({ data: name === "current_tenant_id" ? w.callerTenant : name === "is_club_admin" ? w.isClubAdmin : w.isCoachOrAdmin, error: null }),
+      rpc: (name: string, args?: any) => {
+        w.rpcCalls.push({ name, args })
+        if (name === "current_tenant_id") return Promise.resolve({ data: w.callerTenant, error: null })
+        if (name === "is_club_admin") return Promise.resolve({ data: w.isClubAdmin, error: null })
+        if (name === "is_team_coach") {
+          if (w.teamCoachRpcFails) return Promise.resolve({ data: null, error: { message: "function is_team_coach does not exist" } })
+          return Promise.resolve({ data: w.coachTeamIds.includes(args?.p_team_id), error: null })
+        }
+        return Promise.resolve({ data: null, error: { message: "unexpected rpc " + name } })
+      },
     }),
     createServiceClient: () => ({
       from: (t: string) => query(w, t),
@@ -118,11 +131,44 @@ Deno.test("not allowed: coach cannot send a coach invite", async () => {
   assertEquals([r.status, r.body.code], [403, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
 })
 Deno.test("not allowed: athlete cannot send an athlete invite", async () => {
-  const w = makeWorld({ isClubAdmin: false, isCoachOrAdmin: false }, {}, "athlete_invites")
+  const w = makeWorld({ isClubAdmin: false }, {}, "athlete_invites")
   const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals([r.status, r.body.code], [403, "not_allowed"])
 })
+Deno.test("not allowed: coach cannot send the athlete invite of a team they are not assigned to", async () => {
+  // Coach Rivera coaches team-2 (Sprints). The invite is for team-1 (Coach Smith's team) in the same club.
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-2"] }, {}, "athlete_invites")
+  const r = await call(w, { kind: "athlete", inviteId: INVITE })
+  assertEquals([r.status, r.body.code], [403, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
+  assertEquals(w.rpcCalls.filter((c) => c.name === "is_team_coach").map((c) => c.args), [{ p_team_id: "team-1" }])
+  assertEquals([w.tables.athlete_invites[0].email_send_count, w.tables.audit_events.length], [0, 0])
+  // Same answer as an invite that does not exist.
+  const missing = await call(makeWorld({ isClubAdmin: false, coachTeamIds: ["team-2"] }, {}, "athlete_invites"), { kind: "athlete", inviteId: "22222222-2222-4222-8222-222222222222" })
+  assertEquals([r.status, r.body.error], [missing.status, missing.body.error])
+})
+Deno.test("not allowed: coach with no team assignment cannot send an athlete invite", async () => {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: [] }, {}, "athlete_invites")
+  const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals([r.status, r.body.code], [403, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
+})
+Deno.test("not allowed: team check that cannot be answered counts as no", async () => {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-1"], teamCoachRpcFails: true }, {}, "athlete_invites")
+  const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals([r.status, r.body.code], [403, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
+})
+Deno.test("not allowed: assigned coach of another club's team is never asked about, and is refused", async () => {
+  const w = makeWorld({ isClubAdmin: false, callerTenant: TENANT_B, coachTeamIds: ["team-1"] }, {}, "athlete_invites")
+  const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals([r.status, r.body.code], [403, "not_allowed"])
+  assertEquals(w.rpcCalls.filter((c) => c.name === "is_team_coach").length, 0)
+})
+Deno.test("not allowed: being assigned to a team does not let a coach send a coach invite", async () => {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-1"] })
+  const r = await call(w); assertEquals([r.status, r.body.code], [403, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
+})
+Deno.test("success: club admin sends an athlete invite for any team of the club without a team check", async () => {
+  const w = makeWorld({ coachTeamIds: [] }, {}, "athlete_invites")
+  const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals(r.status, 200); assertEquals(w.fetchCalls.length, 1)
+  assertEquals(w.rpcCalls.filter((c) => c.name === "is_team_coach").length, 0)
+})
 Deno.test("not allowed: inactive member or suspended club (no current tenant)", async () => {
-  const r = await call(makeWorld({ callerTenant: null, isClubAdmin: false, isCoachOrAdmin: false })); assertEquals(r.body.code, "not_allowed")
+  const r = await call(makeWorld({ callerTenant: null, isClubAdmin: false })); assertEquals(r.body.code, "not_allowed")
 })
 Deno.test("wrong tenant and unknown invite look identical", async () => {
   const a = await call(makeWorld({ callerTenant: TENANT_B }))
@@ -187,8 +233,8 @@ Deno.test("success: coach, then immediate resend is rate limited, later resend a
   const later = await call(w); assertEquals([later.status, later.body.sendCount, later.body.resend], [200, 2, true])
   assertEquals(w.tables.audit_events[1].action, "coach_invite_email_resent")
 })
-Deno.test("success: athlete invite sent by a coach", async () => {
-  const w = makeWorld({ isClubAdmin: false }, {}, "athlete_invites")
+Deno.test("success: athlete invite sent by a coach assigned to that team", async () => {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-1"] }, {}, "athlete_invites")
   w.tables.profiles[0] = { user_id: "user-1", display_name: "Coach Kay", role: "coach" }
   const r = await call(w, { kind: "athlete", inviteId: INVITE }); assertEquals(r.status, 200)
   const sent = w.fetchCalls[0].body

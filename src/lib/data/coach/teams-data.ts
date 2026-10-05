@@ -170,13 +170,33 @@ export async function getCoachTeamsSnapshotForCurrentUser(): Promise<Result<Coac
   }
 }
 
-/** Takes an athlete off a team roster. The athlete account and history are kept. */
+/**
+ * Takes an athlete off a team roster. The athlete account and history are kept.
+ * Allowed for a club admin, and for a coach assigned to that team.
+ */
 export async function removeAthleteFromTeamForCurrentCoach(params: {
   athleteId: string
   teamId: string
 }): Promise<Result<void>> {
   const clientResult = requireSupabaseClient("removeAthleteFromTeamForCurrentCoach")
   if (!clientResult.ok) return clientResult
+
+  // The database does this in one checked step. A coach cannot write "no team" on an athlete directly,
+  // because athletes without a team belong to club admins.
+  const { data: removed, error: rpcError } = await clientResult.client.rpc("remove_athlete_from_team", {
+    p_athlete_id: params.athleteId,
+    p_team_id: params.teamId,
+  })
+
+  if (!rpcError) {
+    if (removed !== true) return err("NOT_FOUND", "This athlete is no longer on the team.")
+    coachTeamsSnapshotCache = null
+    return ok(undefined)
+  }
+
+  // Database without the function yet (the migration has not run): fall back to the direct update.
+  const functionMissing = rpcError.code === "PGRST202" || rpcError.code === "42883"
+  if (!functionMissing) return { ok: false, error: mapPostgrestError(rpcError) }
 
   const { data, error } = await clientResult.client
     .from("athletes")

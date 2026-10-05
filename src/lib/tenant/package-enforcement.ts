@@ -46,11 +46,30 @@ async function readTenantPlan(client: SupabaseClient, tenantId: string): Promise
   return ok(toPackageId(data?.requested_plan))
 }
 
+/**
+ * Athletes in the whole club, for the package limit.
+ * A coach can only read the athletes of their own teams, so a plain count would come up short for them.
+ * The database function returns the club total to staff. Where it is not available yet (older database)
+ * the direct count is used, which is exact for club admins.
+ */
+async function countTenantAthletes(client: SupabaseClient, tenantId: string): Promise<Result<number>> {
+  try {
+    const { data, error } = await client.rpc("current_tenant_athlete_count")
+    if (!error && typeof data === "number") return ok(data)
+  } catch {
+    // Fall through to the direct count.
+  }
+
+  const { count, error } = await client.from("athletes").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(count ?? 0)
+}
+
 export async function getTenantPackageUsage(
   client: SupabaseClient,
   tenantId: string,
 ): Promise<Result<TenantPackageUsage>> {
-  const [packageResult, teamsResult, coachesResult, athletesResult] = await Promise.all([
+  const [packageResult, teamsResult, coachesResult, athleteCountResult] = await Promise.all([
     readTenantPlan(client, tenantId),
     client.from("teams").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).neq("status", "archived"),
     client
@@ -59,13 +78,13 @@ export async function getTenantPackageUsage(
       .eq("tenant_id", tenantId)
       .eq("role", "coach")
       .eq("is_active", true),
-    client.from("athletes").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
+    countTenantAthletes(client, tenantId),
   ])
 
   if (!packageResult.ok) return packageResult
   if (teamsResult.error) return { ok: false, error: mapPostgrestError(teamsResult.error) }
   if (coachesResult.error) return { ok: false, error: mapPostgrestError(coachesResult.error) }
-  if (athletesResult.error) return { ok: false, error: mapPostgrestError(athletesResult.error) }
+  if (!athleteCountResult.ok) return athleteCountResult
 
   const packageId = packageResult.data
   return ok({
@@ -74,7 +93,7 @@ export async function getTenantPackageUsage(
     usage: {
       teams: teamsResult.count ?? 0,
       coaches: coachesResult.count ?? 0,
-      athletes: athletesResult.count ?? 0,
+      athletes: athleteCountResult.data,
     },
   })
 }

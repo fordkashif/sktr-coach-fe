@@ -176,8 +176,11 @@ export default function CoachDashboardPage() {
     setSetupGuideDismissedAt(dismissed ? new Date().toISOString() : null)
   }
 
-  const lede =
-    readinessTotal === 0
+  // A coach only sees the teams a club admin assigned them to. With none, there is nothing to invite into yet.
+  const coachHasNoTeam = backendMode === "supabase" && role === "coach" && backendSnapshot !== null && sourceTeams.length === 0
+  const lede = coachHasNoTeam
+    ? "You are not assigned to a team yet. Ask a club admin to add you to one, then your roster, readiness and adherence show up here."
+    : readinessTotal === 0
       ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
       : alertRows.length === 0
         ? `${readinessTotal} ${readinessTotal === 1 ? "athlete" : "athletes"}, all on track today.`
