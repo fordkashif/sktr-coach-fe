@@ -13,6 +13,7 @@ import {
   getCoachWellnessEntriesForCurrentUser,
   type CoachDashboardSnapshot,
 } from "@/lib/data/coach/dashboard-data"
+import { averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 
 type ReportKey = "adherence" | "prs" | "wellness"
@@ -167,7 +168,7 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
   const adherenceRows = [...scopedAthletes]
     .filter((athlete) => matchesSearch(athlete.name))
     .filter((athlete) => readinessFilter === "all" || athlete.readiness === readinessFilter)
-    .sort((left, right) => left.adherence - right.adherence)
+    .sort((left, right) => (left.adherence ?? 101) - (right.adherence ?? 101))
 
   const prCategories = [...new Set(scopedPrs.map((pr) => pr.category))].sort()
   const prRows = scopedPrs
@@ -210,7 +211,7 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
         athlete.eventGroup,
         athlete.primaryEvent,
         READINESS_LABEL[athlete.readiness],
-        String(athlete.adherence),
+        athlete.adherence === null ? "" : String(athlete.adherence),
         athlete.lastWellness === "-" ? "" : athlete.lastWellness,
       ]),
     ])
@@ -271,9 +272,7 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
   } satisfies Record<ReportKey, unknown>
   const active = reports[report]
 
-  const adherenceAverage = adherenceRows.length
-    ? Math.round(adherenceRows.reduce((sum, athlete) => sum + athlete.adherence, 0) / adherenceRows.length)
-    : null
+  const adherenceAverage = averageAdherence(adherenceRows.map((athlete) => athlete.adherence))
 
   const th = "whitespace-nowrap px-3 py-2.5 font-semibold"
   const td = "whitespace-nowrap px-3 py-3.5"
@@ -451,7 +450,7 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
               {report === "adherence" ? (
                 <Summary
                   items={[
-                    { label: "Average adherence", value: adherenceAverage ?? 0, unit: "%" },
+                    adherenceAverage === null ? { label: "Average adherence", value: "None" } : { label: "Average adherence", value: adherenceAverage, unit: "%" },
                     { label: "Ready", value: adherenceRows.filter((athlete) => athlete.readiness === "green").length },
                     { label: "Watch", value: adherenceRows.filter((athlete) => athlete.readiness === "yellow").length },
                     { label: "Review", value: adherenceRows.filter((athlete) => athlete.readiness === "red").length },
@@ -518,10 +517,14 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
                             <ReadinessTag status={athlete.readiness} />
                           </td>
                           <td className={td}>
-                            <span className="flex items-center gap-3">
-                              <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} className="w-28" />
-                              <span className="w-11 text-right font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
-                            </span>
+                            {athlete.adherence === null ? (
+                              <span className="text-sk-mute">{NO_SESSIONS_DUE}</span>
+                            ) : (
+                              <span className="flex items-center gap-3">
+                                <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} className="w-28" />
+                                <span className="w-11 text-right font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
+                              </span>
+                            )}
                           </td>
                           <td className={`${td} pr-0 text-right text-sk-ink-2`}>
                             {athlete.lastWellness && athlete.lastWellness !== "-" ? athlete.lastWellness : <span className="text-sk-mute">None yet</span>}

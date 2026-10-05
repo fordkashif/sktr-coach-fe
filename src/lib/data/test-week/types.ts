@@ -50,6 +50,30 @@ export type TestWeekSubmissionResult = {
   submittedCount: number
   /** Tests where this submission became the athlete's personal best. */
   newPersonalBests: string[]
+  /** The same tests with the new mark and the mark it replaced (null for a first result). */
+  personalBests: Array<{ testName: string; mark: string; previous: string | null }>
   /** Set when results saved but a personal best record could not be updated. */
   prWarning: string | null
+}
+
+/** One past (or still open) test week with the athlete's own results. */
+export type AthleteTestWeekHistoryItem = {
+  testWeekId: string
+  name: string
+  startDate: string
+  endDate: string
+  status: "published" | "closed"
+  results: Array<{
+    testDefinitionId: string
+    name: string
+    unit: TestDefinitionUnit
+    valueText: string
+    valueNumeric: number | null
+    scheduledDate: string
+    submittedAt: string
+    /** The result for a test of the same name in the test week before this one. */
+    previousValueText: string | null
+    /** Movement against that result. Null when there is none or the marks are equal. */
+    change: { text: string; improved: boolean } | null
+  }>
 }

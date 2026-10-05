@@ -62,6 +62,7 @@ export async function getLatestSessionForAthlete(athleteId: string): Promise<Res
 
   // Plans create sessions for every planned day, so "latest" means the one that matters now:
   // today's session, else the next one coming up, else the most recent past one.
+  // Sessions the athlete skipped with a reason, and ones they added themselves, are never "the session to do".
   const columns = "id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at"
   const now = new Date()
   const today = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`
@@ -71,6 +72,8 @@ export async function getLatestSessionForAthlete(athleteId: string): Promise<Res
     .select(columns)
     .eq("athlete_id", athleteId)
     .gte("scheduled_for", today)
+    .neq("origin", "athlete")
+    .neq("status", "skipped")
     .order("scheduled_for", { ascending: true })
     .limit(1)
     .maybeSingle()
@@ -81,6 +84,8 @@ export async function getLatestSessionForAthlete(athleteId: string): Promise<Res
     .from("sessions")
     .select(columns)
     .eq("athlete_id", athleteId)
+    .neq("origin", "athlete")
+    .neq("status", "skipped")
     .order("scheduled_for", { ascending: false })
     .limit(1)
     .maybeSingle()

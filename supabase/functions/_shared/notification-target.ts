@@ -55,6 +55,11 @@ export function notificationTargetPath(eventType: string, metadata: Notification
       return "/athlete/training-plan"
     case "test_week_published":
       return "/athlete/test-week"
+    case "competition_entry_added": {
+      // The athlete was entered in a meet: straight to it.
+      const competitionId = id(metadata, "competition_id")
+      return competitionId ? `/athlete/competitions/${competitionId}` : "/athlete/competitions"
+    }
     case "session_note_added": {
       const sessionDate = date(metadata, "session_date")
       return sessionDate ? `/athlete/log?date=${sessionDate}` : "/athlete/log"
@@ -62,6 +67,9 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     case "athlete_team_added":
     case "athlete_team_removed":
       return "/athlete/home"
+    case "availability_set_by_coach":
+      // The plan shows the notice with "I'm back" and which sessions are excused.
+      return "/athlete/training-plan"
     case "athlete_invite_created":
       // The invited athlete sees this one; the person who sent the invite is told below when it is accepted.
       return role === "athlete" ? "/athlete/join" : teamPath(metadata, role)
@@ -75,10 +83,28 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     }
     case "athlete_test_results_submitted":
       return "/coach/test-week"
+    case "athlete_new_best": {
+      // A personal or season best: the athlete it belongs to.
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/coach/athletes/${athleteId}` : teamPath(metadata, "coach")
+    }
     case "athlete_low_readiness": {
       const athleteId = id(metadata, "athlete_id")
       return athleteId ? `/coach/athletes/${athleteId}` : teamPath(metadata, "coach")
     }
+    case "athlete_unavailable":
+    case "athlete_available_again": {
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/coach/athletes/${athleteId}` : teamPath(metadata, "coach")
+    }
+    case "athlete_pain_reported": {
+      // The report is read on the athlete's page, where the row policies decide who may.
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/coach/athletes/${athleteId}` : teamPath(metadata, "coach")
+    }
+    case "athlete_left_team":
+      // The athlete is no longer on the team, so their page is closed to the coach: open the team.
+      return teamPath(metadata, role)
     case "athlete_invite_accepted":
       return teamPath(metadata, role)
     case "coach_team_assigned":
@@ -116,10 +142,21 @@ export function notificationActionLabel(eventType: string): string {
       return "Open your plan"
     case "test_week_published":
       return "Open the test week"
+    case "competition_entry_added":
+      return "Open the competition"
+    case "athlete_new_best":
+      return "Open the athlete"
     case "session_note_added":
       return "Open the session"
     case "athlete_low_readiness":
+    case "athlete_pain_reported":
+    case "athlete_unavailable":
+    case "athlete_available_again":
       return "Open the athlete"
+    case "availability_set_by_coach":
+      return "Open your plan"
+    case "athlete_left_team":
+      return "Open the team"
     case "athlete_invite_accepted":
     case "coach_team_assigned":
       return "Open the team"

@@ -8,11 +8,16 @@ const athleteRoutes = [
   "/athlete/join/t1",
   "/athlete/log",
   "/athlete/profile",
+  "/athlete/competitions",
   "/athlete/prs",
+  "/athlete/prs/event/k%3A100m",
   "/athlete/test-week",
+  "/athlete/test-week/history",
   "/athlete/training-plan",
   "/athlete/trends",
   "/athlete/wellness",
+  "/athlete/wellness/history",
+  "/athlete/wellness/pain",
 ]
 
 const coachRoutes = [

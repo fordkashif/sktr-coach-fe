@@ -24,6 +24,7 @@ import {
 } from "@/components/invites/invite-email-ui"
 import { sendInviteEmail } from "@/lib/data/invites/invite-email-data"
 import { removeAthleteFromTeamForCurrentCoach } from "@/lib/data/coach/teams-data"
+import { adherenceText, averageAdherence as meanAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 import type { Athlete, PR, Team } from "@/lib/mock-data"
 
@@ -291,11 +292,9 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const athleteIds = new Set(teamAthletes.map((athlete) => athlete.id))
   const readyCount = teamAthletes.filter((athlete) => athlete.readiness === "green").length
   const readinessAlerts = teamAthletes.length - readyCount
-  const adherenceRiskCount = teamAthletes.filter((athlete) => athlete.adherence < 75).length
-  const averageAdherence =
-    teamAthletes.length > 0
-      ? Math.round(teamAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / teamAthletes.length)
-      : null
+  const adherenceRiskCount = teamAthletes.filter((athlete) => athlete.adherence !== null && athlete.adherence < 75).length
+  // Athletes with no sessions due have no figure and are left out of the average.
+  const averageAdherence = meanAdherence(teamAthletes.map((athlete) => athlete.adherence))
   const latestPrByAthlete = new Map<string, (typeof prsSource)[number]>()
   for (const pr of prsSource) {
     if (!athleteIds.has(pr.athleteId)) continue
@@ -395,11 +394,13 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
         <Stat
           tone="blue"
           label="Plan adherence"
-          value={averageAdherence ?? "0"}
-          unit="%"
+          value={averageAdherence ?? "None"}
+          unit={averageAdherence === null ? undefined : "%"}
           hint={
             averageAdherence === null
-              ? "No athletes yet"
+              ? teamAthletes.length > 0
+                ? NO_SESSIONS_DUE
+                : "No athletes yet"
               : adherenceRiskCount > 0
                 ? `${adherenceRiskCount} under 75%`
                 : "Everyone above 75%"
@@ -472,9 +473,9 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                         <span className="col-span-3 row-start-2 md:col-span-1 md:row-start-auto">
                           <span className="mb-1.5 flex items-baseline justify-between text-sm">
                             <span className="text-sk-mute">Adherence</span>
-                            <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
+                            <span className={athlete.adherence === null ? "text-sk-mute" : "font-bold tabular-nums text-sk-ink"}>{adherenceText(athlete.adherence)}</span>
                           </span>
-                          <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
+                          {athlete.adherence !== null ? <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} /> : null}
                         </span>
                         <span className="col-start-3 row-start-1 justify-self-end md:col-start-auto md:row-start-auto md:justify-self-start">
                           <ReadinessTag status={athlete.readiness} />

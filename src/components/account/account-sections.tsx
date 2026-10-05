@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { Camera, Eye, EyeSlash } from "@phosphor-icons/react"
 import { Avatar, Button, Field, InlineConfirm, Input, List, ListRow, Notice, Section, notify } from "@/components/sk"
@@ -17,6 +17,7 @@ import {
   validateNewEmail,
   validateNewPassword,
 } from "@/lib/data/account/account-data"
+import { getCurrentCoachContactVisibility, setCurrentCoachContactVisibility } from "@/lib/data/athlete/profile-data"
 import { prepareAvatarImage, type AvatarImageError } from "@/lib/image-resize"
 import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
 import { useRole } from "@/lib/role-context"
@@ -501,6 +502,69 @@ export function DevicesSection() {
           />
         </List>
       )}
+    </Section>
+  )
+}
+
+/**
+ * Coaches only: whether the athletes of their teams see their email address on the athlete profile.
+ * Off until the coach turns it on. Their name and photo are shown either way.
+ */
+export function CoachContactSection() {
+  const { account } = useCurrentAccount()
+  const { userEmail } = useRole()
+  const email = account?.email ?? userEmail
+  const [shown, setShown] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getCurrentCoachContactVisibility().then((result) => {
+      if (cancelled) return
+      // A database without this setting yet behaves as "off".
+      setShown(result.ok ? result.data : false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleToggle = async () => {
+    if (shown === null || busy) return
+    const next = !shown
+    setBusy(true)
+    setError(null)
+    const result = await setCurrentCoachContactVisibility(next)
+    setBusy(false)
+    if (!result.ok) {
+      setError(`Could not change this. ${result.error.message}`)
+      return
+    }
+    setShown(next)
+    notify(next ? "Your athletes can now see your email" : "Your email is hidden from athletes")
+  }
+
+  return (
+    <Section title="Contact for athletes" hint="Athletes on your teams always see your name and photo. Your email is shown only if you choose.">
+      {error ? (
+        <Notice tone="error" className="mb-3">
+          {error}
+        </Notice>
+      ) : null}
+      <List>
+        <ListRow
+          title="Show my email to my athletes"
+          subtitle={
+            shown === null ? "Checking..." : shown ? <span className="break-all">On. They see {email ?? "your email"} on their profile.</span> : "Off. Athletes cannot see your email."
+          }
+          trailing={
+            <Button size="sm" aria-pressed={Boolean(shown)} disabled={shown === null || busy} onClick={() => void handleToggle()}>
+              {busy ? "Saving..." : shown ? "Hide email" : "Show email"}
+            </Button>
+          }
+        />
+      </List>
     </Section>
   )
 }

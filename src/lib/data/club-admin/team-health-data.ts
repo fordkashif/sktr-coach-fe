@@ -1,4 +1,6 @@
+import { listAthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { err, mapPostgrestError, ok, type Result } from "@/lib/data/result"
+import { adherenceCounts, adherencePercent, sumAdherence, type AdherenceSession } from "@/lib/data/session/adherence"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -25,8 +27,12 @@ export type ClubAdminTeamHealthRow = {
   review: number
   /** Athletes with no check-in in the window and no stored readiness. */
   noCheckIn: number
-  /** Percentage of scheduled sessions completed in the window, or null when none were scheduled. */
+  /**
+   * Percentage of due sessions completed in the window, or null when none were due.
+   * Skipped sessions and sessions inside an unavailable period are excused; sessions athletes added do not count.
+   */
   adherence: number | null
+  /** Sessions that were due and not excused: the weight of this team in the club figure. */
   scheduledSessions: number
 }
 
@@ -77,7 +83,7 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
       .order("entry_date", { ascending: true }),
     client
       .from("sessions")
-      .select("id, athlete_id")
+      .select("id, athlete_id, scheduled_for, status, origin")
       .eq("tenant_id", tenantId)
       .gte("scheduled_for", sinceIso)
       .lte("scheduled_for", todayIso),
@@ -124,17 +130,20 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
     latestScore.set(row.athlete_id, row.readiness_score)
   }
 
-  const sessionsByAthlete = new Map<string, Set<string>>()
-  for (const row of (sessionsResult.data as Array<{ id: string; athlete_id: string }> | null) ?? []) {
-    const current = sessionsByAthlete.get(row.athlete_id) ?? new Set<string>()
-    current.add(row.id)
-    sessionsByAthlete.set(row.athlete_id, current)
-  }
-  const completedByAthlete = new Map<string, number>()
-  for (const row of (completionsResult.data as Array<{ session_id: string; athlete_id: string }> | null) ?? []) {
-    if (!sessionsByAthlete.get(row.athlete_id)?.has(row.session_id)) continue
-    completedByAthlete.set(row.athlete_id, (completedByAthlete.get(row.athlete_id) ?? 0) + 1)
-  }
+  const availabilityResult = await listAthleteAvailability(
+    athletes.map((athlete) => athlete.id),
+    { from: sinceIso },
+  )
+  // Excused days make the figure kinder. If they cannot be read the figure is still shown.
+  if (!availabilityResult.ok) console.warn("[club-admin] could not read athlete availability", availabilityResult.error)
+  const adherenceByAthlete = adherenceCounts(
+    ((sessionsResult.data as Array<{ id: string; athlete_id: string; scheduled_for: string; status: string; origin: string | null }> | null) ?? []).map(
+      (row): AdherenceSession => ({ id: row.id, athleteId: row.athlete_id, scheduledFor: row.scheduled_for, status: row.status, origin: row.origin }),
+    ),
+    new Set(((completionsResult.data as Array<{ session_id: string; athlete_id: string }> | null) ?? []).map((row) => row.session_id)),
+    availabilityResult.ok ? availabilityResult.data : [],
+    { from: sinceIso, to: todayIso },
+  )
 
   const teamRows =
     (teamsResult.data as Array<{ id: string; name: string; event_group: string | null; status: ClubAdminTeamHealthRow["status"] }> | null) ?? []
@@ -147,8 +156,6 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
       let watch = 0
       let review = 0
       let noCheckIn = 0
-      let scheduled = 0
-      let completed = 0
       for (const athlete of roster) {
         const score = latestScore.get(athlete.id)
         const readiness: Readiness | null =
@@ -157,9 +164,8 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
         else if (readiness === "yellow") watch += 1
         else if (readiness === "red") review += 1
         else noCheckIn += 1
-        scheduled += sessionsByAthlete.get(athlete.id)?.size ?? 0
-        completed += completedByAthlete.get(athlete.id) ?? 0
       }
+      const teamCount = sumAdherence(roster.map((athlete) => adherenceByAthlete.get(athlete.id)))
       const lead = leadByTeam.get(team.id)
       return {
         id: team.id,
@@ -174,8 +180,8 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
         watch,
         review,
         noCheckIn,
-        adherence: scheduled > 0 ? Math.min(100, Math.round((completed / scheduled) * 100)) : null,
-        scheduledSessions: scheduled,
+        adherence: adherencePercent(teamCount),
+        scheduledSessions: teamCount.due,
       }
     })
 

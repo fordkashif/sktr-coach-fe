@@ -273,6 +273,72 @@ Scheduler (both guarded, the migration applies without them): extensions `pg_net
 
 Realtime: `user_notifications` is added to the `supabase_realtime` publication (guarded).
 
+## Pain Reports and Private Athlete Details (migration `20261008110000_pain_reports_and_athlete_profile_fields.sql`)
+
+Additive. No existing table, column or row is changed.
+
+New table `pain_reports`:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | uuid pk | |
+| `tenant_id` | uuid fk tenants | |
+| `athlete_id` | uuid fk athletes, cascade | |
+| `body_areas` | text[] | 1 to 12 keys from a fixed list (`hamstring_left`, `lower_back`, ...). Keep in step with `src/lib/data/wellness/pain-report-types.ts` |
+| `severity` | smallint | 1 to 5 |
+| `started_on` | date | not in the future |
+| `training_impact` | text | `none`, `modified`, `cannot_train` |
+| `note` | text null | 500 characters at most |
+| `status` | text | `open` or `resolved`; `resolved_at` is set exactly when resolved |
+| `reported_by_user_id` | uuid fk auth.users | |
+| `created_at`, `updated_at` | timestamptz | |
+
+Indexes: `pain_reports_athlete_status_idx (athlete_id, status, created_at desc)`, `pain_reports_tenant_open_idx (tenant_id, created_at desc) where status = 'open'`.
+
+New table `athlete_private_details` (one row per athlete, primary key `athlete_id`): `tenant_id`, `preferred_name`, `pronouns`, `height_cm numeric(5,1)` (50 to 260), `weight_kg numeric(5,1)` (20 to 300), `emergency_contact_name`, `emergency_contact_relationship`, `emergency_contact_phone`, `guardian_name`, `guardian_phone`, `guardian_email`, `medical_notes` (1000 characters), `bib_number`, `affiliation`, `updated_by_user_id`, `created_at`, `updated_at`. Every value is optional. Index `athlete_private_details_tenant_idx`.
+
+New table `coach_contact_settings` (primary key `user_id`): `tenant_id`, `show_email_to_athletes boolean default false`, `created_at`, `updated_at`. No row means off.
+
+Functions: `update_current_athlete_private_details(...)`, `set_current_coach_contact_visibility(boolean)`, `get_current_athlete_team_coaches()`, `leave_current_athlete_team()`, `contact_phone_is_valid(text)`, `contact_email_is_valid(text)`; `notification_default_enabled(text, text)` replaced (adds `athlete_pain_reported` to the email-off list). Triggers: `pain_reports_before_write`, `queue_pain_report_notifications`, `set_updated_at_athlete_private_details`.
+
+New notification events: `athlete_pain_reported` (metadata `athlete_id`, `team_id`, `pain_report_id`), `athlete_left_team` (metadata `athlete_id`, `team_id`). New audit action: `athlete_leave_team`.
+
+## Skip, Availability, Sessions Added by the Athlete (migration `20261008090000_session_skip_availability_extra.sql`)
+
+`sessions` gains:
+
+| Column | Type | Notes |
+|---|---|---|
+| `origin` | text not null default `plan` | `plan` (set by the coach, from a plan or by hand) or `athlete` (logged by the athlete without being planned). `athlete` rows never have a plan slot (`sessions_athlete_origin_has_no_plan`) and never count towards adherence |
+| `skip_reason` | text null | `sick`, `injured`, `travelling`, `competing`, `school_work`, `other`. Required while `status = 'skipped'`, cleared by trigger otherwise |
+| `skip_note` | text null | 280 characters at most |
+| `skipped_at` | timestamptz null | |
+
+`sessions.status` now allows `skipped` (`sessions_status_check` replaced by a wider check). New index `sessions_athlete_scheduled_idx (athlete_id, scheduled_for desc)`.
+
+New table `athlete_availability`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid pk | |
+| `tenant_id` | uuid fk tenants | |
+| `athlete_id` | uuid fk athletes | cascade on delete |
+| `kind` | text | `injured`, `sick`, `away` |
+| `starts_on` | date | first day unavailable |
+| `ends_on` | date null | last day unavailable; null means until further notice. `ends_on = starts_on - 1` marks a period cancelled before it began |
+| `note` | text null | 280 characters at most; never copied into audit events or notifications |
+| `created_by_user_id`, `created_by_role` | uuid, text | who set it (`athlete`, `coach`, `club-admin`) |
+| `ended_at`, `ended_by_user_id` | timestamptz, uuid | set when ended by hand ("I'm back") |
+| `created_at`, `updated_at` | timestamptz | |
+
+Indexes: `athlete_availability_athlete_idx (athlete_id, starts_on desc)`, `athlete_availability_tenant_idx (tenant_id, starts_on desc)`.
+
+Functions: `skip_my_session(uuid, text, text)`, `unskip_my_session(uuid)`, `set_athlete_availability(text, date, date, text, uuid) returns uuid`, `end_athlete_availability(uuid, date)`, `get_my_last_exercise_results(text[], date, uuid)`, `availability_kind_label(text)`, trigger function `clear_session_skip_fields()`.
+
+New notification events: `athlete_unavailable` and `athlete_available_again` (to the team's coaches, in the app only; metadata `athlete_id`, `team_id`), `availability_set_by_coach` (to the athlete, in the app and by email; metadata `athlete_id`, `availability_id`). New audit actions: `athlete_availability_set`, `athlete_availability_ended`.
+
+Plan adherence (computed in the app, `src/lib/data/session/adherence.ts`): sessions completed / sessions that were due and not excused, last 28 days. Due: `origin = 'plan'` and scheduled up to today. Excused: `status = 'skipped'`, or scheduled inside an `athlete_availability` period, unless the session was completed anyway. No sessions due gives no figure (null), never 100%.
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)
@@ -287,3 +353,13 @@ Realtime: `user_notifications` is added to the `supabase_realtime` publication (
 - [x] Soft-delete/archive approach documented
 - [x] Initial SQL migration drafted
 
+
+## Results history and competitions (20261008100000)
+
+- `result_events (key, name, category, kind, unit, lower_is_better, wind_applies, hand_time_adjust, aliases, sort_order)`: the controlled event list. `kind`: `time` (seconds, lower is better), `distance` (metres, higher is better), `points`, `weight` (kilograms), `other` (free text name, unit chosen per result). Mirrored by `RESULT_EVENTS` in `src/lib/data/pr/marks.ts`.
+- `athlete_results`: every mark. `event_key`, `event_label`, `event_group` (`k:<key>` or `o:<lower case label>`, what bests are grouped by), `mark_value` in the canonical unit (`mark_unit`: s, m, cm, kg, pts), `compare_value` (mark plus the hand timing adjustment), `mark_display` ("10.84", "10.6h", "1:52.30"), `timing`, `result_date`, `source` (`competition`, `test_week`, `training`, `manual`, `imported`), `competition_id`, `competition_entry_id` (unique), `test_result_id` (unique, cascades), `legacy_pr_record_id` (unique), `place`, `wind`, `is_wind_legal` (false when wind is over +2.0), `environment`, `is_altitude`, `location`, `notes`, `entered_by_user_id`.
+- `competitions (scope team|club|athlete, team_id, owner_athlete_id, name, start_date, end_date, venue, location, level, environment, notes, created_by_user_id)` and `competition_entries (competition_id, athlete_id, event_key, event_label, event_group, notes, status entered|scratched, entered_by_user_id)`, unique per competition, athlete and event. The result of an entry is the `athlete_results` row with that `competition_entry_id`: one final mark, optional place and wind.
+- Bests are derived: `athlete_event_best(athlete, event_group, from, to, legal_only)` and the view `athlete_event_bests` (`personal_best`, `season_best`, `wind_assisted_best`). Season: `results_season_bounds(tenant, date)` = the club's `club_profiles` season when the date is inside it, otherwise the calendar year.
+- `pr_records` is kept as a projection (new column `event_group`): one row per athlete and event holding the current best, rewritten by trigger from `athlete_results`. Readers are unchanged. Do not write it from the app.
+- `test_results` rows are copied into `athlete_results` by trigger (insert, update, delete, and when a test is renamed).
+- Notification event types: `athlete_new_best` (coaches of the athlete's team, in-app), `competition_entry_added` (the athlete, in-app and email).

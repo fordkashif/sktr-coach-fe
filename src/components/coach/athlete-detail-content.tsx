@@ -18,6 +18,7 @@ import { Link } from "react-router-dom"
 import { EmptyState, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, type TagTone, type Tone } from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { listMockLoggedSessions } from "@/lib/data/session/session-mock"
+import { skippedLabel, type SkipReason } from "@/lib/data/session/types"
 import type { LoggedSessionResults } from "@/lib/data/session/types"
 import {
   type Athlete,
@@ -80,7 +81,7 @@ function ageFromDateOfBirth(value: string | null | undefined) {
   return age > 0 && age < 120 ? age : null
 }
 
-type SessionStatus = "scheduled" | "in-progress" | "completed"
+type SessionStatus = "scheduled" | "in-progress" | "completed" | "skipped"
 
 /** A session row. Mock logs only carry the base LogEntry fields; the backend adds the rest. */
 export type AthleteDetailLog = LogEntry & {
@@ -89,6 +90,12 @@ export type AthleteDetailLog = LogEntry & {
   coachNote?: string | null
   completedOn?: string | null
   durationMinutes?: number | null
+  /** "athlete": the athlete added this session themselves. It does not count towards plan adherence. */
+  origin?: "plan" | "athlete"
+  skipReason?: SkipReason | null
+  skipNote?: string | null
+  /** Scheduled while the athlete was marked unavailable. Not done still does not count as missed. */
+  excused?: boolean
   /** What the athlete logged for this session. */
   results?: LoggedSessionResults | null
 }
@@ -169,10 +176,11 @@ function sessionState(log: AthleteDetailLog): { label: string; tone: TagTone } |
   if (!log.status) return null
   if (log.status === "completed") return { label: "Done", tone: "green" }
   if (log.status === "in-progress") return { label: "In progress", tone: "blue" }
+  if (log.status === "skipped") return { label: skippedLabel(log.skipReason), tone: "plain" }
   const day = log.isoDate ? parseDay(log.isoDate) : null
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
-  if (day && day < startOfToday) return { label: "Not done", tone: "coral" }
+  if (day && day < startOfToday) return log.excused ? { label: "Excused", tone: "plain" } : { label: "Not done", tone: "coral" }
   return { label: "Scheduled", tone: "plain" }
 }
 
@@ -248,6 +256,9 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
             details: "",
             isoDate: logged.date,
             status: logged.status,
+            origin: logged.origin,
+            skipReason: logged.skipReason,
+            skipNote: logged.skipNote,
             completedOn: logged.completedOn,
             results: logged.results,
           }),
@@ -311,9 +322,12 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
   const windowStart = startOfToday.getTime() - 27 * 24 * 60 * 60 * 1000
+  // Due means set by the coach and not excused: skipped with a reason, or inside an unavailable period, leaves the count.
   const dueLogs = datedLogs.filter((log) => {
     const day = parseDay(log.isoDate as string)
-    return day ? day.getTime() >= windowStart && day.getTime() <= startOfToday.getTime() : false
+    if (!day || day.getTime() < windowStart || day.getTime() > startOfToday.getTime()) return false
+    if (log.origin === "athlete") return false
+    return log.status === "completed" || (log.status !== "skipped" && !log.excused)
   })
   const doneCount = dueLogs.filter((log) => log.status === "completed").length
   const adherence = isBackend ? (dueLogs.length > 0 ? Math.round((doneCount / dueLogs.length) * 100) : null) : athlete.adherence
@@ -606,6 +620,7 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
                       log.type,
                       log.isoDate ? formatDay(log.isoDate) : log.date,
                       log.durationMinutes ? `${log.durationMinutes} min` : null,
+                      log.origin === "athlete" ? "added by athlete" : null,
                       log.status === "completed" && log.completedOn && log.completedOn !== log.isoDate
                         ? `done ${formatDay(log.completedOn)}`
                         : null,
@@ -620,6 +635,7 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
                           {state ? <Tag tone={state.tone} className="shrink-0">{state.label}</Tag> : null}
                         </div>
                         {!log.status && log.details ? <p className="mt-2 text-sm leading-relaxed text-sk-ink-2">{log.details}</p> : null}
+                        {log.status === "skipped" && log.skipNote ? <p className="mt-2 text-sm leading-relaxed text-sk-ink-2">Athlete's note: {log.skipNote}</p> : null}
 
                         {log.results ? (
                           <div className="sk-well mt-3" data-session-results>

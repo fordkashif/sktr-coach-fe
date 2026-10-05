@@ -12,3 +12,16 @@ export type PrRecord = {
   wind: string | null
   note: string | null
 }
+
+export type {
+  AthleteResult,
+  EventBests,
+  EventHistory,
+  MarkUnit,
+  NewResultVerdict,
+  ResultEnvironment,
+  ResultEvent,
+  ResultSource,
+  Season,
+  Timing,
+} from "@/lib/data/pr/marks"

@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
-import { ArrowClockwise, ArrowLeft, ArrowRight, CheckCircle, WarningCircle } from "@phosphor-icons/react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useNavigate, useParams } from "react-router-dom"
+import { ArrowClockwise, ArrowRight } from "@phosphor-icons/react"
+import { InviteFrame, InviteSteps } from "@/components/auth/invite-frame"
+import { Button, Fact, FactList, Field, Input, LinkButton, Notice, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
 import { acceptAthleteInviteForCurrentUser } from "@/lib/data/athlete/invite-data"
 import {
   claimAthleteInviteAccount,
@@ -52,7 +54,6 @@ export default function AthleteClaimPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [requiresPassword, setRequiresPassword] = useState(true)
-  const formId = useId()
 
   useEffect(() => {
     let cancelled = false
@@ -339,209 +340,119 @@ export default function AthleteClaimPage() {
     },
   ]
 
-  const showDetails = Boolean(preview) || stage === "loading"
-
   return (
-    <main className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-12 pt-8 sm:px-6 sm:pt-14">
-      <header className="space-y-3">
-        <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-blue">SKTR Coach</p>
-        <h1 className="sk-title">{title}</h1>
-        <p className="sk-lede" aria-live="polite">
-          {stage === "error" ? "Something stopped this invite from opening. Nothing has been changed on your account." : message}
-        </p>
-      </header>
+    <InviteFrame>
+      <ScreenHeader
+        title={title}
+        lede={<span aria-live="polite">{stage === "error" ? "Something stopped this invite from opening. Nothing has been changed on your account." : message}</span>}
+      />
 
-      <section className="sk-card" aria-label="Invite details">
-        {showDetails ? (
-          <dl>
-            <div className="sk-row items-baseline pt-0">
-              <dt className="sk-label shrink-0">Team</dt>
-              <dd className="min-w-0 break-words text-right font-bold text-sk-ink">{preview?.teamName ?? "Loading..."}</dd>
-            </div>
-            {preview ? (
-              <>
-                <div className="sk-row items-baseline">
-                  <dt className="sk-label shrink-0">Club</dt>
-                  <dd className="min-w-0 break-words text-right font-bold text-sk-ink">{preview.organizationName}</dd>
-                </div>
-                {preview.eventGroup ? (
-                  <div className="sk-row items-baseline">
-                    <dt className="sk-label shrink-0">Event group</dt>
-                    <dd className="min-w-0 text-right font-bold text-sk-ink">{eventGroupLabel(preview.eventGroup)}</dd>
-                  </div>
-                ) : null}
-                {preview.email ? (
-                  <div className="sk-row items-baseline">
-                    <dt className="sk-label shrink-0">Invited email</dt>
-                    <dd className="min-w-0 break-all text-right font-bold text-sk-ink">{preview.email}</dd>
-                  </div>
-                ) : null}
-              </>
+      {stage === "loading" ? (
+        <Section title="Your invite">
+          <SkeletonRows rows={3} label="Checking invite" />
+        </Section>
+      ) : preview ? (
+        <Section title="Your invite">
+          <FactList>
+            <Fact label="Team">{preview.teamName}</Fact>
+            <Fact label="Club">{preview.organizationName}</Fact>
+            {preview.eventGroup ? <Fact label="Event group">{eventGroupLabel(preview.eventGroup)}</Fact> : null}
+            {preview.email ? (
+              <Fact label="Invited email">
+                <span className="break-all">{preview.email}</span>
+              </Fact>
             ) : null}
-          </dl>
-        ) : null}
+          </FactList>
+        </Section>
+      ) : null}
 
-        {stage === "error" ? (
-          <div className={preview ? "mt-5 space-y-4" : "space-y-4"}>
-            <div className="flex items-start gap-3 rounded-2xl bg-sk-coral-tint p-4" role="alert">
-              <WarningCircle className="mt-0.5 size-5 shrink-0 text-[#b32a0c]" weight="fill" aria-hidden />
-              <div className="space-y-1 text-sm">
-                <p className="font-bold text-[#b32a0c]">{error ?? message}</p>
-                <p className="text-sk-ink-2">
-                  Open the newest invite link from your email, or sign in with the exact email the invite was sent to.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
-                <ArrowClockwise className="size-5" weight="bold" />
-                Try again
-              </button>
-              <Link to="/login" className="sk-btn sk-btn-quiet">
-                <ArrowLeft className="size-5" weight="bold" />
-                Back to login
-              </Link>
-            </div>
+      {stage === "error" ? (
+        <>
+          <Notice tone="error">
+            {error ?? message}
+            <span className="mt-0.5 block font-normal">Open the newest invite link from your email, or sign in with the exact email the invite was sent to.</span>
+          </Notice>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => window.location.reload()}>
+              <ArrowClockwise className="size-5" weight="bold" aria-hidden />
+              Try again
+            </Button>
+            <LinkButton to="/login" variant="quiet">
+              Back to login
+            </LinkButton>
           </div>
-        ) : null}
+        </>
+      ) : null}
 
-        {stage === "needs-auth" ? (
-          <div className="mt-5 space-y-4">
-            <p className="text-sm leading-relaxed text-sk-ink-2">
-              This email already has a SKTR Coach account. Sign in with it and you are added to the team straight away.
-            </p>
-            <Link to={`/login?redirect=${encodeURIComponent(`/athlete/claim/${inviteId}`)}`} className="sk-btn sk-btn-primary">
+      {stage === "needs-auth" ? (
+        <Section title="Sign in to join" hint="This email already has a SKTR Coach account. Sign in with it and you are added to the team straight away.">
+          <div className="pt-3">
+            <LinkButton to={`/login?redirect=${encodeURIComponent(`/athlete/claim/${inviteId}`)}`} variant="primary" size="lg" block>
               Sign in to continue
-              <ArrowRight className="size-5" weight="bold" />
-            </Link>
+              <ArrowRight className="size-5" weight="bold" aria-hidden />
+            </LinkButton>
           </div>
-        ) : null}
+        </Section>
+      ) : null}
 
-        {stage === "demo" ? (
-          <div className="mt-5 space-y-4">
-            <p className="text-sm leading-relaxed text-sk-ink-2">
-              This is the demo workspace, so there is no account to create. Continue to confirm the team.
-            </p>
-            <Link to={`/athlete/join/${encodeURIComponent(inviteId)}`} className="sk-btn sk-btn-primary">
+      {stage === "demo" ? (
+        <Section title="Demo workspace" hint="There is no account to create here. Continue to confirm the team.">
+          <div className="pt-3">
+            <LinkButton to={`/athlete/join/${encodeURIComponent(inviteId)}`} variant="primary" size="lg" block>
               Continue to join
-              <ArrowRight className="size-5" weight="bold" />
-            </Link>
+              <ArrowRight className="size-5" weight="bold" aria-hidden />
+            </LinkButton>
           </div>
-        ) : null}
+        </Section>
+      ) : null}
 
-        {stage === "accepted" ? (
-          <div className="mt-5 space-y-4">
-            <p className="flex items-center gap-2 text-sm font-bold text-[#07673f]">
-              <CheckCircle className="size-5 shrink-0" weight="fill" aria-hidden />
-              {inviteSummary ? `You now train with ${inviteSummary}.` : "Your invite is accepted."}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="sk-btn sk-btn-primary" onClick={() => navigate("/athlete/home")}>
-                Open today
-                <ArrowRight className="size-5" weight="bold" />
-              </button>
-              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet">
-                Open plan
-              </Link>
-            </div>
+      {stage === "accepted" ? (
+        <>
+          <Notice tone="success">{inviteSummary ? `You now train with ${inviteSummary}.` : "Your invite is accepted."}</Notice>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => navigate("/athlete/home")}>
+              Open today
+              <ArrowRight className="size-5" weight="bold" aria-hidden />
+            </Button>
+            <LinkButton to="/athlete/training-plan">Open plan</LinkButton>
           </div>
-        ) : null}
+        </>
+      ) : null}
 
-        {stage === "setup" ? (
-          <form className="mt-5 grid gap-4" onSubmit={handleSetupSubmit} noValidate>
-            <h2 className="sk-h2">{requiresPassword ? "Create your account" : "Finish your profile"}</h2>
-            <p className="-mt-2 text-sm leading-relaxed text-sk-mute">
-              {requiresPassword
-                ? "There is no account for this email yet, so this creates one."
-                : "Your account is already linked. Confirm your name and you are done."}
-            </p>
-            <div>
-              <label htmlFor={`${formId}-name`} className="sk-label mb-1.5 block">
-                Full name
-              </label>
-              <input
-                id={`${formId}-name`}
-                className="sk-field"
-                autoComplete="name"
-                placeholder="First and last name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-              />
-            </div>
+      {stage === "setup" ? (
+        <Section
+          title={requiresPassword ? "Create your account" : "Finish your profile"}
+          hint={requiresPassword ? "There is no account for this email yet, so this creates one." : "Your account is already linked. Confirm your name and you are done."}
+        >
+          <form className="flex flex-col gap-4 pt-3" onSubmit={handleSetupSubmit} noValidate>
+            <Field label="Full name">
+              <Input autoComplete="name" placeholder="First and last name" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+            </Field>
             {requiresPassword ? (
               <>
-                {preview?.email ? (
-                  <input type="email" autoComplete="username" value={preview.email} readOnly hidden aria-hidden tabIndex={-1} />
-                ) : null}
-                <div>
-                  <label htmlFor={`${formId}-password`} className="sk-label mb-1.5 block">
-                    Password
-                  </label>
-                  <input
-                    id={`${formId}-password`}
-                    type="password"
-                    className="sk-field"
-                    autoComplete="new-password"
-                    aria-describedby={`${formId}-password-hint`}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                  <p id={`${formId}-password-hint`} className="mt-1.5 text-sm text-sk-mute">
-                    At least 8 characters.
-                  </p>
-                </div>
-                <div>
-                  <label htmlFor={`${formId}-confirm`} className="sk-label mb-1.5 block">
-                    Confirm password
-                  </label>
-                  <input
-                    id={`${formId}-confirm`}
-                    type="password"
-                    className="sk-field"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                  />
-                </div>
+                {preview?.email ? <input type="email" autoComplete="username" value={preview.email} readOnly hidden aria-hidden tabIndex={-1} /> : null}
+                <Field label="Password" hint="At least 8 characters.">
+                  <Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                </Field>
+                <Field label="Confirm password">
+                  <Input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+                </Field>
               </>
             ) : null}
-            {error ? (
-              <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" disabled={submitting} className="sk-btn sk-btn-primary">
+            {error ? <Notice tone="error">{error}</Notice> : null}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="submit" variant="primary" size="lg" disabled={submitting} className="sm:flex-1">
                 {submitting ? "Saving..." : requiresPassword ? "Create account and join" : "Finish setup"}
-              </button>
-              <button type="button" className="sk-btn sk-btn-ghost" onClick={() => navigate("/login")}>
+              </Button>
+              <LinkButton to="/login" variant="quiet" size="lg">
                 Back to login
-              </button>
+              </LinkButton>
             </div>
           </form>
-        ) : null}
-      </section>
-
-      {stage !== "error" ? (
-        <section aria-labelledby={`${formId}-steps`} className="px-1">
-          <h2 id={`${formId}-steps`} className="sk-h3">
-            Your first week
-          </h2>
-          <ol className="mt-3 space-y-4">
-            {steps.map((step, index) => (
-              <li key={step.title} className="flex items-start gap-3">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sk-yellow text-sm font-extrabold text-sk-ink">
-                  {index + 1}
-                </span>
-                <div>
-                  <p className="font-bold text-sk-ink">{step.title}</p>
-                  <p className="text-sm leading-relaxed text-sk-mute">{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
+        </Section>
       ) : null}
-    </main>
+
+      {stage !== "error" ? <InviteSteps title="Your first week" steps={steps} /> : null}
+    </InviteFrame>
   )
 }

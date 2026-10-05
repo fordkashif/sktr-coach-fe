@@ -1,215 +1,134 @@
 "use client"
 
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Check, Minus, PencilSimple, Plus } from "@phosphor-icons/react"
-import { PageHeader, Panel, ReadinessTag } from "@/components/sk"
+import { Link, useLocation, useNavigate } from "react-router-dom"
+import { PencilSimple } from "@phosphor-icons/react"
 import {
-  getCurrentAthleteWellnessEntries,
+  Button,
+  Choices,
+  FactList,
+  Fact,
+  Field,
+  List,
+  ListRow,
+  Notice,
+  ReadinessText,
+  Screen,
+  ScreenHeader,
+  Section,
+  SkeletonRows,
+  Split,
+  Stat,
+  StatStrip,
+  StatusDot,
+  Stepper,
+  TapScale,
+  Textarea,
+  notify,
+} from "@/components/sk"
+import { currentAvailability, getMyAvailability, setMyAvailability } from "@/lib/data/athlete/availability-data"
+import { getCurrentAthletePainReports, resolveCurrentAthletePainReport } from "@/lib/data/wellness/pain-report-data"
+import { bodyAreasSummary, type PainReport, type PainTrainingImpact } from "@/lib/data/wellness/pain-report-types"
+import {
+  loadCurrentAthleteWellnessEntries,
   localWellnessDate,
-  scoreWellnessInput,
-  submitCurrentAthleteWellnessEntry,
+  saveCurrentAthleteWellnessEntry,
   validateWellnessInput,
   WELLNESS_NOTE_MAX_LENGTH,
   WELLNESS_SLEEP_MAX_HOURS,
 } from "@/lib/data/wellness/wellness-data"
-import type { WellnessEntry, WellnessReadiness, WellnessSubmissionInput } from "@/lib/data/wellness/types"
-import { getBackendMode } from "@/lib/supabase/config"
-import { tenantStorageKey } from "@/lib/tenant-storage"
-import { cn } from "@/lib/utils"
-
-const MOCK_WELLNESS_STORAGE_KEY = "pacelab:wellness-entries"
-const HISTORY_LOOKBACK = 90
-
-type ScaleKey = "soreness" | "fatigue" | "mood" | "stress"
-
-/** Stored values stay 1 to 5. Soreness, fatigue and stress: 1 is best. Mood: 5 is best. */
-const SCALES: Array<{ key: ScaleKey; label: string; question: string; words: [string, string, string, string, string] }> = [
-  { key: "soreness", label: "Soreness", question: "How sore is your body?", words: ["None", "Light", "Some", "Sore", "Very sore"] },
-  { key: "fatigue", label: "Fatigue", question: "How tired do you feel?", words: ["Fresh", "Good", "OK", "Tired", "Drained"] },
-  { key: "mood", label: "Mood", question: "How is your mood?", words: ["Low", "Flat", "OK", "Good", "Great"] },
-  { key: "stress", label: "Stress", question: "How stressed are you?", words: ["Calm", "Light", "Some", "High", "Very high"] },
-]
+import type { WellnessEntry, WellnessSubmissionInput } from "@/lib/data/wellness/types"
+import {
+  WELLNESS_SCALES,
+  formatHours,
+  formatSleep,
+  longDate,
+  painReportSummary,
+  painTone,
+  readinessCopy,
+  shiftDate,
+  shortDate,
+  type ScaleKey,
+} from "./wellness-shared"
 
 type ScaleAnswers = Record<ScaleKey, number | null>
 
 const EMPTY_ANSWERS: ScaleAnswers = { soreness: null, fatigue: null, mood: null, stress: null }
 
-function parseLocalDate(iso: string) {
-  const [year, month, day] = iso.split("-").map(Number)
-  return new Date(year, (month ?? 1) - 1, day ?? 1)
-}
-
-function shiftDate(iso: string, days: number) {
-  const date = parseLocalDate(iso)
-  date.setDate(date.getDate() + days)
-  return localWellnessDate(date)
-}
-
-function formatSleep(hours: number) {
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} ${hours === 1 ? "hour" : "hours"}`
-}
-
-function readMockEntries(): WellnessEntry[] {
-  if (typeof window === "undefined") return []
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(tenantStorageKey(MOCK_WELLNESS_STORAGE_KEY)) ?? "[]") as WellnessEntry[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function sortEntries(entries: WellnessEntry[]) {
-  return [...entries].sort((a, b) => a.entryDate.localeCompare(b.entryDate))
-}
-
-function readinessCopy(entry: WellnessEntry): { headline: string; body: string } {
-  if (entry.readiness === "green") {
-    return {
-      headline: "You are ready to train",
-      body: "Sleep, soreness, fatigue and stress all look good. Train as planned.",
-    }
-  }
-
-  const reasons: string[] = []
-  if (entry.sleepHours < 6) reasons.push("sleep was under 6 hours")
-  else if (entry.sleepHours < 7) reasons.push("sleep was under 7 hours")
-  if (entry.soreness >= 4) reasons.push("soreness is high")
-  if (entry.fatigue >= 4) reasons.push("fatigue is high")
-  if (entry.stress >= 4) reasons.push("stress is high")
-  if (entry.mood < 3) reasons.push("mood is low")
-  if (reasons.length === 0) reasons.push("soreness, fatigue and stress are adding up")
-
-  const joined = reasons.length > 1 ? `${reasons.slice(0, -1).join(", ")} and ${reasons[reasons.length - 1]}` : reasons[0]
-  const why = `${joined.charAt(0).toUpperCase()}${joined.slice(1)}.`
-
-  if (entry.readiness === "yellow") {
-    return { headline: "Take it a little easier today", body: `${why} You can train, but listen to your body.` }
-  }
-  return { headline: "Talk to your coach before training", body: `${why} Your coach can see this and may adjust today's session.` }
-}
-
-const READINESS_SURFACE: Record<WellnessReadiness, string> = {
-  green: "bg-sk-green-tint",
-  yellow: "bg-sk-yellow-tint",
-  red: "bg-sk-coral-tint",
-}
-
-const READINESS_DOT: Record<WellnessReadiness, string> = {
-  green: "bg-sk-green text-white",
-  yellow: "bg-sk-yellow text-sk-ink",
-  red: "bg-sk-coral text-white",
-}
-
-const READINESS_WORD: Record<WellnessReadiness, string> = { green: "Ready", yellow: "Watch", red: "Review" }
-
-function ScaleQuestion({
-  scale,
-  value,
-  onChange,
-  missing,
-}: {
-  scale: (typeof SCALES)[number]
-  value: number | null
-  onChange: (next: number) => void
-  missing: boolean
-}) {
-  const titleId = `wellness-${scale.key}`
-  return (
-    <div className="py-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 id={titleId} className="sk-h3">
-          {scale.question}
-        </h3>
-        <p className={cn("shrink-0 text-sm font-bold", value ? "text-sk-blue" : missing ? "text-[#b32a0c]" : "text-sk-mute")}>
-          {value ? scale.words[value - 1] : missing ? "Pick one" : ""}
-        </p>
-      </div>
-      <div role="radiogroup" aria-labelledby={titleId} className="mt-3 grid grid-cols-5 gap-2">
-        {scale.words.map((word, index) => {
-          const option = index + 1
-          const selected = value === option
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              aria-label={`${scale.label} ${option} of 5, ${word}`}
-              onClick={() => onChange(option)}
-              className={cn(
-                "flex h-14 items-center justify-center rounded-[14px] border-2 text-xl font-extrabold tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-                selected
-                  ? "border-sk-blue bg-sk-blue text-white"
-                  : "border-sk-line bg-white text-sk-ink hover:border-sk-blue hover:bg-sk-blue-tint",
-              )}
-            >
-              {option}
-            </button>
-          )
-        })}
-      </div>
-      <div className="mt-2 flex justify-between text-sm font-semibold text-sk-mute" aria-hidden>
-        <span>{scale.words[0]}</span>
-        <span>{scale.words[4]}</span>
-      </div>
-    </div>
-  )
-}
+/** Set by the pain report screen when it sends the athlete back here. */
+type ReportedState = { painReported?: PainTrainingImpact } | null
 
 export default function AthleteWellnessPage() {
-  const backendMode = getBackendMode()
-  const isSupabase = backendMode === "supabase"
+  const navigate = useNavigate()
+  const location = useLocation()
   const today = localWellnessDate()
 
-  const [entries, setEntries] = useState<WellnessEntry[]>(() => (isSupabase ? [] : sortEntries(readMockEntries())))
-  const [isLoading, setIsLoading] = useState(isSupabase)
+  const [entries, setEntries] = useState<WellnessEntry[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [painReports, setPainReports] = useState<PainReport[] | null>(null)
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
 
   const [sleep, setSleep] = useState(8)
   const [answers, setAnswers] = useState<ScaleAnswers>(EMPTY_ANSWERS)
   const [notes, setNotes] = useState("")
+  const [hurting, setHurting] = useState<"no" | "yes">("no")
   const [isEditing, setIsEditing] = useState(false)
   const [showMissing, setShowMissing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [justSaved, setJustSaved] = useState(false)
 
+  const [reported, setReported] = useState<PainTrainingImpact | null>(() => (location.state as ReportedState)?.painReported ?? null)
+  const [unavailable, setUnavailable] = useState<"unknown" | "no" | "yes" | "saving">("unknown")
+
   useEffect(() => {
-    if (!isSupabase) return
     let cancelled = false
     void (async () => {
-      const result = await getCurrentAthleteWellnessEntries(HISTORY_LOOKBACK)
+      const [entriesResult, painResult] = await Promise.all([loadCurrentAthleteWellnessEntries(), getCurrentAthletePainReports({ status: "open" })])
       if (cancelled) return
-      if (result.ok) {
-        setEntries(sortEntries(result.data))
+      if (entriesResult.ok) {
+        setEntries(entriesResult.data)
         setLoadError(null)
       } else {
-        setLoadError(result.error.message)
+        setEntries([])
+        setLoadError(entriesResult.error.message)
       }
-      setIsLoading(false)
+      // A database without pain reports yet simply shows none.
+      setPainReports(painResult.ok ? painResult.data : [])
     })()
     return () => {
       cancelled = true
     }
-  }, [isSupabase])
+  }, [])
 
-  const todayEntry = useMemo(() => entries.find((entry) => entry.entryDate === today) ?? null, [entries, today])
+  // The "you said you cannot train" follow-up only makes sense while the athlete is not already marked unavailable.
+  useEffect(() => {
+    if (reported !== "cannot_train") return
+    let cancelled = false
+    void getMyAvailability().then((result) => {
+      if (cancelled) return
+      setUnavailable(result.ok && currentAvailability(result.data) ? "yes" : "no")
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reported])
+
+  const todayEntry = useMemo(() => entries?.find((entry) => entry.entryDate === today) ?? null, [entries, today])
   const showForm = !todayEntry || isEditing
 
   const week = useMemo(() => {
-    const byDate = new Map(entries.map((entry) => [entry.entryDate, entry]))
+    const byDate = new Map((entries ?? []).map((entry) => [entry.entryDate, entry]))
     return Array.from({ length: 7 }, (_, index) => {
-      const date = shiftDate(today, index - 6)
+      const date = shiftDate(today, -index)
       return { date, entry: byDate.get(date) ?? null, isToday: date === today }
     })
   }, [entries, today])
-
   const weekCount = week.filter((day) => day.entry).length
 
-  /** Days in a row with a real check-in, ending today (or yesterday if today is still open). */
+  /** Days in a row with a check-in, ending today (or yesterday if today is still open). */
   const streak = useMemo(() => {
-    const dates = new Set(entries.map((entry) => entry.entryDate))
+    const dates = new Set((entries ?? []).map((entry) => entry.entryDate))
     let cursor = dates.has(today) ? today : shiftDate(today, -1)
     let count = 0
     while (dates.has(cursor)) {
@@ -222,40 +141,25 @@ export default function AthleteWellnessPage() {
   const startEditing = () => {
     if (!todayEntry) return
     setSleep(todayEntry.sleepHours)
-    setAnswers({
-      soreness: todayEntry.soreness,
-      fatigue: todayEntry.fatigue,
-      mood: todayEntry.mood,
-      stress: todayEntry.stress,
-    })
+    setAnswers({ soreness: todayEntry.soreness, fatigue: todayEntry.fatigue, mood: todayEntry.mood, stress: todayEntry.stress })
     setNotes(todayEntry.notes ?? "")
+    setHurting("no")
     setSubmitError(null)
     setShowMissing(false)
     setJustSaved(false)
     setIsEditing(true)
   }
 
-  const stepSleep = (delta: number) => {
-    setSleep((current) => Math.max(0, Math.min(WELLNESS_SLEEP_MAX_HOURS, Math.round((current + delta) * 2) / 2)))
-  }
-
-  const storeEntry = (entry: WellnessEntry) => {
-    setEntries((current) => sortEntries([...current.filter((item) => item.entryDate !== entry.entryDate), entry]))
-    setIsEditing(false)
-    setShowMissing(false)
-    setJustSaved(true)
-  }
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSaving) return
     setSubmitError(null)
 
-    const missing = SCALES.filter((scale) => answers[scale.key] === null).map((scale) => scale.label.toLowerCase())
+    const missing = WELLNESS_SCALES.filter((scale) => answers[scale.key] === null)
     if (missing.length > 0) {
       setShowMissing(true)
-      setSubmitError(`Still to answer: ${missing.join(", ")}.`)
-      const firstMissing = SCALES.find((scale) => answers[scale.key] === null)
-      if (firstMissing) document.getElementById(`wellness-${firstMissing.key}`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+      setSubmitError(`Still to answer: ${missing.map((scale) => scale.label.toLowerCase()).join(", ")}.`)
+      document.getElementById(`wellness-${missing[0].key}`)?.scrollIntoView({ block: "center", behavior: "smooth" })
       return
     }
 
@@ -268,263 +172,285 @@ export default function AthleteWellnessPage() {
       stress: answers.stress as number,
       notes: notes.trim() || null,
     }
-
     const validationError = validateWellnessInput(input)
     if (validationError) {
       setSubmitError(validationError)
       return
     }
 
-    if (isSupabase) {
-      setIsSaving(true)
-      const persistResult = await submitCurrentAthleteWellnessEntry(input)
-      setIsSaving(false)
-      if (!persistResult.ok) {
-        setSubmitError(persistResult.error.message)
-        return
-      }
-      storeEntry(persistResult.data)
+    setIsSaving(true)
+    const result = await saveCurrentAthleteWellnessEntry(input)
+    setIsSaving(false)
+    if (!result.ok) {
+      setSubmitError(result.error.message)
       return
     }
 
-    const scored = scoreWellnessInput(input)
-    const mockEntry: WellnessEntry = {
-      id: `mock-${today}`,
-      athleteId: "mock-athlete",
-      createdAt: new Date().toISOString(),
-      ...input,
-      ...scored,
-    }
-    try {
-      const next = sortEntries([...readMockEntries().filter((item) => item.entryDate !== today), mockEntry]).slice(-HISTORY_LOOKBACK)
-      window.localStorage.setItem(tenantStorageKey(MOCK_WELLNESS_STORAGE_KEY), JSON.stringify(next))
-    } catch {
-      setSubmitError("Could not save this check-in on this device.")
+    setEntries((current) => [...(current ?? []).filter((item) => item.entryDate !== result.data.entryDate), result.data].sort((a, b) => a.entryDate.localeCompare(b.entryDate)))
+    setIsEditing(false)
+    setShowMissing(false)
+    setJustSaved(true)
+    if (hurting === "yes") navigate("/athlete/wellness/pain", { state: { fromCheckIn: true } })
+  }
+
+  const handleResolve = async (report: PainReport) => {
+    setResolvingId(report.id)
+    const result = await resolveCurrentAthletePainReport(report.id)
+    setResolvingId(null)
+    if (!result.ok) {
+      notify("Could not mark it resolved", result.error.message)
       return
     }
-    storeEntry(mockEntry)
+    setPainReports((current) => (current ?? []).filter((item) => item.id !== report.id))
+    notify("Marked resolved", "It stays in your wellness history.")
+  }
+
+  const handleMarkUnavailable = async () => {
+    setUnavailable("saving")
+    const result = await setMyAvailability({ kind: "injured", startsOn: today, endsOn: null, note: null })
+    if (!result.ok) {
+      setUnavailable("no")
+      notify("Could not mark you unavailable", result.error.message)
+      return
+    }
+    setUnavailable("yes")
   }
 
   const resultCopy = todayEntry ? readinessCopy(todayEntry) : null
+  const loading = entries === null
+
+  const painSection = (
+    <Section
+      title="Pain and injuries"
+      action={
+        painReports && painReports.length > 0 ? (
+          <Link className="sk-link" to="/athlete/wellness/pain">
+            Report another
+          </Link>
+        ) : undefined
+      }
+    >
+      {painReports === null ? (
+        <SkeletonRows rows={1} label="Checking your pain reports" />
+      ) : painReports.length === 0 ? (
+        <List>
+          <ListRow to="/athlete/wellness/pain" title="Report pain or an injury" subtitle="Tell your coach about something that hurts." />
+        </List>
+      ) : (
+        <List aria-label="Open pain reports">
+          {painReports.map((report) => (
+            <ListRow
+              key={report.id}
+              leading={<StatusDot tone={painTone(report)} />}
+              title={bodyAreasSummary(report.bodyAreas)}
+              subtitle={painReportSummary(report)}
+              trailing={
+                <Button size="sm" disabled={resolvingId === report.id} onClick={() => void handleResolve(report)}>
+                  {resolvingId === report.id ? "Saving..." : "Mark resolved"}
+                </Button>
+              }
+            />
+          ))}
+        </List>
+      )}
+    </Section>
+  )
+
+  const historySection = (
+    <Section
+      title="Last 7 days"
+      meta={loading ? undefined : weekCount === 0 ? "No check-ins yet" : `${weekCount} of 7${streak >= 2 ? `, ${streak} in a row` : ""}`}
+    >
+      {loading ? (
+        <SkeletonRows rows={7} label="Loading your check-ins" />
+      ) : (
+        <>
+          <List aria-label="Check-ins in the last 7 days">
+            {week.map((day) => (
+              <ListRow
+                key={day.date}
+                title={day.isToday ? "Today" : shortDate(day.date)}
+                subtitle={day.entry ? `Slept ${formatSleep(day.entry.sleepHours)}` : undefined}
+                trailing={
+                  day.entry ? (
+                    <ReadinessText status={day.entry.readiness} detail={String(day.entry.readinessScore)} />
+                  ) : (
+                    <span className="font-normal text-sk-mute">{day.isToday ? "Not done yet" : "No check-in"}</span>
+                  )
+                }
+              />
+            ))}
+            <ListRow to="/athlete/wellness/history" title="Wellness history" subtitle="Earlier weeks, your readiness trend and pain reports." />
+          </List>
+        </>
+      )}
+    </Section>
+  )
 
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="Wellness check-in"
-        lede={
-          todayEntry && !isEditing
-            ? "Today is done. Your coach can see how you are feeling."
-            : "Five quick taps before you train. It takes about 20 seconds."
-        }
+        lede={todayEntry && !isEditing ? "Today is done. Your coach can see how you are feeling." : "Five quick taps before you train. It takes about 20 seconds."}
       />
 
-      {loadError ? (
-        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-          Could not load your check-ins. {loadError}
-        </p>
+      {loadError ? <Notice tone="error">We could not load your check-ins. {loadError}</Notice> : null}
+
+      {reported ? (
+        <Notice
+          tone="success"
+          action={
+            reported === "cannot_train" && unavailable !== "yes" && unavailable !== "unknown" ? (
+              <Button size="sm" disabled={unavailable === "saving"} onClick={() => void handleMarkUnavailable()}>
+                {unavailable === "saving" ? "Saving..." : "Mark me unavailable"}
+              </Button>
+            ) : (
+              <Button variant="quiet" size="sm" onClick={() => setReported(null)}>
+                Dismiss
+              </Button>
+            )
+          }
+        >
+          {reported === "none"
+            ? "Report saved. Your coaches can see it."
+            : reported === "cannot_train" && unavailable === "yes"
+              ? "Report sent and you are marked unavailable from today. Your coaches have been told."
+              : reported === "cannot_train"
+                ? "Report sent. Your coaches have been told. You can also mark yourself unavailable so missed sessions do not count against you."
+                : "Report sent. Your coaches have been told."}
+        </Notice>
       ) : null}
 
-      {isLoading ? (
-        <p className="text-sm font-semibold text-sk-mute">Loading your check-ins...</p>
-      ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
-          {showForm ? (
-            <Panel
-              title={isEditing ? "Update today's check-in" : "How are you today?"}
-              hint={parseLocalDate(today).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
-            >
-              <form onSubmit={handleSubmit} noValidate>
-                <div className="divide-y divide-sk-line border-t border-sk-line">
-                  <div className="py-5">
-                    <h3 id="wellness-sleep" className="sk-h3">
-                      How long did you sleep?
-                    </h3>
-                    <div className="mt-3 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => stepSleep(-0.5)}
-                        disabled={sleep <= 0}
-                        aria-label="Half an hour less sleep"
-                        className="sk-btn sk-btn-quiet size-14 shrink-0 px-0"
-                      >
-                        <Minus className="size-5" weight="bold" />
-                      </button>
-                      <p
-                        role="status"
-                        aria-labelledby="wellness-sleep"
-                        className="flex-1 rounded-[14px] bg-sk-canvas py-2.5 text-center"
-                      >
-                        <span className="sk-num text-[2.25rem]">{Number.isInteger(sleep) ? sleep : sleep.toFixed(1)}</span>
-                        <span className="ml-1.5 text-base font-bold text-sk-ink-2">{sleep === 1 ? "hour" : "hours"}</span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => stepSleep(0.5)}
-                        disabled={sleep >= WELLNESS_SLEEP_MAX_HOURS}
-                        aria-label="Half an hour more sleep"
-                        className="sk-btn sk-btn-quiet size-14 shrink-0 px-0"
-                      >
-                        <Plus className="size-5" weight="bold" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {SCALES.map((scale) => (
-                    <ScaleQuestion
-                      key={scale.key}
-                      scale={scale}
-                      value={answers[scale.key]}
-                      missing={showMissing && answers[scale.key] === null}
-                      onChange={(next) => setAnswers((current) => ({ ...current, [scale.key]: next }))}
+      <Split
+        main={
+          loading ? (
+            <Section title="How are you today?">
+              <SkeletonRows rows={5} label="Loading today's check-in" />
+            </Section>
+          ) : showForm ? (
+            <Section title={isEditing ? "Update today's check-in" : "How are you today?"} meta={longDate(today)}>
+              <form onSubmit={(event) => void handleSubmit(event)} noValidate className="flex flex-col gap-5">
+                <List>
+                  <li>
+                    <Stepper
+                      label="How long did you sleep?"
+                      value={sleep}
+                      onChange={setSleep}
+                      min={0}
+                      max={WELLNESS_SLEEP_MAX_HOURS}
+                      step={0.5}
+                      format={(hours) => (
+                        <>
+                          {formatHours(hours)} <span className="text-base font-semibold tracking-normal text-sk-mute">{hours === 1 ? "hour" : "hours"}</span>
+                        </>
+                      )}
+                      decreaseLabel="Half an hour less sleep"
+                      increaseLabel="Half an hour more sleep"
                     />
+                  </li>
+                  {WELLNESS_SCALES.map((scale) => (
+                    <li key={scale.key} id={`wellness-${scale.key}`}>
+                      <TapScale
+                        label={scale.question}
+                        name={scale.label}
+                        words={scale.words}
+                        value={answers[scale.key]}
+                        missing={showMissing}
+                        onChange={(next) => setAnswers((current) => ({ ...current, [scale.key]: next }))}
+                      />
+                    </li>
                   ))}
-
-                  <div className="py-5">
-                    <label htmlFor="wellness-notes" className="sk-h3 block">
-                      Anything your coach should know?
-                    </label>
-                    <p className="mt-0.5 text-sm text-sk-mute">Optional. A niggle, a late night, travel.</p>
-                    <textarea
-                      id="wellness-notes"
-                      rows={2}
-                      maxLength={WELLNESS_NOTE_MAX_LENGTH}
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      className="sk-field mt-3 h-auto min-h-[76px] resize-y py-3"
+                  <li className="py-4">
+                    <Choices
+                      label="Anything hurting?"
+                      hint={hurting === "yes" ? "You will tell us where right after this." : undefined}
+                      value={hurting}
+                      onChange={setHurting}
+                      options={[
+                        { value: "no", label: "No" },
+                        { value: "yes", label: "Yes" },
+                      ]}
                     />
-                  </div>
-                </div>
+                  </li>
+                </List>
 
-                {submitError ? (
-                  <p role="alert" className="mb-3 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                    {submitError}
-                  </p>
-                ) : null}
+                <Field label="Anything your coach should know?" optional hint="A late night, travel, exams.">
+                  <Textarea rows={2} maxLength={WELLNESS_NOTE_MAX_LENGTH} value={notes} onChange={(event) => setNotes(event.target.value)} />
+                </Field>
 
-                <div className="flex flex-col gap-2 sm:flex-row-reverse">
-                  <button type="submit" disabled={isSaving} className="sk-btn sk-btn-primary h-14 w-full text-base sm:flex-1">
-                    {isSaving ? "Saving..." : isEditing ? "Save changes" : "Submit check-in"}
-                  </button>
+                {submitError ? <Notice tone="error">{submitError}</Notice> : null}
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="submit" variant="primary" size="lg" disabled={isSaving} className="sm:flex-1">
+                    {isSaving ? "Saving..." : isEditing ? "Save changes" : hurting === "yes" ? "Submit and report pain" : "Submit check-in"}
+                  </Button>
                   {isEditing ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="quiet"
+                      size="lg"
                       onClick={() => {
                         setIsEditing(false)
                         setSubmitError(null)
                       }}
-                      className="sk-btn sk-btn-ghost h-14 w-full sm:w-auto"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </form>
-            </Panel>
+            </Section>
           ) : todayEntry && resultCopy ? (
-            <Panel
-              title="Today's readiness"
-              hint={justSaved ? "Check-in saved." : "From the check-in you submitted today."}
-              action={<ReadinessTag status={todayEntry.readiness} />}
-            >
-              <div className={cn("rounded-2xl p-5", READINESS_SURFACE[todayEntry.readiness])}>
-                <p className="sk-num text-[3.5rem]">
-                  {todayEntry.readinessScore}
-                  <span className="ml-1 text-lg font-bold tracking-normal text-sk-ink-2">out of 100</span>
-                </p>
-                <p className="mt-3 text-xl font-bold tracking-[-0.02em] text-sk-ink">{resultCopy.headline}</p>
-                <p className="mt-1 max-w-[52ch] text-[0.95rem] leading-relaxed text-sk-ink-2">{resultCopy.body}</p>
-              </div>
+            <>
+              <Section title="Today's readiness" meta={justSaved ? "Check-in saved" : longDate(today)}>
+                <List>
+                  <ListRow
+                    leading={<StatusDot tone={todayEntry.readiness === "green" ? "green" : todayEntry.readiness === "yellow" ? "amber" : "coral"} />}
+                    title={resultCopy.headline}
+                    subtitle={resultCopy.body}
+                  />
+                </List>
+                <StatStrip aria-label="Today's numbers">
+                  <Stat label="Readiness" value={todayEntry.readinessScore} of={100} hint={<ReadinessText status={todayEntry.readiness} />} />
+                  <Stat label="Sleep" value={formatHours(todayEntry.sleepHours)} unit=" h" />
+                </StatStrip>
+              </Section>
 
-              <h3 className="sk-label mt-6">Your answers</h3>
-              <dl className="mt-1">
-                <div className="sk-row">
-                  <dt className="font-semibold text-sk-ink">Sleep</dt>
-                  <dd className="font-bold tabular-nums text-sk-ink">{formatSleep(todayEntry.sleepHours)}</dd>
-                </div>
-                {SCALES.map((scale) => {
-                  const value = todayEntry[scale.key]
-                  return (
-                    <div key={scale.key} className="sk-row">
-                      <dt className="font-semibold text-sk-ink">{scale.label}</dt>
-                      <dd className="text-right">
-                        <span className="font-bold text-sk-ink">{scale.words[value - 1] ?? value}</span>
-                        <span className="ml-2 text-sm tabular-nums text-sk-mute">{value} of 5</span>
-                      </dd>
-                    </div>
-                  )
-                })}
-                {todayEntry.notes ? (
-                  <div className="border-b border-sk-line py-3.5 last:border-b-0">
-                    <dt className="font-semibold text-sk-ink">Note to coach</dt>
-                    <dd className="mt-1 whitespace-pre-wrap break-words text-[0.95rem] leading-relaxed text-sk-ink-2">{todayEntry.notes}</dd>
-                  </div>
-                ) : null}
-              </dl>
-
-              <button type="button" onClick={startEditing} className="sk-btn sk-btn-quiet mt-5 h-12 w-full sm:w-auto">
-                <PencilSimple className="size-4" weight="bold" />
-                Update today&apos;s check-in
-              </button>
-            </Panel>
-          ) : null}
-
-          <Panel
-            title="Last 7 days"
-            hint={
-              weekCount === 0
-                ? "No check-ins yet this week."
-                : `${weekCount} of 7 days checked in${streak >= 2 ? `, ${streak} days in a row` : ""}.`
-            }
-          >
-            <ol className="grid grid-cols-7 gap-1.5">
-              {week.map((day) => {
-                const date = parseLocalDate(day.date)
-                const weekday = date.toLocaleDateString(undefined, { weekday: "short" })
-                const longDate = date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
-                return (
-                  <li
-                    key={day.date}
-                    aria-label={`${longDate}: ${day.entry ? READINESS_WORD[day.entry.readiness] : day.isToday ? "not checked in yet" : "no check-in"}`}
-                    className="flex flex-col items-center gap-1.5"
-                  >
-                    <span className={cn("text-xs font-bold", day.isToday ? "text-sk-ink" : "text-sk-mute")} aria-hidden>
-                      {day.isToday ? "Today" : weekday}
-                    </span>
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "flex size-10 items-center justify-center rounded-full",
-                        day.entry
-                          ? READINESS_DOT[day.entry.readiness]
-                          : day.isToday
-                            ? "border-2 border-sk-blue bg-white"
-                            : "border-2 border-dashed border-[#cdd2de] bg-white",
-                      )}
-                    >
-                      {day.entry ? <Check className="size-4" weight="bold" /> : null}
-                    </span>
-                    <span className="text-xs font-semibold tabular-nums text-sk-mute" aria-hidden>
-                      {day.entry ? day.entry.readinessScore : ""}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
-            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-sk-line pt-4 text-sm text-sk-ink-2">
-              {(["green", "yellow", "red"] as const).map((status) => (
-                <span key={status} className="inline-flex items-center gap-1.5 font-semibold">
-                  <span className={cn("size-2.5 rounded-full", READINESS_DOT[status])} />
-                  {READINESS_WORD[status]}
-                </span>
-              ))}
-              <span className="inline-flex items-center gap-1.5 font-semibold">
-                <span className="size-2.5 rounded-full border-2 border-dashed border-[#cdd2de]" />
-                Missed
-              </span>
-            </div>
-          </Panel>
-        </div>
-      )}
-    </div>
+              <Section
+                title="Your answers"
+                action={
+                  <Button variant="quiet" size="sm" onClick={startEditing}>
+                    <PencilSimple className="size-4" weight="bold" aria-hidden />
+                    Update today&apos;s check-in
+                  </Button>
+                }
+              >
+                <FactList>
+                  {WELLNESS_SCALES.map((scale) => {
+                    const value = todayEntry[scale.key]
+                    return (
+                      <Fact key={scale.key} label={scale.label}>
+                        {scale.words[value - 1] ?? value}
+                        <span className="ml-2 font-normal tabular-nums text-sk-mute">{value} of 5</span>
+                      </Fact>
+                    )
+                  })}
+                  {todayEntry.notes ? (
+                    <Fact label="Note to coach" stack>
+                      {todayEntry.notes}
+                    </Fact>
+                  ) : null}
+                </FactList>
+              </Section>
+            </>
+          ) : null
+        }
+        side={
+          <>
+            {painSection}
+            {historySection}
+          </>
+        }
+      />
+    </Screen>
   )
 }

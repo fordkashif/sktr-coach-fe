@@ -70,6 +70,9 @@ const coachLinks: ShellLink[] = [
   { id: "reports", href: "/coach/reports", label: "Reports", icon: ChartBar },
 ]
 
+/** Everything under the athlete's Progress tab. Each is its own screen, with the tab bar showing. */
+const ATHLETE_PROGRESS_PATHS = ["/athlete/trends", "/athlete/prs", "/athlete/competitions", "/athlete/test-week"]
+
 /** The athlete's third item is the log action: a raised round button in the phone tab bar. */
 const ATHLETE_LOG_ID = "log"
 const athleteLinks: ShellLink[] = [
@@ -183,10 +186,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [coachTeamsHref, role])
 
   // A coach's Athletes tab points at one team, so it stays lit on any team or athlete page.
+  // The athlete's Progress tab covers its four sections: overview, records, competitions and tests.
   const isLinkActive = (link: ShellLink) =>
     role === "coach" && link.id === "teams"
       ? pathname.startsWith("/coach/teams") || pathname.startsWith("/coach/athletes")
-      : pathname.startsWith(link.href)
+      : role === "athlete" && link.id === "progress"
+        ? ATHLETE_PROGRESS_PATHS.some((prefix) => pathname.startsWith(prefix))
+        : pathname.startsWith(link.href)
 
   const homeHref = links[0]?.href ?? "/"
   const accountHref = role === "athlete" ? "/athlete/profile" : "/account"

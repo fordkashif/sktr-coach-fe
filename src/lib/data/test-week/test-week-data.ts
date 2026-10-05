@@ -1,8 +1,12 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
+import { eventGroupKey, formatMarkWithUnit, resolveEventByName, seasonFor, selectBests, type MarkUnit } from "@/lib/data/pr/marks"
+import { loadMockResultsState } from "@/lib/data/pr/mock-results-store"
+import { mapResultRow, RESULT_COLUMNS, type ResultRow } from "@/lib/data/pr/results-data"
 import type {
   ActiveTestDefinition,
+  AthleteTestWeekHistoryItem,
   CurrentAthleteTestWeekContext,
   LatestBenchmarkSnapshot,
   TestDefinitionUnit,
@@ -257,20 +261,6 @@ function parseNumericValue(valueText: string) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
-function categoryForTestUnit(unit: ActiveTestDefinition["unit"]): string {
-  if (unit === "weight") return "Strength"
-  if (unit === "height") return "Jumps"
-  if (unit === "distance") return "Distance"
-  if (unit === "time") return "Sprint"
-  return "Performance"
-}
-
-function parseComparableNumericFromText(value: string): number | null {
-  const normalized = value.replace(",", ".").replace(/[^\d.-]/g, "")
-  const parsed = Number.parseFloat(normalized)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
 function isBetterPerformance(unit: ActiveTestDefinition["unit"], candidate: number | null, baseline: number | null): boolean {
   if (candidate === null) return false
   if (baseline === null) return true
@@ -463,9 +453,10 @@ export async function submitCurrentAthleteTestWeekResults(
     submitted_at: submittedAt,
   }))
 
-  const { error: upsertError } = await clientResult.client
+  const { data: savedRows, error: upsertError } = await clientResult.client
     .from("test_results")
     .upsert(payload, { onConflict: "test_week_id,test_definition_id,athlete_id" })
+    .select("id, test_definition_id")
 
   if (upsertError) {
     const mapped = mapPostgrestError(upsertError)
@@ -475,51 +466,41 @@ export async function submitCurrentAthleteTestWeekResults(
     return { ok: false, error: mapped }
   }
 
-  // Results are saved at this point. A personal best that fails to update must not
-  // make the athlete think the submission was lost, so it is reported as a warning.
+  // Results are saved at this point, and the database has already copied them into the results
+  // history and refreshed the athlete's bests (20261008100000). All that is left is to tell the
+  // athlete which of these are personal bests. A failure to read that must not make them think
+  // the submission was lost, so it is reported as a warning.
   let prWarning: string | null = null
-  const newBests: string[] = []
+  const personalBests: TestWeekSubmissionResult["personalBests"] = []
 
-  for (const row of toPersist) {
-    const { data: existingPr, error: existingPrError } = await clientResult.client
-      .from("pr_records")
-      .select("id, best_value")
-      .eq("athlete_id", context.athleteId)
-      .eq("event", row.test_name)
-      .maybeSingle()
+  const { data: historyRows, error: historyError } = await clientResult.client
+    .from("athlete_results")
+    .select(RESULT_COLUMNS)
+    .eq("athlete_id", context.athleteId)
+    .limit(2000)
 
-    if (existingPrError) {
-      prWarning = mapPostgrestError(existingPrError).message
-      continue
+  if (historyError) {
+    prWarning = mapPostgrestError(historyError).message
+  } else {
+    const history = ((historyRows as ResultRow[] | null) ?? []).map(mapResultRow)
+    const season = seasonFor(localIsoDate())
+    const savedIdByDefinition = new Map(
+      ((savedRows as Array<{ id: string; test_definition_id: string }> | null) ?? []).map((saved) => [saved.test_definition_id, saved.id]),
+    )
+    for (const row of toPersist) {
+      const resolved = resolveEventByName(row.test_name, UNIT_BY_TEST_UNIT[row.test_unit])
+      const group = eventGroupKey(resolved.eventKey, resolved.label)
+      const sameEvent = history.filter((item) => item.eventGroup === group)
+      const best = selectBests(sameEvent, season).personalBest
+      // A personal best when the best mark in the history is the row of the result just saved.
+      if (!best || !best.testResultId || best.testResultId !== savedIdByDefinition.get(row.test_definition_id)) continue
+      const earlier = selectBests(sameEvent.filter((item) => item.id !== best.id), season).personalBest
+      personalBests.push({
+        testName: row.test_name,
+        mark: formatMarkWithUnit(best.display, best.unit),
+        previous: earlier ? formatMarkWithUnit(earlier.display, earlier.unit) : null,
+      })
     }
-
-    const existingNumeric = existingPr ? parseComparableNumericFromText(existingPr.best_value as string) : null
-    if (!isBetterPerformance(row.test_unit, row.value_numeric, existingNumeric)) continue
-
-    const { error: prUpsertError } = await clientResult.client
-      .from("pr_records")
-      .upsert(
-        {
-          tenant_id: athleteRow.tenant_id as string,
-          athlete_id: context.athleteId,
-          event: row.test_name,
-          category: categoryForTestUnit(row.test_unit),
-          best_value: row.value_text,
-          previous_value: existingPr?.best_value ?? null,
-          measured_on: localIsoDate(),
-          source_type: "test-week",
-          source_ref: `${context.testWeekId}:${row.test_definition_id}`,
-          is_legal: true,
-          recorded_by_user_id: null,
-        },
-        { onConflict: "athlete_id,event" },
-      )
-
-    if (prUpsertError) {
-      prWarning = mapPostgrestError(prUpsertError).message
-      continue
-    }
-    newBests.push(row.test_name)
   }
 
   return ok({
@@ -527,9 +508,143 @@ export async function submitCurrentAthleteTestWeekResults(
     testWeekId: context.testWeekId,
     submittedAt,
     submittedCount: payload.length,
-    newPersonalBests: newBests,
+    newPersonalBests: personalBests.map((item) => item.testName),
+    personalBests,
     prWarning,
   })
+}
+
+const UNIT_BY_TEST_UNIT: Record<TestDefinitionUnit, MarkUnit> = { time: "s", distance: "m", weight: "kg", height: "cm", score: "pts" }
+
+/** "0.05s faster", "5kg more", "2cm lower". Null when the two marks are equal. */
+export function describeTestChange(unit: TestDefinitionUnit, current: number, previous: number): { text: string; improved: boolean } | null {
+  const diff = Math.round((current - previous) * 1000) / 1000
+  if (diff === 0) return null
+  const amount = Math.abs(diff)
+  if (unit === "time") return { text: `${amount.toFixed(2)}s ${diff < 0 ? "faster" : "slower"}`, improved: diff < 0 }
+  const improved = diff > 0
+  if (unit === "distance") return { text: `${amount.toFixed(2)}m ${improved ? "further" : "shorter"}`, improved }
+  if (unit === "height") return { text: `${Number(amount.toFixed(1))}cm ${improved ? "higher" : "lower"}`, improved }
+  if (unit === "weight") return { text: `${Number(amount.toFixed(2))}kg ${improved ? "more" : "less"}`, improved }
+  return { text: `${Number(amount.toFixed(2))} pts ${improved ? "more" : "less"}`, improved }
+}
+
+type HistoryRow = {
+  test_week_id: string
+  test_definition_id: string
+  value_text: string
+  value_numeric: number | string | null
+  submitted_at: string
+  test_definitions: { name: string; unit: TestDefinitionUnit; scheduled_date: string; day_index: number; sort_order: number } | Array<{ name: string; unit: TestDefinitionUnit; scheduled_date: string; day_index: number; sort_order: number }> | null
+  test_weeks: { name: string; start_date: string; end_date: string; status: string } | Array<{ name: string; start_date: string; end_date: string; status: string }> | null
+}
+
+/** Adds the change against the previous test week that had a test of the same name. Weeks must be newest first. */
+export function withChangesBetweenWeeks(weeks: AthleteTestWeekHistoryItem[]): AthleteTestWeekHistoryItem[] {
+  return weeks.map((week, index) => ({
+    ...week,
+    results: week.results.map((result) => {
+      const key = result.name.trim().toLowerCase()
+      let previous: AthleteTestWeekHistoryItem["results"][number] | null = null
+      for (const older of weeks.slice(index + 1)) {
+        previous = older.results.find((item) => item.name.trim().toLowerCase() === key && item.unit === result.unit) ?? null
+        if (previous) break
+      }
+      const change =
+        previous && result.valueNumeric !== null && previous.valueNumeric !== null
+          ? describeTestChange(result.unit, result.valueNumeric, previous.valueNumeric)
+          : null
+      return { ...result, previousValueText: previous?.valueText ?? null, change }
+    }),
+  }))
+}
+
+/**
+ * Every test week the athlete has results in, newest first, with each result and how it moved
+ * against the test week before it. The week that is still open is included once it has a result.
+ */
+export async function getCurrentAthleteTestWeekHistory(): Promise<Result<AthleteTestWeekHistoryItem[]>> {
+  if (getBackendMode() !== "supabase") {
+    const state = loadMockResultsState()
+    const weeks: AthleteTestWeekHistoryItem[] = state.testWeeks
+      .map((week) => ({
+        testWeekId: week.id,
+        name: week.name,
+        startDate: week.startDate,
+        endDate: week.endDate,
+        status: week.status,
+        results: state.results
+          .filter((result) => result.source === "test_week" && (result.testResultId ?? "").startsWith(`${week.id}:`))
+          .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
+          .map((result) => ({
+            testDefinitionId: result.testResultId ?? result.id,
+            name: result.eventLabel,
+            unit: (Object.entries(UNIT_BY_TEST_UNIT).find(([, unit]) => unit === result.unit)?.[0] ?? "score") as TestDefinitionUnit,
+            valueText: formatMarkWithUnit(result.display, result.unit),
+            valueNumeric: result.value,
+            scheduledDate: result.date,
+            submittedAt: result.createdAt,
+            previousValueText: null,
+            change: null,
+          })),
+      }))
+      .filter((week) => week.results.length > 0)
+      .sort((a, b) => b.startDate.localeCompare(a.startDate))
+    return ok(withChangesBetweenWeeks(weeks))
+  }
+
+  const clientResult = requireSupabaseClient("getCurrentAthleteTestWeekHistory")
+  if (!clientResult.ok) return clientResult
+  const athleteIdResult = await getCurrentAthleteId(clientResult.client)
+  if (!athleteIdResult.ok) return athleteIdResult
+
+  const { data, error } = await clientResult.client
+    .from("test_results")
+    .select("test_week_id, test_definition_id, value_text, value_numeric, submitted_at, test_definitions(name, unit, scheduled_date, day_index, sort_order), test_weeks(name, start_date, end_date, status)")
+    .eq("athlete_id", athleteIdResult.data)
+    .order("submitted_at", { ascending: false })
+    .limit(1000)
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const weeks = new Map<string, AthleteTestWeekHistoryItem & { order: Map<string, number> }>()
+  for (const row of (data as HistoryRow[] | null) ?? []) {
+    const definition = firstEmbedded(row.test_definitions)
+    const week = firstEmbedded(row.test_weeks)
+    if (!definition || !week) continue
+    const item =
+      weeks.get(row.test_week_id) ??
+      ({
+        testWeekId: row.test_week_id,
+        name: week.name,
+        startDate: week.start_date.slice(0, 10),
+        endDate: week.end_date.slice(0, 10),
+        status: week.status === "published" ? "published" : "closed",
+        results: [],
+        order: new Map<string, number>(),
+      } satisfies AthleteTestWeekHistoryItem & { order: Map<string, number> })
+    const numeric = row.value_numeric === null ? null : Number(row.value_numeric)
+    item.results.push({
+      testDefinitionId: row.test_definition_id,
+      name: definition.name,
+      unit: definition.unit,
+      valueText: row.value_text,
+      valueNumeric: numeric !== null && Number.isFinite(numeric) ? numeric : null,
+      scheduledDate: definition.scheduled_date.slice(0, 10),
+      submittedAt: row.submitted_at,
+      previousValueText: null,
+      change: null,
+    })
+    item.order.set(row.test_definition_id, definition.day_index * 1000 + definition.sort_order)
+    weeks.set(row.test_week_id, item)
+  }
+
+  const ordered = [...weeks.values()]
+    .map(({ order, ...week }) => ({
+      ...week,
+      results: [...week.results].sort((a, b) => (order.get(a.testDefinitionId) ?? 0) - (order.get(b.testDefinitionId) ?? 0)),
+    }))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))
+  return ok(withChangesBetweenWeeks(ordered))
 }
 
 export type CoachTestWeekListItem = {

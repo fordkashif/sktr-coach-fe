@@ -2,31 +2,55 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
-import { ArrowRight, CalendarBlank, CheckCircle, Circle, ClipboardText, LockSimple, Trophy } from "@phosphor-icons/react"
-import { EmptyState, PageHeader, Panel, Stat, Tag } from "@/components/sk"
-import { tenantStorageKey } from "@/lib/tenant-storage"
-import { getCurrentAthletePrRecords } from "@/lib/data/pr/pr-data"
-import { getBackendMode } from "@/lib/supabase/config"
+import { ProgressTabs } from "@/components/athlete/results-parts"
+import {
+  ActionBar,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  Section,
+  SkeletonRows,
+  Split,
+  Stat,
+  StatStrip,
+  StatusDot,
+  StatusText,
+} from "@/components/sk"
+import { eventGroupKey, formatMarkWithUnit, resolveEventByName, selectBests, type AthleteResult, type MarkUnit } from "@/lib/data/pr/marks"
+import { buildMockResult, loadMockResultsState, mockDay, updateMockResultsState } from "@/lib/data/pr/mock-results-store"
+import { getCurrentAthleteRecords } from "@/lib/data/pr/results-data"
 import {
   getCurrentAthleteActiveTestWeekContext,
+  getCurrentAthleteTestWeekHistory,
   submitCurrentAthleteTestWeekResults,
 } from "@/lib/data/test-week/test-week-data"
-import type { ActiveTestDefinition, CurrentAthleteTestWeekContext, TestDefinitionUnit } from "@/lib/data/test-week/types"
-import { cn } from "@/lib/utils"
+import type { ActiveTestDefinition, AthleteTestWeekHistoryItem, CurrentAthleteTestWeekContext, TestDefinitionUnit } from "@/lib/data/test-week/types"
+import { getBackendMode } from "@/lib/supabase/config"
+import { tenantStorageKey } from "@/lib/tenant-storage"
 
 type TestSubmission = Record<string, string>
 type WeekPhase = "upcoming" | "open" | "closed"
+type PersonalBestLine = { testName: string; mark: string; previous: string | null }
 
-const PR_OVERRIDE_STORAGE_KEY = "pacelab:pr-overrides"
-const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-results"
+/** The athlete home screen hides its "test week results" to-do once this is set (mock mode only). */
+const MOCK_SUBMITTED_STORAGE_KEY = "pacelab:test-week-submission"
+const MOCK_WEEK_ID = "fallback-week"
+const MOCK_WEEK_NAME = "Speed and power testing"
 
-/** What the athlete types is a plain number. The unit is fixed by the test and shown beside the field. */
-const UNIT_META: Record<TestDefinitionUnit, { suffix: string; long: string; lowerIsBetter: boolean }> = {
-  time: { suffix: "s", long: "seconds", lowerIsBetter: true },
-  distance: { suffix: "m", long: "metres", lowerIsBetter: false },
-  weight: { suffix: "kg", long: "kilograms", lowerIsBetter: false },
-  height: { suffix: "cm", long: "centimetres", lowerIsBetter: false },
-  score: { suffix: "pts", long: "points", lowerIsBetter: false },
+/** What the athlete types is a plain number. The unit is fixed by the test and named beside the field. */
+const UNIT_META: Record<TestDefinitionUnit, { suffix: string; long: string; mark: MarkUnit }> = {
+  time: { suffix: "s", long: "seconds", mark: "s" },
+  distance: { suffix: "m", long: "metres", mark: "m" },
+  weight: { suffix: "kg", long: "kilograms", mark: "kg" },
+  height: { suffix: "cm", long: "centimetres", mark: "cm" },
+  score: { suffix: "pts", long: "points", mark: "pts" },
 }
 
 const MAX_RESULT_VALUE = 100000
@@ -85,28 +109,20 @@ function inputValueFor(saved: { valueText: string; valueNumeric: number | null }
   return numeric === null ? "" : String(numeric)
 }
 
+function groupFor(test: Pick<ActiveTestDefinition, "name" | "unit">): string {
+  const resolved = resolveEventByName(test.name, UNIT_META[test.unit].mark)
+  return eventGroupKey(resolved.eventKey, resolved.label)
+}
+
 /* ---------- mock mode: a demo week kept in this browser only ---------- */
 
-const MOCK_TESTS: Array<{ name: string; unit: TestDefinitionUnit; dayIndex: number; isRequired: boolean; previous: string; best?: string }> = [
-  { name: "30m", unit: "time", dayIndex: 0, isRequired: true, previous: "4.05s", best: "4.05s" },
-  { name: "Flying 30m", unit: "time", dayIndex: 0, isRequired: true, previous: "2.89s", best: "2.89s" },
-  { name: "150m", unit: "time", dayIndex: 1, isRequired: true, previous: "16.8s", best: "16.8s" },
-  { name: "Squat 1RM", unit: "weight", dayIndex: 1, isRequired: true, previous: "185kg", best: "185kg" },
-  { name: "CMJ", unit: "height", dayIndex: 2, isRequired: false, previous: "72cm" },
+const MOCK_TESTS: Array<{ name: string; unit: TestDefinitionUnit; dayIndex: number; isRequired: boolean }> = [
+  { name: "30m", unit: "time", dayIndex: 0, isRequired: true },
+  { name: "Flying 30m", unit: "time", dayIndex: 0, isRequired: true },
+  { name: "150m", unit: "time", dayIndex: 1, isRequired: true },
+  { name: "Squat 1RM", unit: "weight", dayIndex: 1, isRequired: true },
+  { name: "CMJ", unit: "height", dayIndex: 2, isRequired: false },
 ]
-
-type MockStored = { results: CurrentAthleteTestWeekContext["results"]; submittedAt: string | null }
-
-function readMockStored(): MockStored {
-  if (typeof window === "undefined") return { results: {}, submittedAt: null }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(tenantStorageKey(TEST_WEEK_STORAGE_KEY)) ?? "null") as MockStored | null
-    if (parsed && typeof parsed === "object" && parsed.results) return parsed
-  } catch {
-    /* fall through to empty */
-  }
-  return { results: {}, submittedAt: null }
-}
 
 /** Mock mode only: `?state=none|upcoming|closed` previews the other screen states. Ignored in supabase mode. */
 function buildMockContext(): CurrentAthleteTestWeekContext | null {
@@ -115,7 +131,7 @@ function buildMockContext(): CurrentAthleteTestWeekContext | null {
 
   const today = localIsoDate()
   const startDate = preview === "upcoming" ? shiftDate(today, 3) : preview === "closed" ? shiftDate(today, -6) : shiftDate(today, -1)
-  const stored = readMockStored()
+  const state = loadMockResultsState()
   const tests = MOCK_TESTS.map((test, index) => ({
     id: `fallback-${index}`,
     name: test.name,
@@ -125,55 +141,84 @@ function buildMockContext(): CurrentAthleteTestWeekContext | null {
     dayIndex: test.dayIndex,
   }))
 
+  const results: CurrentAthleteTestWeekContext["results"] = {}
+  const previous: CurrentAthleteTestWeekContext["previous"] = {}
+  let lastSubmittedAt: string | null = null
+  for (const test of tests) {
+    const saved = state.results.find((result) => result.testResultId === `${MOCK_WEEK_ID}:${test.id}`)
+    if (saved) {
+      results[test.id] = { valueText: formatMarkWithUnit(saved.display, saved.unit), valueNumeric: saved.value, submittedAt: saved.createdAt }
+      if (!lastSubmittedAt || saved.createdAt > lastSubmittedAt) lastSubmittedAt = saved.createdAt
+    }
+    const earlier = state.results
+      .filter((result) => result.source === "test_week" && result.eventGroup === groupFor(test) && !(result.testResultId ?? "").startsWith(`${MOCK_WEEK_ID}:`))
+      .sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (earlier) previous[test.id] = { valueText: formatMarkWithUnit(earlier.display, earlier.unit), submittedAt: earlier.date }
+  }
+
   return {
     athleteId: "fallback-athlete",
-    testWeekId: "fallback-week",
-    testWeekName: "Speed and power testing",
+    testWeekId: MOCK_WEEK_ID,
+    testWeekName: MOCK_WEEK_NAME,
     startDate,
     endDate: shiftDate(startDate, 2),
     status: preview === "closed" ? "closed" : "published",
     tests,
-    lastSubmittedAt: stored.submittedAt,
-    results: stored.results,
-    previous: Object.fromEntries(
-      MOCK_TESTS.map((test, index) => [`fallback-${index}`, { valueText: test.previous, submittedAt: shiftDate(today, -84) }]),
-    ),
+    lastSubmittedAt,
+    results,
+    previous,
   }
 }
 
-function mockBests(): Record<string, string> {
-  const bests: Record<string, string> = {}
-  MOCK_TESTS.forEach((test) => {
-    if (test.best) bests[test.name.toLowerCase()] = test.best
-  })
-  if (typeof window !== "undefined") {
-    try {
-      const overrides = JSON.parse(window.localStorage.getItem(tenantStorageKey(PR_OVERRIDE_STORAGE_KEY)) ?? "{}") as Record<string, string>
-      Object.entries(overrides).forEach(([event, value]) => {
-        bests[event.toLowerCase()] = value
+/** Mock mode only: saves the typed results into the demo history, the way the database trigger does. */
+function saveMockResults(context: CurrentAthleteTestWeekContext, cleaned: Record<string, string>): void {
+  const submittedAt = new Date().toISOString()
+  updateMockResultsState((state) => {
+    const kept = state.results.filter((result) => !Object.keys(cleaned).some((id) => result.testResultId === `${MOCK_WEEK_ID}:${id}`))
+    const added = context.tests
+      .filter((test) => cleaned[test.id])
+      .map((test) => {
+        const resolved = resolveEventByName(test.name, UNIT_META[test.unit].mark)
+        return buildMockResult({
+          eventKey: resolved.eventKey,
+          label: resolved.label,
+          unit: resolved.unit,
+          value: Number.parseFloat(cleaned[test.id]) * resolved.factor,
+          day: 0,
+          date: test.scheduledDate <= localIsoDate() ? test.scheduledDate : localIsoDate(),
+          source: "test_week",
+          testResultId: `${MOCK_WEEK_ID}:${test.id}`,
+          location: context.testWeekName,
+          createdAt: submittedAt,
+        })
       })
-    } catch {
-      /* ignore unreadable overrides */
-    }
+    const testWeeks = state.testWeeks.some((week) => week.id === MOCK_WEEK_ID)
+      ? state.testWeeks
+      : [...state.testWeeks, { id: MOCK_WEEK_ID, name: context.testWeekName, startDate: mockDay(-1), endDate: mockDay(1), status: "published" as const }]
+    return { ...state, results: [...added, ...kept], testWeeks }
+  })
+  try {
+    window.localStorage.setItem(tenantStorageKey(MOCK_SUBMITTED_STORAGE_KEY), submittedAt)
+  } catch {
+    /* the home screen to-do simply stays */
   }
-  return bests
 }
 
 /* ---------- screen ---------- */
 
 export default function AthleteTestWeekPage() {
-  const backendMode = getBackendMode()
-  const isSupabase = backendMode === "supabase"
+  const isSupabase = getBackendMode() === "supabase"
 
   const [context, setContext] = useState<CurrentAthleteTestWeekContext | null>(() => (isSupabase ? null : buildMockContext()))
-  const [bests, setBests] = useState<Record<string, string>>(() => (isSupabase ? {} : mockBests()))
+  const [history, setHistory] = useState<AthleteResult[]>([])
+  const [pastWeeks, setPastWeeks] = useState<AthleteTestWeekHistoryItem[] | null>(null)
   const [isLoading, setIsLoading] = useState(isSupabase)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [values, setValues] = useState<TestSubmission>(() =>
     context ? Object.fromEntries(context.tests.map((test) => [test.id, inputValueFor(context.results[test.id])])) : {},
   )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [prUpdates, setPrUpdates] = useState<string[]>([])
+  const [newBests, setNewBests] = useState<PersonalBestLine[]>([])
   const [submissionError, setSubmissionError] = useState<string | null>(null)
   const [submissionNotice, setSubmissionNotice] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -184,33 +229,50 @@ export default function AthleteTestWeekPage() {
     setFieldErrors({})
   }, [])
 
-  const load = useCallback(async () => {
-    if (!isSupabase) return
-    setIsLoading(true)
-    const [contextResult, prsResult] = await Promise.all([getCurrentAthleteActiveTestWeekContext(), getCurrentAthletePrRecords()])
-    setIsLoading(false)
+  const loadSideData = useCallback(async () => {
+    const [recordsResult, historyResult] = await Promise.all([getCurrentAthleteRecords(), getCurrentAthleteTestWeekHistory()])
+    // Bests and past weeks only add context to the form, so a failure here is not worth blocking it.
+    if (recordsResult.ok) setHistory(recordsResult.data.results)
+    setPastWeeks(historyResult.ok ? historyResult.data : [])
+    return recordsResult.ok ? recordsResult.data.results : null
+  }, [])
 
+  const load = useCallback(async () => {
+    if (!isSupabase) {
+      applyContext(buildMockContext())
+      return
+    }
+    setIsLoading(true)
+    const contextResult = await getCurrentAthleteActiveTestWeekContext()
+    setIsLoading(false)
     if (!contextResult.ok) {
       setLoadError(contextResult.error.message)
       return
     }
     setLoadError(null)
     applyContext(contextResult.data)
-
-    // Personal bests only add a line of context to each test, so a failure here is not worth blocking the form.
-    if (prsResult.ok) {
-      setBests(Object.fromEntries(prsResult.data.map((pr) => [pr.event.toLowerCase(), pr.bestValue])))
-    }
   }, [applyContext, isSupabase])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    if (isSupabase) void load()
+    void loadSideData()
+  }, [isSupabase, load, loadSideData])
 
   const today = localIsoDate()
   const tests = useMemo(() => context?.tests ?? [], [context])
   const phase: WeekPhase | null = !context ? null : context.status === "closed" ? "closed" : context.startDate > today ? "upcoming" : "open"
   const canEdit = phase === "open"
+
+  /** Best mark so far per test, from the whole results history. */
+  const bestByTest = useMemo(() => {
+    const season = { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` }
+    const map: Record<string, string> = {}
+    for (const test of tests) {
+      const best = selectBests(history.filter((result) => result.eventGroup === groupFor(test)), season).personalBest
+      if (best) map[test.id] = formatMarkWithUnit(best.display, best.unit)
+    }
+    return map
+  }, [history, tests, today])
 
   const days = useMemo(() => {
     const grouped = new Map<number, ActiveTestDefinition[]>()
@@ -238,7 +300,7 @@ export default function AthleteTestWeekPage() {
     if (!context || !canEdit) return
     setSubmissionError(null)
     setSubmissionNotice(null)
-    setPrUpdates([])
+    setNewBests([])
 
     if (changedIds.length === 0) {
       setSubmissionError(submittedCount > 0 ? "Nothing has changed since you last submitted." : "Enter at least one result before submitting.")
@@ -263,14 +325,12 @@ export default function AthleteTestWeekPage() {
     setFieldErrors(errors)
     if (Object.keys(errors).length > 0) {
       setSubmissionError("Fix the highlighted results, then submit again.")
-      document.getElementById(`test-${Object.keys(errors)[0]}`)?.focus()
+      window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#test-week-form input[aria-invalid="true"]')?.focus())
       return
     }
 
-    const describeBest = (test: ActiveTestDefinition) => {
-      const before = bests[test.name.toLowerCase()]
-      return before ? `${test.name}: ${payload[test.id]} (was ${before})` : `${test.name}: ${payload[test.id]}`
-    }
+    const count = Object.keys(payload).length
+    const savedText = `${count} ${count === 1 ? "result" : "results"} saved. Your coach can see ${count === 1 ? "it" : "them"}.`
 
     if (isSupabase) {
       setIsSaving(true)
@@ -280,153 +340,168 @@ export default function AthleteTestWeekPage() {
         setSubmissionError(submission.error.message)
         return
       }
-      const bestNames = new Set(submission.data.newPersonalBests)
-      setPrUpdates(tests.filter((test) => payload[test.id] && bestNames.has(test.name)).map(describeBest))
-      setSubmissionNotice(`${submission.data.submittedCount} ${submission.data.submittedCount === 1 ? "result" : "results"} saved.`)
+      setNewBests(submission.data.personalBests)
+      setSubmissionNotice(savedText)
       if (submission.data.prWarning) {
-        setSubmissionError(`Your results are saved, but your personal bests could not be updated. ${submission.data.prWarning}`)
+        setSubmissionError(`Your results are saved, but we could not check them against your personal bests. ${submission.data.prWarning}`)
       }
-      await load()
+      await Promise.all([load(), loadSideData()])
       return
     }
 
-    const submittedAt = new Date().toISOString()
-    const nextResults = { ...context.results }
-    const updates: string[] = []
-    let nextOverrides: Record<string, string> = {}
-    try {
-      nextOverrides = JSON.parse(window.localStorage.getItem(tenantStorageKey(PR_OVERRIDE_STORAGE_KEY)) ?? "{}") as Record<string, string>
-    } catch {
-      nextOverrides = {}
-    }
-
-    tests.forEach((test) => {
-      const valueText = payload[test.id]
-      if (!valueText) return
-      const numeric = Number.parseFloat(cleaned[test.id])
-      nextResults[test.id] = { valueText, valueNumeric: numeric, submittedAt }
-      const before = numericOf(bests[test.name.toLowerCase()] ?? "")
-      const better = before === null || (UNIT_META[test.unit].lowerIsBetter ? numeric < before : numeric > before)
-      if (better) {
-        updates.push(describeBest(test))
-        nextOverrides[test.name] = valueText
+    // Mock mode: what was the best before, so the new bests can be named.
+    const before = { ...bestByTest }
+    saveMockResults(context, cleaned)
+    const fresh = await loadSideData()
+    const season = { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` }
+    const bests: PersonalBestLine[] = []
+    for (const test of tests) {
+      if (!cleaned[test.id] || !fresh) continue
+      const best = selectBests(fresh.filter((result) => result.eventGroup === groupFor(test)), season).personalBest
+      if (best && best.testResultId === `${MOCK_WEEK_ID}:${test.id}`) {
+        bests.push({ testName: test.name, mark: formatMarkWithUnit(best.display, best.unit), previous: before[test.id] ?? null })
       }
-    })
-
-    try {
-      window.localStorage.setItem(tenantStorageKey(PR_OVERRIDE_STORAGE_KEY), JSON.stringify(nextOverrides))
-      window.localStorage.setItem(tenantStorageKey(TEST_WEEK_STORAGE_KEY), JSON.stringify({ results: nextResults, submittedAt }))
-    } catch {
-      setSubmissionError("Could not save these results on this device.")
-      return
     }
-
-    setPrUpdates(updates)
-    setSubmissionNotice(`${Object.keys(payload).length} ${Object.keys(payload).length === 1 ? "result" : "results"} saved.`)
-    setBests(mockBests())
-    applyContext({ ...context, results: nextResults, lastSubmittedAt: submittedAt })
+    setNewBests(bests)
+    setSubmissionNotice(savedText)
+    applyContext(buildMockContext())
   }
+
+  const header = (lede?: string) => <ScreenHeader title="Test week" lede={lede ?? "Where you enter your results when your coach runs testing."} />
+
+  const pastWeeksSection = (
+    <Section
+      title="Past test weeks"
+      action={
+        pastWeeks && pastWeeks.length > 0 ? (
+          <Link className="sk-link" to="/athlete/test-week/history">
+            See all
+          </Link>
+        ) : undefined
+      }
+    >
+      {pastWeeks === null ? (
+        <SkeletonRows rows={2} label="Loading past test weeks" />
+      ) : pastWeeks.filter((week) => week.testWeekId !== context?.testWeekId).length > 0 ? (
+        <List>
+          {pastWeeks
+            .filter((week) => week.testWeekId !== context?.testWeekId)
+            .slice(0, 3)
+            .map((week) => {
+              const better = week.results.filter((result) => result.change?.improved).length
+              return (
+                <ListRow
+                  key={week.testWeekId}
+                  to={`/athlete/test-week/history#${week.testWeekId}`}
+                  title={week.name}
+                  subtitle={`${shortDate(week.startDate)} ${parseLocalDate(week.startDate).getFullYear()}, ${week.results.length} ${week.results.length === 1 ? "result" : "results"}${better > 0 ? `, ${better} better than the time before` : ""}`}
+                />
+              )
+            })}
+        </List>
+      ) : (
+        <EmptyState title="No past test weeks yet" body="After your first test week, your results stay here so you can see how each test moves." />
+      )}
+    </Section>
+  )
 
   if (isLoading && !context) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Test week" />
-        <p className="text-sm font-semibold text-sk-mute">Loading your test week...</p>
-      </div>
+      <Screen>
+        {header()}
+        <ProgressTabs />
+        <Section title="This test week">
+          <SkeletonRows rows={4} label="Loading your test week" />
+        </Section>
+      </Screen>
     )
   }
 
   if (loadError && !context) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Test week" />
-        <div role="alert" className="rounded-2xl bg-sk-coral-tint p-5">
-          <p className="sk-h3">Could not load your test week</p>
-          <p className="mt-1 text-sm text-[#b32a0c]">{loadError}</p>
-          <button type="button" onClick={() => void load()} className="sk-btn sk-btn-quiet mt-4">
-            Try again
-          </button>
-        </div>
-      </div>
+      <Screen>
+        {header()}
+        <ProgressTabs />
+        <Notice
+          tone="error"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
+          Your test week could not be loaded. {loadError}
+        </Notice>
+      </Screen>
     )
   }
 
   if (!context || !phase) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Test week" lede="This is where you enter your results when your coach runs testing." />
-        <EmptyState
-          icon={<ClipboardText className="size-5" weight="bold" />}
-          title="No open test week"
-          body="When your coach publishes a test week for your team, the tests will show up here with a box for each result."
-          action={
-            <Link to="/athlete/trends" className="sk-btn sk-btn-quiet">
-              See my progress
-              <ArrowRight className="size-4" weight="bold" />
-            </Link>
+      <Screen>
+        {header()}
+        <ProgressTabs />
+        <Split
+          main={
+            <Section title="No open test week">
+              <EmptyState
+                title="Nothing to enter right now"
+                body="When your coach opens a test week for your team, its tests show up here with a box for each result."
+                action={
+                  <LinkButton to="/athlete/prs" size="sm">
+                    See your records
+                  </LinkButton>
+                }
+              />
+            </Section>
           }
+          side={pastWeeksSection}
         />
-      </div>
+      </Screen>
     )
   }
 
-  const dateRange =
-    context.startDate === context.endDate ? dayLabel(context.startDate) : `${dayLabel(context.startDate)} to ${dayLabel(context.endDate)}`
+  const dateRange = context.startDate === context.endDate ? dayLabel(context.startDate) : `${dayLabel(context.startDate)} to ${dayLabel(context.endDate)}`
   const daysUntilStart = Math.round((parseLocalDate(context.startDate).getTime() - parseLocalDate(today).getTime()) / 86400000)
   const daysLeft = Math.round((parseLocalDate(context.endDate).getTime() - parseLocalDate(today).getTime()) / 86400000)
   const allDone = tests.length > 0 && submittedCount === tests.length
 
+  const contextLine = (test: ActiveTestDefinition) => {
+    const previous = context.previous[test.id]
+    const best = bestByTest[test.id]
+    const parts = [previous ? `Last time ${previous.valueText}, ${shortDate(previous.submittedAt)}` : "No earlier result"]
+    if (best && best !== previous?.valueText) parts.push(`Best ${best}`)
+    return `${parts.join(". ")}.`
+  }
+
   return (
-    <div className="sk-page">
-      <PageHeader
-        title={context.testWeekName}
-        lede={
-          <span className="inline-flex items-center gap-2">
-            <CalendarBlank className="size-4 shrink-0" weight="bold" />
-            Test week, {dateRange}
-          </span>
-        }
-      />
+    <Screen>
+      {header(`${context.testWeekName}, ${dateRange}.`)}
+      <ProgressTabs />
 
       {phase === "upcoming" ? (
-        <div className="rounded-[20px] bg-sk-yellow-tint p-5">
-          <p className="sk-h3">
-            Starts {daysUntilStart === 1 ? "tomorrow" : `in ${daysUntilStart} days`}, on {dayLabel(context.startDate)}
-          </p>
-          <p className="mt-1 text-[0.95rem] leading-relaxed text-sk-ink-2">
-            You can enter results once the test week starts. Here is what your coach has planned.
-          </p>
-        </div>
+        <Notice>
+          Starts {daysUntilStart === 1 ? "tomorrow" : `in ${daysUntilStart} days`}, on {dayLabel(context.startDate)}. You can enter results once it starts. Here is what your coach has planned.
+        </Notice>
       ) : null}
-
       {phase === "closed" ? (
-        <div className="flex items-start gap-3 rounded-[20px] bg-sk-canvas p-5 ring-1 ring-sk-line">
-          <LockSimple className="mt-0.5 size-5 shrink-0 text-sk-ink-2" weight="bold" />
-          <div>
-            <p className="sk-h3">This test week is closed</p>
-            <p className="mt-1 text-[0.95rem] leading-relaxed text-sk-ink-2">
-              Your coach has closed it, so results can no longer be changed. If something is wrong, ask your coach to reopen it.
-            </p>
-          </div>
-        </div>
+        <Notice>Your coach has closed this test week, so results can no longer be changed. If something is wrong, ask your coach to reopen it.</Notice>
       ) : null}
+      {canEdit && context.lastSubmittedAt && !submissionNotice ? (
+        <Notice tone="success">
+          {allDone ? "All results submitted." : "Results submitted so far."} Last saved {stamp(context.lastSubmittedAt)}. You can change a result until your coach closes the week.
+        </Notice>
+      ) : null}
+      {submissionNotice && !submissionError ? <Notice tone="success">{submissionNotice}</Notice> : null}
+      {submissionError ? <Notice tone="error">{submissionError}</Notice> : null}
 
       {phase !== "upcoming" ? (
-        <section aria-label="Progress" className="grid grid-cols-2 gap-3 lg:max-w-[720px]">
+        <StatStrip aria-label="This test week">
           <Stat
-            tone={allDone ? "green" : phase === "open" ? "blue" : "plain"}
             label="Submitted"
             value={submittedCount}
-            unit={` of ${tests.length}`}
-            hint={
-              tests.length === 0
-                ? "No tests set"
-                : allDone
-                  ? "All tests done"
-                  : requiredLeft > 0
-                    ? `${requiredLeft} required still to do`
-                    : "Only optional tests left"
-            }
+            of={tests.length}
+            hint={tests.length === 0 ? "No tests set" : allDone ? "All tests done" : requiredLeft > 0 ? `${requiredLeft} required still to do` : "Only optional tests left"}
           />
           <Stat
             label={phase === "closed" ? "Ended" : "Ends"}
@@ -443,170 +518,126 @@ export default function AthleteTestWeekPage() {
                       : "Past the end date, still open"
             }
           />
-        </section>
+        </StatStrip>
       ) : null}
 
-      {canEdit && context.lastSubmittedAt ? (
-        <div className="flex items-start gap-3 rounded-[20px] bg-sk-green-tint p-5">
-          <CheckCircle className="mt-0.5 size-5 shrink-0 text-sk-green" weight="fill" />
-          <div>
-            <p className="sk-h3">{allDone ? "All results submitted" : "Results submitted so far"}</p>
-            <p className="mt-1 text-[0.95rem] leading-relaxed text-sk-ink-2">
-              Last saved {stamp(context.lastSubmittedAt)}. Your coach can see them. You can change a result until your coach closes the week.
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {prUpdates.length > 0 ? (
-        <Panel title="New personal bests" action={<Trophy className="size-6 text-[#c48a00]" weight="fill" />}>
-          <ul>
-            {prUpdates.map((update) => (
-              <li key={update} className="sk-row font-semibold text-sk-ink">
-                {update}
-              </li>
+      {newBests.length > 0 ? (
+        <Section title="New personal bests" meta={`${newBests.length} this time`}>
+          <List>
+            {newBests.map((best) => (
+              <ListRow
+                key={best.testName}
+                leading={<StatusDot tone="green" />}
+                title={best.testName}
+                subtitle={best.previous ? `Was ${best.previous}` : "Your first result in this test"}
+                trailing={best.mark}
+              />
             ))}
-          </ul>
-        </Panel>
+          </List>
+        </Section>
       ) : null}
 
-      {tests.length === 0 ? (
-        <EmptyState
-          icon={<ClipboardText className="size-5" weight="bold" />}
-          title="No tests in this week yet"
-          body="Your coach has not added any tests to this test week. Check back soon."
-        />
-      ) : (
-        <form onSubmit={handleSubmit} noValidate className="space-y-6">
-          <div className="grid items-start gap-6 lg:grid-cols-2 xl:grid-cols-3">
-            {days.map(([dayIndex, testsForDay]) => {
-              const date = testsForDay[0]?.scheduledDate ?? shiftDate(context.startDate, dayIndex)
-              return (
-                <Panel
-                  key={dayIndex}
-                  title={`Day ${dayIndex + 1}`}
-                  hint={date === today ? `${dayLabel(date)}, today` : dayLabel(date)}
-                >
-                  <ul className="divide-y divide-sk-line border-t border-sk-line">
-                    {testsForDay.map((test) => {
-                      const meta = UNIT_META[test.unit]
-                      const saved = context.results[test.id]
-                      const previous = context.previous[test.id]
-                      const best = bests[test.name.toLowerCase()]
-                      const error = fieldErrors[test.id]
-                      const inputId = `test-${test.id}`
-                      return (
-                        <li key={test.id} className="py-4 last:pb-0">
-                          <div className="flex items-start justify-between gap-3">
-                            <label htmlFor={canEdit ? inputId : undefined} className="min-w-0">
-                              <span className="block text-lg font-bold tracking-[-0.01em] text-sk-ink">{test.name}</span>
-                              <span className="mt-0.5 block text-sm text-sk-mute">
-                                {test.isRequired ? "" : "Optional. "}
-                                {previous ? `Last time ${previous.valueText}, ${shortDate(previous.submittedAt)}` : "No earlier result"}
-                                {best && best !== previous?.valueText ? `. Best ${best}` : ""}
-                              </span>
-                            </label>
-                            {phase === "upcoming" ? (
-                              <span className="shrink-0 text-sm font-semibold text-sk-mute">{meta.long}</span>
-                            ) : saved ? (
-                              <span className="inline-flex shrink-0 items-center gap-1 text-sm font-bold text-[#07673f]">
-                                <CheckCircle className="size-4" weight="fill" />
-                                Submitted
-                              </span>
-                            ) : (
-                              <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-sk-mute">
-                                <Circle className="size-4" weight="bold" />
-                                Not submitted
-                              </span>
-                            )}
-                          </div>
-
-                          {canEdit ? (
-                            <>
-                              <div className="relative mt-3">
-                                <input
-                                  id={inputId}
-                                  type="text"
-                                  inputMode="decimal"
-                                  autoComplete="off"
-                                  enterKeyHint="next"
-                                  placeholder="0.00"
-                                  value={values[test.id] ?? ""}
-                                  aria-invalid={Boolean(error)}
-                                  aria-describedby={error ? `${inputId}-error` : `${inputId}-unit`}
-                                  onChange={(event) => {
-                                    const next = event.target.value
-                                    setValues((current) => ({ ...current, [test.id]: next }))
-                                    if (error) setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== test.id)))
-                                  }}
-                                  onBlur={() => {
-                                    // A saved result cannot be removed by the athlete, so an emptied field goes back to the saved value.
-                                    if (saved && !(values[test.id] ?? "").trim()) {
-                                      setValues((current) => ({ ...current, [test.id]: inputValueFor(saved) }))
-                                    }
-                                  }}
-                                  className={cn(
-                                    "sk-field h-14 pr-28 text-xl font-bold tabular-nums placeholder:font-semibold",
-                                    error && "border-sk-coral focus:border-sk-coral focus:ring-sk-coral/20",
-                                  )}
-                                />
-                                <span
-                                  id={`${inputId}-unit`}
-                                  className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-bold text-sk-mute"
-                                >
-                                  {meta.long}
-                                </span>
-                              </div>
-                              {error ? (
-                                <p id={`${inputId}-error`} role="alert" className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
-                                  {error}
-                                </p>
-                              ) : null}
-                            </>
-                          ) : phase === "closed" ? (
-                            <p className="mt-2">
-                              {saved ? (
-                                <span className="sk-num text-[1.75rem]">{saved.valueText}</span>
+      <Split
+        main={
+          tests.length === 0 ? (
+            <Section title="No tests in this week yet">
+              <EmptyState title="Your coach has not added any tests" body="Check back soon. Once tests are added, each one gets a box for your result." />
+            </Section>
+          ) : canEdit ? (
+            <form id="test-week-form" className="flex flex-col gap-7 lg:gap-9" onSubmit={(event) => void handleSubmit(event)} noValidate>
+              {days.map(([dayIndex, testsForDay]) => {
+                const date = testsForDay[0]?.scheduledDate ?? shiftDate(context.startDate, dayIndex)
+                const done = testsForDay.filter((test) => context.results[test.id]).length
+                return (
+                  <Section key={dayIndex} title={`Day ${dayIndex + 1}`} hint={date === today ? `${dayLabel(date)}, today` : dayLabel(date)} meta={`${done} of ${testsForDay.length} submitted`}>
+                    <div className="mt-3 flex flex-col gap-5">
+                      {testsForDay.map((test) => {
+                        const meta = UNIT_META[test.unit]
+                        const saved = context.results[test.id]
+                        return (
+                          <Field
+                            key={test.id}
+                            label={`${test.name} (${meta.long})`}
+                            optional={!test.isRequired}
+                            error={fieldErrors[test.id]}
+                            hint={`${saved ? `Submitted ${saved.valueText}. ` : ""}${contextLine(test)}`}
+                          >
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              enterKeyHint="next"
+                              placeholder="0.00"
+                              className="font-bold tabular-nums"
+                              value={values[test.id] ?? ""}
+                              onChange={(changeEvent) => {
+                                const next = changeEvent.target.value
+                                setValues((current) => ({ ...current, [test.id]: next }))
+                                if (fieldErrors[test.id]) setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== test.id)))
+                              }}
+                              onBlur={() => {
+                                // A saved result cannot be removed by the athlete, so an emptied field goes back to the saved value.
+                                if (saved && !(values[test.id] ?? "").trim()) {
+                                  setValues((current) => ({ ...current, [test.id]: inputValueFor(saved) }))
+                                }
+                              }}
+                            />
+                          </Field>
+                        )
+                      })}
+                    </div>
+                  </Section>
+                )
+              })}
+            </form>
+          ) : (
+            <>
+              {days.map(([dayIndex, testsForDay]) => {
+                const date = testsForDay[0]?.scheduledDate ?? shiftDate(context.startDate, dayIndex)
+                return (
+                  <Section key={dayIndex} title={`Day ${dayIndex + 1}`} hint={dayLabel(date)}>
+                    <List>
+                      {testsForDay.map((test) => {
+                        const saved = context.results[test.id]
+                        return (
+                          <ListRow
+                            key={test.id}
+                            title={test.name}
+                            subtitle={`${test.isRequired ? "" : "Optional. "}${contextLine(test)}`}
+                            trailing={
+                              phase === "upcoming" ? (
+                                <span className="font-normal text-sk-mute">{UNIT_META[test.unit].long}</span>
+                              ) : saved ? (
+                                saved.valueText
                               ) : (
-                                <Tag>No result</Tag>
-                              )}
-                            </p>
-                          ) : null}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </Panel>
-              )
-            })}
-          </div>
+                                <StatusText tone="neutral">No result</StatusText>
+                              )
+                            }
+                          />
+                        )
+                      })}
+                    </List>
+                  </Section>
+                )
+              })}
+            </>
+          )
+        }
+        side={pastWeeksSection}
+      />
 
-          {canEdit ? (
-            <div className="space-y-3">
-              {submissionError ? (
-                <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                  {submissionError}
-                </p>
-              ) : null}
-              {submissionNotice && !submissionError ? (
-                <p role="status" className="rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-[#07673f]">
-                  {submissionNotice}
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button type="submit" disabled={isSaving} className="sk-btn sk-btn-primary h-14 w-full text-base sm:w-auto sm:min-w-[240px]">
-                  {isSaving ? "Saving..." : submittedCount > 0 ? "Submit changes" : "Submit results"}
-                </button>
-                <p className="text-sm text-sk-mute">
-                  {changedIds.length > 0
-                    ? `${changedIds.length} ${changedIds.length === 1 ? "result" : "results"} ready to submit. You can come back for the rest.`
-                    : "Enter what you have done so far. You can come back for the rest."}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </form>
-      )}
-    </div>
+      {canEdit && tests.length > 0 ? (
+        <ActionBar aria-label="Submit results">
+          <p className="min-w-0 text-sm text-sk-mute">
+            {changedIds.length > 0
+              ? `${changedIds.length} ${changedIds.length === 1 ? "result" : "results"} ready. You can come back for the rest.`
+              : "Enter what you have done so far."}
+          </p>
+          <Button type="submit" form="test-week-form" variant="primary" disabled={isSaving}>
+            {isSaving ? "Saving..." : submittedCount > 0 ? "Submit changes" : "Submit results"}
+          </Button>
+        </ActionBar>
+      ) : null}
+    </Screen>
   )
 }

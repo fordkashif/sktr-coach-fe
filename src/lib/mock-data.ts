@@ -11,7 +11,8 @@ export interface Athlete {
   eventGroup: EventGroup
   primaryEvent: string
   readiness: Readiness
-  adherence: number
+  /** Percent of due sessions done, or null when no sessions were due (never shown as 100%). */
+  adherence: number | null
   lastWellness: string
   teamId: string
 }

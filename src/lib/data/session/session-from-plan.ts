@@ -246,3 +246,30 @@ export function formatSetLog(kind: LogKind, log: SessionRowLog): string {
 export function isLogEmpty(log: SessionRowLog) {
   return !log.completed && log.reps === null && log.loadKg === null && log.timeSeconds === null && log.mark === null
 }
+
+/**
+ * Several sets of one exercise in a few words, for "Last time: 3 x 5 at 120kg".
+ * Equal strength sets collapse to "sets x reps at load"; everything else is listed set by set.
+ */
+export function summariseSets(kind: LogKind, logs: SessionRowLog[]): string {
+  const sets = logs.filter((log) => !isLogEmpty(log)).sort((left, right) => left.setIndex - right.setIndex)
+  if (sets.length === 0) return ""
+  const strength = sets.filter((log) => log.reps !== null || log.loadKg !== null)
+  if (strength.length === sets.length) {
+    const one = (log: SessionRowLog) =>
+      log.reps !== null && log.loadKg !== null ? `${trimNumber(log.reps)} at ${trimNumber(log.loadKg)}kg` : log.reps !== null ? `${trimNumber(log.reps)} reps` : `${trimNumber(log.loadKg ?? 0)}kg`
+    const same = sets.every((log) => log.reps === sets[0].reps && log.loadKg === sets[0].loadKg)
+    if (same && sets[0].reps !== null) {
+      return sets[0].loadKg !== null ? `${sets.length} x ${trimNumber(sets[0].reps)} at ${trimNumber(sets[0].loadKg)}kg` : `${sets.length} x ${trimNumber(sets[0].reps)}`
+    }
+    return sets.map(one).join(", ")
+  }
+  const parts = sets.map((log) => formatSetLog(kind, log)).filter(Boolean)
+  if (parts.every((part) => part === "Done")) return parts.length > 1 ? `${parts.length} done` : "Done"
+  return parts.join(", ")
+}
+
+/** How exercise names are matched between sessions: case and outer spaces do not matter. */
+export function exerciseKey(label: string) {
+  return label.trim().toLowerCase()
+}

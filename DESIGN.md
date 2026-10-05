@@ -124,7 +124,14 @@ All from `@/components/sk`.
 | `StatStrip`, `Stat` | A hairline above and below, stats divided by vertical hairlines. One row on desktop, two columns on phone. `Stat` takes `label`, `value`, `unit`, and `of` for "3 of 4". Two to five stats. Never coloured. |
 | `DataTable`, `TableSub` | A real table: caption for screen readers, `th scope`, right-aligned numeric columns (`align: "right"`). The first column is the row header (name, with `TableSub` for a second line). On phone each row restacks into a list row: use `phone: "trailing"` for the one value to keep on the right, `"plain"` for a value that needs no label, `"hide"` to drop a column; other columns become labelled lines. It never scrolls the page sideways. |
 | `DayStrip` | Seven days of a week as circles: today blue, done green tick, planned soft fill, rest plain. |
+| `WeekPager` | Which week is showing ("Week 2 of 4" with the dates under it) with previous and next buttons, and room for a quiet "Today" action. |
+| `DayPicker` | `DayStrip` you can tap: pick one of seven days, the chosen one has a ring. Also shows skipped (dash) and missed (coral). Use with `WeekPager`. |
+| `DayLabel` | A weekday over the day of the month as the leading part of a `ListRow` in a week list. Today is blue. |
 | `Meter` | A thin progress bar. Give it an `aria-label` via `label`. |
+| `Sparkline` | One small trend line with no axes (readiness over the last weeks). Ink line, newest point marked, missing days skipped. Needs a `label` that says the trend in words. |
+| `TrendLine`, `TrendBars` | A real chart with axes, straight on the page (no box): one series, a 2px line in blue or slim bars in green, hairline grid, 12px grey labels, a tooltip on hover or tap. `TrendLine` takes dates (drawn to scale) or even steps; `TrendBars` is a count per period and starts at zero. Both need a `label` sentence, and the headline number goes in words beside them. |
+| `Mark` | A result written the track and field way: the number bold, its unit small beside it, and a `qualifier` for the wind reading ("11.28 s +0.9"). Sizes `sm` (table), `md` (trailing value of a row), `lg` (the one mark a screen is about). Ink only; "personal best" is said beside it with `StatusText` or a `Tag`. |
+| `FactList`, `Fact` | Read-only details as label and value rows with hairlines (a profile, an invite). `empty` is the grey text for a value not added yet, `stack` puts a long value under its label. |
 | `EmptyState` | Two lines of plain text (what will appear here) and one action. No box, no icon. |
 | `SkeletonRows`, `Skeleton`, `ScreenSkeleton` | Loading placeholders the height of real rows. |
 
@@ -146,7 +153,16 @@ All from `@/components/sk`.
 | `Button`, `LinkButton` | `variant`: `primary` (solid blue, one per screen), `secondary` (outlined, the default), `quiet` (blue text, for cancel and minor actions), `danger` (outlined, coral text). `size`: `md` 44px, `sm` (44px on phone, 40px on desktop), `lg` 52px. `LinkButton` whenever pressing goes to another screen. Text says what happens; an icon may go before the text. |
 | `Field` with `Input`, `Textarea`, `Select` | Label above, control (44px), then a hint or an error. `Field` wires ids and aria for you. |
 | `Segmented` | Two to four views of the same thing. |
+| `TapScale` | A 1 to 5 answer in one tap: numbered buttons, the two end words under them, the chosen word beside the question. |
+| `Stepper` | A number changed with minus and plus (hours of sleep), shown large between the two buttons. |
+| `Choices` | Tap to pick one (or, with `multiple`, several) from a short set of words, as a grid of equal buttons. For answers in a form; `Segmented` is for switching views. |
+| `SetList`, `SetGroup`, `SetRow` | Logging results set by set. `SetGroup` is one exercise (name, target, a hint such as "Last time", progress, a row of quiet actions); each `SetRow` is one set: its number, the inputs, the tick. |
+| `NumberInput` | A big number field for a phone (52px, decimal keypad, unit inside on the right). `mode="time"` also takes minutes and seconds. |
+| `TickButton` | A 52px square tick: tap to mark a set done (green), tap again to undo. |
+| `EffortScale` | A 1 to 10 answer in one tap, two rows of five, with the word for the chosen number under it. |
+| `ActionBar` | A bar that stays at the bottom while the screen scrolls, above the phone tab bar: progress and save state of a long task, at most one button. Last child of `Screen`. |
 | `Tabs` | Underlined tabs for more views or longer labels. |
+| `NavTabs` | The sub-sections of one destination when each is its own screen with its own address (Progress: Overview, Records, Competitions, Tests). Looks like `Tabs`, every tab is a link. Goes straight under the `ScreenHeader` of each of those screens. |
 | `InlineConfirm` | "Are you sure" in place, where the button was. Use it instead of a dialog for remove, archive, cancel. |
 | `Sheet` | A panel over the screen with a title and a close button. `side="right"` for something to glance at (notifications), `side="bottom"` for a short choice on phone. |
 | `Dialog` | A centred panel for one short form or decision. Title, close button, actions in `footer`. |
@@ -161,7 +177,7 @@ Built once in `src/components/app-shell.tsx`. Screens never draw navigation.
 
 **Desktop, 1024px and wider: a top bar.** There is no sidebar. Left to right: the brand, the team switcher (only for a coach on two or more teams), the role's destinations as tabs, then the notifications bell and the profile avatar. The active tab has the soft blue fill with dark blue text. The bar is one row at every width from 1024px up; labels are kept short so that seven destinations fit.
 
-**Phone: an app bar and a tab bar.** The app bar is one 56px row: the brand on the left (or the team switcher for a multi-team coach, or a back button while a screen is in detail mode), the bell and the avatar on the right. The tab bar is white with a hairline on top, icon over label, the active one blue. It holds at most five items. A role with more destinations shows four and "More", which opens a bottom sheet with the rest. For the athlete the centre item is a raised round ink button that opens the session log.
+**Phone: an app bar and a tab bar.** The app bar is one 56px row: the brand on the left (or the team switcher for a multi-team coach, or a back button while a screen is in detail mode), the bell and the avatar on the right. The tab bar is white with a hairline on top, icon over label, the active one blue. It holds at most five items. A role with more destinations shows four and "More", which opens a bottom sheet with the rest. For the athlete the centre item is a raised round ink button that opens the session log. The athlete's Progress tab has four sections, each its own screen with `NavTabs` under the header (Overview, Records, Competitions, Tests); the tab stays lit on all of them and on the screens below them.
 
 | Role | Desktop tabs | Phone tabs |
 |---|---|---|
@@ -174,7 +190,7 @@ The bell is there for every role. It shows the number of unread notifications an
 
 The avatar opens the profile menu: Your account, Notification settings, Sign out (athletes also get Join a team).
 
-Detail screens (an athlete, a plan, a test week) use `ScreenHeader` with `back`. A phone screen that takes over the whole view can also ask the shell for a back button and no tab bar by dispatching `pacelab:mobile-detail-mode` (see `app-shell.tsx`).
+Detail screens (an athlete, a plan, a test week) use `ScreenHeader` with `back`. A phone screen that takes over the whole view can also ask the shell for a back button and no tab bar by dispatching `pacelab:mobile-detail-mode` (see `app-shell.tsx`). A role's main destinations (the tabs, the athlete's plan and log included) never do this: the tab bar stays.
 
 ## Words
 

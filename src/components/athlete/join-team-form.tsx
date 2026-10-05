@@ -1,14 +1,14 @@
 "use client"
 
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
-import { Link } from "react-router-dom"
-import { ArrowRight, CheckCircle, UsersThree, WarningCircle } from "@phosphor-icons/react"
-import { Initials, PageHeader, Panel } from "@/components/sk"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { ArrowRight } from "@phosphor-icons/react"
+import { Avatar, Button, Field, Input, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
 import { acceptAthleteInviteForCurrentUser, getAthleteInvitePreviewForCurrentUser } from "@/lib/data/athlete/invite-data"
 import {
   MOCK_ATHLETE_ID,
   eventGroupLabel,
   getCurrentAthleteTeam,
+  hasMockAthleteLeftTeam,
 } from "@/lib/data/athlete/profile-data"
 import type { Team } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -116,7 +116,6 @@ function problemForAcceptError(message: string): Problem {
 
 export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
   const isSupabaseMode = getBackendMode() === "supabase"
-  const formId = useId()
   const [inviteInput, setInviteInput] = useState(initialCode)
   const [joinState, setJoinState] = useState<JoinState>(() => loadStoredJoinState())
   const [joinedNow, setJoinedNow] = useState<{ name: string } | null>(null)
@@ -235,7 +234,8 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
     if (isSupabaseMode) {
       return supabaseTeam?.teamId ? { id: supabaseTeam.teamId, name: supabaseTeam.teamName ?? "Your team" } : null
     }
-    const teamId = joinState.joinedTeamId ?? mockAthleteTeamId
+    // After leaving a team in the demo, the athlete has none until they join again.
+    const teamId = joinState.joinedTeamId ?? (hasMockAthleteLeftTeam() ? null : mockAthleteTeamId)
     const team = mockTeams?.find((item) => item.id === teamId) ?? null
     return team ? { id: team.id, name: team.name } : null
   }, [isSupabaseMode, joinState.joinedTeamId, mockAthleteTeamId, mockTeams, supabaseTeam])
@@ -281,155 +281,107 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
   if (joinedNow) {
     return (
-      <div className="sk-page">
-        <PageHeader title={`You are on ${joinedNow.name}`} lede="Your plan, test weeks and coach notes for this team show up from now on." />
-        <div className="max-w-[640px]">
-          <Panel>
-            <p className="flex items-center gap-2 font-bold text-[#07673f]" role="status">
-              <CheckCircle className="size-6 shrink-0" weight="fill" aria-hidden />
-              Joined {joinedNow.name}
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Link to="/athlete/home" className="sk-btn sk-btn-primary">
-                Open today
-                <ArrowRight className="size-5" weight="bold" />
-              </Link>
-              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet">
-                Open plan
-              </Link>
-              <button
-                type="button"
-                className="sk-btn sk-btn-ghost"
-                onClick={() => {
-                  setJoinedNow(null)
-                  setInviteInput("")
-                }}
-              >
-                Use another code
-              </button>
-            </div>
-          </Panel>
+      <Screen width="narrow">
+        <ScreenHeader title={`You are on ${joinedNow.name}`} lede="Your plan, test weeks and coach notes for this team show up from now on." />
+        <Notice tone="success">Joined {joinedNow.name}.</Notice>
+        <div className="flex flex-wrap gap-2">
+          <LinkButton to="/athlete/home" variant="primary">
+            Open today
+            <ArrowRight className="size-5" weight="bold" aria-hidden />
+          </LinkButton>
+          <LinkButton to="/athlete/training-plan">Open plan</LinkButton>
+          <Button
+            variant="quiet"
+            onClick={() => {
+              setJoinedNow(null)
+              setInviteInput("")
+            }}
+          >
+            Use another code
+          </Button>
         </div>
-      </div>
+      </Screen>
     )
   }
 
+  const inviteDetail = resolvedInvite
+    ? [eventGroupLabel(resolvedInvite.group), resolvedInvite.athleteCount !== null ? `${resolvedInvite.athleteCount} athletes` : null].filter(Boolean).join(", ")
+    : ""
+
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen width="narrow">
+      <ScreenHeader
+        back={{ to: "/athlete/profile", label: "Profile" }}
         title="Join a team"
         lede="Paste the invite link or code from your coach. You will see the team before anything changes."
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,640px)_minmax(0,1fr)] lg:gap-8">
-        <Panel>
-          <form className="grid gap-5" onSubmit={(event) => void handleJoin(event)} noValidate>
-            <div>
-              <label htmlFor={`${formId}-code`} className="sk-label mb-1.5 block">
-                Invite link or code
-              </label>
-              <input
-                id={`${formId}-code`}
-                className="sk-field"
-                placeholder="Paste it here"
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-describedby={`${formId}-status`}
-                value={inviteInput}
-                onChange={(event) => setInviteInput(event.target.value)}
-              />
-            </div>
+      <form className="flex flex-col gap-7" onSubmit={(event) => void handleJoin(event)} noValidate>
+        <Field
+          label="Invite link or code"
+          hint={!hasTypedInvite ? "Opened a link from your coach? The code fills in by itself. Otherwise paste it here." : undefined}
+        >
+          <Input
+            placeholder="Paste it here"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={inviteInput}
+            onChange={(event) => setInviteInput(event.target.value)}
+          />
+        </Field>
 
-            <div id={`${formId}-status`} aria-live="polite" className="grid gap-5">
-              {!hasTypedInvite ? (
-                <p className="text-sm leading-relaxed text-sk-mute">
-                  Opened a link from your coach? The code fills in by itself. Otherwise paste it above.
-                </p>
-              ) : null}
+        <div aria-live="polite" className="flex flex-col gap-4 empty:hidden">
+          {isChecking ? (
+            <Section title="Checking invite">
+              <SkeletonRows rows={1} leading label="Checking invite" />
+            </Section>
+          ) : null}
 
-              {isChecking ? <p className="text-sm font-semibold text-sk-mute">Checking invite...</p> : null}
+          {resolvedInvite && !isChecking ? (
+            <Section title={alreadyOnTeam ? "Your team" : "You are about to join"}>
+              <List>
+                <ListRow leading={<Avatar name={resolvedInvite.name} size="lg" />} title={resolvedInvite.name} subtitle={inviteDetail || undefined} />
+              </List>
+            </Section>
+          ) : null}
 
-              {resolvedInvite && !isChecking ? (
-                <div className="sk-well">
-                  <p className="sk-label">{alreadyOnTeam ? "Your team" : "You are about to join"}</p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <Initials name={resolvedInvite.name} size="lg" className="rounded-2xl" />
-                    <div className="min-w-0">
-                      <p className="break-words text-xl font-extrabold tracking-[-0.02em] text-sk-ink">{resolvedInvite.name}</p>
-                    </div>
-                  </div>
-                  {resolvedInvite.group || resolvedInvite.athleteCount !== null ? (
-                    <p className="mt-3 text-sm text-sk-mute">
-                      {[
-                        eventGroupLabel(resolvedInvite.group),
-                        resolvedInvite.athleteCount !== null ? `${resolvedInvite.athleteCount} athletes` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
+          {alreadyOnTeam && !isChecking ? <Notice tone="success">You are already on this team. There is nothing to do.</Notice> : null}
 
-              {alreadyOnTeam && !isChecking ? (
-                <p className="flex items-start gap-2 text-sm font-bold text-[#07673f]">
-                  <CheckCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
-                  You are already on this team. There is nothing to do.
-                </p>
-              ) : null}
+          {problem && !isChecking ? (
+            <Notice tone="error">
+              {problem.title}
+              <span className="mt-0.5 block font-normal">{problem.body}</span>
+            </Notice>
+          ) : null}
+        </div>
 
-              {problem && !isChecking ? (
-                <div className="flex items-start gap-3 rounded-2xl bg-sk-coral-tint p-4" role="alert">
-                  <WarningCircle className="mt-0.5 size-5 shrink-0 text-[#b32a0c]" weight="fill" aria-hidden />
-                  <div className="space-y-1 text-sm">
-                    <p className="font-bold text-[#b32a0c]">{problem.title}</p>
-                    <p className="text-sk-ink-2">{problem.body}</p>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {alreadyOnTeam ? (
-                <Link to="/athlete/home" className="sk-btn sk-btn-primary w-full sm:w-auto">
-                  Open today
-                  <ArrowRight className="size-5" weight="bold" />
-                </Link>
-              ) : (
-                <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={!canJoin || joining}>
-                  {joining ? "Joining..." : resolvedInvite && canJoin ? `Join ${resolvedInvite.name}` : "Join team"}
-                </button>
-              )}
-            </div>
-            {canJoin && currentTeam ? (
-              <p className="-mt-2 text-sm text-sk-mute">
-                Joining moves you off {currentTeam.name}. You can only be on one team at a time.
-              </p>
-            ) : null}
-          </form>
-        </Panel>
-
-        <section aria-labelledby={`${formId}-current`} className="px-1 lg:pt-2">
-          <h2 id={`${formId}-current`} className="sk-h3">
-            Your team right now
-          </h2>
-          {currentTeam ? (
-            <p className="mt-2 flex items-center gap-2 font-bold text-sk-ink">
-              <UsersThree className="size-5 shrink-0 text-sk-blue" weight="fill" aria-hidden />
-              {currentTeam.name}
-            </p>
+        <div className="flex flex-col gap-2">
+          {alreadyOnTeam ? (
+            <LinkButton to="/athlete/home" variant="primary" size="lg">
+              Open today
+              <ArrowRight className="size-5" weight="bold" aria-hidden />
+            </LinkButton>
           ) : (
-            <p className="mt-2 text-sm leading-relaxed text-sk-mute">
-              You are not on a team yet. Once you join one, your plan and test weeks appear here in the app.
-            </p>
+            <Button type="submit" variant="primary" size="lg" disabled={!canJoin || joining}>
+              {joining ? "Joining..." : resolvedInvite && canJoin ? `Join ${resolvedInvite.name}` : "Join team"}
+            </Button>
           )}
-          <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-sk-mute">
-            No code? Ask your coach to invite you from their team page. The invite goes to your email.
-          </p>
-        </section>
-      </div>
-    </div>
+          {canJoin && currentTeam ? (
+            <p className="sk-field-hint">Joining moves you off {currentTeam.name}. You can only be on one team at a time.</p>
+          ) : null}
+        </div>
+      </form>
+
+      <Section title="Your team right now" hint={currentTeam ? undefined : "You are not on a team yet. Once you join one, your plan and test weeks appear in the app."}>
+        {currentTeam ? (
+          <List>
+            <ListRow leading={<Avatar name={currentTeam.name} />} title={currentTeam.name} subtitle="You can leave a team from your profile." />
+          </List>
+        ) : null}
+        <p className="sk-field-hint pt-3">No code? Ask your coach to invite you from their team page. The invite goes to your email.</p>
+      </Section>
+    </Screen>
   )
 }

@@ -11,6 +11,7 @@ import {
 } from "@/lib/data/club-admin/team-health-data"
 import type { Athlete } from "@/lib/mock-data"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite } from "@/lib/mock-club-admin"
+import { averageAdherence } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 import { loadClubAccountRequests, loadClubInvites, loadClubTeams, loadClubUsers, loadProfileSafe } from "../state"
@@ -42,9 +43,9 @@ function buildMockTeamRows(teams: ClubTeam[], users: ClubUser[], athletes: Athle
         watch: roster.filter((athlete) => athlete.readiness === "yellow").length,
         review: roster.filter((athlete) => athlete.readiness === "red").length,
         noCheckIn: 0,
-        adherence: roster.length > 0 ? Math.round(roster.reduce((sum, athlete) => sum + athlete.adherence, 0) / roster.length) : null,
+        adherence: averageAdherence(roster.map((athlete) => athlete.adherence)),
         scheduledSessions: 0,
-        adherenceWeight: roster.length,
+        adherenceWeight: roster.filter((athlete) => athlete.adherence !== null).length,
       }
     })
 }

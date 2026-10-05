@@ -8,6 +8,7 @@ import type {
 } from "@/lib/data/wellness/types"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { tenantStorageKey } from "@/lib/tenant-storage"
 
 type ClientResolution =
   | { ok: true; client: SupabaseClient }
@@ -235,4 +236,58 @@ export async function getCurrentAthleteWellnessTrend(limit = 28): Promise<Result
       trainingLoad: entry.trainingLoad,
     })),
   )
+}
+
+/* ---------------------------------------------------------------------------
+   Mock mode: the demo athlete's check-ins, kept in localStorage per tenant.
+--------------------------------------------------------------------------- */
+
+const MOCK_WELLNESS_STORAGE_KEY = "pacelab:wellness-entries"
+/** How far back the wellness screens look, in days. */
+export const WELLNESS_HISTORY_DAYS = 90
+
+/** Oldest first, the same order getCurrentAthleteWellnessEntries() returns. */
+export function loadMockWellnessEntries(): WellnessEntry[] {
+  if (typeof window === "undefined") return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(tenantStorageKey(MOCK_WELLNESS_STORAGE_KEY)) ?? "[]") as WellnessEntry[]
+    return Array.isArray(parsed) ? [...parsed].sort((a, b) => a.entryDate.localeCompare(b.entryDate)) : []
+  } catch {
+    return []
+  }
+}
+
+/** Saves (or replaces) the demo athlete's check-in for a day, scored the same way as the real one. */
+export function saveMockWellnessEntry(input: WellnessSubmissionInput): Result<WellnessEntry> {
+  const validationError = validateWellnessInput(input)
+  if (validationError) return err("VALIDATION", validationError)
+
+  const entry: WellnessEntry = {
+    id: `mock-${input.entryDate}`,
+    athleteId: "mock-athlete",
+    createdAt: new Date().toISOString(),
+    ...input,
+    ...scoreWellnessInput(input),
+  }
+  try {
+    const next = [...loadMockWellnessEntries().filter((item) => item.entryDate !== input.entryDate), entry]
+      .sort((a, b) => a.entryDate.localeCompare(b.entryDate))
+      .slice(-WELLNESS_HISTORY_DAYS)
+    window.localStorage.setItem(tenantStorageKey(MOCK_WELLNESS_STORAGE_KEY), JSON.stringify(next))
+  } catch {
+    return err("UNKNOWN", "Could not save this check-in on this device.")
+  }
+  return ok(entry)
+}
+
+/** The signed-in athlete's check-ins, oldest first, in either mode. */
+export async function loadCurrentAthleteWellnessEntries(limit = WELLNESS_HISTORY_DAYS): Promise<Result<WellnessEntry[]>> {
+  if (getBackendMode() !== "supabase") return ok(loadMockWellnessEntries().slice(-limit))
+  return getCurrentAthleteWellnessEntries(limit)
+}
+
+/** Saves today's (or a given day's) check-in in either mode. */
+export async function saveCurrentAthleteWellnessEntry(input: WellnessSubmissionInput): Promise<Result<WellnessEntry>> {
+  if (getBackendMode() !== "supabase") return saveMockWellnessEntry(input)
+  return submitCurrentAthleteWellnessEntry(input)
 }
