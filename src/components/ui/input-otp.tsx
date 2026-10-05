@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { MinusSignIcon } from "@hugeicons/core-free-icons";
+import { Minus as MinusGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import { OTPInput, OTPInputContext } from 'input-otp'
 import { cn } from '@/lib/utils'
@@ -69,7 +68,7 @@ function InputOTPSlot({
 function InputOTPSeparator({ ...props }: React.ComponentProps<'div'>) {
   return (
     <div data-slot="input-otp-separator" role="separator" {...props}>
-      <HugeiconsIcon icon={MinusSignIcon} />
+      <MinusGlyph weight="bold" />
     </div>
   )
 }

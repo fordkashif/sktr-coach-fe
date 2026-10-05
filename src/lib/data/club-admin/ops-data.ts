@@ -19,6 +19,7 @@ export type ClubAdminInvite = {
   teamId?: string
   status: "pending" | "accepted" | "expired" | "revoked"
   createdAt: string
+  expiresAt?: string
   inviteUrl?: string
 }
 
@@ -207,7 +208,7 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
       .eq("status", "active"),
     clientResult.client
       .from("coach_invites")
-      .select("id, email, team_id, status, created_at")
+      .select("id, email, team_id, status, created_at, expires_at")
       .eq("tenant_id", contextResult.data.tenantId)
       .order("created_at", { ascending: false }),
     clientResult.client
@@ -246,12 +247,19 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
     team_id: string | null
     status: ClubAdminInvite["status"]
     created_at: string
+    expires_at: string | null
   }> | null) ?? []).map((row) => ({
     id: row.id,
     email: row.email,
     teamId: row.team_id ?? undefined,
-    status: row.status,
+    // A pending invite past its expiry can no longer be accepted, so report it as expired.
+    status:
+      row.status === "pending" && row.expires_at && new Date(row.expires_at).getTime() < Date.now()
+        ? "expired"
+        : row.status,
     createdAt: row.created_at.slice(0, 10),
+    expiresAt: row.expires_at ?? undefined,
+    inviteUrl: `/invite/coach/${row.id}`,
   }))
 
   const accountRequests: ClubAdminAccountRequest[] = ((requestsResult.data as Array<{
@@ -278,6 +286,9 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
 
   return ok({ users, invites, accountRequests, teams })
 }
+
+/** Coach invite links stop working after this many days. */
+export const COACH_INVITE_VALID_DAYS = 14
 
 export async function createCoachInvite(params: {
   email: string
@@ -310,8 +321,9 @@ export async function createCoachInvite(params: {
       role: "coach",
       status: "pending",
       invited_by_user_id: contextResult.data.userId,
+      expires_at: new Date(Date.now() + COACH_INVITE_VALID_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     })
-    .select("id, email, team_id, status, created_at")
+    .select("id, email, team_id, status, created_at, expires_at")
     .single()
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
@@ -321,6 +333,7 @@ export async function createCoachInvite(params: {
     teamId: data.team_id ?? undefined,
     status: data.status,
     createdAt: data.created_at.slice(0, 10),
+    expiresAt: data.expires_at ?? undefined,
     inviteUrl: `/invite/coach/${data.id}`,
   })
 }
@@ -347,7 +360,7 @@ export async function reviewAccountRequest(params: {
   const contextResult = await getCurrentClubAdminContext(clientResult.client)
   if (!contextResult.ok) return contextResult
 
-  const { error } = await clientResult.client
+  const { data, error } = await clientResult.client
     .from("account_requests")
     .update({
       status: params.status,
@@ -356,11 +369,49 @@ export async function reviewAccountRequest(params: {
     })
     .eq("id", params.requestId)
     .eq("tenant_id", contextResult.data.tenantId)
+    .select("id")
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "This request could not be updated. It may have been removed.")
   return ok(undefined)
 }
 
+/** Turns the errors raised by `set_tenant_member_access` into messages a club admin can act on. */
+function mapMemberAccessError(error: { code?: string; message: string }): DataError {
+  const message = error.message.toLowerCase()
+  if (error.code === "PGRST202") {
+    return {
+      code: "NOT_FOUND",
+      message: "Changing member access is not switched on for this workspace yet. The latest database update still needs to be applied.",
+      cause: error,
+    }
+  }
+  if (message.includes("at least one active club-admin")) {
+    return { code: "CONFLICT", message: "Your club needs at least one active club admin. Make someone else a club admin first.", cause: error }
+  }
+  if (message.includes("your own role")) {
+    return { code: "FORBIDDEN", message: "You cannot change your own role or deactivate your own account. Ask another club admin to do it.", cause: error }
+  }
+  if (message.includes("member not found")) {
+    return { code: "NOT_FOUND", message: "This person is no longer part of your club. Refresh the page and try again.", cause: error }
+  }
+  if (message.includes("only active club-admin")) {
+    return { code: "FORBIDDEN", message: "Only an active club admin can change member access. Your own access may have changed, so sign in again.", cause: error }
+  }
+  if (message.includes("role must be")) {
+    return { code: "VALIDATION", message: "That role cannot be assigned here. Choose athlete, coach or club admin.", cause: error }
+  }
+  if (message.includes("authentication required")) {
+    return { code: "UNAUTHORIZED", message: "Your session has ended. Sign in again and retry.", cause: error }
+  }
+  return { code: "UNKNOWN", message: error.message, cause: error }
+}
+
+/**
+ * Changes a member's role and active flag through the `set_tenant_member_access` database function,
+ * which enforces the rules (same club only, no self changes, never remove the last active club admin).
+ * Moving someone to the athlete role also removes their coach team assignments.
+ */
 export async function updateProfileRoleAndStatus(params: {
   userId: string
   role: ClubAdminUser["role"]
@@ -369,19 +420,15 @@ export async function updateProfileRoleAndStatus(params: {
   const clientResult = requireSupabaseClient("updateProfileRoleAndStatus")
   if (!clientResult.ok) return clientResult
 
-  const contextResult = await getCurrentClubAdminContext(clientResult.client)
-  if (!contextResult.ok) return contextResult
+  const { data, error } = await clientResult.client.rpc("set_tenant_member_access", {
+    p_user_id: params.userId,
+    p_role: params.role,
+    p_is_active: params.status === "active",
+  })
 
-  const { error } = await clientResult.client
-    .from("profiles")
-    .update({
-      role: params.role,
-      is_active: params.status === "active",
-    })
-    .eq("user_id", params.userId)
-    .eq("tenant_id", contextResult.data.tenantId)
-
-  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (error) return { ok: false, error: mapMemberAccessError(error) }
+  const row = (Array.isArray(data) ? data[0] : data) as { user_id?: string } | null
+  if (!row?.user_id) return err("NOT_FOUND", "This change was not saved. Refresh the page and try again.")
   return ok(undefined)
 }
 
@@ -1170,5 +1217,713 @@ export async function setClubAdminTeamArchived(params: {
     .eq("tenant_id", contextResult.data.tenantId)
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(undefined)
+}
+
+/* ---------------------------------------------------------------------------
+   People and teams screens (club admin)
+--------------------------------------------------------------------------- */
+
+/** Cancels a pending coach invite so its link stops working. */
+export async function revokeCoachInvite(inviteId: string): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("revokeCoachInvite")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error } = await clientResult.client
+    .from("coach_invites")
+    .update({ status: "revoked" })
+    .eq("id", inviteId)
+    .eq("tenant_id", contextResult.data.tenantId)
+    .eq("status", "pending")
+    .select("id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "This invite is no longer pending.")
+  return ok(undefined)
+}
+
+export type ClubAdminPeopleDirectory = {
+  currentUserId: string
+  /** Every team in the club, including draft and archived ones, for labels. */
+  teams: ClubAdminTeamOption[]
+  /** Keyed by user id. Email is the account email when the database can supply it, otherwise own account and accepted invites only. */
+  members: Record<string, { email?: string; teamIds: string[] }>
+}
+
+/**
+ * Team assignments and emails for the people table. Profiles do not store an email, so emails come
+ * from the `get_tenant_member_emails` database function, with the signed-in session and accepted
+ * coach and athlete invites as the fallback when that function is not available.
+ */
+export async function getClubAdminPeopleDirectory(): Promise<Result<ClubAdminPeopleDirectory>> {
+  const clientResult = requireSupabaseClient("getClubAdminPeopleDirectory")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+  const { tenantId, userId } = contextResult.data
+
+  const { data: authSession } = await clientResult.client.auth.getSession()
+  const currentUserEmail = authSession.session?.user.email?.trim().toLowerCase()
+
+  const [teamsResult, coachesResult, athletesResult, coachInvitesResult, athleteInvitesResult] = await Promise.all([
+    clientResult.client.from("teams").select("id, name").eq("tenant_id", tenantId),
+    clientResult.client.from("team_coaches").select("team_id, user_id").eq("tenant_id", tenantId),
+    clientResult.client.from("athletes").select("user_id, team_id").eq("tenant_id", tenantId).not("user_id", "is", null),
+    clientResult.client.from("coach_invites").select("email, metadata").eq("tenant_id", tenantId).eq("status", "accepted"),
+    clientResult.client
+      .from("athlete_invites")
+      .select("email, accepted_by_user_id")
+      .eq("tenant_id", tenantId)
+      .eq("status", "accepted"),
+  ])
+
+  if (teamsResult.error) return { ok: false, error: mapPostgrestError(teamsResult.error) }
+  if (coachesResult.error) return { ok: false, error: mapPostgrestError(coachesResult.error) }
+  if (athletesResult.error) return { ok: false, error: mapPostgrestError(athletesResult.error) }
+  if (coachInvitesResult.error) return { ok: false, error: mapPostgrestError(coachInvitesResult.error) }
+  if (athleteInvitesResult.error) return { ok: false, error: mapPostgrestError(athleteInvitesResult.error) }
+
+  const members: ClubAdminPeopleDirectory["members"] = {}
+  const entry = (id: string) => (members[id] ??= { teamIds: [] })
+  const addTeam = (id: string, teamId: string | null) => {
+    if (!teamId) return
+    const member = entry(id)
+    if (!member.teamIds.includes(teamId)) member.teamIds.push(teamId)
+  }
+
+  for (const row of (coachesResult.data as Array<{ team_id: string; user_id: string }> | null) ?? []) {
+    addTeam(row.user_id, row.team_id)
+  }
+  for (const row of (athletesResult.data as Array<{ user_id: string | null; team_id: string | null }> | null) ?? []) {
+    if (row.user_id) addTeam(row.user_id, row.team_id)
+  }
+  for (const row of (coachInvitesResult.data as Array<{ email: string; metadata: Record<string, unknown> | null }> | null) ?? []) {
+    const acceptedUserId = row.metadata?.accepted_user_id
+    if (typeof acceptedUserId === "string" && row.email) entry(acceptedUserId).email = row.email.toLowerCase()
+  }
+  for (const row of (athleteInvitesResult.data as Array<{ email: string | null; accepted_by_user_id: string | null }> | null) ?? []) {
+    if (row.accepted_by_user_id && row.email) entry(row.accepted_by_user_id).email = row.email.toLowerCase()
+  }
+  if (currentUserEmail) entry(userId).email = currentUserEmail
+
+  // Account emails for everyone in the club, from the `get_tenant_member_emails` database function.
+  // Optional: if the function is missing or fails, the invite based emails above still show.
+  try {
+    const emailsResult = await clientResult.client.rpc("get_tenant_member_emails")
+    if (!emailsResult.error) {
+      for (const row of (emailsResult.data as Array<{ user_id: string | null; email: string | null }> | null) ?? []) {
+        if (row.user_id && row.email) entry(row.user_id).email = row.email.toLowerCase()
+      }
+    }
+  } catch {
+    // Keep the emails already collected.
+  }
+
+  return ok({
+    currentUserId: userId,
+    teams: ((teamsResult.data as Array<{ id: string; name: string }> | null) ?? []).map((row) => ({ id: row.id, name: row.name })),
+    members,
+  })
+}
+
+export type ClubAdminTeamMembers = {
+  coaches: Array<{ userId: string; name: string; isPrimary: boolean; isSelf: boolean }>
+  athletes: Array<{ id: string; name: string; primaryEvent: string | null }>
+}
+
+/** Coaches and active athletes on every team in the club (any status), keyed by team id. */
+export async function getClubAdminTeamMembers(): Promise<Result<Record<string, ClubAdminTeamMembers>>> {
+  const clientResult = requireSupabaseClient("getClubAdminTeamMembers")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+  const { tenantId, userId } = contextResult.data
+
+  const [coachesResult, profilesResult, athletesResult] = await Promise.all([
+    clientResult.client
+      .from("team_coaches")
+      .select("team_id, user_id, is_primary, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: true }),
+    clientResult.client.from("profiles").select("user_id, display_name").eq("tenant_id", tenantId),
+    clientResult.client
+      .from("athletes")
+      .select("id, team_id, first_name, last_name, primary_event")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .not("team_id", "is", null)
+      .order("first_name", { ascending: true }),
+  ])
+
+  if (coachesResult.error) return { ok: false, error: mapPostgrestError(coachesResult.error) }
+  if (profilesResult.error) return { ok: false, error: mapPostgrestError(profilesResult.error) }
+  if (athletesResult.error) return { ok: false, error: mapPostgrestError(athletesResult.error) }
+
+  const nameByUserId = new Map<string, string>()
+  for (const row of (profilesResult.data as Array<{ user_id: string; display_name: string | null }> | null) ?? []) {
+    if (row.display_name) nameByUserId.set(row.user_id, row.display_name)
+  }
+
+  const byTeam: Record<string, ClubAdminTeamMembers> = {}
+  const entry = (teamId: string) => (byTeam[teamId] ??= { coaches: [], athletes: [] })
+
+  for (const row of (coachesResult.data as Array<{ team_id: string; user_id: string; is_primary: boolean }> | null) ?? []) {
+    const team = entry(row.team_id)
+    // Only the earliest primary row counts as lead, matching getClubAdminTeamsSnapshot.
+    const isPrimary = row.is_primary && !team.coaches.some((coach) => coach.isPrimary)
+    team.coaches.push({
+      userId: row.user_id,
+      name: nameByUserId.get(row.user_id) ?? (row.user_id === userId ? "You" : "Coach"),
+      isPrimary,
+      isSelf: row.user_id === userId,
+    })
+  }
+
+  for (const row of (athletesResult.data as Array<{
+    id: string
+    team_id: string
+    first_name: string
+    last_name: string
+    primary_event: string | null
+  }> | null) ?? []) {
+    entry(row.team_id).athletes.push({
+      id: row.id,
+      name: `${row.first_name} ${row.last_name}`.trim(),
+      primaryEvent: row.primary_event,
+    })
+  }
+
+  return ok(byTeam)
+}
+
+/**
+ * Sets the full coaching staff for a team: one optional lead plus any number of additional coaches.
+ * Coaches not listed are taken off the team.
+ */
+export async function setClubAdminTeamCoaches(params: {
+  teamId: string
+  leadCoachUserId?: string | null
+  coachUserIds: string[]
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("setClubAdminTeamCoaches")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+  const { tenantId, userId } = contextResult.data
+
+  const teamId = params.teamId.trim()
+  if (!teamId) return err("VALIDATION", "Team id is required.")
+
+  const leadCoachUserId = params.leadCoachUserId?.trim() || null
+  const desired = new Set(params.coachUserIds.map((id) => id.trim()).filter(Boolean))
+  if (leadCoachUserId) desired.add(leadCoachUserId)
+
+  const existingResult = await clientResult.client
+    .from("team_coaches")
+    .select("user_id")
+    .eq("tenant_id", tenantId)
+    .eq("team_id", teamId)
+
+  if (existingResult.error) return { ok: false, error: mapPostgrestError(existingResult.error) }
+
+  const toRemove = ((existingResult.data as Array<{ user_id: string }> | null) ?? [])
+    .map((row) => row.user_id)
+    .filter((id) => !desired.has(id))
+
+  if (toRemove.length > 0) {
+    const removeResult = await clientResult.client
+      .from("team_coaches")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("team_id", teamId)
+      .in("user_id", toRemove)
+
+    if (removeResult.error) return { ok: false, error: mapPostgrestError(removeResult.error) }
+  }
+
+  if (desired.size === 0) return ok(undefined)
+
+  const { data, error } = await clientResult.client
+    .from("team_coaches")
+    .upsert(
+      Array.from(desired).map((coachUserId) => ({
+        tenant_id: tenantId,
+        team_id: teamId,
+        user_id: coachUserId,
+        is_primary: coachUserId === leadCoachUserId,
+        created_by_user_id: userId,
+      })),
+      { onConflict: "team_id,user_id" },
+    )
+    .select("user_id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length < desired.size) return err("UNKNOWN", "Not every coach assignment was saved. Reload and check the team.")
+  return ok(undefined)
+}
+
+/** Takes one coach off a team. Their account and other teams are untouched. */
+export async function removeClubAdminTeamCoach(params: { teamId: string; userId: string }): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("removeClubAdminTeamCoach")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error } = await clientResult.client
+    .from("team_coaches")
+    .delete()
+    .eq("tenant_id", contextResult.data.tenantId)
+    .eq("team_id", params.teamId)
+    .eq("user_id", params.userId)
+    .select("user_id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "This coach is no longer on the team.")
+  return ok(undefined)
+}
+
+// ---------------------------------------------------------------------------
+// Club admin reports, activity log, package usage and billing contact.
+// Read-only helpers for the reports, audit and billing screens, plus the
+// billing contact update. Appended; nothing above depends on these.
+// ---------------------------------------------------------------------------
+
+const CLUB_REPORT_PAGE_SIZE = 1000
+const CLUB_REPORT_MAX_PAGES = 20
+export const CLUB_REPORT_ROW_CAP = 1000
+export const CLUB_REPORT_WINDOW_DAYS = 28
+
+type ClubPageResult = { data: unknown; error: Parameters<typeof mapPostgrestError>[0] | null }
+
+/** YYYY-MM-DD for the user's own calendar day (never UTC). */
+function clubLocalIsoDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+/** Pages through a query 1,000 rows at a time so counts are not cut off by the API row limit. */
+async function fetchAllClubRows<T>(
+  buildPage: (from: number, to: number) => PromiseLike<ClubPageResult>,
+): Promise<Result<{ rows: T[]; complete: boolean }>> {
+  const rows: T[] = []
+  for (let page = 0; page < CLUB_REPORT_MAX_PAGES; page += 1) {
+    const from = page * CLUB_REPORT_PAGE_SIZE
+    const { data, error } = await buildPage(from, from + CLUB_REPORT_PAGE_SIZE - 1)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    const batch = (data as T[] | null) ?? []
+    rows.push(...batch)
+    if (batch.length < CLUB_REPORT_PAGE_SIZE) return ok({ rows, complete: true })
+  }
+  return ok({ rows, complete: false })
+}
+
+export type ClubAdminPerformanceReport = {
+  /** Days counted for adherence and current readiness, ending today (local). */
+  windowDays: number
+  teams: Array<{
+    id: string
+    name: string
+    eventGroup: string | null
+    status: "draft" | "active" | "archived"
+    leadCoach: string | null
+  }>
+  athletes: Array<{
+    id: string
+    teamId: string | null
+    name: string
+    eventGroup: string | null
+    primaryEvent: string | null
+    readiness: "green" | "yellow" | "red" | null
+    /** Sessions scheduled in the window up to today, and how many of those were completed. */
+    sessionsPlanned: number
+    sessionsDone: number
+    /** Null when no sessions were scheduled in the window. */
+    adherence: number | null
+    /** Date (YYYY-MM-DD) of the latest check-in among the loaded rows. */
+    lastCheckIn: string | null
+  }>
+  prs: Array<{
+    id: string
+    athleteId: string
+    event: string
+    category: string
+    bestValue: string
+    previousValue: string | null
+    measuredOn: string
+    legal: boolean
+    wind: string | null
+  }>
+  wellness: Array<{
+    id: string
+    athleteId: string
+    date: string
+    sleep: number
+    soreness: number
+    fatigue: number
+    mood: number
+    stress: number
+    readiness: "green" | "yellow" | "red"
+    notes: string | null
+  }>
+  /** Rows in the database for the club. Greater than the loaded rows when the cap applied. */
+  prTotal: number
+  wellnessTotal: number
+  /** False if the session history was too large to count in full. */
+  adherenceComplete: boolean
+}
+
+export async function getClubAdminPerformanceReport(): Promise<Result<ClubAdminPerformanceReport>> {
+  const clientResult = requireSupabaseClient("getClubAdminPerformanceReport")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const client = clientResult.client
+  const tenantId = contextResult.data.tenantId
+  const today = new Date()
+  const since = new Date(today)
+  since.setDate(since.getDate() - (CLUB_REPORT_WINDOW_DAYS - 1))
+  const todayIso = clubLocalIsoDate(today)
+  const sinceIso = clubLocalIsoDate(since)
+
+  const [teamsResult, athletesResult, coachLinksResult, prsResult, wellnessResult, sessionsResult, completionsResult] =
+    await Promise.all([
+      client.from("teams").select("id, name, event_group, status").eq("tenant_id", tenantId).neq("status", "archived").order("name"),
+      fetchAllClubRows<{
+        id: string
+        team_id: string | null
+        first_name: string
+        last_name: string
+        event_group: string | null
+        primary_event: string | null
+        readiness: "green" | "yellow" | "red" | null
+      }>((from, to) =>
+        client
+          .from("athletes")
+          .select("id, team_id, first_name, last_name, event_group, primary_event, readiness")
+          .eq("tenant_id", tenantId)
+          .eq("is_active", true)
+          .order("id")
+          .range(from, to),
+      ),
+      client.from("team_coaches").select("team_id, user_id, is_primary, created_at").eq("tenant_id", tenantId).eq("is_primary", true),
+      client
+        .from("pr_records")
+        .select("id, athlete_id, event, category, best_value, previous_value, measured_on, is_legal, wind", { count: "exact" })
+        .eq("tenant_id", tenantId)
+        .order("measured_on", { ascending: false })
+        .order("id")
+        .limit(CLUB_REPORT_ROW_CAP),
+      client
+        .from("wellness_entries")
+        .select("id, athlete_id, entry_date, sleep_hours, soreness, fatigue, mood, stress, notes, readiness", { count: "exact" })
+        .eq("tenant_id", tenantId)
+        .order("entry_date", { ascending: false })
+        .order("id")
+        .limit(CLUB_REPORT_ROW_CAP),
+      fetchAllClubRows<{ id: string; athlete_id: string }>((from, to) =>
+        client
+          .from("sessions")
+          .select("id, athlete_id")
+          .eq("tenant_id", tenantId)
+          .gte("scheduled_for", sinceIso)
+          .lte("scheduled_for", todayIso)
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAllClubRows<{ session_id: string; athlete_id: string }>((from, to) =>
+        client
+          .from("session_completions")
+          .select("session_id, athlete_id")
+          .eq("tenant_id", tenantId)
+          .gte("completion_date", sinceIso)
+          .order("id")
+          .range(from, to),
+      ),
+    ])
+
+  if (teamsResult.error) return { ok: false, error: mapPostgrestError(teamsResult.error) }
+  if (!athletesResult.ok) return athletesResult
+  if (coachLinksResult.error) return { ok: false, error: mapPostgrestError(coachLinksResult.error) }
+  if (prsResult.error) return { ok: false, error: mapPostgrestError(prsResult.error) }
+  if (wellnessResult.error) return { ok: false, error: mapPostgrestError(wellnessResult.error) }
+  if (!sessionsResult.ok) return sessionsResult
+  if (!completionsResult.ok) return completionsResult
+
+  const leadByTeamId = new Map<string, { userId: string; createdAt: string }>()
+  for (const link of (coachLinksResult.data as Array<{ team_id: string; user_id: string; created_at: string }> | null) ?? []) {
+    const existing = leadByTeamId.get(link.team_id)
+    if (!existing || link.created_at < existing.createdAt) {
+      leadByTeamId.set(link.team_id, { userId: link.user_id, createdAt: link.created_at })
+    }
+  }
+
+  const leadUserIds = Array.from(new Set(Array.from(leadByTeamId.values()).map((lead) => lead.userId)))
+  const coachNameByUserId = new Map<string, string>()
+  if (leadUserIds.length > 0) {
+    const profilesResult = await client
+      .from("profiles")
+      .select("user_id, display_name")
+      .eq("tenant_id", tenantId)
+      .in("user_id", leadUserIds)
+    if (profilesResult.error) return { ok: false, error: mapPostgrestError(profilesResult.error) }
+    for (const row of (profilesResult.data as Array<{ user_id: string; display_name: string | null }> | null) ?? []) {
+      if (row.display_name) coachNameByUserId.set(row.user_id, row.display_name)
+    }
+  }
+
+  const activeAthleteIds = new Set(athletesResult.data.rows.map((row) => row.id))
+
+  const wellness = ((wellnessResult.data as Array<{
+    id: string
+    athlete_id: string
+    entry_date: string
+    sleep_hours: number
+    soreness: number
+    fatigue: number
+    mood: number
+    stress: number
+    notes: string | null
+    readiness: "green" | "yellow" | "red"
+  }> | null) ?? [])
+    .filter((row) => activeAthleteIds.has(row.athlete_id))
+    .map((row) => ({
+      id: row.id,
+      athleteId: row.athlete_id,
+      date: row.entry_date,
+      sleep: Number(row.sleep_hours),
+      soreness: row.soreness,
+      fatigue: row.fatigue,
+      mood: row.mood,
+      stress: row.stress,
+      readiness: row.readiness,
+      notes: row.notes,
+    }))
+
+  // Rows arrive newest first, so the first one seen per athlete is their latest check-in.
+  const latestCheckInByAthlete = new Map<string, { date: string; readiness: "green" | "yellow" | "red" }>()
+  for (const entry of wellness) {
+    if (!latestCheckInByAthlete.has(entry.athleteId)) {
+      latestCheckInByAthlete.set(entry.athleteId, { date: entry.date, readiness: entry.readiness })
+    }
+  }
+
+  const sessionIdsByAthlete = new Map<string, Set<string>>()
+  for (const row of sessionsResult.data.rows) {
+    const current = sessionIdsByAthlete.get(row.athlete_id) ?? new Set<string>()
+    current.add(row.id)
+    sessionIdsByAthlete.set(row.athlete_id, current)
+  }
+  const doneByAthlete = new Map<string, number>()
+  for (const row of completionsResult.data.rows) {
+    if (!sessionIdsByAthlete.get(row.athlete_id)?.has(row.session_id)) continue
+    doneByAthlete.set(row.athlete_id, (doneByAthlete.get(row.athlete_id) ?? 0) + 1)
+  }
+
+  return ok({
+    windowDays: CLUB_REPORT_WINDOW_DAYS,
+    teams: ((teamsResult.data as Array<{
+      id: string
+      name: string
+      event_group: string | null
+      status: "draft" | "active" | "archived"
+    }> | null) ?? []).map((row) => {
+      const lead = leadByTeamId.get(row.id)
+      return {
+        id: row.id,
+        name: row.name,
+        eventGroup: row.event_group,
+        status: row.status,
+        leadCoach: lead ? coachNameByUserId.get(lead.userId) ?? null : null,
+      }
+    }),
+    athletes: athletesResult.data.rows.map((row) => {
+      const sessionsPlanned = sessionIdsByAthlete.get(row.id)?.size ?? 0
+      const sessionsDone = Math.min(doneByAthlete.get(row.id) ?? 0, sessionsPlanned)
+      const latest = latestCheckInByAthlete.get(row.id)
+      return {
+        id: row.id,
+        teamId: row.team_id,
+        name: `${row.first_name} ${row.last_name}`.trim(),
+        eventGroup: row.event_group,
+        primaryEvent: row.primary_event,
+        readiness: latest && latest.date >= sinceIso ? latest.readiness : row.readiness,
+        sessionsPlanned,
+        sessionsDone,
+        adherence: sessionsPlanned > 0 ? Math.round((sessionsDone / sessionsPlanned) * 100) : null,
+        lastCheckIn: latest?.date ?? null,
+      }
+    }),
+    prs: ((prsResult.data as Array<{
+      id: string
+      athlete_id: string
+      event: string
+      category: string
+      best_value: string
+      previous_value: string | null
+      measured_on: string
+      is_legal: boolean
+      wind: string | null
+    }> | null) ?? [])
+      .filter((row) => activeAthleteIds.has(row.athlete_id))
+      .map((row) => ({
+        id: row.id,
+        athleteId: row.athlete_id,
+        event: row.event,
+        category: row.category,
+        bestValue: row.best_value,
+        previousValue: row.previous_value,
+        measuredOn: row.measured_on,
+        legal: row.is_legal,
+        wind: row.wind,
+      })),
+    wellness,
+    prTotal: prsResult.count ?? prsResult.data?.length ?? 0,
+    wellnessTotal: wellnessResult.count ?? wellnessResult.data?.length ?? 0,
+    adherenceComplete: sessionsResult.data.complete && completionsResult.data.complete && athletesResult.data.complete,
+  })
+}
+
+export type ClubAdminAuditLogEntry = {
+  id: string
+  action: string
+  actorUserId: string | null
+  actorRole: string | null
+  /** Display name from the actor's profile, when one exists. */
+  actorName: string | null
+  target: string
+  detail: string | null
+  /** ISO timestamp. Format it in the viewer's local time. */
+  at: string
+}
+
+export const CLUB_AUDIT_LOG_CAP = 500
+
+export async function getClubAdminAuditLog(): Promise<Result<{ entries: ClubAdminAuditLogEntry[]; total: number }>> {
+  const clientResult = requireSupabaseClient("getClubAdminAuditLog")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const { data, error, count } = await clientResult.client
+    .from("audit_events")
+    .select("id, action, actor_role, actor_user_id, target, detail, created_at", { count: "exact" })
+    .eq("tenant_id", contextResult.data.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(CLUB_AUDIT_LOG_CAP)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const rows =
+    (data as Array<{
+      id: string
+      action: string
+      actor_role: string | null
+      actor_user_id: string | null
+      target: string
+      detail: string | null
+      created_at: string
+    }> | null) ?? []
+
+  const actorIds = Array.from(new Set(rows.map((row) => row.actor_user_id).filter((id): id is string => Boolean(id))))
+  const nameByUserId = new Map<string, string>()
+  if (actorIds.length > 0) {
+    // Names are a nicety: if profiles cannot be read the log still shows roles.
+    const profilesResult = await clientResult.client
+      .from("profiles")
+      .select("user_id, display_name")
+      .eq("tenant_id", contextResult.data.tenantId)
+      .in("user_id", actorIds)
+    if (!profilesResult.error) {
+      for (const row of (profilesResult.data as Array<{ user_id: string; display_name: string | null }> | null) ?? []) {
+        if (row.display_name) nameByUserId.set(row.user_id, row.display_name)
+      }
+    }
+  }
+
+  return ok({
+    entries: rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      actorUserId: row.actor_user_id,
+      actorRole: row.actor_role,
+      actorName: row.actor_user_id ? nameByUserId.get(row.actor_user_id) ?? null : null,
+      target: row.target,
+      detail: row.detail,
+      at: row.created_at,
+    })),
+    total: count ?? rows.length,
+  })
+}
+
+export type ClubAdminPackageUsage = {
+  /** The package the club is held to (from its provisioning record). Null when none is on record. */
+  packageId: "starter" | "pro" | "enterprise" | null
+  usage: { teams: number; coaches: number; athletes: number }
+}
+
+/** Same counts the package limits are enforced against when adding teams, coaches and athletes. */
+export async function getClubAdminPackageUsage(): Promise<Result<ClubAdminPackageUsage>> {
+  const clientResult = requireSupabaseClient("getClubAdminPackageUsage")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const usageResult = await getTenantPackageUsage(clientResult.client, contextResult.data.tenantId)
+  if (!usageResult.ok) return usageResult
+
+  return ok({ packageId: usageResult.data.packageId, usage: usageResult.data.usage })
+}
+
+/**
+ * Updates the billing contact on the club's provisioning record.
+ * Uses the `update_current_club_admin_billing_contact(p_billing_contact_name text, p_billing_contact_email text)`
+ * database function. Returns NOT_FOUND when a database has not had that migration applied yet.
+ */
+export async function updateClubAdminBillingContact(params: { name: string; email: string }): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("updateClubAdminBillingContact")
+  if (!clientResult.ok) return clientResult
+
+  const name = params.name.trim()
+  const email = params.email.trim().toLowerCase()
+  if (!name) return err("VALIDATION", "Billing contact name is required.")
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return err("VALIDATION", "Enter a valid billing contact email.")
+
+  const { error } = await clientResult.client.rpc("update_current_club_admin_billing_contact", {
+    p_billing_contact_name: name,
+    p_billing_contact_email: email,
+  })
+
+  if (error) {
+    if (error.code === "PGRST202") {
+      return err("NOT_FOUND", "Changing the billing contact is not switched on for this workspace yet.", error)
+    }
+    const message = error.message.toLowerCase()
+    if (message.includes("only active club-admin")) {
+      return err("FORBIDDEN", "Only an active club admin can change the billing contact.", error)
+    }
+    if (message.includes("is required") || message.includes("not valid") || message.includes("characters or fewer")) {
+      return err("VALIDATION", `${error.message}.`, error)
+    }
+    if (message.includes("cancelled workspace")) {
+      return err("CONFLICT", "The billing contact cannot be changed because this workspace has been cancelled.", error)
+    }
+    if (message.includes("no tenant request found")) {
+      return err("CONFLICT", "There is no billing record for this club yet. Message the SKTR team and they will set it up.", error)
+    }
+    return err("UNKNOWN", error.message, error)
+  }
   return ok(undefined)
 }

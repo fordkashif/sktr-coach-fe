@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ArrowLeft, MagnifyingGlass } from "@phosphor-icons/react"
 
 export function InvalidEntityPage({
   title,
@@ -12,18 +11,20 @@ export function InvalidEntityPage({
   backTo: string
 }) {
   return (
-    <div className="mx-auto w-full max-w-xl p-4 sm:p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild>
-            <Link to={backTo}>Go back</Link>
-          </Button>
-        </CardContent>
-      </Card>
+    <div className="sk-page">
+      <div className="flex max-w-[640px] flex-col items-start gap-4 rounded-[20px] border border-dashed border-[#cdd2de] bg-white p-6 sm:p-8">
+        <span className="flex size-11 items-center justify-center rounded-2xl bg-sk-yellow text-sk-ink">
+          <MagnifyingGlass className="size-5" weight="bold" aria-hidden />
+        </span>
+        <div className="space-y-2">
+          <h1 className="sk-h2">{title}</h1>
+          <p className="max-w-[52ch] leading-relaxed text-sk-mute">{description}</p>
+        </div>
+        <Link to={backTo} className="sk-btn sk-btn-primary">
+          <ArrowLeft className="size-5" weight="bold" aria-hidden />
+          Go back
+        </Link>
+      </div>
     </div>
   )
 }

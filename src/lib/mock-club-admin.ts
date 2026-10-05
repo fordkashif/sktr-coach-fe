@@ -30,14 +30,17 @@ export interface ClubTeam {
   status: TeamStatus
   coachEmail?: string
   coachUserId?: string
+  /** Additional coaches on the team, not counting the lead in coachUserId. */
+  coachUserIds?: string[]
 }
 
 export interface CoachInvite {
   id: string
   email: string
   teamId?: string
-  status: "pending" | "accepted" | "expired"
+  status: "pending" | "accepted" | "expired" | "revoked"
   createdAt: string
+  expiresAt?: string
   inviteUrl?: string
 }
 

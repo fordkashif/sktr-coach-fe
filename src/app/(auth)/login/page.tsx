@@ -1,25 +1,33 @@
-﻿"use client"
+"use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  ArrowLeft,
+  Buildings,
+  CheckCircle,
+  CircleNotch,
+  Eye,
+  EyeSlash,
+  PersonSimpleRun,
+  ShieldCheck,
+  Strategy,
+  Warning,
+  WarningCircle,
+  type Icon,
+} from "@phosphor-icons/react"
+import { Tag } from "@/components/sk"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
+import { AUTH_PHOTOS, AuthSplit } from "@/layouts/auth-layout"
+import { describeAccessRequestError, describeAuthLinkError, describeSignInError } from "@/lib/auth-errors"
 import { setSessionCookies } from "@/lib/auth-session"
 import { getPackageById, getRecommendedPackage, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
-import { submitMockTenantProvisionRequest } from "@/lib/mock-platform-admin"
 import type { AccountRequest } from "@/lib/mock-club-admin"
-import { loadAccountRequests, saveAccountRequests } from "@/lib/mock-club-admin"
-import { MOCK_CREDENTIALS, resolveMockLogin } from "@/lib/mock-auth"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionActor } from "@/lib/supabase/actor"
+import { cn } from "@/lib/utils"
 
 type DemoCredential = {
   email: string
@@ -47,21 +55,10 @@ type RequestFormState = {
   expectedCoachCount: string
   expectedAthleteCount: string
   desiredStartDate: string
+  notes: string
 }
 
-type RequestField =
-  | "firstName"
-  | "lastName"
-  | "email"
-  | "jobTitle"
-  | "organization"
-  | "organizationType"
-  | "requestedPlan"
-  | "organizationWebsite"
-  | "region"
-  | "expectedCoachCount"
-  | "expectedAthleteCount"
-  | "desiredStartDate"
+type RequestField = Exclude<keyof RequestFormState, "notes">
 
 const organizationTypeOptions = [
   { value: "school", label: "School" },
@@ -84,8 +81,39 @@ const emptyRequestForm: RequestFormState = {
   expectedCoachCount: "",
   expectedAthleteCount: "",
   desiredStartDate: "",
+  notes: "",
 }
 
+/** Order the fields appear on screen, so the first one with a problem gets focus. */
+const requestFieldOrder: Array<{ field: RequestField; id: string }> = [
+  { field: "firstName", id: "request-first-name" },
+  { field: "lastName", id: "request-last-name" },
+  { field: "email", id: "request-email" },
+  { field: "jobTitle", id: "request-job-title" },
+  { field: "organization", id: "request-organization" },
+  { field: "organizationType", id: "request-organization-type" },
+  { field: "region", id: "request-region" },
+  { field: "organizationWebsite", id: "request-organization-website" },
+  { field: "expectedCoachCount", id: "request-expected-coaches" },
+  { field: "expectedAthleteCount", id: "request-expected-athletes" },
+  { field: "desiredStartDate", id: "request-desired-start" },
+  { field: "requestedPlan", id: "request-package-starter" },
+]
+
+const packageCopy: Record<PackageId, string> = {
+  starter: "One team getting started with plans and testing.",
+  pro: "A growing club with several coaches and teams.",
+  enterprise: "Several programs, with setup help and support from us.",
+}
+
+const demoAccounts: Array<{ key: DemoAccountKey; label: string; hint: string; icon: Icon }> = [
+  { key: "coach", label: "Coach", hint: "Plans, roster, test weeks", icon: Strategy },
+  { key: "athlete", label: "Athlete", hint: "Today's session, check-ins", icon: PersonSimpleRun },
+  { key: "clubAdmin", label: "Club admin", hint: "Teams, coaches, invites", icon: Buildings },
+  { key: "platformAdmin", label: "Platform admin", hint: "Club requests, audit", icon: ShieldCheck },
+]
+
+const MAX_HEADCOUNT = 100000
 const MOCK_ROLE_STORAGE_KEY = "pacelab:mock-role"
 const MOCK_USER_EMAIL_STORAGE_KEY = "pacelab:mock-user-email"
 const MOCK_COACH_TEAM_STORAGE_KEY = "pacelab:mock-coach-team"
@@ -96,14 +124,102 @@ async function resolveInitialCoachTeamId() {
   return snapshot.data.teams[0]?.id
 }
 
+function todayIsoDate() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function FormAlert({ children, tone = "coral" }: { children: ReactNode; tone?: "coral" | "yellow" }) {
+  const isCoral = tone === "coral"
+  const Glyph = isCoral ? WarningCircle : Warning
+  return (
+    <div
+      role={isCoral ? "alert" : "status"}
+      className={cn("flex items-start gap-3 rounded-2xl p-4 text-sm", isCoral ? "bg-sk-coral-tint" : "bg-sk-yellow-tint")}
+    >
+      <Glyph className={cn("mt-0.5 size-5 shrink-0", isCoral ? "text-[#b32a0c]" : "text-[#7a5600]")} weight="fill" aria-hidden />
+      <div className={cn("min-w-0 leading-relaxed", isCoral ? "font-semibold text-[#b32a0c]" : "text-sk-ink-2")}>{children}</div>
+    </div>
+  )
+}
+
+function FieldShell({
+  id,
+  label,
+  optional = false,
+  hint,
+  error,
+  children,
+  className,
+}: {
+  id: string
+  label: string
+  optional?: boolean
+  hint?: string
+  error?: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-sk-ink-2">
+        {label}
+        {optional ? <span className="font-normal text-sk-mute"> (optional)</span> : null}
+      </label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={`${id}-hint`} className="mt-1.5 text-sm text-sk-mute">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function TextField({
+  id,
+  label,
+  optional,
+  hint,
+  error,
+  wrapperClassName,
+  className,
+  ...inputProps
+}: {
+  id: string
+  label: string
+  optional?: boolean
+  hint?: string
+  error?: string
+  wrapperClassName?: string
+} & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <FieldShell id={id} label={label} optional={optional} hint={hint} error={error} className={wrapperClassName}>
+      <input
+        id={id}
+        aria-invalid={error ? "true" : undefined}
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+        className={cn("sk-field text-base sm:text-[0.95rem]", error && "border-sk-coral focus:border-sk-coral focus:ring-sk-coral/20", className)}
+        {...inputProps}
+      />
+    </FieldShell>
+  )
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isSupabaseMode = getBackendMode() === "supabase"
-  const initialMode = searchParams.get("mode") === "request" ? "request" : "signin"
-  const [mode, setMode] = useState<AuthMode>(initialMode)
+  const mode: AuthMode = searchParams.get("mode") === "request" ? "request" : "signin"
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState("")
   const [isSigningIn, setIsSigningIn] = useState(false)
@@ -111,9 +227,18 @@ export default function LoginPage() {
   const [requestForm, setRequestForm] = useState<RequestFormState>(emptyRequestForm)
   const [requestErrors, setRequestErrors] = useState<Partial<Record<RequestField, string>>>({})
   const [requestSubmitted, setRequestSubmitted] = useState(false)
+  const [submittedEmail, setSubmittedEmail] = useState("")
   const [demoCredentials, setDemoCredentials] = useState<DemoCredentialMap | null>(null)
+  const signInLock = useRef(false)
+  const requestLock = useRef(false)
+  const formId = useId()
   const parsedCoachCount = Number.parseInt(requestForm.expectedCoachCount || "0", 10)
   const parsedAthleteCount = Number.parseInt(requestForm.expectedAthleteCount || "0", 10)
+  const hasHeadcount =
+    requestForm.expectedCoachCount.trim() !== "" &&
+    requestForm.expectedAthleteCount.trim() !== "" &&
+    parsedCoachCount >= 0 &&
+    parsedAthleteCount >= 0
   const selectedPackage = getPackageById(requestForm.requestedPlan)
   const recommendedPackageId =
     parsedCoachCount >= 0 && parsedAthleteCount >= 0 ? getRecommendedPackage(parsedCoachCount, parsedAthleteCount) : null
@@ -123,21 +248,28 @@ export default function LoginPage() {
     Number.isFinite(selectedPackage.limits.athletes)
       ? [
           ...(parsedCoachCount > selectedPackage.limits.coaches
-            ? [`Projected coach count exceeds ${selectedPackage.label} capacity.`]
+            ? [`${selectedPackage.label} covers up to ${selectedPackage.limits.coaches} coaches. You expect ${parsedCoachCount}.`]
             : []),
           ...(parsedAthleteCount > selectedPackage.limits.athletes
-            ? [`Projected athlete count exceeds ${selectedPackage.label} capacity.`]
+            ? [`${selectedPackage.label} covers up to ${selectedPackage.limits.athletes} athletes. You expect ${parsedAthleteCount}.`]
             : []),
         ]
       : []
   const safeRedirect = (() => {
     const candidate = searchParams.get("redirect")
-    return candidate && candidate.startsWith("/") ? candidate : null
+    return candidate && candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : null
   })()
 
+  // Mock helpers are only loaded in mock mode so they stay out of the live sign-in path.
   useEffect(() => {
     if (isSupabaseMode) return
-    setDemoCredentials(MOCK_CREDENTIALS)
+    let active = true
+    void import("@/lib/mock-auth").then((module) => {
+      if (active) setDemoCredentials(module.MOCK_CREDENTIALS)
+    })
+    return () => {
+      active = false
+    }
   }, [isSupabaseMode])
 
   useEffect(() => {
@@ -202,7 +334,11 @@ export default function LoginPage() {
       const currentUrl = new URL(window.location.href)
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""))
       if (hashParams.get("access_token") || hashParams.get("refresh_token")) {
-        setError("Unexpected hash-based auth callback. This flow should complete through a code exchange instead.")
+        setError("That sign-in link is in an older format we no longer accept. Sign in with your email and password instead.")
+        return
+      }
+      if (hashParams.get("error") || hashParams.get("error_code") || currentUrl.searchParams.get("error_code")) {
+        setError(describeAuthLinkError(hashParams.get("error_description") ?? currentUrl.searchParams.get("error_description")))
         return
       }
 
@@ -219,8 +355,12 @@ export default function LoginPage() {
       if (callbackCode) {
         const exchangeResult = await supabase.auth.exchangeCodeForSession(callbackCode)
         if (exchangeResult.error) {
-          setError(exchangeResult.error.message)
-          return
+          // A second pass over the same code (React strict mode, a refresh) fails even though the first one signed in.
+          const { data: existing } = await supabase.auth.getSession()
+          if (!existing.session) {
+            if (active) setError(describeAuthLinkError(exchangeResult.error))
+            return
+          }
         }
 
         currentUrl.searchParams.delete("code")
@@ -231,12 +371,12 @@ export default function LoginPage() {
       await routeActor()
     }
 
-    void handleAuthCallback()
+    void handleAuthCallback().catch(() => undefined)
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      void routeActor()
+      void routeActor().catch(() => undefined)
     })
 
     return () => {
@@ -245,86 +385,12 @@ export default function LoginPage() {
     }
   }, [isSupabaseMode, navigate, rememberMe, safeRedirect])
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setIsSigningIn(true)
-    setError("")
-
-    if (isSupabaseMode) {
-      if (!isSupabaseEnabled()) {
-        setError("Supabase mode is enabled but URL/key are missing in environment.")
-        setIsSigningIn(false)
-        return
-      }
-
-      const supabase = getBrowserSupabaseClient()
-      if (!supabase) {
-        setError("Supabase client failed to initialize.")
-        setIsSigningIn(false)
-        return
-      }
-
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password,
-      })
-
-      if (signInError || !data.session) {
-        setError(signInError?.message ?? "Sign in failed.")
-        setIsSigningIn(false)
-        return
-      }
-
-      const actor = await resolveSessionActor(supabase, data.session)
-      if (!actor) {
-        setError("Sign in succeeded, but your account is not mapped to an application role.")
-        setIsSigningIn(false)
-        return
-      }
-
-      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
-      window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
-      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
-      window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
-
-      let coachTeamId: string | undefined
-      if (actor.role === "coach") {
-        coachTeamId = await resolveInitialCoachTeamId()
-      }
-
-      setSessionCookies(
-        actor.role,
-        actor.tenantId ?? "platform-admin",
-        actor.userEmail ?? data.session.user.email ?? "",
-        actor.role === "coach" ? coachTeamId : undefined,
-      )
-
-      setError("")
-      if (safeRedirect) {
-        navigate(safeRedirect)
-        return
-      }
-      if (actor.role === "athlete") {
-        navigate("/athlete/home")
-        return
-      }
-      if (actor.role === "coach") {
-        navigate("/coach/dashboard")
-        return
-      }
-      if (actor.role === "platform-admin") {
-        navigate("/platform-admin/dashboard")
-        return
-      }
-      navigate("/club-admin/dashboard")
-      return
-    }
-
-    const match = resolveMockLogin(email, password)
+  const signInWithMockAccount = async (accountEmail: string, accountPassword: string) => {
+    const { resolveMockLogin } = await import("@/lib/mock-auth")
+    const match = resolveMockLogin(accountEmail, accountPassword)
 
     if (!match) {
-      setError("Use a valid mock account from demo access.")
-      setIsSigningIn(false)
+      setError("That is not one of the demo accounts. Pick a role under Try the demo.")
       return
     }
 
@@ -344,672 +410,711 @@ export default function LoginPage() {
     navigate(match.redirectTo)
   }
 
-  const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setError("")
-
-    const nextErrors: Partial<Record<RequestField, string>> = {}
-    const normalizedEmail = requestForm.email.trim().toLowerCase()
-    const normalizedWebsite = requestForm.organizationWebsite.trim()
-    const coachCount = Number.parseInt(requestForm.expectedCoachCount || "0", 10)
-    const athleteCount = Number.parseInt(requestForm.expectedAthleteCount || "0", 10)
-    const requestorName = `${requestForm.firstName.trim()} ${requestForm.lastName.trim()}`.trim()
-
-    if (!requestForm.firstName.trim()) nextErrors.firstName = "First name is required."
-    if (!requestForm.lastName.trim()) nextErrors.lastName = "Last name is required."
-    if (!normalizedEmail) {
-      nextErrors.email = "Work email is required."
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      nextErrors.email = "Enter a valid work email."
-    }
-    if (!requestForm.jobTitle.trim()) nextErrors.jobTitle = "Job title is required."
-    if (!requestForm.organization.trim()) nextErrors.organization = "Organization name is required."
-    if (!requestForm.organizationType.trim()) nextErrors.organizationType = "Organization type is required."
-    if (!requestForm.requestedPlan.trim()) nextErrors.requestedPlan = "Select the package you want to start with."
-    if (!requestForm.region.trim()) nextErrors.region = "Country or region is required."
-    if (!requestForm.expectedCoachCount.trim()) {
-      nextErrors.expectedCoachCount = "Expected coach count is required."
-    } else if (Number.isNaN(coachCount) || coachCount < 0) {
-      nextErrors.expectedCoachCount = "Enter a valid coach count."
-    }
-    if (!requestForm.expectedAthleteCount.trim()) {
-      nextErrors.expectedAthleteCount = "Expected athlete count is required."
-    } else if (Number.isNaN(athleteCount) || athleteCount < 0) {
-      nextErrors.expectedAthleteCount = "Enter a valid athlete count."
-    }
-    if (normalizedWebsite) {
-      try {
-        const parsedWebsite = new URL(normalizedWebsite)
-        if (!(parsedWebsite.protocol === "http:" || parsedWebsite.protocol === "https:")) {
-          nextErrors.organizationWebsite = "Enter a valid website URL."
-        }
-      } catch {
-        nextErrors.organizationWebsite = "Enter a valid website URL."
-      }
-    }
-
-    setRequestErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
-
-    setIsSubmittingRequest(true)
-    if (isSupabaseMode) {
-      const supabase = getBrowserSupabaseClient()
-      if (!supabase) {
-        setError("Supabase client is not configured.")
-        setIsSubmittingRequest(false)
-        return
-      }
-
-      const result = await supabase.rpc("submit_tenant_provision_request", {
-        p_requestor_name: requestorName,
-        p_requestor_email: normalizedEmail,
-        p_organization_name: requestForm.organization.trim(),
-        p_notes: null,
-        p_requested_plan: requestForm.requestedPlan.trim(),
-        p_expected_seats: Math.max(0, coachCount) + Math.max(0, athleteCount),
-        p_job_title: requestForm.jobTitle.trim(),
-        p_organization_type: requestForm.organizationType.trim(),
-        p_organization_website: normalizedWebsite || null,
-        p_region: requestForm.region.trim(),
-        p_expected_coach_count: Math.max(0, coachCount),
-        p_expected_athlete_count: Math.max(0, athleteCount),
-        p_desired_start_date: requestForm.desiredStartDate || null,
-      })
-
-      if (result.error) {
-        setError(result.error.message)
-        setIsSubmittingRequest(false)
-        return
-      }
-
-      setError("")
-      setRequestErrors({})
-      setRequestForm(emptyRequestForm)
-      setRequestSubmitted(true)
-      setIsSubmittingRequest(false)
+  const signInWithSupabase = async () => {
+    if (!isSupabaseEnabled()) {
+      setError("Sign in is not set up on this site yet. Tell whoever runs it that the connection settings are missing.")
       return
     }
 
-    submitMockTenantProvisionRequest({
-      fullName: requestorName,
-      email: requestForm.email,
-      jobTitle: requestForm.jobTitle,
-      organization: requestForm.organization,
-      organizationType: requestForm.organizationType,
-      requestedPlan: requestForm.requestedPlan as PackageId,
-      organizationWebsite: requestForm.organizationWebsite,
-      region: requestForm.region,
-      expectedCoachCount: Math.max(0, coachCount),
-      expectedAthleteCount: Math.max(0, athleteCount),
-      desiredStartDate: requestForm.desiredStartDate,
-      notes: "",
+    const supabase = getBrowserSupabaseClient()
+    if (!supabase) {
+      setError("Sign in could not start. Refresh the page and try again.")
+      return
+    }
+
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
     })
 
-    const existingRequests = loadAccountRequests()
-    const nextRequest: AccountRequest = {
-      id: `request-${Date.now()}`,
-      fullName: requestorName,
-      email: requestForm.email.trim().toLowerCase(),
-      organization: requestForm.organization.trim(),
-      role: "club-admin",
-      status: "pending",
-      createdAt: new Date().toISOString(),
+    if (signInError || !data.session) {
+      setError(describeSignInError(signInError))
+      return
     }
-    saveAccountRequests([nextRequest, ...existingRequests])
+
+    const actor = await resolveSessionActor(supabase, data.session)
+    if (!actor) {
+      // Signed in, but nothing to open: the account is not active in any club. Do not leave a half signed-in session behind.
+      await supabase.auth.signOut().catch(() => undefined)
+      setError(
+        "Your password is right, but this account is not active in a club right now. Ask your club admin to restore your access or send a new invite.",
+      )
+      return
+    }
+
+    window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
+    window.localStorage.removeItem(MOCK_USER_EMAIL_STORAGE_KEY)
+    window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
+    window.localStorage.setItem("pacelab-remember-me", rememberMe ? "true" : "false")
+
+    let coachTeamId: string | undefined
+    if (actor.role === "coach") {
+      coachTeamId = await resolveInitialCoachTeamId()
+    }
+
+    setSessionCookies(
+      actor.role,
+      actor.tenantId ?? "platform-admin",
+      actor.userEmail ?? data.session.user.email ?? "",
+      actor.role === "coach" ? coachTeamId : undefined,
+    )
+
     setError("")
-    setRequestErrors({})
-    setRequestForm(emptyRequestForm)
-    setRequestSubmitted(true)
-    setIsSubmittingRequest(false)
+    if (safeRedirect) {
+      navigate(safeRedirect)
+      return
+    }
+    if (actor.role === "athlete") {
+      navigate("/athlete/home")
+      return
+    }
+    if (actor.role === "coach") {
+      navigate("/coach/dashboard")
+      return
+    }
+    if (actor.role === "platform-admin") {
+      navigate("/platform-admin/dashboard")
+      return
+    }
+    navigate("/club-admin/dashboard")
   }
 
-  const applyDemoCredentials = (accountKey: DemoAccountKey) => {
+  const runSignIn = async (task: () => Promise<void>) => {
+    if (signInLock.current) return
+    signInLock.current = true
+    setIsSigningIn(true)
+    setError("")
+    try {
+      await task()
+    } catch (caught) {
+      setError(describeSignInError(caught instanceof Error ? caught : null))
+    } finally {
+      signInLock.current = false
+      setIsSigningIn(false)
+    }
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void runSignIn(() => (isSupabaseMode ? signInWithSupabase() : signInWithMockAccount(email, password)))
+  }
+
+  const handleDemoSignIn = (accountKey: DemoAccountKey) => {
     const account = demoCredentials?.[accountKey]
     if (!account) return
     setEmail(account.email)
     setPassword(account.password)
+    void runSignIn(() => signInWithMockAccount(account.email, account.password))
+  }
+
+  const updateRequestField = (field: keyof RequestFormState, value: string) => {
+    setRequestForm((previous) => ({ ...previous, [field]: value }))
+    if (field !== "notes") {
+      setRequestErrors((previous) => ({ ...previous, [field]: undefined }))
+    }
+  }
+
+  const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (requestLock.current) return
     setError("")
-    setMode("signin")
+
+    const nextErrors: Partial<Record<RequestField, string>> = {}
+    const normalizedEmail = requestForm.email.trim().toLowerCase()
+    const rawWebsite = requestForm.organizationWebsite.trim()
+    const normalizedWebsite = rawWebsite && !/^[a-z][a-z0-9+.-]*:\/\//i.test(rawWebsite) ? `https://${rawWebsite}` : rawWebsite
+    const coachCountText = requestForm.expectedCoachCount.trim()
+    const athleteCountText = requestForm.expectedAthleteCount.trim()
+    const coachCount = Number.parseInt(coachCountText || "0", 10)
+    const athleteCount = Number.parseInt(athleteCountText || "0", 10)
+    const requestorName = `${requestForm.firstName.trim()} ${requestForm.lastName.trim()}`.trim()
+    const notes = requestForm.notes.trim()
+
+    if (!requestForm.firstName.trim()) nextErrors.firstName = "Add your first name."
+    if (!requestForm.lastName.trim()) nextErrors.lastName = "Add your last name."
+    if (!normalizedEmail) {
+      nextErrors.email = "Add your work email."
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      nextErrors.email = "That does not look like an email address. Check for typos."
+    }
+    if (!requestForm.jobTitle.trim()) nextErrors.jobTitle = "Add your job title, for example Head coach."
+    if (!requestForm.organization.trim()) nextErrors.organization = "Add the name of your club or organization."
+    if (!requestForm.organizationType.trim()) nextErrors.organizationType = "Choose the type that fits best."
+    if (!requestForm.requestedPlan.trim()) nextErrors.requestedPlan = "Choose the package you want to start with."
+    if (!requestForm.region.trim()) nextErrors.region = "Add your country or region."
+    if (!coachCountText) {
+      nextErrors.expectedCoachCount = "Add how many coaches you expect."
+    } else if (!/^\d+$/.test(coachCountText) || coachCount > MAX_HEADCOUNT) {
+      nextErrors.expectedCoachCount = "Use a whole number, 0 or more."
+    }
+    if (!athleteCountText) {
+      nextErrors.expectedAthleteCount = "Add how many athletes you expect."
+    } else if (!/^\d+$/.test(athleteCountText) || athleteCount > MAX_HEADCOUNT) {
+      nextErrors.expectedAthleteCount = "Use a whole number, 0 or more."
+    }
+    if (normalizedWebsite) {
+      try {
+        const parsedWebsite = new URL(normalizedWebsite)
+        if (!(parsedWebsite.protocol === "http:" || parsedWebsite.protocol === "https:") || !parsedWebsite.hostname.includes(".")) {
+          nextErrors.organizationWebsite = "Use a web address like yourclub.com."
+        }
+      } catch {
+        nextErrors.organizationWebsite = "Use a web address like yourclub.com."
+      }
+    }
+    if (requestForm.desiredStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestForm.desiredStartDate)) {
+      nextErrors.desiredStartDate = "Pick a date from the calendar."
+    }
+
+    setRequestErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) {
+      const firstInvalid = requestFieldOrder.find((entry) => nextErrors[entry.field])
+      if (firstInvalid) document.getElementById(firstInvalid.id)?.focus()
+      return
+    }
+
+    requestLock.current = true
+    setIsSubmittingRequest(true)
+    try {
+      if (isSupabaseMode) {
+        const supabase = getBrowserSupabaseClient()
+        if (!supabase) {
+          setError("Requests are not set up on this site yet. Refresh the page and try again.")
+          return
+        }
+
+        const result = await supabase.rpc("submit_tenant_provision_request", {
+          p_requestor_name: requestorName,
+          p_requestor_email: normalizedEmail,
+          p_organization_name: requestForm.organization.trim(),
+          p_notes: notes || null,
+          p_requested_plan: requestForm.requestedPlan.trim(),
+          p_expected_seats: Math.max(0, coachCount) + Math.max(0, athleteCount),
+          p_job_title: requestForm.jobTitle.trim(),
+          p_organization_type: requestForm.organizationType.trim(),
+          p_organization_website: normalizedWebsite || null,
+          p_region: requestForm.region.trim(),
+          p_expected_coach_count: Math.max(0, coachCount),
+          p_expected_athlete_count: Math.max(0, athleteCount),
+          p_desired_start_date: requestForm.desiredStartDate || null,
+        })
+
+        if (result.error) {
+          setError(describeAccessRequestError(result.error))
+          return
+        }
+      } else {
+        const [{ submitMockTenantProvisionRequest }, { loadAccountRequests, saveAccountRequests }] = await Promise.all([
+          import("@/lib/mock-platform-admin"),
+          import("@/lib/mock-club-admin"),
+        ])
+
+        submitMockTenantProvisionRequest({
+          fullName: requestorName,
+          email: requestForm.email,
+          jobTitle: requestForm.jobTitle,
+          organization: requestForm.organization,
+          organizationType: requestForm.organizationType,
+          requestedPlan: requestForm.requestedPlan as PackageId,
+          organizationWebsite: normalizedWebsite,
+          region: requestForm.region,
+          expectedCoachCount: Math.max(0, coachCount),
+          expectedAthleteCount: Math.max(0, athleteCount),
+          desiredStartDate: requestForm.desiredStartDate,
+          notes,
+        })
+
+        const existingRequests = loadAccountRequests()
+        const nextRequest: AccountRequest = {
+          id: `request-${Date.now()}`,
+          fullName: requestorName,
+          email: normalizedEmail,
+          organization: requestForm.organization.trim(),
+          role: "club-admin",
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        }
+        saveAccountRequests([nextRequest, ...existingRequests])
+      }
+
+      setError("")
+      setRequestErrors({})
+      setSubmittedEmail(normalizedEmail)
+      setRequestForm(emptyRequestForm)
+      setRequestSubmitted(true)
+      window.scrollTo({ top: 0 })
+    } catch (caught) {
+      setError(describeAccessRequestError(caught instanceof Error ? caught : null))
+    } finally {
+      requestLock.current = false
+      setIsSubmittingRequest(false)
+    }
   }
 
   const switchMode = (nextMode: AuthMode) => {
-    setMode(nextMode)
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        if (nextMode === "request") next.set("mode", "request")
+        else next.delete("mode")
+        return next
+      },
+      { replace: false },
+    )
     setError("")
     setRequestErrors({})
     if (nextMode === "request") {
       setRequestSubmitted(false)
     }
+    window.scrollTo({ top: 0 })
   }
 
+  const isRequest = mode === "request"
+
   return (
-    <main className="auth-login-shell min-h-screen bg-[#050b16] text-white xl:h-screen xl:overflow-hidden">
-      <div className="relative isolate min-h-screen overflow-hidden xl:h-screen">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(31,140,255,0.22),_transparent_36%),linear-gradient(180deg,_rgba(8,15,28,0.96)_0%,_rgba(4,9,18,1)_58%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:72px_72px] opacity-[0.16]" />
-        <div className="relative mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-1 overflow-hidden xl:h-screen xl:grid-cols-[minmax(0,1.15fr)_minmax(440px,520px)] xl:gap-10 xl:px-8 2xl:px-12">
-          <section className="flex min-h-[160px] flex-col justify-between px-6 pb-5 pt-8 sm:min-h-[176px] sm:px-8 sm:pb-6 md:pb-8 xl:sticky xl:top-0 xl:h-screen xl:px-6 xl:pb-14 xl:pt-12 2xl:px-10">
-            <div className="space-y-6 md:space-y-8 xl:max-w-[620px] xl:space-y-10">
-              <div className="space-y-4">
-                <img src="/app-icon.png" alt="SKTR Coach" className="h-16 w-16 object-contain" />
-                <p className="text-xs font-semibold uppercase tracking-[0.34em] text-[#6fb6ff]">SKTR Coach</p>
+    <AuthSplit
+      wide={isRequest && !requestSubmitted}
+      photo={isRequest ? AUTH_PHOTOS.lanes : AUTH_PHOTOS.blocks}
+      headline={isRequest ? "Put your whole club on one plan." : "See who is ready before the first rep."}
+      body={
+        isRequest
+          ? "Coaches write the training, athletes log it, and you see every team from one place."
+          : "Build the week, run test weeks and read every athlete's check-in, all in one place."
+      }
+    >
+      {!isRequest ? (
+        <div className="space-y-8">
+          <header className="space-y-3">
+            <h1 className="sk-title">Sign in</h1>
+            <p className="sk-lede">Coaches, athletes and club admins all start here.</p>
+          </header>
+
+          <form className="grid gap-5" onSubmit={handleSubmit}>
+            <TextField
+              id="email"
+              label="Email"
+              type="email"
+              name="email"
+              autoComplete="email"
+              inputMode="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
+              placeholder="you@yourclub.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+
+            <div>
+              <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                <label htmlFor="password" className="text-sm font-semibold text-sk-ink-2">
+                  Password
+                </label>
+                <Link to="/reset-password" className="rounded text-sm font-bold text-sk-blue hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue">
+                  Forgot password?
+                </Link>
               </div>
-
-              <div className="space-y-3 lg:space-y-4">
-                <div className="space-y-2 xl:hidden">
-                  <h1 className="max-w-[10ch] text-[clamp(2.5rem,9vw,3.5rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
-                    {mode === "signin" ? "Welcome back" : "Request account"}
-                  </h1>
-                  <p className="max-w-[560px] text-sm leading-6 text-white/68 md:text-base">
-                    {mode === "signin"
-                      ? "Sign in to continue into your athlete, coach, or club admin workspace."
-                      : "Request a club admin account for your organization from this form."}
-                  </p>
-                </div>
-
-                <div className="hidden space-y-4 xl:block">
-                  <h1 className="max-w-[10ch] text-[clamp(3rem,8vw,6rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
-                    {mode === "signin"
-                      ? "Performance operations for athletes, coaches, and clubs."
-                      : "Request a club admin workspace for your organization."}
-                  </h1>
-                  <p className="max-w-[520px] text-sm leading-7 text-white/68 sm:text-base">
-                    {mode === "signin"
-                      ? "Enter one shared system for training plans, readiness, testing, and team coordination. The product should feel operational, not generic. This surface now carries that same bar."
-                      : "Use this request form to start a new club tenant request with the operational details required for review."}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section
-            className={`relative flex items-end md:px-6 md:pb-8 xl:min-h-0 xl:h-screen xl:justify-end xl:px-0 xl:py-10 ${
-              mode === "request" ? "xl:items-start xl:overflow-y-auto" : "xl:items-center xl:overflow-hidden"
-            }`}
-          >
-            <div className="w-full md:mx-auto md:max-w-[760px] xl:mx-0 xl:flex xl:justify-end">
-              <div className="w-full rounded-t-[36px] border-x border-t border-white/10 bg-[linear-gradient(180deg,#f8fafc_0%,#edf2f7_100%)] px-5 pb-8 pt-6 text-slate-950 shadow-[0_-24px_80px_rgba(0,0,0,0.24)] sm:px-8 sm:pb-10 sm:pt-8 md:rounded-[36px] md:border md:px-8 md:shadow-[0_24px_80px_rgba(0,0,0,0.24)] xl:w-full xl:max-w-[500px] xl:px-8 xl:pb-8 2xl:max-w-[520px] 2xl:px-10">
-                <div className="space-y-6">
-                <div className="space-y-4">
-                  <div className="inline-flex w-full max-w-[340px] rounded-full border border-slate-200 bg-slate-100 p-1 text-sm font-medium text-slate-600 sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => switchMode("signin")}
-                      className={mode === "signin" ? "flex-1 rounded-full bg-white px-4 py-2 text-center text-slate-950 shadow-sm sm:flex-none" : "flex-1 rounded-full px-4 py-2 text-center transition hover:text-slate-950 sm:flex-none"}
-                    >
-                      Sign in
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => switchMode("request")}
-                      className={mode === "request" ? "flex-1 rounded-full bg-white px-4 py-2 text-center text-slate-950 shadow-sm sm:flex-none" : "flex-1 rounded-full px-4 py-2 text-center transition hover:text-slate-950 sm:flex-none"}
-                    >
-                      Request account
-                    </button>
-                  </div>
-                </div>
-
-                {mode === "signin" ? (
-                  <>
-                    <form className="space-y-5" onSubmit={handleSubmit}>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="email" className="text-sm font-medium text-slate-700">
-                          Email
-                        </Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          required
-                          placeholder="coach@pacelab.local"
-                          value={email}
-                          onChange={(event) => setEmail(event.target.value)}
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                      </div>
-
-                      <div className="space-y-2.5">
-                        <Label htmlFor="password" className="text-sm font-medium text-slate-700">
-                          Password
-                        </Label>
-                        <Input
-                          id="password"
-                          type="password"
-                          required
-                          placeholder="Password123!"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                        <label className="flex items-center gap-2">
-                          <Checkbox checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
-                          <span>Remember me</span>
-                        </label>
-                        <div className="flex flex-col items-start gap-1 sm:items-end">
-                          <Link to="/reset-password" className="text-sm font-medium text-[#1368ff] hover:underline">
-                            Forgot password?
-                          </Link>
-                        </div>
-                      </div>
-
-                      {error ? (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-                          {error}
-                        </div>
-                      ) : null}
-
-                      {isSigningIn ? (
-                        <div
-                          className="rounded-2xl border border-[#cfe2ff] bg-[linear-gradient(135deg,#eff6ff_0%,#f8fbff_100%)] px-4 py-3 text-sm text-[#1f5fd1]"
-                          aria-live="polite"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex size-4 animate-spin rounded-full border-2 border-[#1f8cff]/25 border-t-[#1f8cff]" />
-                            <span className="font-medium">Signing in. Checking your account and workspace access.</span>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <Button
-                        type="submit"
-                        disabled={isSigningIn}
-                        className="h-14 w-full rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#2f80ff_100%)] text-base font-semibold shadow-[0_12px_36px_rgba(28,101,255,0.32)] hover:opacity-95"
-                      >
-                        <span className="flex items-center justify-center gap-3">
-                          {isSigningIn ? (
-                            <span className="inline-flex size-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
-                          ) : null}
-                          {isSigningIn ? "Signing in..." : "Sign in"}
-                        </span>
-                      </Button>
-                    </form>
-
-                    {!isSupabaseMode ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-4 text-xs uppercase tracking-[0.24em] text-slate-400">
-                          <Separator className="bg-slate-200" />
-                          Demo access
-                          <Separator className="bg-slate-200" />
-                        </div>
-
-                        <Accordion type="single" collapsible className="rounded-[28px] border border-slate-200 bg-white px-5">
-                          <AccordionItem value="demo-access" className="border-none">
-                            <AccordionTrigger className="py-5 text-base font-semibold text-slate-950 hover:no-underline">
-                              Use a mock account
-                            </AccordionTrigger>
-                            <AccordionContent className="space-y-3 pb-5 text-slate-600">
-                              <p className="text-sm leading-6">
-                                Load credentials for the exact workspace you want to inspect, then submit normally.
-                              </p>
-                              <div className="grid gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => applyDemoCredentials("athlete")}
-                                  disabled={!demoCredentials}
-                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                                >
-                                  <span>
-                                    <span className="block text-sm font-semibold text-slate-950">Athlete</span>
-                                    <span className="block text-xs text-slate-500">{demoCredentials?.athlete.email ?? "Loading..."}</span>
-                                  </span>
-                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => applyDemoCredentials("coach")}
-                                  disabled={!demoCredentials}
-                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                                >
-                                  <span>
-                                    <span className="block text-sm font-semibold text-slate-950">Coach</span>
-                                    <span className="block text-xs text-slate-500">{demoCredentials?.coach.email ?? "Loading..."}</span>
-                                  </span>
-                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => applyDemoCredentials("clubAdmin")}
-                                  disabled={!demoCredentials}
-                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                                >
-                                  <span>
-                                    <span className="block text-sm font-semibold text-slate-950">Club Admin</span>
-                                    <span className="block text-xs text-slate-500">{demoCredentials?.clubAdmin.email ?? "Loading..."}</span>
-                                  </span>
-                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => applyDemoCredentials("platformAdmin")}
-                                  disabled={!demoCredentials}
-                                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                                >
-                                  <span>
-                                    <span className="block text-sm font-semibold text-slate-950">Platform Admin</span>
-                                    <span className="block text-xs text-slate-500">{demoCredentials?.platformAdmin.email ?? "Loading..."}</span>
-                                  </span>
-                                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-[#1368ff]">Use</span>
-                                </button>
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-                        </Accordion>
-                      </div>
-                    ) : null}
-                  </>
-                ) : requestSubmitted ? (
-                  <div className="space-y-4 px-1 py-1 text-slate-950">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#1f8cff]">Request received</p>
-                    <h2 className="text-2xl font-semibold tracking-[-0.04em]">We have your access request.</h2>
-                    <p className="text-sm leading-6 text-slate-600">
-                      {isSupabaseMode
-                        ? "Your request was submitted for platform-admin review. You'll be contacted after approval."
-                        : "This demo now stores the request in the platform-admin queue so approval, provisioning, and audit flow can be exercised locally."}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => switchMode("signin")}
-                      className="h-12 rounded-full border-slate-200 bg-white px-5 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-                    >
-                      Back to sign in
-                    </Button>
-                  </div>
-                ) : (
-                  <form className="space-y-5" onSubmit={handleRequestSubmit}>
-                    <div className="grid gap-5 sm:grid-cols-2">
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-first-name" className="text-sm font-medium text-slate-700">
-                          First name <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                          id="request-first-name"
-                          value={requestForm.firstName}
-                          aria-invalid={requestErrors.firstName ? "true" : "false"}
-                          onChange={(event) => {
-                            setRequestForm((previous) => ({ ...previous, firstName: event.target.value }))
-                            setRequestErrors((previous) => ({ ...previous, firstName: undefined }))
-                          }}
-                          placeholder="Jordan"
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                        {requestErrors.firstName ? <p className="text-sm text-red-600">{requestErrors.firstName}</p> : null}
-                      </div>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-last-name" className="text-sm font-medium text-slate-700">
-                          Last name <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                          id="request-last-name"
-                          value={requestForm.lastName}
-                          aria-invalid={requestErrors.lastName ? "true" : "false"}
-                          onChange={(event) => {
-                            setRequestForm((previous) => ({ ...previous, lastName: event.target.value }))
-                            setRequestErrors((previous) => ({ ...previous, lastName: undefined }))
-                          }}
-                          placeholder="Davis"
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                        {requestErrors.lastName ? <p className="text-sm text-red-600">{requestErrors.lastName}</p> : null}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="request-email" className="text-sm font-medium text-slate-700">
-                        Work email <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="request-email"
-                        type="email"
-                        value={requestForm.email}
-                        aria-invalid={requestErrors.email ? "true" : "false"}
-                        onChange={(event) => {
-                          setRequestForm((previous) => ({ ...previous, email: event.target.value }))
-                          setRequestErrors((previous) => ({ ...previous, email: undefined }))
-                        }}
-                        placeholder="jordan@club.com"
-                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                      />
-                      {requestErrors.email ? <p className="text-sm text-red-600">{requestErrors.email}</p> : null}
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="request-job-title" className="text-sm font-medium text-slate-700">
-                        Job title <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="request-job-title"
-                        value={requestForm.jobTitle}
-                        aria-invalid={requestErrors.jobTitle ? "true" : "false"}
-                        onChange={(event) => {
-                          setRequestForm((previous) => ({ ...previous, jobTitle: event.target.value }))
-                          setRequestErrors((previous) => ({ ...previous, jobTitle: undefined }))
-                        }}
-                        placeholder="Head coach"
-                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                      />
-                      {requestErrors.jobTitle ? <p className="text-sm text-red-600">{requestErrors.jobTitle}</p> : null}
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="request-organization" className="text-sm font-medium text-slate-700">
-                        Organization <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="request-organization"
-                        value={requestForm.organization}
-                        aria-invalid={requestErrors.organization ? "true" : "false"}
-                        onChange={(event) => {
-                          setRequestForm((previous) => ({ ...previous, organization: event.target.value }))
-                          setRequestErrors((previous) => ({ ...previous, organization: undefined }))
-                        }}
-                        placeholder="Elite Track Club"
-                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                      />
-                      {requestErrors.organization ? <p className="text-sm text-red-600">{requestErrors.organization}</p> : null}
-                    </div>
-
-                    <div className="grid gap-5 sm:grid-cols-2">
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-organization-type" className="text-sm font-medium text-slate-700">
-                          Organization type <span className="text-red-500">*</span>
-                        </Label>
-                        <Select
-                          value={requestForm.organizationType}
-                          onValueChange={(value) => {
-                            setRequestForm((previous) => ({ ...previous, organizationType: value }))
-                            setRequestErrors((previous) => ({ ...previous, organizationType: undefined }))
-                          }}
-                        >
-                              <SelectTrigger
-                                id="request-organization-type"
-                                aria-invalid={requestErrors.organizationType ? "true" : "false"}
-                                className="!h-14 w-full rounded-full border-slate-200 bg-white px-5 py-0 text-base shadow-none focus:ring-[#1368ff]/20 [&>span]:leading-none"
-                                aria-label="Organization type"
-                              >
-                            <SelectValue placeholder="Select organization type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {organizationTypeOptions.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {requestErrors.organizationType ? <p className="text-sm text-red-600">{requestErrors.organizationType}</p> : null}
-                      </div>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-region" className="text-sm font-medium text-slate-700">
-                          Country or region <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                          id="request-region"
-                          value={requestForm.region}
-                          aria-invalid={requestErrors.region ? "true" : "false"}
-                          onChange={(event) => {
-                            setRequestForm((previous) => ({ ...previous, region: event.target.value }))
-                            setRequestErrors((previous) => ({ ...previous, region: undefined }))
-                          }}
-                          placeholder="Jamaica"
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                        {requestErrors.region ? <p className="text-sm text-red-600">{requestErrors.region}</p> : null}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label className="text-sm font-medium text-slate-700">
-                        Package <span className="text-red-500">*</span>
-                      </Label>
-                      <RadioGroup
-                        value={requestForm.requestedPlan}
-                        onValueChange={(value) => {
-                          setRequestForm((previous) => ({ ...previous, requestedPlan: value }))
-                          setRequestErrors((previous) => ({ ...previous, requestedPlan: undefined }))
-                        }}
-                        className="space-y-3"
-                        aria-invalid={requestErrors.requestedPlan ? "true" : "false"}
-                      >
-                        {packageOptions.map((option) => {
-                          const isSelected = requestForm.requestedPlan === option.id
-                          const coachesLabel = Number.isFinite(option.limits.coaches) ? `${option.limits.coaches} coaches` : "Custom coaches"
-                          const athletesLabel = Number.isFinite(option.limits.athletes) ? `${option.limits.athletes} athletes` : "Custom athletes"
-
-                          return (
-                            <label
-                              key={option.id}
-                              htmlFor={`request-package-${option.id}`}
-                              className={`flex cursor-pointer items-start justify-between gap-4 rounded-[24px] border px-5 py-4 transition ${
-                                isSelected
-                                  ? "border-[#1368ff] bg-[#eef5ff] shadow-[0_10px_28px_rgba(19,104,255,0.12)]"
-                                  : "border-slate-200 bg-white hover:border-slate-300"
-                              }`}
-                            >
-                              <div className="space-y-1.5">
-                                <div className="text-[1.05rem] font-semibold text-slate-950">{option.label}</div>
-                                <p className="text-sm leading-6 text-slate-500">{option.description}</p>
-                                <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                                  {coachesLabel} · {athletesLabel}
-                                </p>
-                              </div>
-                              <RadioGroupItem
-                                id={`request-package-${option.id}`}
-                                value={option.id}
-                                className="mt-1 border-slate-300 text-slate-950"
-                              />
-                            </label>
-                          )
-                        })}
-                      </RadioGroup>
-                      {requestErrors.requestedPlan ? <p className="text-sm text-red-600">{requestErrors.requestedPlan}</p> : null}
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="request-organization-website" className="text-sm font-medium text-slate-700">
-                        Organization website
-                      </Label>
-                      <Input
-                        id="request-organization-website"
-                        type="url"
-                        value={requestForm.organizationWebsite}
-                        aria-invalid={requestErrors.organizationWebsite ? "true" : "false"}
-                        onChange={(event) => {
-                          setRequestForm((previous) => ({ ...previous, organizationWebsite: event.target.value }))
-                          setRequestErrors((previous) => ({ ...previous, organizationWebsite: undefined }))
-                        }}
-                        placeholder="https://jamaicacollege.edu.jm"
-                        className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                      />
-                      {requestErrors.organizationWebsite ? <p className="text-sm text-red-600">{requestErrors.organizationWebsite}</p> : null}
-                    </div>
-
-                    <div className="grid gap-5 sm:grid-cols-3">
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-expected-coaches" className="text-sm font-medium text-slate-700">
-                          Expected coaches <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                          id="request-expected-coaches"
-                          type="number"
-                          min="0"
-                          value={requestForm.expectedCoachCount}
-                          aria-invalid={requestErrors.expectedCoachCount ? "true" : "false"}
-                          onChange={(event) => {
-                            setRequestForm((previous) => ({ ...previous, expectedCoachCount: event.target.value }))
-                            setRequestErrors((previous) => ({ ...previous, expectedCoachCount: undefined }))
-                          }}
-                          placeholder="4"
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                        {requestErrors.expectedCoachCount ? <p className="text-sm text-red-600">{requestErrors.expectedCoachCount}</p> : null}
-                      </div>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-expected-athletes" className="text-sm font-medium text-slate-700">
-                          Expected athletes <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                          id="request-expected-athletes"
-                          type="number"
-                          min="0"
-                          value={requestForm.expectedAthleteCount}
-                          aria-invalid={requestErrors.expectedAthleteCount ? "true" : "false"}
-                          onChange={(event) => {
-                            setRequestForm((previous) => ({ ...previous, expectedAthleteCount: event.target.value }))
-                            setRequestErrors((previous) => ({ ...previous, expectedAthleteCount: undefined }))
-                          }}
-                          placeholder="60"
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                        {requestErrors.expectedAthleteCount ? <p className="text-sm text-red-600">{requestErrors.expectedAthleteCount}</p> : null}
-                      </div>
-                      <div className="space-y-2.5">
-                        <Label htmlFor="request-desired-start" className="text-sm font-medium text-slate-700">
-                          Target start date
-                        </Label>
-                        <Input
-                          id="request-desired-start"
-                          type="date"
-                          value={requestForm.desiredStartDate}
-                          onChange={(event) => setRequestForm((previous) => ({ ...previous, desiredStartDate: event.target.value }))}
-                          className="h-14 rounded-full border-slate-200 bg-white px-5 text-base shadow-none placeholder:text-slate-400"
-                        />
-                      </div>
-                    </div>
-
-                    {packageFitWarnings.length > 0 ? (
-                      <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
-                        <p className="font-semibold">Package fit warning</p>
-                        <p>
-                          Your projected rollout is larger than the selected package. You can still submit this request, but we recommend{" "}
-                          {getPackageById(recommendedPackageId)?.label ?? "a higher package"}.
-                        </p>
-                        <ul className="mt-2 list-disc pl-5">
-                          {packageFitWarnings.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    <Button
-                      type="submit"
-                      disabled={isSubmittingRequest}
-                      className="h-14 w-full rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#2f80ff_100%)] text-base font-semibold shadow-[0_12px_36px_rgba(28,101,255,0.32)] hover:opacity-95"
-                    >
-                      {isSubmittingRequest ? "Submitting request..." : "Submit request"}
-                    </Button>
-                  </form>
-                )}
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  className="sk-field pr-[4.5rem] text-base sm:text-[0.95rem]"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <button
+                  type="button"
+                  aria-pressed={showPassword}
+                  aria-controls="password"
+                  onClick={() => setShowPassword((previous) => !previous)}
+                  className="absolute inset-y-1 right-1 inline-flex items-center gap-1.5 rounded-[10px] px-2.5 text-sm font-bold text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-sk-blue"
+                >
+                  {showPassword ? <EyeSlash className="size-4" weight="bold" aria-hidden /> : <Eye className="size-4" weight="bold" aria-hidden />}
+                  {showPassword ? "Hide" : "Show"}
+                </button>
               </div>
             </div>
-          </div>
+
+            <label className="flex min-h-11 w-fit cursor-pointer items-center gap-2.5 text-sm font-semibold text-sk-ink-2">
+              <input
+                type="checkbox"
+                className="size-[18px] rounded accent-sk-blue"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Keep me signed in on this device
+            </label>
+
+            {error ? <FormAlert>{error}</FormAlert> : null}
+
+            <button type="submit" disabled={isSigningIn} className="sk-btn sk-btn-primary h-12 w-full text-base">
+              {isSigningIn ? <CircleNotch className="size-5 animate-spin" weight="bold" aria-hidden /> : null}
+              {isSigningIn ? "Signing in..." : "Sign in"}
+            </button>
+            <p className="sr-only" aria-live="polite">
+              {isSigningIn ? "Signing in. Checking your account." : ""}
+            </p>
+          </form>
+
+          <section aria-labelledby={`${formId}-new`} className="flex flex-col gap-3 border-t border-sk-line pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id={`${formId}-new`} className="sk-h3">
+                New to SKTR Coach?
+              </h2>
+              <p className="text-sm text-sk-mute">Clubs join by request. It takes about two minutes.</p>
+            </div>
+            <button type="button" className="sk-btn sk-btn-quiet shrink-0" onClick={() => switchMode("request")}>
+              Request access for your club
+            </button>
           </section>
+
+          {!isSupabaseMode ? (
+            <section aria-labelledby={`${formId}-demo`} className="sk-well space-y-3">
+              <div>
+                <h2 id={`${formId}-demo`} className="sk-h3">
+                  Try the demo
+                </h2>
+                <p className="text-sm text-sk-mute">Open a sample club as any role. Nothing here touches real data.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {demoAccounts.map((account) => (
+                  <button
+                    key={account.key}
+                    type="button"
+                    disabled={!demoCredentials || isSigningIn}
+                    onClick={() => handleDemoSignIn(account.key)}
+                    className="flex min-h-[60px] items-center gap-3 rounded-[14px] border border-sk-line bg-white px-3 py-2.5 text-left transition-colors hover:border-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue disabled:pointer-events-none disabled:opacity-45"
+                  >
+                    <account.icon className="size-6 shrink-0 text-sk-blue" weight="bold" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block text-[0.95rem] font-bold leading-tight text-sk-ink">{account.label}</span>
+                      <span className="block text-xs leading-snug text-sk-mute">{account.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
-      </div>
-    </main>
+      ) : requestSubmitted ? (
+        <div className="space-y-7">
+          <header className="space-y-4">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-sk-green-tint text-sk-green">
+              <CheckCircle className="size-8" weight="fill" aria-hidden />
+            </span>
+            <h1 className="sk-title">
+              We have your access request.
+            </h1>
+            <p className="sk-lede">
+              {isSupabaseMode
+                ? "Thanks. A real person reads every request, so there is nothing more to do right now."
+                : "Demo mode: this request is now in the platform-admin queue. Sign in as Platform admin to review and approve it."}
+            </p>
+          </header>
+
+          <section aria-labelledby={`${formId}-next`}>
+            <h2 id={`${formId}-next`} className="sk-h3">
+              What happens next
+            </h2>
+            <ol className="mt-3 space-y-4">
+              {[
+                {
+                  title: "We review your request",
+                  body: "Usually within two working days. If we need anything else we will email you.",
+                },
+                {
+                  title: "You get a setup link by email",
+                  body: submittedEmail
+                    ? `We send it to ${submittedEmail}. Use it to create your club admin sign-in.`
+                    : "Use it to create your club admin sign-in.",
+                },
+                {
+                  title: "You invite your coaches and athletes",
+                  body: "Set up your teams, then send invites from your club dashboard.",
+                },
+              ].map((step, index) => (
+                <li key={step.title} className="flex items-start gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sk-yellow text-sm font-extrabold text-sk-ink">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sk-ink">{step.title}</p>
+                    <p className="break-words text-sm leading-relaxed text-sk-mute">{step.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="sk-btn sk-btn-primary" onClick={() => switchMode("signin")}>
+              <ArrowLeft className="size-5" weight="bold" aria-hidden />
+              Back to sign in
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <header className="space-y-3">
+            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3" onClick={() => switchMode("signin")}>
+              <ArrowLeft className="size-4" weight="bold" aria-hidden />
+              Back to sign in
+            </button>
+            <h1 className="sk-title">Request access for your club</h1>
+            <p className="sk-lede">
+              Tell us who you are and how big your club is. We review each request and email you a setup link, usually within two working days.
+            </p>
+          </header>
+
+          <form className="grid gap-9" onSubmit={handleRequestSubmit} noValidate>
+            <fieldset className="grid gap-4">
+              <legend className="sk-h2 mb-4">About you</legend>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  id="request-first-name"
+                  label="First name"
+                  autoComplete="given-name"
+                  placeholder="Jordan"
+                  value={requestForm.firstName}
+                  error={requestErrors.firstName}
+                  onChange={(event) => updateRequestField("firstName", event.target.value)}
+                />
+                <TextField
+                  id="request-last-name"
+                  label="Last name"
+                  autoComplete="family-name"
+                  placeholder="Davis"
+                  value={requestForm.lastName}
+                  error={requestErrors.lastName}
+                  onChange={(event) => updateRequestField("lastName", event.target.value)}
+                />
+              </div>
+              <TextField
+                id="request-email"
+                label="Work email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="jordan@club.com"
+                hint="Your setup link goes here, so use one you check."
+                value={requestForm.email}
+                error={requestErrors.email}
+                onChange={(event) => updateRequestField("email", event.target.value)}
+              />
+              <TextField
+                id="request-job-title"
+                label="Job title"
+                autoComplete="organization-title"
+                placeholder="Head coach"
+                value={requestForm.jobTitle}
+                error={requestErrors.jobTitle}
+                onChange={(event) => updateRequestField("jobTitle", event.target.value)}
+              />
+            </fieldset>
+
+            <fieldset className="grid gap-4">
+              <legend className="sk-h2 mb-4">Your club</legend>
+              <TextField
+                id="request-organization"
+                label="Club or organization name"
+                autoComplete="organization"
+                placeholder="Elite Track Club"
+                value={requestForm.organization}
+                error={requestErrors.organization}
+                onChange={(event) => updateRequestField("organization", event.target.value)}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldShell id="request-organization-type" label="Organization type" error={requestErrors.organizationType}>
+                  <Select value={requestForm.organizationType} onValueChange={(value) => updateRequestField("organizationType", value)}>
+                    <SelectTrigger
+                      id="request-organization-type"
+                      aria-label="Organization type"
+                      aria-invalid={requestErrors.organizationType ? "true" : undefined}
+                      aria-describedby={requestErrors.organizationType ? "request-organization-type-error" : undefined}
+                      className={cn(
+                        "!h-11 w-full rounded-[14px] border-[#d5d9e3] bg-white px-3.5 py-0 text-base text-sk-ink shadow-none focus:border-sk-blue focus:ring-2 focus:ring-sk-blue/20 data-[placeholder]:text-[#9aa2b1] sm:text-[0.95rem]",
+                        requestErrors.organizationType && "border-sk-coral",
+                      )}
+                    >
+                      <SelectValue placeholder="Choose one" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {organizationTypeOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldShell>
+                <TextField
+                  id="request-region"
+                  label="Country or region"
+                  autoComplete="country-name"
+                  placeholder="Jamaica"
+                  value={requestForm.region}
+                  error={requestErrors.region}
+                  onChange={(event) => updateRequestField("region", event.target.value)}
+                />
+              </div>
+              <TextField
+                id="request-organization-website"
+                label="Website"
+                optional
+                type="url"
+                inputMode="url"
+                autoComplete="url"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="yourclub.com"
+                value={requestForm.organizationWebsite}
+                error={requestErrors.organizationWebsite}
+                onChange={(event) => updateRequestField("organizationWebsite", event.target.value)}
+              />
+            </fieldset>
+
+            <fieldset className="grid gap-4">
+              <legend className="sk-h2 mb-1">Size and timing</legend>
+              <p className="mb-3 text-sm text-sk-mute">A rough guess is fine. It helps us suggest the right package.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <TextField
+                  id="request-expected-coaches"
+                  label="Expected coaches"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_HEADCOUNT}
+                  step={1}
+                  placeholder="4"
+                  value={requestForm.expectedCoachCount}
+                  error={requestErrors.expectedCoachCount}
+                  onChange={(event) => updateRequestField("expectedCoachCount", event.target.value)}
+                />
+                <TextField
+                  id="request-expected-athletes"
+                  label="Expected athletes"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_HEADCOUNT}
+                  step={1}
+                  placeholder="60"
+                  value={requestForm.expectedAthleteCount}
+                  error={requestErrors.expectedAthleteCount}
+                  onChange={(event) => updateRequestField("expectedAthleteCount", event.target.value)}
+                />
+              </div>
+              <TextField
+                id="request-desired-start"
+                label="Target start date"
+                optional
+                type="date"
+                min={todayIsoDate()}
+                hint="When you would like your coaches using it."
+                wrapperClassName="sm:max-w-[280px]"
+                value={requestForm.desiredStartDate}
+                error={requestErrors.desiredStartDate}
+                onChange={(event) => updateRequestField("desiredStartDate", event.target.value)}
+              />
+            </fieldset>
+
+            <fieldset
+              role="radiogroup"
+              aria-invalid={requestErrors.requestedPlan ? "true" : undefined}
+              aria-describedby={requestErrors.requestedPlan ? "request-package-error" : undefined}
+            >
+              <legend className="sk-h2 mb-1">Package</legend>
+              <p className="mb-4 text-sm text-sk-mute">Pick where you want to start. You can change it later.</p>
+              <div className={cn("overflow-hidden rounded-[20px] border", requestErrors.requestedPlan ? "border-sk-coral" : "border-sk-line")}>
+                {packageOptions.map((option) => {
+                  const isSelected = requestForm.requestedPlan === option.id
+                  const hasLimits = Number.isFinite(option.limits.coaches) && Number.isFinite(option.limits.athletes)
+                  const limitsLabel = hasLimits
+                    ? `Up to ${option.limits.coaches} coaches and ${option.limits.athletes} athletes`
+                    : "No set limit on coaches or athletes"
+                  return (
+                    <label
+                      key={option.id}
+                      htmlFor={`request-package-${option.id}`}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3.5 border-b border-sk-line px-4 py-4 transition-colors last:border-b-0 sm:px-5",
+                        isSelected ? "bg-sk-blue-tint" : "bg-white hover:bg-sk-canvas",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        id={`request-package-${option.id}`}
+                        name="request-package"
+                        value={option.id}
+                        checked={isSelected}
+                        onChange={() => updateRequestField("requestedPlan", option.id)}
+                        className="mt-0.5 size-5 shrink-0 accent-sk-blue"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-base font-bold text-sk-ink">{option.label}</span>
+                          {hasHeadcount && recommendedPackageId === option.id ? <Tag tone="blue">Fits your numbers</Tag> : null}
+                        </span>
+                        <span className="mt-0.5 block text-sm leading-relaxed text-sk-ink-2">{packageCopy[option.id]}</span>
+                        <span className="mt-1 block text-sm font-semibold text-sk-mute">{limitsLabel}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              {requestErrors.requestedPlan ? (
+                <p id="request-package-error" className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
+                  {requestErrors.requestedPlan}
+                </p>
+              ) : null}
+              {packageFitWarnings.length > 0 ? (
+                <div className="mt-3">
+                  <FormAlert tone="yellow">
+                    <p className="font-bold text-[#7a5600]">
+                      Your club looks bigger than this package. {getPackageById(recommendedPackageId)?.label ?? "A larger package"} is a better fit.
+                    </p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {packageFitWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1">You can still send the request as it is.</p>
+                  </FormAlert>
+                </div>
+              ) : null}
+            </fieldset>
+
+            <FieldShell id="request-notes" label="Notes" optional hint="Anything that helps us set you up: events you coach, a deadline, questions.">
+              <textarea
+                id="request-notes"
+                rows={3}
+                maxLength={1000}
+                aria-describedby="request-notes-hint"
+                className="sk-field h-auto min-h-[96px] py-2.5 text-base leading-relaxed sm:text-[0.95rem]"
+                value={requestForm.notes}
+                onChange={(event) => updateRequestField("notes", event.target.value)}
+              />
+            </FieldShell>
+
+            <div className="space-y-4">
+              {error ? <FormAlert>{error}</FormAlert> : null}
+              {Object.values(requestErrors).some(Boolean) ? (
+                <FormAlert>Some answers need another look. Fix the fields marked above, then send again.</FormAlert>
+              ) : null}
+              <button type="submit" disabled={isSubmittingRequest} className="sk-btn sk-btn-primary h-12 w-full text-base sm:w-auto sm:px-8">
+                {isSubmittingRequest ? <CircleNotch className="size-5 animate-spin" weight="bold" aria-hidden /> : null}
+                {isSubmittingRequest ? "Submitting request..." : "Submit request"}
+              </button>
+              <p className="text-sm text-sk-mute">We only use these details to review your request and set up your club.</p>
+            </div>
+          </form>
+        </div>
+      )}
+    </AuthSplit>
   )
 }
-

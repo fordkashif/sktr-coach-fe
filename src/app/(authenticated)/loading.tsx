@@ -1,10 +1,17 @@
-import { Spinner } from "@/components/ui/spinner"
+import { Link } from "react-router-dom"
+import { CircleNotch } from "@phosphor-icons/react"
 
 export default function AuthenticatedLoading() {
   return (
-    <div className="flex h-[50vh] items-center justify-center">
-      <Spinner className="size-6" />
-      <span className="ml-2 text-sm text-muted-foreground">Loading workspace...</span>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4 text-center" role="status" aria-live="polite">
+      <CircleNotch className="size-8 animate-spin text-sk-blue" weight="bold" aria-hidden />
+      <p className="sk-h3">Loading workspace...</p>
+      <p className="text-sm text-sk-mute">
+        Taking a while?{" "}
+        <Link to="/" className="font-bold text-sk-blue hover:underline">
+          Go to home
+        </Link>
+      </p>
     </div>
   )
 }

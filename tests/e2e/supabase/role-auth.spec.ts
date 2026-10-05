@@ -15,7 +15,7 @@ test("club admin session can access users page", async ({ browser }) => {
 
   await page.goto("/club-admin/users")
   await expect(page).toHaveURL(/\/club-admin\/users$/)
-  await expect(page.locator("body")).toContainText("Users & Roles")
+  await expect(page.getByRole("heading", { level: 1, name: "People" })).toBeVisible()
 
   await context.close()
 })

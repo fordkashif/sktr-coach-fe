@@ -25,7 +25,7 @@ test.describe("club-admin supabase surfaces", () => {
     await withClubAdminPage(browser, async (page) => {
       await page.goto("/club-admin/dashboard")
       await expect(page).toHaveURL(/\/club-admin\/dashboard$/)
-      await expect(page.locator("body")).toContainText("Command Center")
+      await expect(page.locator("body")).toContainText("Team by team")
     })
   })
 
@@ -33,7 +33,7 @@ test.describe("club-admin supabase surfaces", () => {
     await withClubAdminPage(browser, async (page) => {
       await page.goto("/club-admin/reports")
       await expect(page).toHaveURL(/\/club-admin\/reports$/)
-      await expect(page.locator("body")).toContainText("Reports & Exports")
+      await expect(page.locator("body")).toContainText("Team summary")
     })
   })
 
@@ -41,7 +41,7 @@ test.describe("club-admin supabase surfaces", () => {
     await withClubAdminPage(browser, async (page) => {
       await page.goto("/club-admin/audit")
       await expect(page).toHaveURL(/\/club-admin\/audit$/)
-      await expect(page.locator("body")).toContainText("Audit / Activity Logs")
+      await expect(page.locator("body")).toContainText("Activity log")
     })
   })
 
@@ -50,14 +50,14 @@ test.describe("club-admin supabase surfaces", () => {
       await page.goto("/club-admin/reports")
 
       const downloadPromise = page.waitForEvent("download")
-      await page.getByRole("button", { name: "Users CSV" }).click()
+      await page.getByRole("button", { name: "Teams CSV" }).click()
       const download = await downloadPromise
-      expect(download.suggestedFilename()).toBe("club-users.csv")
+      expect(download.suggestedFilename()).toBe("club-team-summary.csv")
 
       await page.goto("/club-admin/audit")
-      await page.getByPlaceholder("Search logs...").fill("club-users.csv")
-      await expect(page.locator("body")).toContainText("export_csv")
-      await expect(page.locator("body")).toContainText("club-users.csv")
+      await page.getByLabel("Search activity").fill("club-team-summary.csv")
+      await expect(page.locator("body")).toContainText("Downloaded a CSV")
+      await expect(page.locator("body")).toContainText("club-team-summary.csv")
     })
   })
 })

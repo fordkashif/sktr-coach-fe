@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon, CircleIcon, Tick01Icon } from "@hugeicons/core-free-icons";
+import { CaretRight as CaretRightGlyph, Check as CheckGlyph, Circle as CircleGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import * as MenubarPrimitive from '@radix-ui/react-menubar'
 import { cn } from '@/lib/utils'
@@ -129,7 +128,7 @@ function MenubarCheckboxItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <MenubarPrimitive.ItemIndicator>
-          <HugeiconsIcon icon={Tick01Icon} className="size-4" />
+          <CheckGlyph weight="bold" className="size-4" />
         </MenubarPrimitive.ItemIndicator>
       </span>
       {children}
@@ -153,7 +152,7 @@ function MenubarRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <MenubarPrimitive.ItemIndicator>
-          <HugeiconsIcon icon={CircleIcon} className="size-2 fill-current" />
+          <CircleGlyph weight="fill" className="size-2 fill-current" />
         </MenubarPrimitive.ItemIndicator>
       </span>
       {children}
@@ -235,7 +234,7 @@ function MenubarSubTrigger({
       {...props}
     >
       {children}
-      <HugeiconsIcon icon={ArrowRight01Icon} className="ml-auto h-4 w-4" />
+      <CaretRightGlyph weight="bold" className="ml-auto h-4 w-4" />
     </MenubarPrimitive.SubTrigger>
   )
 }

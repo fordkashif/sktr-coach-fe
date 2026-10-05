@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { X as XGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import * as ToastPrimitives from '@radix-ui/react-toast'
 import { cva, type VariantProps } from 'class-variance-authority'
@@ -83,7 +82,7 @@ const ToastClose = React.forwardRef<
     toast-close=""
     {...props}
   >
-    <HugeiconsIcon icon={Cancel01Icon} className="h-4 w-4" />
+    <XGlyph weight="bold" className="h-4 w-4" />
   </ToastPrimitives.Close>
 ))
 ToastClose.displayName = ToastPrimitives.Close.displayName
