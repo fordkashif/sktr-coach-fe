@@ -34,6 +34,16 @@ export type PlanListItem = {
 }
 
 /**
+ * Which teams a plan screen works on.
+ * listTeamId: the plan list shows this team only (a coach's selected team). Null lists every team.
+ * teamIds: the teams the user may build for (a coach's assigned teams). Null means every team (club admins).
+ */
+export type PlanScope = {
+  listTeamId: string | null
+  teamIds: string[] | null
+}
+
+/**
  * Where plans live. The builder UI only talks to this, so mock mode and the real
  * backend get exactly the same screen and the same features.
  */

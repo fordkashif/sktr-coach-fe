@@ -369,6 +369,9 @@ export async function getCurrentAthleteActiveTestWeekContext(): Promise<Result<C
   })
 }
 
+const TEST_WEEK_NOT_OPEN_MESSAGE =
+  "These results were not saved because this test week is not open for your team right now. Your coach may have closed it. Reload the page, and ask your coach to reopen it if you still need to enter results."
+
 /** value_numeric is numeric(10, 3): keep entries inside what the column can hold. */
 const MAX_TEST_RESULT_VALUE = 100000
 
@@ -463,7 +466,13 @@ export async function submitCurrentAthleteTestWeekResults(
     .from("test_results")
     .upsert(payload, { onConflict: "test_week_id,test_definition_id,athlete_id" })
 
-  if (upsertError) return { ok: false, error: mapPostgrestError(upsertError) }
+  if (upsertError) {
+    const mapped = mapPostgrestError(upsertError)
+    // The database only accepts an athlete's results while the week is open for their team
+    // (published, not archived, started). The coach may have closed it since the page loaded.
+    if (mapped.code === "FORBIDDEN") return { ok: false, error: { ...mapped, message: TEST_WEEK_NOT_OPEN_MESSAGE } }
+    return { ok: false, error: mapped }
+  }
 
   // Results are saved at this point. A personal best that fails to update must not
   // make the athlete think the submission was lost, so it is reported as a warning.

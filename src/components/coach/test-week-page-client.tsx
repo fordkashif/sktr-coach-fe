@@ -19,6 +19,8 @@ import { tenantStorageKey } from "@/lib/tenant-storage"
 interface CoachTestWeekPageClientProps {
   initialRole: Role
   initialCoachTeamId: string | null
+  /** The coach's assigned teams. Null for club admins, who work on every team. */
+  coachTeamIds: string[] | null
 }
 
 type StoredResult = { value: string; change: ResultChange | null }
@@ -161,8 +163,10 @@ function writeStoredWeeks(weeks: StoredWeek[]) {
 
 const done: ActionResult = { ok: true, data: null }
 
-export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamId }: CoachTestWeekPageClientProps) {
-  const scopedTeamId = initialRole === "coach" ? initialCoachTeamId : null
+export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamId, coachTeamIds }: CoachTestWeekPageClientProps) {
+  const isCoach = initialRole === "coach"
+  const scopedTeamId = isCoach ? initialCoachTeamId : null
+  const teamIdsKey = isCoach && coachTeamIds ? coachTeamIds.join(",") : null
   const [storedWeeks, setStoredWeeks] = useState<StoredWeek[]>(readStoredWeeks)
 
   const commit = useCallback((update: (current: StoredWeek[]) => StoredWeek[]) => {
@@ -173,15 +177,17 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
     })
   }, [])
 
-  const teams = useMemo(
-    () =>
-      mockTeams.map((team) => ({
+  // A coach picks from the teams they are assigned to. Club admins get every team.
+  const teams = useMemo(() => {
+    const allowed = teamIdsKey === null ? null : new Set(teamIdsKey.split(","))
+    return mockTeams
+      .filter((team) => (allowed ? allowed.has(team.id) : true))
+      .map((team) => ({
         id: team.id,
         name: team.name,
         athleteCount: mockAthletes.filter((athlete) => athlete.teamId === team.id).length,
-      })),
-    [],
-  )
+      }))
+  }, [teamIdsKey])
 
   const weeks = useMemo<TestWeekRow[]>(
     () =>
@@ -296,7 +302,8 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
     <TestWeekScreen
       weeks={weeks}
       teams={teams}
-      lockedTeamId={scopedTeamId}
+      lockedTeamId={isCoach && teams.length <= 1 ? scopedTeamId : null}
+      defaultTeamId={scopedTeamId}
       isLoading={false}
       loadError={null}
       starterTests={starterTests}

@@ -26,11 +26,12 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import type React from "react"
-import { getCoachScope } from "@/lib/coach-scope"
+import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
+import { useCoachTeams } from "@/lib/coach-teams"
 import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
-import { clearSessionCookies, COACH_TEAM_COOKIE, getCookieValue, setCoachTeamCookie } from "@/lib/auth-session"
+import { clearSessionCookies } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
   MOCK_ROLE_STORAGE_KEY,
@@ -156,97 +157,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
-  const [resolvedCoachTeamId, setResolvedCoachTeamId] = useState<string | null>(() =>
-    role === "coach" ? getCookieValue(COACH_TEAM_COOKIE) : null,
-  )
+  const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
+  const showTeamSwitcher = role === "coach" && coachTeams.length > 1
   const isRestrictedClubAdminSetupRoute =
     pathname === "/club-admin/setup/billing" || pathname === "/club-admin/get-started"
   const useAthleteHomeActionNav = pathname.startsWith("/athlete/home")
   const hideMobileNav = mobileDetailMode
 
-  useEffect(() => {
-    if (role !== "coach" || typeof window === "undefined") {
-      setResolvedCoachTeamId(null)
-      return
+  // The Teams tab opens the selected team. With no team it opens the page that explains why.
+  const coachTeamsHref = role === "coach" && coachTeamId ? `/coach/teams/${coachTeamId}` : "/coach/teams"
+
+  // After a switch, a screen that belongs to one team moves to the same screen for the new team.
+  const handleTeamSwitched = (team: { id: string }) => {
+    if (pathname.startsWith("/coach/teams/") || pathname.startsWith("/coach/athletes/")) {
+      navigate(`/coach/teams/${team.id}`)
     }
-
-    const scopedTeamId = getCookieValue(COACH_TEAM_COOKIE)
-    if (scopedTeamId) {
-      setResolvedCoachTeamId(scopedTeamId)
-      return
-    }
-
-    if (getBackendMode() !== "supabase") {
-      const coachScope = getCoachScope(role)
-      const mockTeamId = window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? null
-      setResolvedCoachTeamId(mockTeamId)
-      return
-    }
-
-    const supabase = getBrowserSupabaseClient()
-    if (!supabase) {
-      setResolvedCoachTeamId(null)
-      return
-    }
-
-    let cancelled = false
-
-    const resolveCoachTeamId = async () => {
-      const { data: authSession } = await supabase.auth.getSession()
-      const userId = authSession.session?.user.id
-      if (!userId) {
-        if (!cancelled) setResolvedCoachTeamId(null)
-        return
-      }
-
-      const profileResult = await supabase.from("profiles").select("tenant_id, role").eq("user_id", userId).maybeSingle()
-      if (cancelled || profileResult.error || !profileResult.data || profileResult.data.role !== "coach") {
-        if (!cancelled) setResolvedCoachTeamId(null)
-        return
-      }
-
-      const membershipResult = await supabase
-        .from("team_coaches")
-        .select("team_id")
-        .eq("tenant_id", profileResult.data.tenant_id)
-        .eq("user_id", userId)
-
-      if (cancelled || membershipResult.error) {
-        if (!cancelled) setResolvedCoachTeamId(null)
-        return
-      }
-
-      const teamId = ((membershipResult.data as Array<{ team_id: string }> | null) ?? []).map((row) => row.team_id)[0] ?? null
-      if (!cancelled) {
-        setResolvedCoachTeamId(teamId)
-        setCoachTeamCookie(teamId ?? undefined)
-      }
-    }
-
-    void resolveCoachTeamId()
-    return () => {
-      cancelled = true
-    }
-  }, [role, pathname])
-
-  const coachTeamsHref = useMemo(() => {
-    if (role !== "coach" || typeof window === "undefined") return "/coach/teams"
-
-    const scopedTeamId = resolvedCoachTeamId ?? getCookieValue(COACH_TEAM_COOKIE)
-    if (scopedTeamId) {
-      return `/coach/teams/${scopedTeamId}`
-    }
-
-    if (getBackendMode() !== "mock") return "/coach/teams"
-    const coachScope = getCoachScope(role)
-    const coachTeamId = window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId
-
-    if (coachScope.isScopedCoach && !coachScope.allowTeamSwitcher && coachTeamId) {
-      return `/coach/teams/${coachTeamId}`
-    }
-
-    return "/coach/teams"
-  }, [resolvedCoachTeamId, role])
+  }
 
   const links = useMemo(() => {
     if (role === "athlete") return athleteLinks
@@ -256,6 +182,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (role === "platform-admin") return platformAdminLinks
     return clubAdminLinks
   }, [coachTeamsHref, role])
+
+  // A coach's Teams tab points at one team, so it stays lit on any team page.
+  const isLinkActive = (link: ShellLink) =>
+    role === "coach" && link.label === "Teams" ? pathname.startsWith("/coach/teams") : pathname.startsWith(link.href)
 
   const useAthleteDrawerMenu = role === "athlete"
   const displayName = displayNameFromEmail(userEmail, role)
@@ -389,9 +319,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
+          {showTeamSwitcher ? (
+            <div className="px-3 pb-4">
+              <CoachTeamSwitcher variant="sidebar" onSwitched={handleTeamSwitched} />
+            </div>
+          ) : null}
+
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1 px-3">
             {links.map((link) => {
-              const isActive = pathname.startsWith(link.href)
+              const isActive = isLinkActive(link)
               const LinkIcon = link.icon
               return (
                 <Link
@@ -436,7 +372,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.875rem)] sm:px-6 lg:hidden">
-          <div className="min-w-0 lg:hidden">
+          <div className={cn("min-w-0 lg:hidden", showTeamSwitcher && "shrink-0")}>
             {mobileDetailMode ? (
               <button type="button" className={iconButton} aria-label="Back" onClick={handleMobileBack}>
                 <ArrowLeft className="size-5" weight="bold" />
@@ -451,7 +387,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuTrigger asChild>
                   <button type="button" className="flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-sk-blue" aria-label="Open profile menu">
                     <Initials name={displayName} className="size-11" />
-                    <span className="min-w-0 text-left leading-tight">
+                    {/* The team switcher takes the room next to the avatar on phones. */}
+                    <span className={cn("min-w-0 text-left leading-tight", showTeamSwitcher && "sr-only")}>
                       <span className="block truncate text-base font-bold text-sk-ink">{displayName}</span>
                       {displayName !== getRoleLabel(role) ? <span className="block text-sm text-sk-mute">{getRoleLabel(role)}</span> : null}
                     </span>
@@ -461,6 +398,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             )}
           </div>
+
+          {showTeamSwitcher && !mobileDetailMode ? (
+            <CoachTeamSwitcher variant="bar" onSwitched={handleTeamSwitched} className="flex-1" />
+          ) : null}
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {isRestrictedClubAdminSetupRoute ? null : (
@@ -498,7 +439,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                       <div className="mt-6 space-y-1">
                         {links.map((link) => {
-                          const isActive = pathname.startsWith(link.href)
+                          const isActive = isLinkActive(link)
                           const LinkIcon = link.icon
                           return (
                             <SheetClose asChild key={link.href}>
@@ -643,7 +584,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="mx-auto grid max-w-lg gap-1" style={{ gridTemplateColumns: `repeat(${links.length}, minmax(0, 1fr))` }}>
               {links.map((link) => {
-                const isActive = pathname.startsWith(link.href)
+                const isActive = isLinkActive(link)
                 const LinkIcon = link.icon
                 return (
                   <Link

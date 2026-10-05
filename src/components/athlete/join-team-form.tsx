@@ -63,6 +63,8 @@ type ResolvedInvite = {
   group: string | null
   athleteCount: number | null
   status: InviteStatus
+  /** The invite was sent to a different email address than the one signed in. */
+  addressedToSomeoneElse?: boolean
 }
 
 type Problem = { title: string; body: string }
@@ -181,6 +183,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
         group: result.data.eventGroup,
         athleteCount: null,
         status: result.data.status,
+        addressedToSomeoneElse: result.data.addressedToSomeoneElse,
       })
       setLookupProblem(null)
       setResolvingInvite(false)
@@ -239,7 +242,10 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
   const isChecking = hasTypedInvite && (isSupabaseMode ? resolvingInvite : mockTeams === null)
   const alreadyOnTeam = Boolean(resolvedInvite && currentTeam && resolvedInvite.teamId === currentTeam.id)
-  const statusProblem = resolvedInvite && !alreadyOnTeam ? problemForStatus(resolvedInvite.status) : null
+  const statusProblem =
+    resolvedInvite && !alreadyOnTeam
+      ? problemForStatus(resolvedInvite.status) ?? (resolvedInvite.addressedToSomeoneElse ? PROBLEMS.wrongEmail : null)
+      : null
   const notFoundProblem =
     hasTypedInvite && !isChecking && !resolvedInvite ? (isSupabaseMode ? lookupProblem ?? PROBLEMS.invalid : PROBLEMS.invalid) : null
   const problem = joinProblem ?? statusProblem ?? notFoundProblem

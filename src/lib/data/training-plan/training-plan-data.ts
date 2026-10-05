@@ -845,7 +845,8 @@ export async function getAssignedTrainingPlansForCurrentAthlete(): Promise<Resul
     .from("training_plans")
     .select("id, name, team_id, start_date, weeks, status")
     .in("id", planIds)
-    .neq("status", "draft")
+    // Athletes can only read published plans assigned to them or their team (migration 20261006150000).
+    .eq("status", "published")
     .order("start_date", { ascending: false })
 
   if (plansError) return { ok: false, error: mapPostgrestError(plansError) }

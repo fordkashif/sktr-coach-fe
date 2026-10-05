@@ -2,11 +2,12 @@ import { useEffect, useState } from "react"
 import { ArrowDown, ArrowRight, ArrowUp, CheckCircle, ClipboardText, Minus, Timer, Trophy } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { LineChart } from "@mui/x-charts"
-import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
+import { useCoachTeamScope } from "@/lib/coach-teams"
 import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Stat, scoreTone } from "@/components/sk"
 import type { Athlete, PR, Team, TestWeekResult, TrendPoint } from "@/lib/mock-data"
 import {
   getCoachDashboardSnapshotForCurrentUser,
+  peekCachedCoachDashboardSnapshot,
   type CoachDashboardSnapshot,
 } from "@/lib/data/coach/dashboard-data"
 import {
@@ -36,10 +37,16 @@ function shortDay(date: string) {
 }
 
 export default function CoachDashboardPage() {
+  const { role, coachTeamId } = useCoachTeamScope()
+  // One dashboard per team: switching team starts from a clean screen, never the last team's numbers.
+  return <CoachDashboard key={coachTeamId ?? "all"} role={role} coachTeamId={coachTeamId} />
+}
+
+function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamId: string | null }) {
   const backendMode = getBackendMode()
-  const role = getCookieValue(ROLE_COOKIE)
-  const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
-  const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
+  const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(() =>
+    backendMode === "supabase" ? peekCachedCoachDashboardSnapshot(role === "coach" ? coachTeamId : null) : null,
+  )
   const [backendError, setBackendError] = useState<string | null>(null)
   const [setupGuideDismissedAt, setSetupGuideDismissedAt] = useState<string | null>(null)
   const [setupGuideSaving, setSetupGuideSaving] = useState(false)

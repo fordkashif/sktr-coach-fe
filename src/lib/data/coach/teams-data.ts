@@ -211,3 +211,62 @@ export async function removeAthleteFromTeamForCurrentCoach(params: {
   coachTeamsSnapshotCache = null
   return ok(undefined)
 }
+
+export type CoachAssignedTeam = {
+  id: string
+  name: string
+  eventGroup: EventGroup
+}
+
+/**
+ * The teams the signed-in coach is assigned to (team_coaches joined to teams), by name.
+ * Only active, non-archived teams are returned, because those are the teams every coach screen can open.
+ * A club admin or any other role gets an empty list: the team switcher is for coaches only.
+ */
+export async function getAssignedCoachTeamsForCurrentUser(): Promise<Result<CoachAssignedTeam[]>> {
+  const clientResult = requireSupabaseClient("getAssignedCoachTeamsForCurrentUser")
+  if (!clientResult.ok) return clientResult
+
+  const { data: authSession } = await clientResult.client.auth.getSession()
+  const userId = authSession.session?.user.id
+  if (!userId) return err("UNAUTHORIZED", "No authenticated Supabase session found.")
+
+  const { data: profile, error: profileError } = await clientResult.client
+    .from("profiles")
+    .select("tenant_id, role")
+    .eq("user_id", userId)
+    .maybeSingle()
+
+  if (profileError) return { ok: false, error: mapPostgrestError(profileError) }
+  if (!profile || profile.role !== "coach") return ok([])
+
+  const tenantId = profile.tenant_id as string
+  const membershipResult = await clientResult.client
+    .from("team_coaches")
+    .select("team_id")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", userId)
+
+  if (membershipResult.error) return { ok: false, error: mapPostgrestError(membershipResult.error) }
+  const teamIds = ((membershipResult.data as Array<{ team_id: string }> | null) ?? []).map((row) => row.team_id).filter(Boolean)
+  if (teamIds.length === 0) return ok([])
+
+  const { data: teamRows, error: teamsError } = await clientResult.client
+    .from("teams")
+    .select("id, name, event_group")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .eq("is_archived", false)
+    .in("id", teamIds)
+    .order("name", { ascending: true })
+
+  if (teamsError) return { ok: false, error: mapPostgrestError(teamsError) }
+
+  return ok(
+    ((teamRows as Array<{ id: string; name: string; event_group: string | null }> | null) ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      eventGroup: toEventGroup(row.event_group),
+    })),
+  )
+}

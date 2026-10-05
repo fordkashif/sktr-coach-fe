@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { CoachTeamDetailContent } from "@/components/coach/team-detail-content"
-import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
+import { useCoachTeamScope } from "@/lib/coach-teams"
 import {
   getCoachDashboardSnapshotForCurrentUser,
   peekCachedCoachDashboardSnapshot,
@@ -12,14 +12,23 @@ import { getBackendMode } from "@/lib/supabase/config"
 import { InvalidEntityPage } from "@/pages/invalid-entity"
 
 export default function CoachTeamDetailPage() {
-  const backendMode = getBackendMode()
   const { teamId = "" } = useParams()
-  const role = getCookieValue(ROLE_COOKIE)
-  const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
+  // One screen per team in the address, so nothing from the previous team is ever shown.
+  return <CoachTeamDetail key={teamId} teamId={teamId} />
+}
+
+function CoachTeamDetail({ teamId }: { teamId: string }) {
+  const backendMode = getBackendMode()
+  const { role, coachTeamsLoading, isAssigned, syncSelectedTeam } = useCoachTeamScope()
+  const isCoach = role === "coach"
+  const assigned = isCoach && isAssigned(teamId)
+  // The team in the address is the scope: a coach on several teams can open any of them by link.
+  const scopeTeamId = isCoach ? teamId : null
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(() =>
-    backendMode === "supabase" ? peekCachedCoachDashboardSnapshot(role === "coach" ? coachTeamId : null) : null,
+    backendMode === "supabase" ? peekCachedCoachDashboardSnapshot(scopeTeamId) : null,
   )
   const [mockTeams, setMockTeams] = useState<Team[]>([])
+  const [mockLoaded, setMockLoaded] = useState(false)
   const [backendError, setBackendError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,6 +38,7 @@ export default function CoachTeamDetailPage() {
     void import("@/lib/mock-data").then((module) => {
       if (!cancelled) {
         setMockTeams(module.mockTeams)
+        setMockLoaded(true)
       }
     })
 
@@ -37,12 +47,19 @@ export default function CoachTeamDetailPage() {
     }
   }, [backendMode])
 
+  // Opening a team by link selects it, so the rest of the app follows.
+  useEffect(() => {
+    if (assigned) syncSelectedTeam(teamId)
+  }, [assigned, syncSelectedTeam, teamId])
+
   useEffect(() => {
     if (backendMode !== "supabase") return
+    // A coach's team list decides whether this team may be opened at all.
+    if (isCoach && (coachTeamsLoading || !assigned)) return
     let cancelled = false
 
     const loadSnapshot = async () => {
-      const result = await getCoachDashboardSnapshotForCurrentUser({ scopeTeamId: role === "coach" ? coachTeamId : null })
+      const result = await getCoachDashboardSnapshotForCurrentUser({ scopeTeamId })
       if (cancelled) return
       if (!result.ok) {
         setBackendError(result.error.message)
@@ -56,12 +73,13 @@ export default function CoachTeamDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [backendMode, coachTeamId, role])
+  }, [assigned, backendMode, coachTeamsLoading, isCoach, scopeTeamId])
 
   const teamsSource = backendMode === "supabase" ? (backendSnapshot?.teams ?? []) : mockTeams
   const team = teamsSource.find((item) => item.id === teamId)
+  const waitingForData = backendMode === "supabase" ? !backendSnapshot && !backendError && (!isCoach || assigned) : !mockLoaded
 
-  if (backendMode === "supabase" && !backendSnapshot && !backendError) {
+  if (coachTeamsLoading || waitingForData) {
     return (
       <div className="sk-page">
         <p className="text-sm text-sk-mute">Loading team...</p>
@@ -69,6 +87,7 @@ export default function CoachTeamDetailPage() {
     )
   }
 
+  // In the real backend a coach cannot tell a team they are not on from one that does not exist.
   if (!team) {
     return (
       <InvalidEntityPage
@@ -79,7 +98,7 @@ export default function CoachTeamDetailPage() {
     )
   }
 
-  if (role === "coach" && coachTeamId && coachTeamId !== team.id) {
+  if (isCoach && !assigned) {
     return (
       <InvalidEntityPage
         title="Team unavailable"

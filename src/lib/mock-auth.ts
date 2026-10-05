@@ -43,6 +43,13 @@ export const MOCK_CREDENTIALS = {
 export const MOCK_ROLE_STORAGE_KEY = "pacelab:mock-role"
 export const MOCK_USER_EMAIL_STORAGE_KEY = "pacelab:mock-user-email"
 export const MOCK_COACH_TEAM_STORAGE_KEY = "pacelab:mock-coach-team"
+/**
+ * Mock mode only. A comma separated list of mock team ids (for example "t1,t4") that the demo coach
+ * is assigned to. With two or more ids the coach team switcher appears. Without it the demo coach
+ * has exactly one team, as before. Set it from the browser console or a test:
+ *   localStorage.setItem("pacelab:mock-coach-teams", "t1,t4")
+ */
+export const MOCK_COACH_TEAMS_STORAGE_KEY = "pacelab:mock-coach-teams"
 const MOCK_PASSWORD_OVERRIDES_KEY = "pacelab:mock-password-overrides"
 const MOCK_PASSWORD_RESET_TOKENS_KEY = "pacelab:mock-password-reset-tokens"
 

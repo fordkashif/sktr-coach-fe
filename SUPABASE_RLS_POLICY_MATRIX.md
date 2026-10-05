@@ -12,6 +12,7 @@ Define row-level security behavior for Wave 1 through Wave 3 schema entities, al
 This matrix is implemented by:
 - `supabase/migrations/20260320113000_schema_v1_rls_policies.sql`
 - `supabase/migrations/20261006120000_coach_team_scope.sql` (coaches only act on the teams they are assigned to; see "Coach team scope" below, which is the current rule for every coach line in this document)
+- `supabase/migrations/20261006150000_athlete_read_scope.sql` (athletes only read what their own screens show; see "Athlete read scope" below, which is the current rule for every athlete line in this document)
 
 ## Assumptions
 
@@ -62,9 +63,9 @@ Legend:
 
 ### `teams`
 
-- athlete: `R` tenant teams
+- athlete: `R` only the team they are on (from `20261006150000`). No team: no rows
 - coach: `R` tenant teams (names are club wide). `U` only teams they are assigned to. No `C`, no `D` (from `20261006120000`)
-- club-admin: `R/C/U/D` tenant teams
+- club-admin: `R/C/U/D` tenant teams. `D` is refused with a plain message while the team still has athletes, training plans, plan assignments or test weeks (trigger `prevent_delete_of_team_in_use`, from `20261006150000`); the app offers Archive instead
 
 ### `athletes`
 
@@ -103,13 +104,13 @@ Legend:
 
 ### `test_weeks`
 
-- athlete: `R` tenant test weeks
+- athlete: `R` only their own team's weeks that are `published` or `closed` and not archived, plus any week in which they already have a result of their own (from `20261006150000`). Never a draft of their team, never another team's week
 - coach: `R/C/U/D` test weeks of their assigned teams, plus test weeks with no team that they created (from `20261006120000`)
 - club-admin: `R/C/U/D` tenant test weeks
 
 ### `test_definitions`
 
-- athlete: `R` definitions for tenant test weeks
+- athlete: `R` definitions of the test weeks they can read (above)
 - coach: `R/C/U/D` definitions of the test weeks above
 - club-admin: `R/C/U/D` definitions for tenant test weeks
 
@@ -117,20 +118,20 @@ Legend:
 
 - athlete:
   - `R` own results only
-  - `C/U` own results only, in current tenant
+  - `C/U` own results only, and only while the week is open: it belongs to their current team, `status = 'published'`, not archived, start date reached, and the test belongs to that week (`athlete_can_enter_test_result`, from `20261006150000`). No cut-off at the end date: late entries are accepted until the coach closes the week
   - `D` not allowed
 - coach: `R/C/U/D` results of athletes on their assigned teams
 - club-admin: `R/C/U/D` tenant test results
 
 ### `training_plans`
 
-- athlete: `R` tenant plans whose status is not `draft` (drafts are never visible; migration `20261004120000_training_plan_drafts.sql`)
+- athlete: `R` only plans that are `published` AND assigned to them or to their current team (from `20261006150000`). Drafts, archived plans, unassigned plans, other teams' plans and plans assigned only to a teammate are not visible
 - coach: `R/C/U/D` plans of their assigned teams (drafts included), plus plans with no team that they created (from `20261006120000`). Other teams' plans are not readable
 - club-admin: `R/C/U/D` tenant plans, including drafts
 
 ### `training_plan_weeks`, `training_plan_days`, `training_plan_blocks`
 
-- athlete: `R` structure of tenant plans whose status is not `draft`
+- athlete: `R` structure of the plans they can read (above)
 - coach: `R/C/U/D` structure of the plans above
 - club-admin: `R/C/U/D` structure of tenant plans
 
@@ -152,7 +153,7 @@ Legend:
 - athlete: `U` own completion (`session_completions_update_own`), so effort (`rpe`) and `athlete_comment` can be saved and changed.
 
 `sessions`, `session_blocks`, `session_block_rows` additions:
-- athlete: `C` only for their own athlete row, only with `status = 'scheduled'` and a plan slot (`plan_id`, `plan_week_number`, `plan_day_index`) pointing at a published plan in the tenant; blocks and rows only under such a session while it is still `scheduled`. This covers athletes who joined after the plan was published. Athletes still cannot update or delete sessions.
+- athlete: `C` only for their own athlete row, only with `status = 'scheduled'` and a plan slot (`plan_id`, `plan_week_number`, `plan_day_index`) pointing at a published plan that is assigned to them or to their team (any published plan of the club until `20261006150000`); blocks and rows only under such a session while it is still `scheduled`. This covers athletes who joined after the plan was published. Athletes still cannot update or delete sessions.
 - `sessions.status` is moved by security definer triggers, not by the athlete: first logged set sets `in-progress`, a completion sets `completed`.
 - club-admin: `R/C/U/D` tenant. coach: `R/C/U/D` for athletes on their assigned teams. Sessions are created for every assigned athlete when a plan is published.
 
@@ -274,7 +275,7 @@ What a coach can do, by table (club admin: `R/C/U/D` in own club everywhere, unc
 | `teams` | `R`, `U` | `R` (name, event group) | no `C`, no `D` for coaches. Team names stay readable club wide |
 | `team_coaches` | `R` own rows | none | unchanged: only club admins assign coaches |
 | `athletes` | `R/C/U/D` | none | cannot move an athlete to a team they do not coach, cannot write "no team" (use `remove_athlete_from_team`). Athletes with no team: club admins only |
-| `athlete_invites` | `R/C/U/D` | none | athletes keep a club-wide read (join by code looks an invite up by id) |
+| `athlete_invites` | `R/C/U/D` | none | athletes read only invites addressed to their own email (from `20261006150000`) |
 | `sessions`, `session_blocks`, `session_block_rows`, `session_completions` | `R/C/U/D` | none | scope follows the athlete's current team |
 | `session_row_logs` | `R` | none | |
 | `wellness_entries`, `pr_records`, `test_results` | `R/C/U/D` | none | scope follows the athlete's current team |
@@ -288,7 +289,55 @@ Scope follows where the athlete is now. When a club admin moves an athlete from 
 
 Deliberately still club wide for coaches (not changed by this migration): `teams` read, `profiles` read (`profiles_select_tenant_for_staff`: names and roles of club members), `audit_events` read (`audit_events_select_staff`), `club_profiles` and `billing_profiles` read.
 
-Left as it was for athletes: `training_plans_select_tenant` (every plan of the club that is not a draft), `test_weeks_select_tenant` (every test week of the club) and `athlete_invites_select_tenant` (every athlete invite of the club, invited email included).
+Left as it was for athletes by this migration, and closed by `20261006150000` (see "Athlete read scope"): `training_plans_select_tenant`, `test_weeks_select_tenant` and `athlete_invites_select_tenant`.
+
+### Athlete read scope (migration `20261006150000_athlete_read_scope.sql`)
+
+Before this migration an athlete could read, through the database API, far more than their screens show: every athlete invite of the club (invited email addresses included), every published or archived plan with its weeks, days and blocks, every test week and test of every team (drafts included), every team name and the club's billing profile. They could also write a result of their own into a draft, closed, archived, not yet started or other team's test week, attach it to a test from a different week, create sessions for themselves from any published plan of the club, and write rows into the club's audit log.
+
+Coaches, club admins and platform admins: no change in what they can do.
+
+Helpers (all `security definer`, `stable`, `set search_path = public`, executable by `authenticated` and `service_role` only). They answer null / empty for anyone who is not an active athlete of an open club, so a deactivated athlete or an athlete of a suspended or cancelled club reads nothing through them:
+
+| Function | Answers |
+|---|---|
+| `current_athlete_id()` | the caller's own `athletes` row |
+| `current_athlete_team_id()` | the team that athlete is on now (null when none) |
+| `current_athlete_email()` | the caller's email from `auth.users`, lower-cased and trimmed |
+| `current_athlete_plan_ids()` | published plans assigned to the caller or to their current team |
+| `current_athlete_plan_week_ids()`, `current_athlete_plan_day_ids()` | the weeks and days of those plans |
+| `current_athlete_test_week_ids()` | the test weeks the caller may read (rule below) |
+| `athlete_can_enter_test_result(test_week_id, test_definition_id, athlete_id)` | the caller may add or change this result now (rule below) |
+| `get_athlete_invite_preview(invite_id)` | for the join screen: team name, event group, status, expiry and whether the invite is usable by the caller, for an invite of the caller's own club. Never the invited email address |
+
+What an athlete can read and write now:
+
+| Table | Athlete | Notes |
+|---|---|---|
+| `athletes`, `profiles` | `R` own row | unchanged. No teammate rows: no athlete screen lists teammates |
+| `teams` | `R` own team | coach names still come from `get_current_athlete_team_context()` |
+| `team_coaches`, `coach_invites`, `audit_events` | none | `audit_events` insert is now staff only (an athlete could forge audit rows before). Invite acceptance writes its audit row inside a security definer function |
+| `athlete_invites` | `R` invites addressed to their own email | the join screen calls `get_athlete_invite_preview()`; accepting still goes through `accept_athlete_invite()` |
+| `training_plans` | `R` published and assigned to them or their team | |
+| `training_plan_weeks`, `_days`, `_blocks` | `R` for those plans | the `*_select_tenant` policies now hold the athlete rule only; staff read through `*_staff_all`, which accepts the same plans as before |
+| `training_plan_assignments` | `R` own and own team's rows | unchanged |
+| `test_weeks`, `test_definitions` | `R` own team's published or closed, not archived weeks, plus weeks holding a result of their own | the second part keeps the names of their own past results after a coach archives a week or after they change team |
+| `test_results` | `R` own. `C/U` own, only while the week is open | see "open" below |
+| `sessions` (+ blocks, rows) | `R` own. `C` from a published plan assigned to them or their team | late joiner creating the day's session |
+| `session_row_logs`, `session_completions`, `wellness_entries`, `pr_records`, notifications | own rows | unchanged |
+| `billing_profiles` | none | read is now coach and club admin only |
+| `club_profiles`, `tenants` | `R` own club | unchanged (club name, colours, season dates) |
+
+"Open" for entering test results: the week belongs to the athlete's current team, `status = 'published'`, `is_archived = false`, and `start_date` has been reached (one day of slack, because the database compares in UTC and the app in the athlete's local date). There is deliberately no cut-off at `end_date`: the athlete screen has always accepted late entries in a week that is still published, and a coach who wants entries to stop closes the week (status `closed`) or archives it. Results in a closed or archived week stay readable and cannot be changed by the athlete; coaches and club admins can still enter or correct them. A refused save reaches the athlete as "this test week is not open for your team right now".
+
+Scope follows where the athlete is now. After moving from Sprints to Throws an athlete sees the Throws team, the plans assigned to Throws (and plans assigned to them personally) and the Throws test weeks. Their own sessions, results, wellness and PRs stay theirs.
+
+Not changed, and worth knowing: `get_public_athlete_invite(invite_id)` and `get_public_coach_invite(invite_id)` are callable without signing in and return the invited email address to anyone who holds the invite link (the claim page needs it to pre-fill the form). `training_plan_assignments.visibility_date` (a plan assigned now but scheduled to appear later) is applied by the app, not by the database. Any club member can insert an `account_requests` row for their own club.
+
+Also in this migration:
+- `team_coaches_modify_admin`: a club admin can no longer insert a row pointing at another club's team.
+- Deleting a team that still has athletes, training plans, plan assignments or test weeks is refused with "This team still has athletes, training plans or test weeks, so it cannot be deleted. Archive the team instead." (it used to fail with a raw constraint error when a team-wide plan assignment existed, and silently left athletes and plans without a team otherwise). An empty team can still be deleted.
+- `training_plan_weeks_staff_all`, `training_plan_days_staff_all`, `training_plan_blocks_staff_all` and `test_definitions_staff_all` start with `(select is_coach_or_admin())`. Same rule for staff; it spares athletes a per-row function call.
 
 ### Invite email delivery (migration `20261006090000_invite_email_delivery.sql`)
 
@@ -299,7 +348,7 @@ No policy is added or changed.
 | | Read the four columns | Write the four columns |
 |---|---|---|
 | `coach_invites` | club admins of the club (`coach_invites_staff_all`), as before | service role only |
-| `athlete_invites` | athletes and club admins of the club, and coaches assigned to the invite's team (`athlete_invites_select_tenant`, narrowed for coaches in `20261006120000`) | service role only |
+| `athlete_invites` | club admins of the club, coaches assigned to the invite's team, and the athlete the invite is addressed to (`athlete_invites_select_tenant`, narrowed for coaches in `20261006120000` and for athletes in `20261006150000`) | service role only |
 | anon, other clubs | no rows | no |
 
 - The existing "staff all" policies would let a club admin or coach update any column, including the send counter. The trigger `protect_invite_email_delivery_columns` (before insert or update, security invoker) keeps the four columns unchanged whenever the statement runs as `authenticated` or `anon`, so the resend limit cannot be reset from the API. Every other column behaves as before (revoke still works).
@@ -322,6 +371,7 @@ These are intentionally not available to regular authenticated users:
 
 - Tenant boundary is always checked on tenant-scoped tables.
 - Athlete can never read or write other athletes' rows.
+- An athlete reads only their own team, the published plans assigned to them or their team, their team's published or closed test weeks, and invites addressed to their own email.
 - Coaches and club-admins operate only within current tenant.
 - A coach operates only on teams they are assigned to, and on athletes currently on those teams. Club admins operate on the whole club.
 - Cross-tenant access is blocked even for coach/admin roles.
