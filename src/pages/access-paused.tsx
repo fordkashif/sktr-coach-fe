@@ -1,12 +1,13 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { SignOut } from "@phosphor-icons/react"
+import { EnvelopeSimple, SignOut } from "@phosphor-icons/react"
 import { AUTH_PHOTOS, AuthBrand } from "@/layouts/auth-layout"
 import type { AccessBlock } from "@/lib/access-control"
 import { clearSessionCookies } from "@/lib/auth-session"
 import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 
 /**
  * Shown by the route guard in place of the app when the database has closed the member's access:
@@ -21,7 +22,7 @@ function copyFor(block: AccessBlock, isClubAdmin: boolean) {
     }
   }
 
-  const contact = isClubAdmin ? "Contact SKTR support to get it back." : "Contact your club admin."
+  const contact = isClubAdmin ? `Email ${SUPPORT_EMAIL} to get it back.` : "Contact your club admin."
   if (block === "club-cancelled") {
     return {
       title: "This club's access has ended",
@@ -71,6 +72,12 @@ export function AccessPausedPage({ block, isClubAdmin }: { block: AccessBlock; i
                   <SignOut className="size-5" weight="bold" aria-hidden />
                   {signingOut ? "Signing out..." : "Sign out"}
                 </button>
+                {isClubAdmin && block !== "member-inactive" ? (
+                  <a href={SUPPORT_MAILTO} className="sk-btn sk-btn-quiet">
+                    <EnvelopeSimple className="size-5" weight="bold" aria-hidden />
+                    Email support
+                  </a>
+                ) : null}
               </div>
             </div>
             <div className="relative order-first h-36 bg-sk-blue-tint md:order-none md:h-auto md:min-h-[440px]">

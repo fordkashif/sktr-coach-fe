@@ -2,6 +2,7 @@
 
 import { Link } from "react-router-dom"
 import { AUTH_PHOTOS, AuthSplit } from "@/layouts/auth-layout"
+import { REQUEST_REVIEW_TIME } from "@/lib/support"
 
 export default function CreateClubAccountPage() {
   return (
@@ -14,7 +15,7 @@ export default function CreateClubAccountPage() {
         <header className="space-y-3">
           <h1 className="sk-title">Clubs join by request</h1>
           <p className="sk-lede">
-            You cannot create a club account on your own yet. Send us a short request instead and we will set your club up, usually within two working days.
+            You cannot create a club account on your own yet. Send us a short request instead and we will set your club up, {REQUEST_REVIEW_TIME}.
           </p>
         </header>
         <div className="flex flex-wrap gap-2">
