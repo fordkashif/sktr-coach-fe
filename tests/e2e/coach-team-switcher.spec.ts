@@ -117,6 +117,64 @@ test("a coach on two teams can switch team and every screen follows", async ({ p
   await expect(switcher(page)).toContainText("Throws Group")
 })
 
+test("competitions and messages follow the selected team", async ({ page }) => {
+  await seedMockSession(page, { role: "coach", coachTeamId: "t4", coachTeamIds: ["t1", "t4"] })
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  // Competitions: the sprint team's meet is not on the throws calendar, the club wide one is.
+  await page.goto("/coach/competitions")
+  await expect(switcher(page)).toContainText("Throws Group")
+  await expect(main(page).getByRole("heading", { level: 1, name: "Competitions" })).toBeVisible()
+  await expect(main(page)).toContainText("Club Championships")
+  await expect(main(page)).not.toContainText("City Sprint Classic")
+  await switchTo(page, "Sprint Group")
+  await expect(main(page)).toContainText("City Sprint Classic")
+  await switchTo(page, "Throws Group")
+  await expect(main(page)).not.toContainText("City Sprint Classic")
+
+  // Messages: the throws conversations, not the sprint ones.
+  await topBar(page).getByRole("link", { name: /^Messages/ }).click()
+  await expect(page).toHaveURL(/\/coach\/messages$/)
+  await expect(main(page)).toContainText("Mia Anderson")
+  await expect(main(page)).not.toContainText("Sarah Chen")
+  await switchTo(page, "Sprint Group")
+  await expect(main(page)).toContainText("Sarah Chen")
+  await expect(main(page)).not.toContainText("Mia Anderson")
+})
+
+test("with the team switcher the top bar still fits on one row at 1024px", async ({ page }) => {
+  await seedMockSession(page, { role: "coach", coachTeamId: "t1", coachTeamIds: ["t1", "t4"] })
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await page.goto("/coach/dashboard")
+  await expect(switcher(page)).toBeVisible()
+
+  // Between 1024px and 1280px the two long labels give way to short ones so the switcher fits.
+  const nav = topBar(page).getByRole("navigation", { name: "Main" })
+  for (const name of ["Dashboard", "Athletes", "Plans", "Tests", "Meets", "Reports"]) {
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible()
+  }
+  const layout = await topBar(page).evaluate((bar) => {
+    const element = bar.querySelector("nav") as HTMLElement
+    const last = bar.lastElementChild as HTMLElement
+    return {
+      rows: new Set([...element.children].map((child) => Math.round(child.getBoundingClientRect().top))).size,
+      clipped: element.scrollWidth > element.clientWidth + 1,
+      rightEdgeInside: last.getBoundingClientRect().right <= window.innerWidth,
+      pageScrolls: document.documentElement.scrollWidth > window.innerWidth,
+    }
+  })
+  expect(layout).toEqual({ rows: 1, clipped: false, rightEdgeInside: true, pageScrolls: false })
+  await expect(topBar(page).getByRole("link", { name: /^Messages/ })).toBeVisible()
+
+  // From 1280px the full labels are back.
+  await page.setViewportSize({ width: 1280, height: 800 })
+  for (const name of ["Test weeks", "Competitions"]) {
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible()
+  }
+  const wide = await nav.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+  expect(wide).toBe(true)
+})
+
 test("the plan builder asks before switching team with unsaved work", async ({ page }) => {
   await seedMockSession(page, { role: "coach", coachTeamId: "t4", coachTeamIds: ["t1", "t4"] })
   await page.setViewportSize({ width: 1440, height: 900 })

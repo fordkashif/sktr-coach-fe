@@ -77,9 +77,10 @@ test("athlete adds a profile photo, keeps it after a reload, and their coach see
   })
   await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
   await page.goto("/coach/teams/t1")
-  const row = page.getByRole("listitem").filter({ hasText: "Marcus Johnson" }).first()
+  // The roster is a table: one row per athlete.
+  const row = page.getByRole("row").filter({ hasText: "Marcus Johnson" }).first()
   await expect(row.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
-  await expect(page.getByRole("listitem").filter({ hasText: "Sarah Chen" }).first().locator("img")).toHaveCount(0)
+  await expect(page.getByRole("row").filter({ hasText: "Sarah Chen" }).first().locator("img")).toHaveCount(0)
 })
 
 test("an under 18 athlete adds private details and a guardian, and bad contact details are refused", async ({ page }) => {

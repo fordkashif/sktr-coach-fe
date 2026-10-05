@@ -570,6 +570,26 @@ Trigger `clear_session_skip_fields` (before insert or update on `sessions`): the
 
 Checked on a local Postgres 16 with every migration applied, as each identity: an athlete skips and un-skips only their own sessions and cannot update `sessions` directly; sets and ends only their own availability; adds an extra session only for themselves and cannot forge a planned one (missing `origin`, `origin = 'plan'` without a plan, a plan slot filed as `athlete`, another athlete, another club, a coach note, a completed status, a date months ahead); a coach sets and ends availability for athletes on their own teams and not another team's; a coach with no team for nobody; the club admin for the club and not another club; another club reads and writes nothing; a deactivated member and a member of a suspended club are refused with `access_paused`; `anon` cannot call the functions or read the table.
 
+### Roster: bulk invites, team join codes, athletes without a login, moving teams (migration `20261009090000_roster_bulk_join_codes_managed_athletes.sql`)
+
+| Object | Anon | Athlete | Coach | Club admin | Notes |
+|---|---|---|---|---|---|
+| `team_join_codes` (table) | none | none | select, own teams | select, own club | No insert, update or delete for any API role. The code is a secret. |
+| `team_join_code_uses` (table) | none | none | select, own teams | select, own club | Written only by `join_team_with_code()`. |
+| `create_team_join_code`, `disable_team_join_code` | no | refused | own teams | own club | One live code per team. Expires in 1, 7 or 30 days, at most 500 uses, audited. |
+| `get_public_team_join_code(code)` | yes | yes | yes | yes | Always one row. Team and club names only for a usable code. Wrong codes counted per network address (20 in 10 minutes) and in total. |
+| `join_team_with_code(code)` | no | no team yet: joins | refused (`not_athlete`) | refused (`not_athlete`) | Signed-in account with a CONFIRMED email. The only profile it can create is `athlete` in the code's club, on the code's team. Refuses other clubs, other teams, deactivated members, paused clubs, full clubs, emails with platform or club-request access. 10 wrong codes an hour per account. Audited, coaches told in-app. |
+| `preview_athlete_invites`, `create_athlete_invites` | no | refused | own teams | own club | Up to 200 lines. Reports per line; accounts of other clubs are never revealed. |
+| `create_managed_athlete`, `update_managed_athlete`, `remove_managed_athlete`, `create_athlete_login_invite` | no | refused | own teams | own club | Only for athletes with `user_id is null`. Remove is a soft switch-off, history kept. |
+| `move_athlete_to_team` | no | refused | only when coaching BOTH teams | any athlete and team of the club | Removes untouched upcoming sessions of the old team's plans. Audited, coaches of both teams and the athlete told. |
+| `get_roster_capacity` | no | no rows | own club | own club | Package limit, seats used, pending invites. |
+| `session_row_logs_staff_write_managed` (policy) | - | - | athletes on own teams with no login | same, own club | Lets staff log sets FOR an athlete without a login. Athletes with a login are unchanged. |
+| `athletes.user_id`, `athlete_invites.athlete_id` | - | - | cannot be written through the API | cannot be written through the API | Triggers `protect_athlete_login_link`, `protect_athlete_invite_link`. Only `accept_athlete_invite()` and `join_team_with_code()` link a login. |
+
+Internal (no API role may call): `tenant_athlete_limit`, `tenant_athlete_seats_used`, `tenant_pending_athlete_invite_seats`, `lock_tenant_athlete_seats`, `classify_athlete_invite_email`, `process_athlete_invites`, `save_managed_athlete_guardian`, `roster_clean_name`, `join_code_note_wrong_guess`.
+
+Changed: `accept_athlete_invite` links an invite that carries `athlete_id` to that existing athlete row (same club, same team, still without a login); `current_tenant_athlete_count` counts active athletes only.
+
 ## Service-Role Only Operations (Documented)
 
 These are intentionally not available to regular authenticated users:
@@ -613,3 +633,57 @@ Every policy goes through `current_tenant_id()`, `current_athlete_id()`, `is_clu
 | view `athlete_event_bests` | `security_invoker`: exactly the rows of `athlete_results` the reader may read | | | |
 
 Trigger functions (`*_normalise`, `refresh_pr_record`, `sync_test_result_to_history`, the two notification functions) are `security definer`, not executable by clients, and take the club, the event's unit and direction, the wind legality and "entered by" from the database, never from the request. `get_current_results_season()` returns no rows to anyone who is not an active member.
+
+
+## Test weeks: close, reopen, results entered by a coach (20261009100000)
+
+No row policy is added, changed or dropped. What changes is what the existing policies let through, and one new function.
+
+| Thing | Athlete | Coach | Club admin | Other club, deactivated member, suspended or cancelled club |
+|---|---|---|---|---|
+| `set_test_week_open(test_week_id, open)` (security definer, starts with `assert_caller_active()`) | refused | a published or closed test week of a team they are assigned to (`can_manage_test_week`). A draft or an archived week is refused. | any test week of the club, same conditions | refused (`42501`, with hint `access_paused` for a locked out member) |
+| `test_weeks.status` changed directly (through `test_weeks_staff_all`, unchanged) | no write access | as before, plus: `draft` to `closed` is refused by trigger `test_weeks_status_guard` | the same | nothing |
+| `test_results` insert, update, delete (through `test_results_staff_all` and the athlete policies, all unchanged) | own results, only while the week is open (`athlete_can_enter_test_result`, unchanged): not in a closed week, again after a reopen | results of athletes on their teams, in a published or CLOSED test week they manage, athletes with no login included. Refused by trigger `test_results_guard`: a draft week, another team's week, a new result for an athlete who is not on the week's team, a test that belongs to another week, a value that is not above 0 | the same for the whole club | nothing |
+| `test_results.entered_by_role`, `submitted_by_user_id` | set by the database: `athlete` and their own user id | set by the database: `coach` | set by the database: `club-admin` | not readable (rows are not readable) |
+
+- `test_results_guard()` runs before every insert and before an update of the week, test, athlete, club or value of a result. It never widens access: the row policy has already decided whether the caller may write the row. Calls with no signed-in user (service role, SQL editor) get the consistency checks only.
+- `test_weeks_status_changed()` (after update of `status`) writes `audit_events` rows `test_week_closed` and `test_week_reopened` (actor, role, the week's name) for every close and reopen, whichever way the status was changed, and on a reopen queues the in-app notification `test_week_reopened` for the active athletes of the team who have an account. Closing notifies nobody.
+- `enqueue_test_week_published_notifications()` no longer fires when a closed week goes back to `published`; it is otherwise the 20261007090000 definition.
+- Results a coach enters reach `athlete_results`, `athlete_event_bests` and `pr_records` through the unchanged triggers of 20261008100000, and do not produce the `athlete_test_results_submitted` notice (that one is for results the athlete typed).
+- Trigger functions `test_results_guard`, `test_weeks_status_guard`, `test_weeks_status_changed` are not executable through the API. `set_test_week_open` is executable by `authenticated` and `service_role` only.
+
+
+
+## Messaging: announcements and coach to athlete messages (20261009110000)
+
+Six tables, all with RLS on, `select` granted to `authenticated` and NO insert, update or delete grant: every write is a `security definer` function that starts with `assert_caller_active()`. `anon` has nothing. Every read policy starts with `tenant_id = current_tenant_id()`, so a deactivated member and anyone in a suspended or cancelled club reads nothing and writes nothing.
+
+| Thing | Athlete | Coach | Club admin | Other club, deactivated, suspended or cancelled |
+|---|---|---|---|---|
+| `message_threads`, `messages` (read) | own threads, always (read only once the thread is closed) | threads where they are the coach AND still assigned to the thread's team (`current_message_thread_ids()`). Removed from the team: nothing. Not other coaches' threads, even on the same team. | every thread of the club, read only | nothing |
+| `open_message_thread(athlete, coach)` | with a coach of their own current team (active). Not another athlete, not another team's coach, not with no team | with an athlete on a team they are assigned to (`is_coach_of_athlete`) who has a login and is active. No login: refused with hint `no_login` | refused unless they are also assigned to that athlete's team as a coach | refused (`access_paused` for a locked out member) |
+| `send_direct_message(thread, body)` | in their own thread while it is open | in their own thread while it is open | refused (`not_participant`): club admins never write in a conversation | refused |
+| a thread is open (`message_thread_is_open`) | only while: the athlete has a login, is active and on a team; the thread's coach is an active coach assigned to that team; the club is not blocked. Athlete left the team, coach removed or deactivated: read only (`thread_read_only`) | | | |
+| edit or delete a message | not possible: no grant, no policy, no function | not possible | not possible (hide only) | nothing |
+| `report_message(message, reason)` | the OTHER person's message in their own thread | the same | refused | refused |
+| `hide_message`, `dismiss_message_reports` | refused | refused | messages of their own club. Hiding moves the text to `message_moderation` and leaves `body` null with `hidden_at` set | refused |
+| `message_moderation` (the text of hidden messages) | nothing | nothing | read | nothing |
+| `message_reports` (read) | their own reports | their own reports | all of the club | nothing |
+| `get_message_oversight_threads()` | no rows | no rows | every thread of the club, reported first | no rows |
+| `post_announcement(audience, body, team)` | refused | `team`, a team they are assigned to | `club`, `coaches`, or `team` for any team of the club | refused |
+| `announcements` (read) | the ones sent to them | the ones sent to them, the ones they sent, and their teams' | all of the club | nothing |
+| `announcement_recipients` (read) | own row | own row; read states of an announcement they manage through `get_announcement_recipients()` | all of the club | nothing |
+| `mark_message_thread_read`, `mark_announcement_read` | own read state only | own read state only | own announcements; reading a thread in oversight leaves no trace | no effect |
+| `messaging_settings` (limits) | nothing | nothing | nothing | nothing (service role and the functions only) |
+
+- Limits, from the one private row of `messaging_settings`: 1000 characters, 30 direct messages per sender per hour, 20 announcements per sender per day (`54000`, hint `rate_limited`). The count is taken under an advisory lock per sender.
+- Text is cleaned before it is stored (`clean_message_body`): no control characters, at most one blank line in a row.
+- Audit events (never containing message text): `message_reported`, `message_hidden`, `message_report_dismissed`.
+- Notifications go through `enqueue_notification()` (20261007090000), so the usual rules apply (never the sender, never a deactivated member, never a blocked club, never a channel the person switched off): `announcement_posted` in-app and email with the announcement text; `direct_message_received` in-app only while no unread one exists for that thread, and one email per thread per recipient per hour, neither with the message text; `message_reported` to club admins in-app and email.
+- `get_message_thread()` answers `guardian_contact_on_file` (athlete under 18 by date of birth and a guardian email in `athlete_private_details`) to the thread's coach and to club admins only, never to the athlete. `club_profiles.guardian_cc_enabled` is recorded (default false) and read by nothing that sends.
+- Realtime: `messages` and `message_threads` are in the `supabase_realtime` publication; the row policies above decide who receives a change.
+- Verified on a throwaway Postgres 16 with every migration applied (this one twice): 156 assertions across a club with two teams, a coach each, a coach on both, athletes (one under 18 with a guardian, one with no login), two club admins, a second club and a suspended club.
+
+### Competitions for staff (20261009110000)
+
+No policy is added or changed. Verified against 20261008100000 with 30 assertions: a coach creates, edits and deletes meets of their own teams only; enters, scratches and records results for athletes of their own teams only; sees a meet an athlete on their team added for themselves (and that athlete's entries), may record its results, and may not edit the meet itself; a result typed by a coach lands in `athlete_results`, `athlete_event_best()` and `pr_records` and notifies the team's other coaches of a new best. The one addition is the index `competition_entries_competition_idx`.

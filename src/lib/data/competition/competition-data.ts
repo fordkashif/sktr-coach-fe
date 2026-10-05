@@ -12,16 +12,30 @@ import type {
   CompetitionWithEntries,
 } from "@/lib/data/competition/types"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
-import { cleanLabel, eventGroupKey, findResultEvent, OTHER_EVENT_KEY, type AthleteResult, type ResultEnvironment } from "@/lib/data/pr/marks"
+import {
+  cleanLabel,
+  eventGroupKey,
+  findResultEvent,
+  formatMarkWithUnit,
+  formatWind,
+  OTHER_EVENT_KEY,
+  seasonFor,
+  selectBests,
+  verdictForNewResult,
+  type AthleteResult,
+  type NewResultVerdict,
+  type ResultEnvironment,
+} from "@/lib/data/pr/marks"
 import {
   buildMockResult,
   loadMockResultsState,
   MOCK_ATHLETE_ID,
   MOCK_ATHLETE_USER_ID,
+  MOCK_COACH_USER_ID,
   mockId,
   updateMockResultsState,
 } from "@/lib/data/pr/mock-results-store"
-import { getCurrentAthleteIdentity, getCurrentUserId, mapResultRow, RESULT_COLUMNS, type ResultRow } from "@/lib/data/pr/results-data"
+import { getAthleteResults, getCurrentAthleteIdentity, getCurrentUserId, getResultsSeason, localToday, mapResultRow, RESULT_COLUMNS, type ResultRow } from "@/lib/data/pr/results-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -458,7 +472,13 @@ export async function removeCompetitionEntry(entryId: string): Promise<Result<{ 
  * Record (or correct) the result of an entry: the final mark, with wind and place where they apply.
  * The result joins the athlete's history, so it counts for personal and season bests.
  */
-export async function saveCompetitionEntryResult(entry: CompetitionEntryWithResult, competition: Competition, input: CompetitionResultInput): Promise<Result<AthleteResult>> {
+export async function saveCompetitionEntryResult(
+  entry: CompetitionEntryWithResult,
+  competition: Competition,
+  input: CompetitionResultInput,
+  /** Mock mode only: the demo user who typed it (the coach, on the staff screens). */
+  mockEnteredBy: string = MOCK_ATHLETE_USER_ID,
+): Promise<Result<AthleteResult>> {
   if (!(input.value > 0)) return err("VALIDATION", "Enter the mark.")
   if (input.place !== null && input.place !== undefined && (!Number.isInteger(input.place) || input.place < 1 || input.place > 999)) {
     return err("VALIDATION", "Place must be a whole number from 1 to 999.")
@@ -489,7 +509,7 @@ export async function saveCompetitionEntryResult(entry: CompetitionEntryWithResu
       notes: input.notes?.trim() || null,
       competitionId: competition.id,
       competitionEntryId: entry.id,
-      enteredBy: entry.result?.enteredByUserId ?? MOCK_ATHLETE_USER_ID,
+      enteredBy: entry.result?.enteredByUserId ?? mockEnteredBy,
       createdAt: entry.result?.createdAt ?? new Date().toISOString(),
     })
     updateMockResultsState((state) => ({
@@ -557,27 +577,87 @@ async function staffTenantId(client: SupabaseClient): Promise<Result<string>> {
 }
 
 /**
- * Competitions a coach or club admin can see, with every entry (and result) of the athletes they manage.
- * Pass a team id to keep one team's competitions plus the club wide ones.
+ * Mock mode: the demo athlete is "fallback-athlete" in the results demo and "a1" (Marcus Johnson)
+ * on the coach's demo roster. The staff functions speak roster ids; these two convert.
  */
-export async function getCompetitionsForStaff(params?: { teamId?: string | null }): Promise<Result<CompetitionWithEntries[]>> {
+const MOCK_ROSTER_SELF_ID = "a1"
+function toMockStoreAthleteId(rosterId: string) {
+  return rosterId === MOCK_ROSTER_SELF_ID ? MOCK_ATHLETE_ID : rosterId
+}
+function toMockRosterAthleteId(storeId: string) {
+  return storeId === MOCK_ATHLETE_ID ? MOCK_ROSTER_SELF_ID : storeId
+}
+
+/** Keeps what belongs on one team's calendar: its own meets, club wide ones and the meets its athletes added. */
+function onTeamCalendar(competition: Competition, ownerTeamId: string | null | undefined, teamId: string | null | undefined) {
+  if (!teamId) return true
+  if (competition.scope === "club") return true
+  if (competition.scope === "team") return competition.teamId === teamId
+  return ownerTeamId === teamId
+}
+
+async function mockStaffCompetitions(teamId: string | null | undefined): Promise<CompetitionWithEntries[]> {
+  const { mockAthletes } = await import("@/lib/mock-data")
+  const byId = new Map(mockAthletes.map((athlete) => [athlete.id, athlete]))
+  return mockAssemble(null)
+    .map((competition) => {
+      const owner = competition.ownerAthleteId ? byId.get(toMockRosterAthleteId(competition.ownerAthleteId)) : null
+      return {
+        ...competition,
+        canManage: competition.scope !== "athlete",
+        ownerName: owner?.name ?? null,
+        ownerTeamId: owner?.teamId ?? null,
+        entries: competition.entries
+          .map((entry) => {
+            const athlete = byId.get(toMockRosterAthleteId(entry.athleteId))
+            return { ...entry, athleteId: toMockRosterAthleteId(entry.athleteId), athleteName: athlete?.name ?? "Unnamed athlete", athleteTeamId: athlete?.teamId ?? null }
+          })
+          .filter((entry) => !teamId || entry.athleteTeamId === teamId),
+      }
+    })
+    .filter((competition) => onTeamCalendar(competition, competition.ownerTeamId, teamId))
+    .map((competition): CompetitionWithEntries => ({ ...competition, entries: sortEntries(competition.entries) }))
+}
+
+/**
+ * Competitions a coach or club admin can see, with every entry (and result) of the athletes they manage.
+ * Pass a team id for that team's calendar: its own meets, the club wide ones and the meets its
+ * athletes added for themselves, with the entries of that team's athletes. Pass a competition id for one.
+ */
+export async function getCompetitionsForStaff(params?: { teamId?: string | null; competitionId?: string }): Promise<Result<CompetitionWithEntries[]>> {
   if (isMock()) {
-    return ok(mockAssemble(null).map((item) => ({ ...item, canManage: item.scope !== "athlete", entries: item.entries.map((entry) => ({ ...entry, athleteName: "Demo athlete" })) })))
+    const all = await mockStaffCompetitions(params?.teamId)
+    return ok(params?.competitionId ? all.filter((item) => item.id === params.competitionId) : all)
   }
   const clientResult = requireSupabaseClient("getCompetitionsForStaff")
   if (!clientResult.ok) return clientResult
   const client = clientResult.client
 
   const competitionQuery = client.from("competitions").select(COMPETITION_COLUMNS).order("start_date", { ascending: false }).limit(300)
-  if (params?.teamId) competitionQuery.or(`team_id.eq.${params.teamId},scope.eq.club`)
+  if (params?.competitionId) competitionQuery.eq("id", params.competitionId)
+  // An athlete's own meet has no team of its own, so the team is checked below, on its owner.
+  else if (params?.teamId) competitionQuery.or(`team_id.eq.${params.teamId},scope.eq.club,scope.eq.athlete`)
   const { data: competitionRows, error: competitionError } = await competitionQuery
   if (competitionError) return { ok: false, error: mapPostgrestError(competitionError) }
-  const competitions = ((competitionRows as CompetitionRow[] | null) ?? []).map(mapCompetition)
+  const allCompetitions = ((competitionRows as CompetitionRow[] | null) ?? []).map(mapCompetition)
+  if (allCompetitions.length === 0) return ok([])
+
+  // Who added the athletes' own meets, and which team they are on.
+  const ownerIds = [...new Set(allCompetitions.map((item) => item.ownerAthleteId).filter((id): id is string => Boolean(id)))]
+  const owners = new Map<string, { name: string; teamId: string | null }>()
+  if (ownerIds.length > 0) {
+    const { data: ownerRows, error: ownerError } = await client.from("athletes").select("id, team_id, first_name, last_name").in("id", ownerIds)
+    if (ownerError) return { ok: false, error: mapPostgrestError(ownerError) }
+    for (const row of (ownerRows as Array<{ id: string; team_id: string | null; first_name: string | null; last_name: string | null }> | null) ?? []) {
+      owners.set(row.id, { name: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || "An athlete", teamId: row.team_id })
+    }
+  }
+  const competitions = allCompetitions.filter((item) => onTeamCalendar(item, item.ownerAthleteId ? owners.get(item.ownerAthleteId)?.teamId : null, params?.teamId))
   if (competitions.length === 0) return ok([])
 
   const ids = competitions.map((item) => item.id)
   const [entries, results] = await Promise.all([
-    client.from("competition_entries").select(`${ENTRY_COLUMNS}, athletes(first_name, last_name)`).in("competition_id", ids).limit(5000),
+    client.from("competition_entries").select(`${ENTRY_COLUMNS}, athletes(first_name, last_name, team_id)`).in("competition_id", ids).limit(5000),
     client.from("athlete_results").select(RESULT_COLUMNS).in("competition_id", ids).limit(5000),
   ])
   if (entries.error) return { ok: false, error: mapPostgrestError(entries.error) }
@@ -587,30 +667,36 @@ export async function getCompetitionsForStaff(params?: { teamId?: string | null 
   for (const row of (results.data as ResultRow[] | null) ?? []) {
     if (row.competition_entry_id) resultByEntry.set(row.competition_entry_id, mapResultRow(row))
   }
-  type StaffEntryRow = EntryRow & { athletes: { first_name: string | null; last_name: string | null } | Array<{ first_name: string | null; last_name: string | null }> | null }
-  const entryRows = ((entries.data as StaffEntryRow[] | null) ?? []).map((row) => {
-    const athlete = Array.isArray(row.athletes) ? (row.athletes[0] ?? null) : row.athletes
-    return {
-      ...mapEntry(row),
-      athleteName: [athlete?.first_name, athlete?.last_name].filter(Boolean).join(" ").trim() || "Unnamed athlete",
-      result: resultByEntry.get(row.id) ?? null,
-    }
-  })
+  type EmbeddedAthlete = { first_name: string | null; last_name: string | null; team_id: string | null }
+  type StaffEntryRow = EntryRow & { athletes: EmbeddedAthlete | EmbeddedAthlete[] | null }
+  const entryRows = ((entries.data as unknown as StaffEntryRow[] | null) ?? [])
+    .map((row) => {
+      const athlete = Array.isArray(row.athletes) ? (row.athletes[0] ?? null) : row.athletes
+      return {
+        ...mapEntry(row),
+        athleteName: [athlete?.first_name, athlete?.last_name].filter(Boolean).join(" ").trim() || "Unnamed athlete",
+        athleteTeamId: athlete?.team_id ?? null,
+        result: resultByEntry.get(row.id) ?? null,
+      }
+    })
+    .filter((entry) => !params?.teamId || entry.athleteTeamId === params.teamId)
 
   return ok(
     competitions.map((competition) => ({
       ...competition,
       // The database decides in the end; an athlete's own competition is never managed by staff.
       canManage: competition.scope !== "athlete",
+      ownerName: competition.ownerAthleteId ? (owners.get(competition.ownerAthleteId)?.name ?? null) : null,
       entries: sortEntries(entryRows.filter((entry) => entry.competitionId === competition.id)),
     })),
   )
 }
 
-export async function getCompetitionForStaff(competitionId: string): Promise<Result<CompetitionWithEntries | null>> {
-  const all = await getCompetitionsForStaff()
-  if (!all.ok) return all
-  return ok(all.data.find((item) => item.id === competitionId) ?? null)
+/** One competition with the entries the viewer manages (pass a team id to keep one team's athletes). */
+export async function getCompetitionForStaff(competitionId: string, params?: { teamId?: string | null }): Promise<Result<CompetitionWithEntries | null>> {
+  const result = await getCompetitionsForStaff({ competitionId, teamId: params?.teamId })
+  if (!result.ok) return result
+  return ok(result.data[0] ?? null)
 }
 
 /** A coach creates a competition for one of their teams; a club admin for a team or for the whole club. */
@@ -634,7 +720,7 @@ export async function createCompetitionForStaff(input: StaffCompetitionInput): P
       level: payload.level,
       environment: payload.environment,
       notes: payload.notes,
-      createdByUserId: null,
+      createdByUserId: MOCK_COACH_USER_ID,
     }
     updateMockResultsState((state) => ({ ...state, competitions: [...state.competitions, competition] }))
     return ok(competition)
@@ -670,9 +756,11 @@ export async function enterAthletesInCompetition(
   if (isMock()) {
     const added: CompetitionEntry[] = []
     for (const entry of entries) {
-      const result = mockAddEntry(competitionId, entry.athleteId, entry, "mock-coach-user")
-      if (!result.ok) return result
-      added.push(result.data)
+      const result = mockAddEntry(competitionId, toMockStoreAthleteId(entry.athleteId), entry, MOCK_COACH_USER_ID)
+      if (!result.ok) {
+        return result.error.code === "CONFLICT" ? err("CONFLICT", "One of these athletes is already entered in that event.") : result
+      }
+      added.push({ ...result.data, athleteId: entry.athleteId })
     }
     return ok(added)
   }
@@ -690,4 +778,90 @@ export async function enterAthletesInCompetition(
   // Sends the emails this just queued without waiting for the scheduler.
   kickNotificationEmails()
   return ok(((data as EntryRow[] | null) ?? []).map(mapEntry))
+}
+
+export type SavedStaffResult = {
+  result: AthleteResult
+  /** What the mark is for the athlete: a personal best, a season best, wind assisted, or neither. */
+  verdict: NewResultVerdict
+}
+
+/**
+ * A coach or club admin records (or corrects) the result of an entry, and is told what it means
+ * for the athlete: the answer says whether the mark is now their personal or season best.
+ */
+export async function saveCompetitionEntryResultForStaff(
+  entry: CompetitionEntryWithResult,
+  competition: Competition,
+  input: CompetitionResultInput,
+): Promise<Result<SavedStaffResult>> {
+  const stored = isMock() ? { ...entry, athleteId: toMockStoreAthleteId(entry.athleteId) } : entry
+  const saved = await saveCompetitionEntryResult(stored, competition, input, MOCK_COACH_USER_ID)
+  if (!saved.ok) return saved
+  const [history, season] = await Promise.all([getAthleteResults(saved.data.athleteId), getResultsSeason()])
+  if (!history.ok) return ok({ result: saved.data, verdict: { kind: "none", beat: null } })
+  const sameEvent = history.data.filter((item) => item.eventGroup === saved.data.eventGroup)
+  const withSaved = sameEvent.some((item) => item.id === saved.data.id) ? sameEvent : [...sameEvent, saved.data]
+  return ok({ result: saved.data, verdict: verdictForNewResult(saved.data, withSaved, season.ok ? season.data : seasonFor(localToday())) })
+}
+
+export type EntryStanding = "personal-best" | "season-best" | null
+
+/**
+ * For every entry of a competition that has a result: is that result the athlete's personal best
+ * or season best right now? One read for the whole meet.
+ */
+export async function getEntryStandings(competition: CompetitionWithEntries): Promise<Result<Record<string, EntryStanding>>> {
+  const withResult = competition.entries.filter((entry) => entry.result)
+  if (withResult.length === 0) return ok({})
+  const seasonResult = await getResultsSeason()
+  const season = seasonResult.ok ? seasonResult.data : seasonFor(localToday())
+
+  let history: AthleteResult[]
+  if (isMock()) {
+    history = loadMockResultsState().results
+  } else {
+    const clientResult = requireSupabaseClient("getEntryStandings")
+    if (!clientResult.ok) return clientResult
+    const athleteIds = [...new Set(withResult.map((entry) => entry.athleteId))]
+    const groups = [...new Set(withResult.map((entry) => entry.eventGroup))]
+    const { data, error } = await clientResult.client.from("athlete_results").select(RESULT_COLUMNS).in("athlete_id", athleteIds).in("event_group", groups).limit(10000)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    history = ((data as ResultRow[] | null) ?? []).map(mapResultRow)
+  }
+
+  const standings: Record<string, EntryStanding> = {}
+  for (const entry of withResult) {
+    const result = entry.result as AthleteResult
+    const bests = selectBests(
+      history.filter((item) => item.athleteId === result.athleteId && item.eventGroup === result.eventGroup),
+      season,
+    )
+    standings[entry.id] = bests.personalBest?.id === result.id ? "personal-best" : bests.seasonBest?.id === result.id ? "season-best" : null
+  }
+  return ok(standings)
+}
+
+/** The rows of a meet's results sheet: a header, then one line per entry. For a CSV file. */
+export function competitionResultsRows(competition: CompetitionWithEntries, standings: Record<string, EntryStanding> = {}): string[][] {
+  const header = ["Athlete", "Event", "Status", "Mark", "Wind", "Wind legal", "Place", "Best", "Date", "Note"]
+  const lines = [...competition.entries]
+    .sort((a, b) => a.eventLabel.localeCompare(b.eventLabel) || (a.result?.place ?? 999) - (b.result?.place ?? 999) || (a.athleteName ?? "").localeCompare(b.athleteName ?? ""))
+    .map((entry) => {
+      const result = entry.result
+      const standing = standings[entry.id]
+      return [
+        entry.athleteName ?? "",
+        entry.eventLabel,
+        entry.status === "scratched" ? "Scratched" : result ? "Competed" : "Entered",
+        result ? formatMarkWithUnit(result.display, result.unit) : "",
+        result && result.wind !== null ? formatWind(result.wind) : "",
+        result ? (result.windLegal ? "Yes" : "No") : "",
+        result?.place ? String(result.place) : "",
+        standing === "personal-best" ? "Personal best" : standing === "season-best" ? "Season best" : "",
+        result?.date ?? "",
+        entry.notes ?? "",
+      ]
+    })
+  return [header, ...lines]
 }

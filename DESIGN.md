@@ -121,6 +121,9 @@ All from `@/components/sk`.
 | Part | What it is |
 |---|---|
 | `List`, `ListRow` | Rows with hairline dividers, 56px minimum. `leading` takes a `StatusDot`, `Avatar`, icon, weekday or step number. `title`, `subtitle`, `trailing` (a value). Pass `to`, `href` or `onClick` to make the whole row the target; rows that navigate get a chevron. |
+| `ActionRow`, `RowMenu` | `ActionRow` is a list row that opens something and also carries its own actions to the right, outside the click target, with room under it for an `InlineConfirm`. `RowMenu` is the "more" button (three dots) for the actions used now and then (duplicate, archive, delete, export), so a list is not a wall of buttons. |
+| `CheckRow` | A list row you tick: the whole row is the label of its checkbox, with the same slots as `ListRow`. For picking people from a roster. |
+| `PersonPicker` | Choose one person (radio buttons) or, with `multiple`, several (tick boxes) from a list of people: photo or initials, name, one line of detail, a state on the right. A person who cannot be picked stays in the list, greyed, with the reason ("No login"). A search box appears for long lists; `renderChosen` puts more under a ticked person (the events to enter them in). For recipients and for a roster to enter in something. |
 | `StatStrip`, `Stat` | A hairline above and below, stats divided by vertical hairlines. One row on desktop, two columns on phone. `Stat` takes `label`, `value`, `unit`, and `of` for "3 of 4". Two to five stats. Never coloured. |
 | `DataTable`, `TableSub` | A real table: caption for screen readers, `th scope`, right-aligned numeric columns (`align: "right"`). The first column is the row header (name, with `TableSub` for a second line). On phone each row restacks into a list row: use `phone: "trailing"` for the one value to keep on the right, `"plain"` for a value that needs no label, `"hide"` to drop a column; other columns become labelled lines. It never scrolls the page sideways. |
 | `DayStrip` | Seven days of a week as circles: today blue, done green tick, planned soft fill, rest plain. |
@@ -143,6 +146,9 @@ All from `@/components/sk`.
 | `ReadinessText` | Readiness with the app-wide mapping: green Ready, yellow Watch, red Review. Optional `detail` ("slept 5h"). |
 | `Tag` | Small tinted tag for a status column in a table only. |
 | `Avatar` | The photo when `src` is given, otherwise initials on a solid colour chosen from the name. Sizes `sm` 32, `md` 40, `lg` 44, `xl` 64. |
+| `FilterBar`, `FilterChips` | Above a list or table: `FilterBar` holds a `SearchInput` and its `FilterChips` rows (one row per thing to filter by, one chip always chosen, first is "All"). On phone the chips fold behind a "Filters" button with the number in use. |
+| `QrCode` | A QR code for a link, drawn as crisp black squares on white (SVG, made in the browser by `src/lib/qr/qr-encode.ts`, no outside service). Needs a `label`; always show the link beside it. `md` 220px, `lg` up to 360px for showing a squad. |
+| `PasteList` | Bring in a list by typing, pasting or choosing a CSV or text file: a tall text box with a "Choose a file" link. It only collects the text; the screen shows a preview `DataTable` under it before anything is saved. |
 | `Notice` | One line about the screen: could not load, saved, heads up. Tones `info`, `success`, `warning`, `error`. Small and tinted. It never wraps other content. |
 | `notify`, `notifyError` | A short toast after an action ("Plan saved"). |
 
@@ -152,6 +158,12 @@ All from `@/components/sk`.
 |---|---|
 | `Button`, `LinkButton` | `variant`: `primary` (solid blue, one per screen), `secondary` (outlined, the default), `quiet` (blue text, for cancel and minor actions), `danger` (outlined, coral text). `size`: `md` 44px, `sm` (44px on phone, 40px on desktop), `lg` 52px. `LinkButton` whenever pressing goes to another screen. Text says what happens; an icon may go before the text. |
 | `Field` with `Input`, `Textarea`, `Select` | Label above, control (44px), then a hint or an error. `Field` wires ids and aria for you. |
+| `FormGrid`, `FormActions`, `SearchInput` | `FormGrid` lays out a group of Fields: one column on phone, two (or four with `columns={4}`) above. `FormActions` ends a form: quiet "Cancel" first, the main action last. `SearchInput` is an `Input` with the search icon. |
+| `DateRangeFields` | "From" and "To" as two date fields with optional quick ranges under them ("Last 28 days"). The range is always kept the right way round. |
+| `EditableRows` | A short table you type straight into (the exercises of a block). Tab moves across, Enter moves down and adds a row on the last one, Backspace in an empty row removes it. Restacks on phone. |
+| `DayChecks` | Tick any of the seven days of a week, each a square toggle with an optional mark under it (the A or B of an alternating pattern). |
+| `EntryGrid`, `SaveState` | `EntryGrid` is for typing many numbers fast, spreadsheet style: rows down, columns across, Enter goes down, Tab across, paste a column from a spreadsheet, each cell shows saving, saved or not saved. The first column stays put and the rest scrolls inside the grid, with a line that says so. `SaveState` is the dot and words for anything that saves by itself ("Saving...", "Saved", "Not saved"). |
+| `ConversationScreen`, `MessageList`, `MessageDay`, `MessageItem`, `MessageAction`, `ComposerBar` | A two-person message thread. `ConversationScreen` replaces `Screen` (narrow, and tall enough that the composer rests at the bottom). `MessageItem` is not a chat bubble: name and time on one line, the text under it, a thin rule down the side (blue on the right for mine, grey on the left for theirs); `status` is one quiet word under it ("Seen"), `hidden` a stub in place of the text, `headerAction` one `MessageAction` at the end of the name line ("Report"). `MessageDay` is the date on a hairline. `ComposerBar` stays above the phone tab bar like `ActionBar`: a text box that grows to five lines, Send, a character count near the limit, one `note` line above it, or a `readOnly` sentence instead of the box. |
 | `Segmented` | Two to four views of the same thing. |
 | `TapScale` | A 1 to 5 answer in one tap: numbered buttons, the two end words under them, the chosen word beside the question. |
 | `Stepper` | A number changed with minus and plus (hours of sleep), shown large between the two buttons. |
@@ -160,12 +172,13 @@ All from `@/components/sk`.
 | `NumberInput` | A big number field for a phone (52px, decimal keypad, unit inside on the right). `mode="time"` also takes minutes and seconds. |
 | `TickButton` | A 52px square tick: tap to mark a set done (green), tap again to undo. |
 | `EffortScale` | A 1 to 10 answer in one tap, two rows of five, with the word for the chosen number under it. |
-| `ActionBar` | A bar that stays at the bottom while the screen scrolls, above the phone tab bar: progress and save state of a long task, at most one button. Last child of `Screen`. |
+| `ActionBar` | A bar that stays at the bottom while the screen scrolls, above the phone tab bar: progress and save state of a long task, at most one button (a quiet text action such as "Save draft" may sit beside the state). Last child of `Screen`. |
 | `Tabs` | Underlined tabs for more views or longer labels. |
 | `NavTabs` | The sub-sections of one destination when each is its own screen with its own address (Progress: Overview, Records, Competitions, Tests). Looks like `Tabs`, every tab is a link. Goes straight under the `ScreenHeader` of each of those screens. |
 | `InlineConfirm` | "Are you sure" in place, where the button was. Use it instead of a dialog for remove, archive, cancel. |
 | `Sheet` | A panel over the screen with a title and a close button. `side="right"` for something to glance at (notifications), `side="bottom"` for a short choice on phone. |
 | `Dialog` | A centred panel for one short form or decision. Title, close button, actions in `footer`. |
+| `PrintSheet`, `PrintHeading`, `PrintTable`, `PrintBreak`, `printPage` | What goes on paper or into a PDF when the screen itself is the wrong thing to print (a plan week as a table). Invisible on screen; while one is mounted, printing shows the sheet and nothing else. Without one, any screen prints without the navigation and without being cut at one page; mark controls `print:hidden`. |
 
 Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus rings stay visible (2px blue).
 
@@ -175,16 +188,18 @@ Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weigh
 
 Built once in `src/components/app-shell.tsx`. Screens never draw navigation.
 
-**Desktop, 1024px and wider: a top bar.** There is no sidebar. Left to right: the brand, the team switcher (only for a coach on two or more teams), the role's destinations as tabs, then the notifications bell and the profile avatar. The active tab has the soft blue fill with dark blue text. The bar is one row at every width from 1024px up; labels are kept short so that seven destinations fit.
+**Desktop, 1024px and wider: a top bar.** There is no sidebar. Left to right: the brand, the team switcher (only for a coach on two or more teams), the role's destinations as tabs, then the Messages button, the notifications bell and the profile avatar. The active tab has the soft blue fill with dark blue text. The bar is one row at every width from 1024px up; labels are kept short so that seven destinations fit. A coach on two or more teams also has the team switcher in the row, so between 1024px and 1280px "Test weeks" and "Competitions" read "Tests" and "Meets".
 
-**Phone: an app bar and a tab bar.** The app bar is one 56px row: the brand on the left (or the team switcher for a multi-team coach, or a back button while a screen is in detail mode), the bell and the avatar on the right. The tab bar is white with a hairline on top, icon over label, the active one blue. It holds at most five items. A role with more destinations shows four and "More", which opens a bottom sheet with the rest. For the athlete the centre item is a raised round ink button that opens the session log. The athlete's Progress tab has four sections, each its own screen with `NavTabs` under the header (Overview, Records, Competitions, Tests); the tab stays lit on all of them and on the screens below them.
+**Phone: an app bar and a tab bar.** The app bar is one 56px row: the brand on the left (or the team switcher for a multi-team coach, or a back button while a screen is in detail mode), the bell and the avatar on the right (and the Messages button for the athlete). The tab bar is white with a hairline on top, icon over label, the active one blue. It holds at most five items. A role with more destinations shows four and "More", which opens a bottom sheet with the rest. For the athlete the centre item is a raised round ink button that opens the session log. The athlete's Progress tab has four sections, each its own screen with `NavTabs` under the header (Overview, Records, Competitions, Tests); the tab stays lit on all of them and on the screens below them.
 
 | Role | Desktop tabs | Phone tabs |
 |---|---|---|
-| Athlete | Home, Plan, Log, Progress, Profile | Home, Plan, (log button), Progress, Me |
-| Coach | Dashboard, Athletes, Plans, Test weeks, Reports | Dashboard, Athletes, Plans, Tests, Reports |
-| Club admin | Dashboard, People, Teams, Reports, Club, Activity, Billing | Dashboard, People, Teams, Reports, More (Club, Activity, Billing) |
+| Athlete | Home, Plan, Log, Progress, Profile. Messages button | Home, Plan, (log button), Progress, Me. Messages button in the app bar |
+| Coach | Dashboard, Athletes, Plans, Test weeks, Competitions, Reports. Messages button | Dashboard, Athletes, Plans, Messages, More (Test weeks, Competitions, Reports) |
+| Club admin | Dashboard, People, Teams, Reports, Club, Activity, Billing. Messages button | Dashboard, People, Teams, Reports, More (Messages, Club, Activity, Billing) |
 | Platform admin | Dashboard, Requests, Clubs, Billing, Packages, Activity | Dashboard, Requests, Clubs, Billing, More (Packages, Activity) |
+
+**Messages** is an icon button beside the bell wherever it is not a tab: a speech bubble with the number of unread messages and announcements (for a club admin, plus reported messages waiting for a look). It is a link to the role's Messages screen, not a sheet. On the coach's phone it is a tab with the same count; for a club admin on a phone it is the first row behind More. Where a link sits is declared on the link itself in `app-shell.tsx` (`desktop: "icon"`, `phone: "more"` or `"icon"`).
 
 The bell is there for every role. It shows the number of unread notifications and opens the notifications sheet: the ten most recent as list rows (a blue dot and a bold title mean unread, then a relative time), "Mark all read" and "See all", which goes to `/notifications` (the full history grouped by day). A row is a link to the screen it is about and is marked read when followed. Where each kind of notification leads is decided in one file, `supabase/functions/_shared/notification-target.ts`.
 

@@ -52,12 +52,16 @@ export type CompetitionEntryWithResult = CompetitionEntry & {
   result: AthleteResult | null
   /** Only filled for staff, who see more than one athlete. */
   athleteName?: string
+  /** Staff only: the team the athlete is on now. */
+  athleteTeamId?: string | null
 }
 
 export type CompetitionWithEntries = Competition & {
   entries: CompetitionEntryWithResult[]
   /** The viewer may edit or delete the competition itself. */
   canManage: boolean
+  /** Staff only, for a meet an athlete added for themselves: who that is. */
+  ownerName?: string | null
 }
 
 export type CompetitionInput = {

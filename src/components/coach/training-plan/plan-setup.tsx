@@ -1,6 +1,6 @@
-import { ArrowLeft, ArrowRight } from "@phosphor-icons/react"
+import { ArrowRight } from "@phosphor-icons/react"
 import { useState } from "react"
-import { PageHeader, Panel, Segmented } from "@/components/sk"
+import { Button, Field, FormActions, FormGrid, Input, Notice, Screen, ScreenHeader, Section, Segmented, Select, Textarea } from "@/components/sk"
 import {
   EVENT_GROUPS,
   MAX_WEEKS,
@@ -11,7 +11,7 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import type { EventGroup } from "@/lib/mock-data"
 import type { TeamOption } from "./storage"
-import { ErrorNote, Field, plural } from "./ui"
+import { plural } from "./ui"
 
 type StartFrom = "blank" | "template"
 
@@ -60,79 +60,54 @@ export function PlanSetup({
   }
 
   return (
-    <div className="sk-page">
-      <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3 hidden lg:inline-flex" onClick={onCancel}>
-        <ArrowLeft className="size-4" weight="bold" />
-        {isNew ? "All plans" : "Back to the week planner"}
-      </button>
-
-      <PageHeader
+    <Screen width="narrow">
+      <ScreenHeader
+        back={{ onClick: onCancel, label: isNew ? "All plans" : "Back to the plan" }}
         title={isNew ? "New plan" : "Plan details"}
         lede={isNew ? "Start with the basics. You can change any of this later." : "Changing the start date moves every session with it."}
       />
 
-      {error ? <ErrorNote>{error}</ErrorNote> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
       <form
-        className="space-y-5"
+        className="contents"
         onSubmit={(event) => {
           event.preventDefault()
           submit()
         }}
       >
-        <Panel title="Basics" className="max-w-3xl">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <Section title="Basics">
+          <FormGrid className="mt-2">
             <Field label="Plan name" className="sm:col-span-2">
-              <input
-                className="sk-field"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Preseason power block"
-                autoFocus={isNew}
-              />
+              <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Preseason power block" autoFocus={isNew} />
             </Field>
-            <Field label="Team">
-              <select className="sk-field" value={teamId} disabled={teamLocked} onChange={(event) => setTeamId(event.target.value)}>
+            <Field label="Team" className="sm:col-span-2" hint={teamLocked && team ? "You coach one team, so plans are for it." : undefined}>
+              <Select value={teamId} disabled={teamLocked} onChange={(event) => setTeamId(event.target.value)}>
                 {teams.length === 0 ? <option value="">No teams yet</option> : null}
                 {teams.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label="Start date">
-              <input type="date" className="sk-field" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </Field>
-            <Field
-              label="Weeks"
-              hint={dropped > 0 ? `Shortening the plan removes ${plural(dropped, "session")} after week ${weekCount}.` : undefined}
-            >
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={MAX_WEEKS}
-                className="sk-field"
-                value={weeks}
-                onChange={(event) => setWeeks(event.target.value)}
-              />
+            <Field label="Weeks" hint={dropped > 0 ? `Shortening the plan removes ${plural(dropped, "session")} after week ${weekCount}.` : `1 to ${MAX_WEEKS}`}>
+              <Input type="number" inputMode="numeric" min={1} max={MAX_WEEKS} value={weeks} onChange={(event) => setWeeks(event.target.value)} />
             </Field>
-            <Field label="Notes for athletes" className="sm:col-span-2">
-              <textarea
-                className="sk-field h-auto min-h-[88px] py-2.5"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Optional plan notes"
-              />
+            <Field label="Notes for athletes" optional className="sm:col-span-2">
+              <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional plan notes" />
             </Field>
-          </div>
-        </Panel>
+          </FormGrid>
+        </Section>
 
         {isNew ? (
-          <Panel title="Start from" hint="A template fills every week with sessions you can then edit." className="max-w-3xl">
+          <Section title="Start from" hint="A template fills every week with sessions you can then edit.">
             <Segmented<StartFrom>
               label="Start from"
+              className="mt-2 self-start"
               value={startFrom}
               onChange={setStartFrom}
               options={[
@@ -141,40 +116,40 @@ export function PlanSetup({
               ]}
             />
             {startFrom === "template" ? (
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <FormGrid className="mt-4">
                 <Field label="Event group">
-                  <select className="sk-field" value={eventGroup} onChange={(event) => setEventGroup(event.target.value as EventGroup)}>
+                  <Select value={eventGroup} onChange={(event) => setEventGroup(event.target.value as EventGroup)}>
                     {EVENT_GROUPS.map((group) => (
                       <option key={group.value} value={group.value}>
                         {group.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Training days per week">
-                  <select className="sk-field" value={daysPerWeek} onChange={(event) => setDaysPerWeek(event.target.value)}>
+                  <Select value={daysPerWeek} onChange={(event) => setDaysPerWeek(event.target.value)}>
                     {[3, 4, 5, 6, 7].map((count) => (
                       <option key={count} value={count}>
                         {count} days
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
-              </div>
+              </FormGrid>
             ) : null}
-          </Panel>
+          </Section>
         ) : null}
 
-        <div className="flex max-w-3xl flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="sk-btn sk-btn-ghost" onClick={onCancel}>
+        <FormActions>
+          <Button variant="quiet" onClick={onCancel}>
             Cancel
-          </button>
-          <button type="submit" className="sk-btn sk-btn-primary">
+          </Button>
+          <Button type="submit" variant="primary">
             {isNew ? "Continue to build" : "Save details"}
-            <ArrowRight className="size-5" weight="bold" />
-          </button>
-        </div>
+            <ArrowRight className="size-5" weight="bold" aria-hidden />
+          </Button>
+        </FormActions>
       </form>
-    </div>
+    </Screen>
   )
 }

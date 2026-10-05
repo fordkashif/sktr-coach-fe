@@ -23,6 +23,11 @@ type CoachTeamsSnapshotCacheEntry = {
 let coachTeamsSnapshotCache: CoachTeamsSnapshotCacheEntry | null = null
 let coachTeamsSnapshotInflight: Promise<Result<CoachTeamsSnapshot>> | null = null
 
+/** Forget the cached team list, after a team or roster change, so the next read is fresh. */
+export function invalidateCoachTeamsSnapshot() {
+  coachTeamsSnapshotCache = null
+}
+
 function requireSupabaseClient(operation: string): ClientResolution {
   if (getBackendMode() !== "supabase") {
     return {

@@ -134,3 +134,72 @@ export async function sendInviteEmail(params: { kind: InviteEmailKind; inviteId:
   if (isFailureCode(body?.code)) return failure(body.code, body ?? undefined)
   return failure("unreachable")
 }
+
+/* ---------- Several invites at once ----------------------------------------------------------- */
+
+/** Invites emailed per call to the edge function. Mirrors nothing on the server, which accepts up to 25. */
+export const INVITE_EMAIL_BATCH_SIZE = 10
+
+export type InviteEmailBatchItem = { inviteId: string; result: Result<InviteEmailSent> }
+
+function bodyToResult(body: FunctionBody | null | undefined): Result<InviteEmailSent> {
+  if (body?.ok && body.sentAt) return ok({ sentAt: body.sentAt, sendCount: body.sendCount ?? 1, preview: body.preview === true })
+  if (isFailureCode(body?.code)) return failure(body.code, body ?? undefined)
+  return failure("unreachable")
+}
+
+/**
+ * Emails many pending invites of one kind. They go out in small batches, one batch per request and
+ * one email at a time inside it, and `onProgress` is told after every batch, so the screen can show
+ * "12 of 40 sent". Every invite gets the same checks as a single send. A failure never stops the
+ * rest: the answer has one entry per invite, in the order given, and the failed ones can be passed
+ * in again to retry.
+ */
+export async function sendInviteEmails(
+  params: { kind: InviteEmailKind; inviteIds: string[] },
+  onProgress?: (done: InviteEmailBatchItem[], total: number) => void,
+): Promise<InviteEmailBatchItem[]> {
+  const ids = [...new Set(params.inviteIds)]
+  const done: InviteEmailBatchItem[] = []
+  const report = () => onProgress?.([...done], ids.length)
+
+  if (getBackendMode() !== "supabase") {
+    // Demo: one at a time with a short pause, so the progress is visible.
+    for (const inviteId of ids) {
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      done.push({ inviteId, result: await sendInviteEmail({ kind: params.kind, inviteId }) })
+      report()
+    }
+    return done
+  }
+
+  const client = getBrowserSupabaseClient()
+  for (let start = 0; start < ids.length; start += INVITE_EMAIL_BATCH_SIZE) {
+    const chunk = ids.slice(start, start + INVITE_EMAIL_BATCH_SIZE)
+    if (!client) {
+      for (const inviteId of chunk) done.push({ inviteId, result: failure("unreachable") })
+      report()
+      continue
+    }
+
+    type BatchBody = { ok?: boolean; batch?: boolean; results?: Array<FunctionBody & { inviteId?: string }> }
+    let body: BatchBody | null = null
+    try {
+      const { data, error } = await client.functions.invoke("send-invite-email", { body: { kind: params.kind, inviteIds: chunk } })
+      body = error ? null : ((data ?? null) as BatchBody | null)
+    } catch {
+      body = null
+    }
+
+    if (body?.batch && Array.isArray(body.results)) {
+      const byId = new Map(body.results.map((item) => [String(item.inviteId ?? "").toLowerCase(), item]))
+      for (const inviteId of chunk) done.push({ inviteId, result: bodyToResult(byId.get(inviteId.toLowerCase())) })
+    } else {
+      // An edge function that does not know the batch form yet (not deployed), or a network failure:
+      // fall back to one request per invite. The per-invite checks are the same either way.
+      for (const inviteId of chunk) done.push({ inviteId, result: await sendInviteEmail({ kind: params.kind, inviteId }) })
+    }
+    report()
+  }
+  return done
+}

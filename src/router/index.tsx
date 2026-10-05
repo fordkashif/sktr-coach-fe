@@ -16,6 +16,7 @@ import AthleteClaimPage from "@/app/(auth)/athlete/claim/[inviteId]/page"
 import ClubAdminClaimPage from "@/app/(auth)/club-admin/claim/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
 import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
+import TeamJoinCodePage from "@/app/(auth)/join/[code]/page"
 const AthleteHomePage = lazy(() => import("@/app/(authenticated)/athlete/home/page"))
 const AthleteJoinTeamPage = lazy(() => import("@/app/(authenticated)/athlete/join/page"))
 const AthleteJoinTeamCodePage = lazy(() => import("@/app/(authenticated)/athlete/join/[code]/page"))
@@ -38,6 +39,10 @@ const AthleteTrendsPage = lazy(() => import("@/app/(authenticated)/athlete/trend
 const AthleteWellnessPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/page"))
 const AthleteWellnessHistoryPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/history/page"))
 const AthletePainReportPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/pain/page"))
+const AthleteMessagesPage = lazy(() => import("@/app/(authenticated)/athlete/messages/page"))
+const AthleteMessageThreadPage = lazy(() => import("@/app/(authenticated)/athlete/messages/t/[threadId]/page"))
+const AthleteMessageCoachPage = lazy(() => import("@/app/(authenticated)/athlete/messages/coach/[coachUserId]/page"))
+const AthleteAnnouncementPage = lazy(() => import("@/app/(authenticated)/athlete/messages/a/[announcementId]/page"))
 const CoachDashboardPage = lazy(() => import("@/app/(authenticated)/coach/dashboard/page"))
 const CoachReportsPage = lazy(() => import("@/app/(authenticated)/coach/reports/page"))
 const CoachTeamsPage = lazy(() => import("@/app/(authenticated)/coach/teams/page"))
@@ -45,6 +50,18 @@ const CoachTeamDetailPage = lazy(() => import("@/app/(authenticated)/coach/teams
 const CoachTestWeekPage = lazy(() => import("@/app/(authenticated)/coach/test-week/page"))
 const CoachTrainingPlanPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/page"))
 const CoachAthleteDetailPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/page"))
+const CoachAddAthleteResultPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/results/new/page"))
+const CoachEditAthleteResultPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/results/[resultId]/page"))
+const CoachCompetitionsPage = lazy(() => import("@/app/(authenticated)/coach/competitions/page"))
+const CoachNewCompetitionPage = lazy(() => import("@/app/(authenticated)/coach/competitions/new/page"))
+const CoachCompetitionDetailPage = lazy(() => import("@/app/(authenticated)/coach/competitions/[competitionId]/page"))
+const CoachEditCompetitionPage = lazy(() => import("@/app/(authenticated)/coach/competitions/[competitionId]/edit/page"))
+const CoachEnterAthletesPage = lazy(() => import("@/app/(authenticated)/coach/competitions/[competitionId]/enter/page"))
+const CoachMessagesPage = lazy(() => import("@/app/(authenticated)/coach/messages/page"))
+const CoachMessageThreadPage = lazy(() => import("@/app/(authenticated)/coach/messages/t/[threadId]/page"))
+const CoachMessageAthletePage = lazy(() => import("@/app/(authenticated)/coach/messages/with/[athleteId]/page"))
+const CoachNewAnnouncementPage = lazy(() => import("@/app/(authenticated)/coach/messages/a/new/page"))
+const CoachAnnouncementPage = lazy(() => import("@/app/(authenticated)/coach/messages/a/[announcementId]/page"))
 const ClubAdminDashboardPage = lazy(() => import("@/app/(authenticated)/club-admin/dashboard/page"))
 const ClubAdminGetStartedPage = lazy(() => import("@/app/(authenticated)/club-admin/get-started/page"))
 const ClubAdminBillingSetupPage = lazy(() => import("@/app/(authenticated)/club-admin/setup/billing/page"))
@@ -54,6 +71,10 @@ const ClubAdminTeamsPage = lazy(() => import("@/app/(authenticated)/club-admin/t
 const ClubAdminReportsPage = lazy(() => import("@/app/(authenticated)/club-admin/reports/page"))
 const ClubAdminBillingPage = lazy(() => import("@/app/(authenticated)/club-admin/billing/page"))
 const ClubAdminAuditPage = lazy(() => import("@/app/(authenticated)/club-admin/audit/page"))
+const ClubAdminMessagesPage = lazy(() => import("@/app/(authenticated)/club-admin/messages/page"))
+const ClubAdminMessageThreadPage = lazy(() => import("@/app/(authenticated)/club-admin/messages/t/[threadId]/page"))
+const ClubAdminNewAnnouncementPage = lazy(() => import("@/app/(authenticated)/club-admin/messages/a/new/page"))
+const ClubAdminAnnouncementPage = lazy(() => import("@/app/(authenticated)/club-admin/messages/a/[announcementId]/page"))
 const PlatformAdminRequestsPage = lazy(() => import("@/app/(authenticated)/platform-admin/requests/page"))
 const PlatformAdminTenantsPage = lazy(() => import("@/app/(authenticated)/platform-admin/tenants/page"))
 const PlatformAdminBillingPage = lazy(() => import("@/app/(authenticated)/platform-admin/billing/page"))
@@ -86,6 +107,7 @@ export function AppRouter() {
           <Route path="/club-admin/claim" element={<ClubAdminClaimPage />} />
           <Route path="/create-club-account" element={<CreateClubAccountPage />} />
           <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
+          <Route path="/join/:code" element={<TeamJoinCodePage />} />
         </Route>
 
         <Route element={<GuardedAuthenticatedLayout />}>
@@ -112,6 +134,10 @@ export function AppRouter() {
             <Route path="/athlete/wellness" element={routeElement(AthleteWellnessPage)} />
             <Route path="/athlete/wellness/history" element={routeElement(AthleteWellnessHistoryPage)} />
             <Route path="/athlete/wellness/pain" element={routeElement(AthletePainReportPage)} />
+            <Route path="/athlete/messages" element={routeElement(AthleteMessagesPage)} />
+            <Route path="/athlete/messages/t/:threadId" element={routeElement(AthleteMessageThreadPage)} />
+            <Route path="/athlete/messages/coach/:coachUserId" element={routeElement(AthleteMessageCoachPage)} />
+            <Route path="/athlete/messages/a/:announcementId" element={routeElement(AthleteAnnouncementPage)} />
 
             <Route path="/coach/dashboard" element={routeElement(CoachDashboardPage)} />
             <Route path="/coach/reports" element={routeElement(CoachReportsPage)} />
@@ -120,6 +146,18 @@ export function AppRouter() {
             <Route path="/coach/test-week" element={routeElement(CoachTestWeekPage)} />
             <Route path="/coach/training-plan" element={routeElement(CoachTrainingPlanPage)} />
             <Route path="/coach/athletes/:athleteId" element={routeElement(CoachAthleteDetailPage)} />
+            <Route path="/coach/athletes/:athleteId/results/new" element={routeElement(CoachAddAthleteResultPage)} />
+            <Route path="/coach/athletes/:athleteId/results/:resultId" element={routeElement(CoachEditAthleteResultPage)} />
+            <Route path="/coach/competitions" element={routeElement(CoachCompetitionsPage)} />
+            <Route path="/coach/competitions/new" element={routeElement(CoachNewCompetitionPage)} />
+            <Route path="/coach/competitions/:competitionId" element={routeElement(CoachCompetitionDetailPage)} />
+            <Route path="/coach/competitions/:competitionId/edit" element={routeElement(CoachEditCompetitionPage)} />
+            <Route path="/coach/competitions/:competitionId/enter" element={routeElement(CoachEnterAthletesPage)} />
+            <Route path="/coach/messages" element={routeElement(CoachMessagesPage)} />
+            <Route path="/coach/messages/t/:threadId" element={routeElement(CoachMessageThreadPage)} />
+            <Route path="/coach/messages/with/:athleteId" element={routeElement(CoachMessageAthletePage)} />
+            <Route path="/coach/messages/a/new" element={routeElement(CoachNewAnnouncementPage)} />
+            <Route path="/coach/messages/a/:announcementId" element={routeElement(CoachAnnouncementPage)} />
 
             <Route path="/club-admin" element={<ClubAdminRedirectPage />} />
             <Route path="/club-admin/setup/billing" element={routeElement(ClubAdminBillingSetupPage)} />
@@ -130,6 +168,10 @@ export function AppRouter() {
             <Route path="/club-admin/teams" element={routeElement(ClubAdminTeamsPage)} />
             <Route path="/club-admin/reports" element={routeElement(ClubAdminReportsPage)} />
             <Route path="/club-admin/audit" element={routeElement(ClubAdminAuditPage)} />
+            <Route path="/club-admin/messages" element={routeElement(ClubAdminMessagesPage)} />
+            <Route path="/club-admin/messages/t/:threadId" element={routeElement(ClubAdminMessageThreadPage)} />
+            <Route path="/club-admin/messages/a/new" element={routeElement(ClubAdminNewAnnouncementPage)} />
+            <Route path="/club-admin/messages/a/:announcementId" element={routeElement(ClubAdminAnnouncementPage)} />
             <Route path="/club-admin/billing" element={routeElement(ClubAdminBillingPage)} />
 
             <Route path="/platform-admin" element={<PlatformAdminRedirectPage />} />

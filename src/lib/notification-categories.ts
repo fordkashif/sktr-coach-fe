@@ -41,7 +41,7 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     key: "test-weeks",
     title: "Test weeks",
     description: "When a test week opens for your team.",
-    eventTypes: ["test_week_published"],
+    eventTypes: ["test_week_published", "test_week_reopened"],
     roles: ["athlete"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,
@@ -84,6 +84,27 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     emailAvailable: true,
   },
 
+  // Messaging (20261009110000). Both are on by default on both channels: the database answers
+  // "on" for any kind of update notification_default_enabled() does not list.
+  {
+    key: "announcements",
+    title: "Announcements",
+    description: "When your coach or your club posts an announcement to you. The email carries the announcement.",
+    eventTypes: ["announcement_posted"],
+    roles: ["athlete", "coach", "club-admin"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "direct-messages",
+    title: "Messages",
+    description: "When a coach or an athlete sends you a message. At most one email an hour per conversation, and the email never includes the message.",
+    eventTypes: ["direct_message_received"],
+    roles: ["athlete", "coach", "club-admin"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+
   // Coach (and a club admin who also coaches a team)
   {
     key: "athlete-availability",
@@ -111,6 +132,15 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     roles: ["coach", "club-admin"],
     defaults: { "in-app": true, email: false },
     emailAvailable: true,
+  },
+  {
+    key: "athlete-joined-or-moved",
+    title: "Athletes joining and moving",
+    description: "When an athlete joins one of your teams with the team join code, or is moved to or from one of your teams.",
+    eventTypes: ["athlete_joined_team", "athlete_moved_team"],
+    roles: ["coach", "club-admin"],
+    defaults: { "in-app": true, email: false },
+    emailAvailable: false,
   },
   {
     key: "athlete-left-team",
@@ -182,6 +212,16 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     title: "Your club's account",
     description: "When a package request is approved or declined, and when the club's access is paused or turned back on.",
     eventTypes: ["package_request_reviewed", "club_suspended", "club_reactivated"],
+    roles: ["club-admin"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+
+  {
+    key: "message-reports",
+    title: "Reported messages",
+    description: "When a coach or an athlete reports a message for you to review in message oversight.",
+    eventTypes: ["message_reported"],
     roles: ["club-admin"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,

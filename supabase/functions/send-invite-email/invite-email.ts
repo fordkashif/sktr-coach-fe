@@ -38,6 +38,25 @@ export function parseInvitePayload(value: unknown): { kind: InviteKind; inviteId
   return { kind, inviteId: inviteId.toLowerCase() }
 }
 
+/** One call may carry this many invites. A longer list is sent as several calls. */
+export const MAX_INVITES_PER_BATCH = 25
+
+/** Batch form of the request: { kind, inviteIds }. Ids are lower-cased and de-duplicated, order kept. */
+export function parseInviteBatchPayload(value: unknown): { kind: InviteKind; inviteIds: string[] } | null {
+  if (!value || typeof value !== "object") return null
+  const record = value as Record<string, unknown>
+  const kind = record.kind
+  if (kind !== "coach" && kind !== "athlete") return null
+  if (!Array.isArray(record.inviteIds) || record.inviteIds.length === 0 || record.inviteIds.length > MAX_INVITES_PER_BATCH) return null
+  const inviteIds: string[] = []
+  for (const item of record.inviteIds) {
+    if (typeof item !== "string" || !UUID_PATTERN.test(item.trim())) return null
+    const id = item.trim().toLowerCase()
+    if (!inviteIds.includes(id)) inviteIds.push(id)
+  }
+  return { kind, inviteIds }
+}
+
 export function isValidRecipientEmail(value: string | null | undefined): value is string {
   return typeof value === "string" && EMAIL_PATTERN.test(value.trim())
 }

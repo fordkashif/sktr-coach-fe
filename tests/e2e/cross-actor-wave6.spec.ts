@@ -42,8 +42,11 @@ test("coach exports remain scoped to the assigned team", async ({ page }) => {
   expect(adherenceCsv).not.toContain("Marcus Johnson")
 
   const prDownload = page.waitForEvent("download")
-  await page.locator("#main-content").getByRole("tab", { name: "PRs", exact: true }).click()
-  await page.locator("#main-content").getByRole("button", { name: /^PR CSV$/ }).first().click()
+  await page.locator("#main-content").getByRole("tab", { name: "Records", exact: true }).click()
+  // Records lists the bests set inside the period, so widen it past the default 28 days.
+  await page.locator("#main-content").getByRole("button", { name: "Last 90 days" }).click()
+  await expect(page.locator("#main-content").getByRole("table")).toContainText("Shot Put")
+  await page.locator("#main-content").getByRole("button", { name: /^Records CSV$/ }).first().click()
   const prCsv = await readDownloadText(await prDownload)
   expect(prCsv).toContain("Shot Put")
   expect(prCsv).not.toContain("Marcus Johnson")

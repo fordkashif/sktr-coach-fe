@@ -5,8 +5,10 @@ import { useNavigate } from "react-router-dom"
 import { eventHistoryPath, UNIT_WORDS, verdictMessage } from "@/components/athlete/results-parts"
 import { Button, Choices, Field, Input, InlineConfirm, LinkButton, Notice, Section, Select, Textarea } from "@/components/sk"
 import {
+  describeDifference,
   findResultEvent,
   formatMark,
+  formatMarkWithUnit,
   formatWind,
   OTHER_EVENT_KEY,
   parseMarkInput,
@@ -15,9 +17,30 @@ import {
   WIND_LEGAL_LIMIT,
   type AthleteResult,
   type MarkUnit,
+  type NewResultVerdict,
   type Timing,
 } from "@/lib/data/pr/marks"
-import { addResultForCurrentAthlete, deleteAthleteResult, localToday, updateAthleteResult, type ResultInput } from "@/lib/data/pr/results-data"
+import { addAthleteResult, addResultForCurrentAthlete, deleteAthleteResult, localToday, updateAthleteResult, type ResultInput } from "@/lib/data/pr/results-data"
+
+/** A coach or club admin entering a result for one of their athletes. Where to go back to afterwards is theirs to say. */
+export type ResultFormAthlete = { id: string; name: string; returnTo: string }
+
+/** What to tell a coach after saving a result for an athlete. */
+function staffVerdictMessage(name: string, result: AthleteResult, verdict: NewResultVerdict): { tone: "success" | "warning" | "info"; text: string } {
+  const first = name.split(" ")[0] || name
+  const mark = formatMarkWithUnit(result.display, result.unit)
+  if (verdict.kind === "wind-assisted") return { tone: "warning", text: `Saved as wind assisted. ${mark} is in ${first}'s ${result.eventLabel} history, but a wind over +2.0 does not count as a best.` }
+  if (verdict.kind === "personal-best" || verdict.kind === "season-best") {
+    const gain = verdict.beat ? describeDifference(result, verdict.beat) : null
+    const kind = verdict.kind === "personal-best" ? "personal best" : "season best"
+    return {
+      tone: "success",
+      text: `Saved. ${mark} is a new ${kind} for ${first} in the ${result.eventLabel}${gain && verdict.beat ? `, ${gain.text} than ${formatMarkWithUnit(verdict.beat.display, verdict.beat.unit)}` : ""}.`,
+    }
+  }
+  if (verdict.kind === "first") return { tone: "success", text: `Saved. ${mark} is ${first}'s first ${result.eventLabel} result, so it is their personal best.` }
+  return { tone: "info", text: `Saved. ${mark} is in ${first}'s ${result.eventLabel} history.` }
+}
 
 const CATEGORY_GROUPS = [...new Set(RESULT_EVENTS.filter((event) => event.kind !== "other").map((event) => event.category))]
 
@@ -35,8 +58,20 @@ type FieldErrors = Partial<Record<"event" | "label" | "mark" | "wind" | "date", 
  * The "Add a result" and "Edit result" form. `existing` switches it to editing (and adds delete).
  * After saving it goes to the event's history and says there what the result means
  * (personal best, season best, wind assisted).
+ * With `forAthlete` the same form is used by a coach or club admin for one of their athletes:
+ * the result is saved on that athlete and the form goes back to `forAthlete.returnTo`.
  */
-export function ResultForm({ existing, initialEventKey, cancelTo }: { existing?: AthleteResult; initialEventKey?: string; cancelTo: string }) {
+export function ResultForm({
+  existing,
+  initialEventKey,
+  cancelTo,
+  forAthlete,
+}: {
+  existing?: AthleteResult
+  initialEventKey?: string
+  cancelTo: string
+  forAthlete?: ResultFormAthlete
+}) {
   const navigate = useNavigate()
   const [eventKey, setEventKey] = useState(existing?.eventKey ?? (findResultEvent(initialEventKey) ? (initialEventKey as string) : ""))
   const [otherLabel, setOtherLabel] = useState(existing?.eventKey === OTHER_EVENT_KEY ? existing.eventLabel : "")
@@ -102,14 +137,22 @@ export function ResultForm({ existing, initialEventKey, cancelTo }: { existing?:
         setFormError(result.error.message)
         return
       }
+      if (forAthlete) {
+        navigate(forAthlete.returnTo, { replace: true, state: { saved: { tone: "info", text: "Result corrected. Their bests have been worked out again." } } })
+        return
+      }
       navigate(eventHistoryPath(result.data.eventGroup), { replace: true, state: { saved: { tone: "info", text: "Result updated. Your bests have been worked out again." } } })
       return
     }
 
-    const result = await addResultForCurrentAthlete(input)
+    const result = forAthlete ? await addAthleteResult(forAthlete.id, input) : await addResultForCurrentAthlete(input)
     setSaving(false)
     if (!result.ok) {
       setFormError(result.error.message)
+      return
+    }
+    if (forAthlete) {
+      navigate(forAthlete.returnTo, { replace: true, state: { saved: staffVerdictMessage(forAthlete.name, result.data.result, result.data.verdict) } })
       return
     }
     navigate(eventHistoryPath(result.data.result.eventGroup), { replace: true, state: { saved: verdictMessage(result.data.result, result.data.verdict) } })
@@ -123,6 +166,10 @@ export function ResultForm({ existing, initialEventKey, cancelTo }: { existing?:
     if (!result.ok) {
       setConfirmDelete(false)
       setFormError(result.error.message)
+      return
+    }
+    if (forAthlete) {
+      navigate(forAthlete.returnTo, { replace: true, state: { saved: { tone: "info", text: "Result deleted. Their bests have been worked out again." } } })
       return
     }
     navigate(eventHistoryPath(existing.eventGroup), { replace: true, state: { saved: { tone: "info", text: "Result deleted. Your bests have been worked out again." } } })
@@ -217,7 +264,7 @@ export function ResultForm({ existing, initialEventKey, cancelTo }: { existing?:
               error={errors.wind}
               hint={
                 windAssisted
-                  ? "Over +2.0 is wind assisted. It is kept in your history but does not count as a best."
+                  ? `Over +2.0 is wind assisted. It is kept in ${forAthlete ? "their" : "your"} history but does not count as a best.`
                   : "Metres per second with its sign, like +1.2 or -0.4. Leave it empty if there was no reading."
               }
             >
@@ -270,7 +317,7 @@ export function ResultForm({ existing, initialEventKey, cancelTo }: { existing?:
       </Section>
 
       {existing ? (
-        <Section title="Delete this result" hint="It is removed from your history and your bests are worked out again.">
+        <Section title="Delete this result" hint={forAthlete ? "It is removed from their history and their bests are worked out again." : "It is removed from your history and your bests are worked out again."}>
           {confirmDelete ? (
             <InlineConfirm
               question="Delete this result for good?"

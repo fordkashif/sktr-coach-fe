@@ -1,21 +1,41 @@
-"use client"
-
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { ArrowDown, ArrowUp, DownloadSimple, LockSimple, LockSimpleOpen, PencilSimple, Plus, Trash } from "@phosphor-icons/react"
 import {
-  Archive,
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  CaretRight,
-  PencilSimple,
-  Plus,
-  Timer,
-  Trash,
-  Trophy,
-} from "@phosphor-icons/react"
-import { EmptyState, Meter, PageHeader, Panel, Segmented, Stat, Tag, type TagTone } from "@/components/sk"
+  Button,
+  DataTable,
+  EmptyState,
+  EntryGrid,
+  Field,
+  FormActions,
+  FormGrid,
+  InlineConfirm,
+  Input,
+  List,
+  ListRow,
+  Mark,
+  Notice,
+  RowMenu,
+  SaveState,
+  Screen,
+  ScreenHeader,
+  Section,
+  Segmented,
+  Select,
+  SkeletonRows,
+  Split,
+  Stat,
+  StatStrip,
+  StatusText,
+  TableSub,
+  Tabs,
+  type DataTableColumn,
+  type EntryGridCell,
+  type SaveStateValue,
+  type StateTone,
+} from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
-import { cn } from "@/lib/utils"
+import { csvFileName, downloadCsv } from "@/lib/csv"
+import { TEST_UNIT_META, checkTestResultEntry, entryTextFor, testWeekResultsCsvRows } from "@/lib/data/test-week/result-entry"
 
 /**
  * Test weeks: the one presentation used by both backend modes.
@@ -27,6 +47,7 @@ import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 export type TestUnit = "time" | "distance" | "weight" | "height" | "score"
 export type TestWeekStatus = "draft" | "published" | "closed"
 export type ResultChange = "up" | "down" | "same"
+export type ResultEnteredBy = "athlete" | "coach" | "club-admin"
 
 export type TestWeekRow = {
   id: string
@@ -39,13 +60,21 @@ export type TestWeekRow = {
   testCount: number
   /** Athletes on the assigned team. Null when the team is unknown. */
   athleteCount: number | null
-  /** Athletes who have submitted at least one result. */
+  /** Athletes who have at least one result. */
   submittedCount: number
 }
 
 export type TestWeekTeamOption = { id: string; name: string; athleteCount: number }
 
 export type TestWeekTest = { id: string; name: string; unit: TestUnit; dayIndex: number }
+
+export type TestWeekResultValue = {
+  value: string
+  numeric: number | null
+  change: ResultChange | null
+  /** Who typed it. A coach or club admin can enter results for an athlete. */
+  enteredBy?: ResultEnteredBy | null
+}
 
 export type TestWeekAthleteRow = {
   athleteId: string
@@ -54,7 +83,7 @@ export type TestWeekAthleteRow = {
   /** False when the athlete has since left the assigned team. */
   onRoster: boolean
   submittedAt: string | null
-  results: Record<string, { value: string; numeric: number | null; change: ResultChange | null }>
+  results: Record<string, TestWeekResultValue>
 }
 
 export type TestWeekDetail = { tests: TestWeekTest[]; athletes: TestWeekAthleteRow[] }
@@ -69,12 +98,14 @@ export type TestWeekSaveInput = {
   tests: Array<{ id: string | null; name: string; unit: TestUnit; dayIndex: number; scheduledDate: string }>
 }
 
+export type TestWeekResultInput = { testWeekId: string; testId: string; athleteId: string; unit: TestUnit; value: string }
+export type TestWeekSavedResult = { value: string; numeric: number | null; enteredBy: ResultEnteredBy | null; submittedAt: string }
+
 export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; message: string }
 
 export type TestWeekScreenProps = {
   weeks: TestWeekRow[]
   teams: TestWeekTeamOption[]
-  /** Set for a coach who only works with one team. Hides the team picker. */
   /** Set when the team cannot be changed (a coach with one team). */
   lockedTeamId: string | null
   /** The coach's selected team: the list is for this team and new test weeks start on it. Null for club admins. */
@@ -86,6 +117,10 @@ export type TestWeekScreenProps = {
   loadDetail: (testWeekId: string) => Promise<ActionResult<TestWeekDetail>>
   onSave: (input: TestWeekSaveInput) => Promise<ActionResult<{ id: string }>>
   onPublish: (testWeekId: string) => Promise<ActionResult>
+  /** Close a published week (athletes can no longer enter results) or reopen a closed one. */
+  onSetOpen: (testWeekId: string, open: boolean) => Promise<ActionResult>
+  /** One result typed by the coach for an athlete. An empty value removes it (data: null). */
+  onSaveResult: (input: TestWeekResultInput) => Promise<ActionResult<TestWeekSavedResult | null>>
   onSetArchived: (testWeekId: string, archived: boolean) => Promise<ActionResult>
   onDelete: (testWeekId: string) => Promise<ActionResult>
 }
@@ -93,13 +128,14 @@ export type TestWeekScreenProps = {
 type View = { kind: "list" } | { kind: "detail"; id: string } | { kind: "builder"; id: string | null }
 type DraftTest = { key: string; id: string | null; name: string; unit: TestUnit; dayIndex: number }
 type Draft = { id: string | null; name: string; teamId: string; startDate: string; endDate: string; tests: DraftTest[] }
+type Lens = "athlete" | "test" | "enter"
 
 const UNIT_OPTIONS: Array<{ value: TestUnit; label: string }> = [
-  { value: "time", label: "Time" },
-  { value: "distance", label: "Distance" },
-  { value: "weight", label: "Weight" },
-  { value: "height", label: "Height" },
-  { value: "score", label: "Score" },
+  { value: "time", label: "Time (s)" },
+  { value: "distance", label: "Distance (m)" },
+  { value: "weight", label: "Weight (kg)" },
+  { value: "height", label: "Height (cm)" },
+  { value: "score", label: "Score (pts)" },
 ]
 
 const QUICK_TESTS: Array<{ name: string; unit: TestUnit }> = [
@@ -140,7 +176,7 @@ function dayCount(startDate: string, endDate: string) {
 }
 
 function shortDate(iso: string, withYear = false) {
-  const date = parseDate(iso)
+  const date = parseDate(iso.slice(0, 10))
   if (!date) return iso
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}) })
 }
@@ -160,19 +196,16 @@ function plural(count: number, one: string, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`
 }
 
-function unitLabel(unit: TestUnit) {
-  return UNIT_OPTIONS.find((option) => option.value === unit)?.label ?? unit
-}
-
 function makeKey() {
   return `t-${Math.random().toString(36).slice(2, 10)}`
 }
 
-function statusOf(week: Pick<TestWeekRow, "status" | "isArchived">): { label: string; tone: TagTone } {
-  if (week.isArchived) return { label: "Archived", tone: "plain" }
-  if (week.status === "published") return { label: "Published", tone: "green" }
-  if (week.status === "closed") return { label: "Closed", tone: "plain" }
-  return { label: "Draft", tone: "yellow" }
+function statusOf(week: Pick<TestWeekRow, "status" | "isArchived" | "startDate">): { label: string; tone: StateTone } {
+  if (week.isArchived) return { label: "Archived", tone: "neutral" }
+  if (week.status === "closed") return { label: "Closed", tone: "neutral" }
+  if (week.status === "draft") return { label: "Draft", tone: "amber" }
+  if (week.startDate > toInputDate(new Date())) return { label: `Opens ${shortDate(week.startDate)}`, tone: "blue" }
+  return { label: "Open", tone: "green" }
 }
 
 function numericOf(result: { value: string; numeric: number | null }) {
@@ -181,12 +214,8 @@ function numericOf(result: { value: string; numeric: number | null }) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function Alert({ children }: { children: React.ReactNode }) {
-  return (
-    <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-      {children}
-    </p>
-  )
+function byStaff(result: TestWeekResultValue | undefined) {
+  return result?.enteredBy === "coach" || result?.enteredBy === "club-admin"
 }
 
 function Change({ change }: { change: ResultChange | null }) {
@@ -204,6 +233,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirm, setConfirm] = useState<null | "archive" | "delete" | "close">(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [detailState, setDetailState] = useState<{ id: string; detail: TestWeekDetail | null; error: string | null } | null>(null)
   const [detailVersion, setDetailVersion] = useState(0)
@@ -211,7 +241,6 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const teamName = (teamId: string | null) => teams.find((team) => team.id === teamId)?.name ?? "No team"
   const lockedTeam = teams.find((team) => team.id === lockedTeamId) ?? null
   const scopeTeam = lockedTeam ?? teams.find((team) => team.id === defaultTeamId) ?? null
-  const inSubview = view.kind !== "list"
 
   // Which team the open detail or builder belongs to, and what the builder looked like when it opened.
   const viewTeamId = useRef<string | null>(null)
@@ -235,36 +264,14 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     setView({ kind: "list" })
   }, [defaultTeamId])
 
-  // The app shell swaps the mobile tab bar for a Back button while a detail or builder is open.
-  useEffect(() => {
-    const target = window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }
-    target.__PACELAB_MOBILE_DETAIL_MODE = inSubview
-    window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: inSubview } }))
-    return () => {
-      target.__PACELAB_MOBILE_DETAIL_MODE = false
-      window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: false } }))
-    }
-  }, [inSubview])
-
   const goTo = (next: View) => {
     setActionError(null)
+    setConfirm(null)
     if (next.kind !== "detail") setNotice(null)
     if (next.kind === "detail") viewTeamId.current = weeks.find((week) => week.id === next.id)?.teamId ?? viewTeamId.current
     setView(next)
-    window.scrollTo?.({ top: 0 })
-    document.querySelector("main")?.scrollTo?.({ top: 0 })
+    document.getElementById("main-content")?.scrollTo?.({ top: 0 })
   }
-
-  useEffect(() => {
-    if (!inSubview) return
-    const handleBack = () => {
-      setActionError(null)
-      setNotice(null)
-      setView((current) => (current.kind === "builder" && current.id ? { kind: "detail", id: current.id } : { kind: "list" }))
-    }
-    window.addEventListener("pacelab:mobile-detail-back", handleBack)
-    return () => window.removeEventListener("pacelab:mobile-detail-back", handleBack)
-  }, [inSubview])
 
   const detailId = view.kind === "detail" ? view.id : null
   const { loadDetail } = props
@@ -274,14 +281,14 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     setDetailState((current) => (current?.id === detailId ? current : { id: detailId, detail: null, error: null }))
     void loadDetail(detailId).then((result) => {
       if (cancelled) return
-      setDetailState(
-        result.ok ? { id: detailId, detail: result.data, error: null } : { id: detailId, detail: null, error: result.message },
-      )
+      setDetailState(result.ok ? { id: detailId, detail: result.data, error: null } : { id: detailId, detail: null, error: result.message })
     })
     return () => {
       cancelled = true
     }
-  }, [detailId, detailVersion, loadDetail])
+    // loadDetail changes identity whenever the list reloads. The detail is refetched on demand (detailVersion) instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailId, detailVersion])
 
   const openNew = () => {
     const preferredTeamId = lockedTeamId ?? defaultTeamId
@@ -321,6 +328,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     setActionError(null)
     const result = await action()
     setBusy(false)
+    setConfirm(null)
     if (!result.ok) {
       setActionError(result.message)
       return
@@ -338,107 +346,91 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     const draftWeeks = activeWeeks.filter((week) => week.status === "draft")
     const scope = scopeTeam ? ` for ${scopeTeam.name}` : ""
     const lede = isLoading
-      ? "Loading your test weeks."
+      ? "Getting your test weeks..."
       : activeWeeks.length === 0
-        ? `No test weeks${scope} yet. Set one up and athletes can start submitting results.`
-        : `${plural(activeWeeks.length, "test week")}${scope}. ${openWeeks.length} published${draftWeeks.length > 0 ? `, ${plural(draftWeeks.length, "draft")}` : ""}.`
+        ? `No test weeks${scope} yet. Set one up and athletes can start entering results.`
+        : `${plural(activeWeeks.length, "test week")}${scope}, ${openWeeks.length} open${draftWeeks.length > 0 ? `, ${plural(draftWeeks.length, "draft")}` : ""}.`
+
+    const columns: Array<DataTableColumn<TestWeekRow>> = [
+      {
+        key: "week",
+        header: "Test week",
+        cell: (week) => (
+          <button type="button" className="cursor-pointer rounded-[6px] text-left hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue" onClick={() => goTo({ kind: "detail", id: week.id })}>
+            {week.name}
+            <TableSub>{[scopeTeam ? null : teamName(week.teamId), dateWindow(week.startDate, week.endDate)].filter(Boolean).join(", ")}</TableSub>
+          </button>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        phone: "plain",
+        cell: (week) => {
+          const status = statusOf(week)
+          return <StatusText tone={status.tone}>{status.label}</StatusText>
+        },
+      },
+      { key: "tests", header: "Tests", align: "right", phone: "hide", cell: (week) => week.testCount },
+      {
+        key: "results",
+        header: "Results in",
+        align: "right",
+        strong: true,
+        phone: "trailing",
+        cell: (week) => (week.status === "draft" ? <span className="font-normal text-sk-mute">Not sent yet</span> : week.athleteCount ? `${week.submittedCount} of ${week.athleteCount}` : "No athletes"),
+      },
+    ]
 
     return (
-      <div className="sk-page">
-        {loadError ? <Alert>Could not load test weeks: {loadError}</Alert> : null}
-        {actionError ? <Alert>{actionError}</Alert> : null}
-
-        <PageHeader
+      <Screen>
+        <ScreenHeader
           title="Test weeks"
           lede={lede}
           actions={
-            <button type="button" className="sk-btn sk-btn-primary" onClick={openNew} disabled={isLoading}>
-              <Plus className="size-5" weight="bold" />
+            <Button variant="primary" onClick={openNew} disabled={isLoading}>
+              <Plus className="size-5" weight="bold" aria-hidden />
               New test week
-            </button>
+            </Button>
           }
         />
 
-        {archivedWeeks.length > 0 ? (
-          <Segmented
-            label="Show"
-            value={listFilter}
-            onChange={setListFilter}
-            options={[
-              { value: "active", label: `Active (${activeWeeks.length})` },
-              { value: "archived", label: `Archived (${archivedWeeks.length})` },
-            ]}
-          />
-        ) : null}
+        {loadError ? <Notice tone="error">Could not load test weeks: {loadError}</Notice> : null}
+        {actionError ? <Notice tone="error">{actionError}</Notice> : null}
 
-        {isLoading ? (
-          <Panel>
-            <p className="text-sm font-semibold text-sk-mute">Loading test weeks...</p>
-          </Panel>
-        ) : shownWeeks.length === 0 ? (
-          <EmptyState
-            icon={<Timer className="size-6" weight="fill" />}
-            title="No test weeks yet"
-            body="A test week is a set of tests, such as 30m or squat 1RM, that your athletes complete over a few days. Results land here as they submit."
-            action={
-              <button type="button" className="sk-btn sk-btn-ink sk-btn-sm" onClick={openNew}>
-                Set up a test week
-              </button>
-            }
-          />
-        ) : (
-          <Panel flush>
-            <ul>
-              {shownWeeks.map((week) => {
-                const status = statusOf(week)
-                const total = week.athleteCount ?? 0
-                const showProgress = week.status !== "draft" && total > 0
-                return (
-                  <li key={week.id} className="border-b border-sk-line last:border-b-0">
-                    <button
-                      type="button"
-                      onClick={() => goTo({ kind: "detail", id: week.id })}
-                      className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 px-5 py-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sk-blue sm:grid-cols-[minmax(0,1fr)_minmax(150px,220px)_auto] sm:px-6"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-lg font-bold tracking-[-0.01em] text-sk-ink group-hover:text-sk-blue">{week.name}</span>
-                        <span className="mt-0.5 block text-sm text-sk-mute">
-                          {teamName(week.teamId)}, {dateWindow(week.startDate, week.endDate)}
-                        </span>
-                        <span className="block text-sm text-sk-mute">
-                          {plural(week.testCount, "test")}
-                          {week.athleteCount !== null ? `, ${plural(week.athleteCount, "athlete")}` : ""}
-                        </span>
-                      </span>
-                      <span className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto">
-                        {showProgress ? (
-                          <>
-                            <span className="mb-1.5 flex items-baseline justify-between text-sm">
-                              <span className="text-sk-mute">Submitted</span>
-                              <span className="font-bold tabular-nums text-sk-ink">
-                                {week.submittedCount} of {total}
-                              </span>
-                            </span>
-                            <Meter value={(week.submittedCount / total) * 100} tone={week.submittedCount >= total ? "green" : "blue"} />
-                          </>
-                        ) : (
-                          <span className="text-sm text-sk-mute">
-                            {week.status === "draft" ? "Not visible to athletes yet" : "No athletes on this team"}
-                          </span>
-                        )}
-                      </span>
-                      <span className="col-start-2 row-start-1 flex items-center gap-2 sm:col-start-auto sm:row-start-auto">
-                        <Tag tone={status.tone}>{status.label}</Tag>
-                        <CaretRight className="size-4 text-sk-mute" weight="bold" aria-hidden />
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </Panel>
-        )}
-      </div>
+        <Section
+          title={listFilter === "archived" && archivedWeeks.length > 0 ? "Archived" : "Active"}
+          action={
+            archivedWeeks.length > 0 ? (
+              <Segmented
+                label="Show"
+                value={listFilter}
+                onChange={setListFilter}
+                options={[
+                  { value: "active", label: `Active ${activeWeeks.length}` },
+                  { value: "archived", label: `Archived ${archivedWeeks.length}` },
+                ]}
+              />
+            ) : null
+          }
+        >
+          {isLoading ? (
+            <SkeletonRows rows={3} label="Loading test weeks" />
+          ) : shownWeeks.length === 0 ? (
+            <EmptyState
+              title="No test weeks yet"
+              body="A test week is a set of tests, such as 30m or squat 1RM, that your athletes do over a few days. Results land here as they come in, or you type them in yourself."
+              action={
+                <Button size="sm" onClick={openNew}>
+                  Set up a test week
+                </Button>
+              }
+            />
+          ) : (
+            <DataTable caption="Test weeks" columns={columns} rows={shownWeeks} rowKey={(week) => week.id} />
+          )}
+        </Section>
+      </Screen>
     )
   }
 
@@ -479,7 +471,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
                 viewTeamId.current = input.teamId
                 if (defaultTeamId) syncSelectedTeam(input.teamId)
                 setView({ kind: "detail", id: result.data.id })
-                document.querySelector("main")?.scrollTo?.({ top: 0 })
+                document.getElementById("main-content")?.scrollTo?.({ top: 0 })
               }
               return result
             },
@@ -493,34 +485,26 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   /* ------------------------------ Detail ---------------------------- */
 
   const week = view.kind === "detail" ? (weeks.find((candidate) => candidate.id === view.id) ?? null) : null
-  const backButton = (
-    <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3 hidden lg:inline-flex" onClick={() => goTo({ kind: "list" })}>
-      <ArrowLeft className="size-4" weight="bold" />
-      All test weeks
-    </button>
-  )
+  const back = { onClick: () => goTo({ kind: "list" }), label: "All test weeks" }
 
   if (!week) {
     return (
-      <div className="sk-page">
-        {backButton}
-        <PageHeader title="Test week" />
+      <Screen>
+        <ScreenHeader back={back} title="Test week" />
         {isLoading ? (
-          <Panel>
-            <p className="text-sm font-semibold text-sk-mute">Loading...</p>
-          </Panel>
+          <SkeletonRows rows={4} label="Loading test week" />
         ) : (
           <EmptyState
             title="This test week is not here any more"
             body="It may have been deleted, or it belongs to another team."
             action={
-              <button type="button" className="sk-btn sk-btn-ink sk-btn-sm" onClick={() => goTo({ kind: "list" })}>
+              <Button size="sm" onClick={() => goTo({ kind: "list" })}>
                 Back to test weeks
-              </button>
+              </Button>
             }
           />
         )}
-      </div>
+      </Screen>
     )
   }
 
@@ -528,106 +512,175 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const detail = detailState?.id === week.id ? detailState.detail : null
   const detailError = detailState?.id === week.id ? detailState.error : null
   const isDraft = week.status === "draft" && !week.isArchived
+  const isOpen = week.status === "published" && !week.isArchived
+  const isClosed = week.status === "closed" && !week.isArchived
+
+  const exportCsv = () => {
+    if (!detail) return
+    downloadCsv(
+      csvFileName(week.name, "results"),
+      testWeekResultsCsvRows({
+        weekName: week.name,
+        teamName: teamName(week.teamId),
+        startDate: week.startDate,
+        endDate: week.endDate,
+        status: status.label,
+        tests: detail.tests,
+        athletes: detail.athletes,
+      }),
+    )
+  }
 
   return (
-    <div className="sk-page">
-      {backButton}
-      {actionError ? <Alert>{actionError}</Alert> : null}
-      {notice ? (
-        <p role="status" className="rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-[#07673f]">
-          {notice}
-        </p>
-      ) : null}
-
-      <PageHeader
+    <Screen>
+      <ScreenHeader
+        back={back}
+        fact={<StatusText tone={status.tone}>{status.label}</StatusText>}
         title={week.name}
         lede={`${teamName(week.teamId)}, ${dateWindow(week.startDate, week.endDate)}.`}
         actions={
           <>
             {week.isArchived ? (
-              <button
-                type="button"
-                className="sk-btn sk-btn-quiet"
-                disabled={busy}
-                onClick={() => void run(() => props.onSetArchived(week.id, false), () => setNotice("Restored from the archive."))}
-              >
+              <Button disabled={busy} onClick={() => void run(() => props.onSetArchived(week.id, false), () => setNotice("Restored from the archive."))}>
                 Restore
-              </button>
-            ) : (
-              <>
-                {isDraft ? (
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-primary"
-                    disabled={busy || week.testCount === 0}
-                    onClick={() =>
-                      void run(
-                        () => props.onPublish(week.id),
-                        () => setNotice(`Test week published to ${plural(week.athleteCount ?? 0, "athlete")}.`),
-                      )
-                    }
-                  >
-                    Publish
-                  </button>
-                ) : null}
-                <button type="button" className="sk-btn sk-btn-quiet" disabled={busy || !detail} onClick={() => detail && openEdit(week, detail)}>
-                  <PencilSimple className="size-5" weight="bold" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="sk-btn sk-btn-ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    if (!window.confirm(`Archive "${week.name}"? Athletes will no longer see it.`)) return
-                    void run(() => props.onSetArchived(week.id, true), () => goTo({ kind: "list" }))
-                  }}
-                >
-                  <Archive className="size-5" weight="bold" />
-                  Archive
-                </button>
-              </>
+              </Button>
+            ) : null}
+            {isDraft ? (
+              <Button
+                variant="primary"
+                disabled={busy || week.testCount === 0}
+                onClick={() => void run(() => props.onPublish(week.id), () => setNotice(`Test week published to ${plural(week.athleteCount ?? 0, "athlete")}.`))}
+              >
+                Publish
+              </Button>
+            ) : null}
+            {isOpen ? (
+              <Button disabled={busy} onClick={() => setConfirm("close")}>
+                <LockSimple className="size-5" weight="bold" aria-hidden />
+                Close test week
+              </Button>
+            ) : null}
+            {isClosed ? (
+              <Button
+                disabled={busy}
+                onClick={() => void run(() => props.onSetOpen(week.id, true), () => setNotice("Reopened. Athletes can enter results again, and those with an account have been told."))}
+              >
+                <LockSimpleOpen className="size-5" weight="bold" aria-hidden />
+                Reopen
+              </Button>
+            ) : null}
+            {week.isArchived ? null : (
+              <Button disabled={busy || !detail} onClick={() => detail && openEdit(week, detail)}>
+                <PencilSimple className="size-5" weight="bold" aria-hidden />
+                Edit
+              </Button>
             )}
-            <button
-              type="button"
-              className="sk-btn sk-btn-danger"
-              disabled={busy}
-              onClick={() => {
-                if (!window.confirm(`Delete "${week.name}" for good? Submitted results are deleted too. This cannot be undone.`)) return
-                void run(() => props.onDelete(week.id), () => goTo({ kind: "list" }))
-              }}
-            >
-              <Trash className="size-5" weight="bold" />
-              Delete
-            </button>
+            <RowMenu
+              label={`More for ${week.name}`}
+              items={[
+                { label: "Download results as CSV", onSelect: exportCsv, disabled: !detail || detail.tests.length === 0 },
+                ...(week.isArchived ? [] : [{ label: "Archive", onSelect: () => setConfirm("archive"), disabled: busy }]),
+                { label: "Delete", danger: true, onSelect: () => setConfirm("delete"), disabled: busy },
+              ]}
+            />
           </>
         }
-      >
-        <Tag tone={status.tone}>{status.label}</Tag>
-      </PageHeader>
+      />
 
-      {detailError ? <Alert>Could not load this test week: {detailError}</Alert> : null}
+      {actionError ? <Notice tone="error">{actionError}</Notice> : null}
+      {notice ? <Notice tone="success">{notice}</Notice> : null}
+
+      {confirm === "close" ? (
+        <InlineConfirm
+          question="Close this test week? Athletes can no longer enter or change results. You still can, and you can reopen it."
+          confirmLabel="Close test week"
+          cancelLabel="Keep it open"
+          busy={busy}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void run(() => props.onSetOpen(week.id, false), () => setNotice("Closed. Athletes can no longer enter results. You can still correct them here."))}
+        />
+      ) : null}
+      {confirm === "archive" ? (
+        <InlineConfirm
+          question={`Archive "${week.name}"? Athletes will no longer see it.`}
+          confirmLabel="Archive"
+          busy={busy}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void run(() => props.onSetArchived(week.id, true), () => goTo({ kind: "list" }))}
+        />
+      ) : null}
+      {confirm === "delete" ? (
+        <InlineConfirm
+          question={`Delete "${week.name}" for good? Its results are deleted too. This cannot be undone.`}
+          confirmLabel="Yes, delete"
+          busy={busy}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void run(() => props.onDelete(week.id), () => goTo({ kind: "list" }))}
+        />
+      ) : null}
+
+      {detailError ? <Notice tone="error">Could not load this test week: {detailError}</Notice> : null}
 
       {detail ? (
-        <DetailBody week={week} detail={detail} />
+        <DetailBody
+          week={week}
+          detail={detail}
+          onExport={exportCsv}
+          onSaveResult={props.onSaveResult}
+          onResultSaved={(athleteId, testId, saved) =>
+            setDetailState((current) => {
+              if (!current?.detail || current.id !== week.id) return current
+              return {
+                ...current,
+                detail: {
+                  ...current.detail,
+                  athletes: current.detail.athletes.map((athlete) => {
+                    if (athlete.athleteId !== athleteId) return athlete
+                    const results = { ...athlete.results }
+                    if (saved) results[testId] = { value: saved.value, numeric: saved.numeric, change: null, enteredBy: saved.enteredBy }
+                    else delete results[testId]
+                    const left = Object.keys(results).length
+                    return { ...athlete, results, submittedAt: left === 0 ? null : saved ? saved.submittedAt : athlete.submittedAt }
+                  }),
+                },
+              }
+            })
+          }
+        />
       ) : detailError ? null : (
-        <Panel>
-          <p className="text-sm font-semibold text-sk-mute">Loading results...</p>
-        </Panel>
+        <SkeletonRows rows={4} leading label="Loading results" />
       )}
-    </div>
+    </Screen>
   )
 }
 
 /* ------------------------------------------------------------------ */
 
-function DetailBody({ week, detail }: { week: TestWeekRow; detail: TestWeekDetail }) {
-  const [lens, setLens] = useState<"athlete" | "test">("athlete")
+type EntryState = { text: string; state: SaveStateValue; message?: string | null }
+
+function DetailBody({
+  week,
+  detail,
+  onExport,
+  onSaveResult,
+  onResultSaved,
+}: {
+  week: TestWeekRow
+  detail: TestWeekDetail
+  onExport: () => void
+  onSaveResult: TestWeekScreenProps["onSaveResult"]
+  onResultSaved: (athleteId: string, testId: string, saved: TestWeekSavedResult | null) => void
+}) {
+  const [lens, setLens] = useState<Lens>("athlete")
+  // Cells the coach has typed in this visit: what was typed and whether it is saved yet.
+  const [entries, setEntries] = useState<Record<string, EntryState>>({})
   const days = dayCount(week.startDate, week.endDate)
   const multiDay = new Set(detail.tests.map((test) => test.dayIndex)).size > 1
-  const submitted = detail.athletes.filter((athlete) => athlete.submittedAt)
-  const waiting = detail.athletes.filter((athlete) => !athlete.submittedAt && athlete.onRoster)
+  const submitted = detail.athletes.filter((athlete) => athlete.submittedAt || Object.keys(athlete.results).length > 0)
+  const waiting = detail.athletes.filter((athlete) => !athlete.submittedAt && Object.keys(athlete.results).length === 0 && athlete.onRoster)
   const isDraft = week.status === "draft"
+  const canEnter = !isDraft && !week.isArchived && detail.tests.length > 0 && detail.athletes.length > 0
+  const activeLens: Lens = lens === "enter" && !canEnter ? "athlete" : lens
 
   const testsByDay = useMemo(() => {
     const groups = new Map<number, TestWeekTest[]>()
@@ -651,171 +704,217 @@ function DetailBody({ week, detail }: { week: TestWeekRow; detail: TestWeekDetai
     return { test, best, count }
   })
 
+  const athleteColumns: Array<DataTableColumn<TestWeekAthleteRow>> = [
+    {
+      key: "athlete",
+      header: "Athlete",
+      cell: (athlete) => {
+        const values = Object.values(athlete.results)
+        const staffCount = values.filter(byStaff).length
+        const when = athlete.submittedAt ? shortDate(athlete.submittedAt) : null
+        const line =
+          values.length === 0
+            ? isDraft
+              ? (athlete.primaryEvent ?? "Assigned")
+              : "No results yet"
+            : staffCount === values.length
+              ? `Entered by coach${when ? ` ${when}` : ""}`
+              : `Submitted${when ? ` ${when}` : ""}${staffCount > 0 ? `, ${staffCount} by coach` : ""}`
+        return (
+          <span className="flex items-center gap-3">
+            <PersonAvatar name={athlete.name} athleteId={athlete.athleteId} size="sm" />
+            <span className="min-w-0">
+              {athlete.name}
+              <TableSub>
+                {line}
+                {athlete.onRoster ? "" : ", left the team"}
+              </TableSub>
+            </span>
+          </span>
+        )
+      },
+    },
+    ...detail.tests.map((test) => ({
+      key: test.id,
+      header: multiDay ? `${test.name}, day ${test.dayIndex + 1}` : test.name,
+      align: "right" as const,
+      cell: (athlete: TestWeekAthleteRow) => {
+        const result = athlete.results[test.id]
+        return result ? (
+          <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap font-semibold text-sk-ink">
+            {result.value}
+            <Change change={result.change} />
+          </span>
+        ) : (
+          <span className="text-sk-faint" aria-label="No result">
+            -
+          </span>
+        )
+      },
+    })),
+  ]
+
+  const testColumns: Array<DataTableColumn<(typeof byTest)[number]>> = [
+    {
+      key: "test",
+      header: "Test",
+      cell: ({ test }) => (
+        <>
+          {test.name}
+          <TableSub>
+            {TEST_UNIT_META[test.unit].long}
+            {multiDay ? `, day ${test.dayIndex + 1}` : ""}
+          </TableSub>
+        </>
+      ),
+    },
+    { key: "best", header: "Best mark", phone: "trailing", cell: ({ best }) => (best ? <Mark size="sm" value={best.value} /> : <span className="text-sk-mute">None yet</span>) },
+    { key: "leader", header: "Leader", cell: ({ best }) => best?.athlete ?? "No results yet" },
+    { key: "count", header: "Results in", align: "right", strong: true, cell: ({ count }) => `${count} of ${detail.athletes.length}` },
+  ]
+
+  const cellKey = (athleteId: string, testId: string) => `${athleteId}|${testId}`
+  const entryAthletes = detail.athletes.filter((athlete) => athlete.onRoster || Object.keys(athlete.results).length > 0)
+
+  const cell = (athleteId: string, testId: string): EntryGridCell => {
+    const entry = entries[cellKey(athleteId, testId)]
+    const saved = detail.athletes.find((athlete) => athlete.athleteId === athleteId)?.results[testId]
+    if (entry && entry.state !== "saved") return { value: entry.text, state: entry.state, message: entry.message }
+    return { value: entryTextFor(saved), state: entry?.state ?? "idle", marked: byStaff(saved) }
+  }
+
+  const commit = (athleteId: string, testId: string, text: string) => {
+    const test = detail.tests.find((candidate) => candidate.id === testId)
+    if (!test) return
+    const key = cellKey(athleteId, testId)
+    setEntries((current) => ({ ...current, [key]: { text, state: "saving" } }))
+    void onSaveResult({ testWeekId: week.id, testId, athleteId, unit: test.unit, value: text }).then((result) => {
+      if (!result.ok) {
+        setEntries((current) => ({ ...current, [key]: { text, state: "error", message: result.message } }))
+        return
+      }
+      onResultSaved(athleteId, testId, result.data)
+      setEntries((current) => ({ ...current, [key]: { text, state: "saved" } }))
+    })
+  }
+
+  const entryStates = Object.values(entries)
+  const savingCount = entryStates.filter((entry) => entry.state === "saving").length
+  const failedCount = entryStates.filter((entry) => entry.state === "error").length
+  const savedCount = entryStates.filter((entry) => entry.state === "saved").length
+  const summary: { state: SaveStateValue; text: string } =
+    failedCount > 0
+      ? { state: "error", text: `${plural(failedCount, "result")} not saved` }
+      : savingCount > 0
+        ? { state: "saving", text: "Saving..." }
+        : savedCount > 0
+          ? { state: "saved", text: "All results saved" }
+          : { state: "idle", text: "" }
+
   return (
     <>
-      <section aria-label="Progress" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat tone="blue" label="Submitted" value={submitted.length} hint={`of ${plural(detail.athletes.length, "athlete")}`} />
-        <Stat
-          tone={!isDraft && waiting.length > 0 ? "coral" : "plain"}
-          label="Still to submit"
-          value={isDraft ? 0 : waiting.length}
-          hint={isDraft ? "Not published yet" : waiting.length === 0 ? "Everyone is in" : "Waiting on results"}
-        />
+      <StatStrip aria-label="Progress">
+        <Stat label="Results in" value={submitted.length} of={detail.athletes.length} />
+        <Stat label="Still to come" value={isDraft ? 0 : waiting.length} hint={isDraft ? "Not published yet" : waiting.length === 0 ? "Everyone is in" : undefined} />
         <Stat label="Tests" value={detail.tests.length} hint={multiDay ? "Across the week" : "All on one day"} />
-        <Stat label="Days" value={days} hint={dateWindow(week.startDate, week.endDate)} />
-      </section>
+        <Stat label="Days" value={days} />
+      </StatStrip>
 
-      <div className="space-y-5">
-        <Panel
-          title="Results"
-          hint={isDraft ? undefined : `${submitted.length} of ${detail.athletes.length} submitted`}
-          className="min-w-0"
-          action={
-            detail.athletes.length > 0 && detail.tests.length > 0 ? (
-              <Segmented
-                label="Results view"
-                value={lens}
-                onChange={setLens}
-                options={[
-                  { value: "athlete", label: "By athlete" },
-                  { value: "test", label: "By test" },
-                ]}
-              />
-            ) : null
-          }
-        >
-          {detail.athletes.length === 0 ? (
-            <EmptyState
-              title="No athletes on this team yet"
-              body="Invite athletes to the team and they will show up here, ready to submit."
-              className="border-0 bg-sk-canvas"
+      <Section
+        title="Results"
+        hint={
+          activeLens === "enter"
+            ? "Type a result and press Enter to go down or Tab to go across. Each one saves as you leave it."
+            : week.status === "closed"
+              ? "Closed to athletes. You can still enter and correct results."
+              : undefined
+        }
+        meta={activeLens === "enter" ? <SaveState state={summary.state}>{summary.text}</SaveState> : undefined}
+      >
+        {detail.athletes.length === 0 ? (
+          <EmptyState title="No athletes on this team yet" body="Add or invite athletes to the team and they show up here." />
+        ) : detail.tests.length === 0 ? (
+          <EmptyState title="No tests yet" body="Edit this test week to add the tests athletes should do." />
+        ) : (
+          <>
+            <Tabs<Lens>
+              label="Results view"
+              className="mb-1"
+              value={activeLens}
+              onChange={setLens}
+              options={[
+                { value: "athlete", label: "By athlete" },
+                { value: "test", label: "By test" },
+                ...(canEnter ? [{ value: "enter" as const, label: "Enter results" }] : []),
+              ]}
             />
-          ) : detail.tests.length === 0 ? (
-            <EmptyState title="No tests yet" body="Edit this test week to add the tests athletes should complete." className="border-0 bg-sk-canvas" />
-          ) : lens === "athlete" ? (
-            <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-              <table className="w-full text-left" style={{ minWidth: `${220 + detail.tests.length * 96}px` }}>
-                <thead>
-                  <tr className="border-b border-sk-line text-sm text-sk-mute">
-                    <th scope="col" className="py-2 pr-4 font-semibold">
-                      Athlete
-                    </th>
-                    {detail.tests.map((test) => (
-                      <th key={test.id} scope="col" className="px-2 py-2 text-right align-bottom font-semibold">
-                        {test.name}
-                        {multiDay ? <span className="block text-xs font-medium">Day {test.dayIndex + 1}</span> : null}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.athletes.map((athlete) => (
-                    <tr key={athlete.athleteId} className="border-b border-sk-line last:border-b-0">
-                      <th scope="row" className="py-3.5 pr-4 font-normal">
-                        <span className="flex items-center gap-3">
-                          <PersonAvatar name={athlete.name} athleteId={athlete.athleteId} size="sm" />
-                          <span className="min-w-0">
-                            <span className="block whitespace-nowrap font-bold text-sk-ink">{athlete.name}</span>
-                            <span className="block whitespace-nowrap text-sm text-sk-mute">
-                              {athlete.submittedAt
-                                ? `Submitted ${new Date(athlete.submittedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                                : isDraft
-                                  ? (athlete.primaryEvent ?? "Assigned")
-                                  : "Not submitted"}
-                              {athlete.onRoster ? "" : ", left the team"}
-                            </span>
-                          </span>
-                        </span>
-                      </th>
-                      {detail.tests.map((test) => {
-                        const result = athlete.results[test.id]
-                        return (
-                          <td key={test.id} className="px-2 py-3.5 text-right">
-                            {result ? (
-                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap font-semibold tabular-nums text-sk-ink">
-                                {result.value}
-                                <Change change={result.change} />
-                              </span>
-                            ) : (
-                              <span className="text-sk-mute" aria-label="No result">
-                                n/a
-                              </span>
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {activeLens === "athlete" ? (
+              <DataTable caption="Results by athlete" columns={athleteColumns} rows={detail.athletes} rowKey={(athlete) => athlete.athleteId} />
+            ) : activeLens === "test" ? (
+              <DataTable caption="Results by test" columns={testColumns} rows={byTest} rowKey={(row) => row.test.id} />
+            ) : (
+              <>
+                <EntryGrid
+                  className="mt-2"
+                  caption={`Enter results for ${week.name}`}
+                  rowHeader="Athlete"
+                  rows={entryAthletes.map((athlete) => ({
+                    key: athlete.athleteId,
+                    label: athlete.name,
+                    header: (
+                      <span className="flex items-center gap-2.5">
+                        <PersonAvatar name={athlete.name} athleteId={athlete.athleteId} size="sm" className="hidden sm:inline-flex" />
+                        <span className="min-w-0 truncate">{athlete.name}</span>
+                      </span>
+                    ),
+                  }))}
+                  columns={detail.tests.map((test) => ({
+                    key: test.id,
+                    header: test.name,
+                    sub: `${TEST_UNIT_META[test.unit].long}${multiDay ? `, day ${test.dayIndex + 1}` : ""}`,
+                  }))}
+                  cell={cell}
+                  validate={(testId, text) => {
+                    const test = detail.tests.find((candidate) => candidate.id === testId)
+                    if (!test) return null
+                    const checked = checkTestResultEntry(text, test.unit)
+                    return checked.ok ? null : checked.message
+                  }}
+                  onCommit={commit}
+                />
+                <p className="mt-3 flex items-start gap-2 text-sm text-sk-mute">
+                  <span className="mt-[0.45rem] size-1.5 shrink-0 rounded-full bg-sk-blue" aria-hidden />
+                  Entered by a coach. You can paste a column from a spreadsheet into any cell. Empty a cell to remove a result.
+                </p>
+              </>
+            )}
+            <div className="-ml-2.5 mt-2">
+              <Button variant="quiet" size="sm" onClick={onExport}>
+                <DownloadSimple className="size-4" weight="bold" aria-hidden />
+                Download results as CSV
+              </Button>
             </div>
-          ) : (
-            <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-              <table className="w-full min-w-[480px] text-left">
-                <thead>
-                  <tr className="border-b border-sk-line text-sm text-sk-mute">
-                    <th scope="col" className="py-2 pr-4 font-semibold">Test</th>
-                    <th scope="col" className="px-2 py-2 font-semibold">Best mark</th>
-                    <th scope="col" className="px-2 py-2 font-semibold">Leader</th>
-                    <th scope="col" className="py-2 pl-2 text-right font-semibold">Submitted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byTest.map(({ test, best, count }) => (
-                    <tr key={test.id} className="border-b border-sk-line last:border-b-0">
-                      <th scope="row" className="py-3.5 pr-4 font-normal">
-                        <span className="block font-bold text-sk-ink">{test.name}</span>
-                        <span className="block text-sm text-sk-mute">
-                          {unitLabel(test.unit)}
-                          {multiDay ? `, day ${test.dayIndex + 1}` : ""}
-                        </span>
-                      </th>
-                      <td className="px-2 py-3.5">
-                        {best ? (
-                          <span className="inline-flex items-center gap-1.5 text-lg font-extrabold tabular-nums text-sk-ink">
-                            <Trophy className="size-4 text-[#c48a00]" weight="fill" aria-hidden />
-                            {best.value}
-                          </span>
-                        ) : (
-                          <span className="text-sk-mute">n/a</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-3.5 font-semibold text-sk-ink">{best?.athlete ?? <span className="font-normal text-sk-mute">No results yet</span>}</td>
-                      <td className="py-3.5 pl-2 text-right font-semibold tabular-nums text-sk-ink">
-                        {count} of {detail.athletes.length}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+          </>
+        )}
+      </Section>
 
-        <Panel title="Tests by day" hint={plural(detail.tests.length, "test")} className="min-w-0">
-          {testsByDay.length === 0 ? (
-            <p className="text-sm text-sk-mute">Nothing scheduled yet.</p>
-          ) : (
-            <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2 xl:grid-cols-3">
-              {testsByDay.map(([dayIndex, tests]) => (
-                <div key={dayIndex}>
-                  <h3 className="sk-label">
-                    Day {dayIndex + 1}, {weekdayDate(addDays(week.startDate, dayIndex))}
-                  </h3>
-                  <ul className="mt-1">
-                    {tests.map((test) => (
-                      <li key={test.id} className="sk-row py-2.5">
-                        <span className="font-semibold text-sk-ink">{test.name}</span>
-                        <span className="text-sm text-sk-mute">{unitLabel(test.unit)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </div>
+      <Section title="Tests by day">
+        {testsByDay.length === 0 ? (
+          <EmptyState title="Nothing scheduled yet" body="Edit this test week to add tests to its days." />
+        ) : (
+          <List>
+            {testsByDay.map(([dayIndex, tests]) => (
+              <ListRow
+                key={dayIndex}
+                leading={<span className="w-12 text-left font-bold text-sk-mute">Day {dayIndex + 1}</span>}
+                title={tests.map((test) => test.name).join(", ")}
+                subtitle={weekdayDate(addDays(week.startDate, dayIndex))}
+                trailing={<span className="font-normal text-sk-mute">{plural(tests.length, "test")}</span>}
+              />
+            ))}
+          </List>
+        )}
+      </Section>
     </>
   )
 }
@@ -845,20 +944,18 @@ function Builder({
   onCancel: () => void
   onSubmit: (input: TestWeekSaveInput) => void
 }) {
-  const fieldId = useId()
   const [activeDay, setActiveDay] = useState(0)
   const focusKey = useRef<string | null>(null)
   const days = dayCount(draft.startDate, draft.endDate)
   const day = Math.min(activeDay, days - 1)
   const team = lockedTeam ?? teams.find((candidate) => candidate.id === draft.teamId) ?? null
   const isPublished = editingWeek?.status === "published"
+  const isClosed = editingWeek?.status === "closed"
   const hasResults = (editingWeek?.submittedCount ?? 0) > 0
   const dayTests = draft.tests.filter((test) => Math.min(test.dayIndex, days - 1) === day)
   const namedTests = draft.tests.filter((test) => test.name.trim())
   const usedDays = new Set(namedTests.map((test) => Math.min(test.dayIndex, days - 1))).size
-  const quickAdds = QUICK_TESTS.filter(
-    (quick) => !dayTests.some((test) => test.name.trim().toLowerCase() === quick.name.toLowerCase()),
-  )
+  const quickAdds = QUICK_TESTS.filter((quick) => !dayTests.some((test) => test.name.trim().toLowerCase() === quick.name.toLowerCase()))
 
   const patch = (next: Partial<Draft>) => setDraft((current) => ({ ...current, ...next }))
   const patchTest = (key: string, next: Partial<DraftTest>) =>
@@ -899,197 +996,144 @@ function Builder({
   }
 
   return (
-    <div className="sk-page">
-      <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3 hidden lg:inline-flex" onClick={onCancel}>
-        <ArrowLeft className="size-4" weight="bold" />
-        {draft.id ? "Back to results" : "All test weeks"}
-      </button>
-
-      <PageHeader
+    <Screen>
+      <ScreenHeader
+        back={{ onClick: onCancel, label: draft.id ? "Back to results" : "All test weeks" }}
         title={draft.id ? "Edit test week" : "New test week"}
         lede="Name it, set the dates, then add the tests for each day."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] xl:items-start">
-        <Panel title="Details">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label htmlFor={`${fieldId}-name`} className="sk-label block">
-                Test week name
-              </label>
-              <input
-                id={`${fieldId}-name`}
-                className="sk-field"
-                value={draft.name}
-                placeholder="Week 4 testing"
-                onChange={(event) => patch({ name: event.target.value })}
-              />
+      <Split
+        main={
+          <Section title="Tests" hint="Pick a day, then add what athletes should do on it." meta={`${plural(namedTests.length, "test")}, ${plural(usedDays, "day")}`}>
+            <Tabs<string>
+              label="Day"
+              className="mt-2"
+              value={String(day)}
+              onChange={(next) => setActiveDay(Number(next))}
+              options={Array.from({ length: days }, (_, index) => {
+                const count = draft.tests.filter((test) => test.name.trim() && Math.min(test.dayIndex, days - 1) === index).length
+                return { value: String(index), label: `Day ${index + 1}`, count: count > 0 ? count : undefined }
+              })}
+            />
+
+            <p className="mt-4 text-[0.9375rem] font-semibold text-sk-ink">{weekdayDate(addDays(draft.startDate, day))}</p>
+
+            {dayTests.length === 0 ? (
+              <p className="mt-2 text-[0.9375rem] text-sk-mute">Nothing on day {day + 1} yet. Add a test below, or leave it as a rest day.</p>
+            ) : (
+              <ul className="mt-2 flex flex-col gap-2">
+                {dayTests.map((test, index) => (
+                  <li key={test.key} className="grid grid-cols-[minmax(0,1fr)_2.75rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_11rem_2.75rem]">
+                    <input
+                      className="sk-field"
+                      aria-label={`Test ${index + 1} name`}
+                      placeholder="Test name, for example 300m"
+                      value={test.name}
+                      autoFocus={focusKey.current === test.key}
+                      enterKeyHint="next"
+                      onChange={(event) => patchTest(test.key, { name: event.target.value })}
+                      onKeyDown={(event) => {
+                        // Enter on the last test starts the next one, so a list can be typed without the mouse.
+                        if (event.key !== "Enter") return
+                        event.preventDefault()
+                        if (index === dayTests.length - 1 && test.name.trim()) addTest()
+                      }}
+                    />
+                    <select
+                      className="sk-field col-start-1 row-start-2 sm:col-start-auto sm:row-start-auto"
+                      aria-label={`Test ${index + 1} unit`}
+                      value={test.unit}
+                      onChange={(event) => patchTest(test.key, { unit: event.target.value as TestUnit })}
+                    >
+                      {UNIT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="inline-flex size-11 cursor-pointer items-center justify-center rounded-[12px] text-sk-mute transition-colors hover:bg-sk-soft hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+                      aria-label={`Remove ${test.name.trim() || `test ${index + 1}`}`}
+                      onClick={() => setDraft((current) => ({ ...current, tests: current.tests.filter((item) => item.key !== test.key) }))}
+                    >
+                      <Trash className="size-5" weight="bold" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => addTest()}>
+                <Plus className="size-4" weight="bold" aria-hidden />
+                Add test
+              </Button>
+              {quickAdds.map((quick) => (
+                <Button key={quick.name} size="sm" variant="quiet" onClick={() => addTest(quick)}>
+                  <Plus className="size-4" weight="bold" aria-hidden />
+                  <span className="sr-only">Add </span>
+                  {quick.name}
+                </Button>
+              ))}
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label htmlFor={`${fieldId}-team`} className="sk-label block">
-                Team
-              </label>
-              {lockedTeam ? (
-                <p id={`${fieldId}-team`} className="flex h-11 items-center rounded-[14px] bg-sk-canvas px-3.5 font-semibold text-sk-ink">
-                  {lockedTeam.name}
-                </p>
-              ) : (
-                <select id={`${fieldId}-team`} className="sk-field" value={draft.teamId} onChange={(event) => patch({ teamId: event.target.value })}>
+
+            {hasResults ? (
+              <Notice tone="warning" className="mt-4">
+                {plural(editingWeek?.submittedCount ?? 0, "athlete has", "athletes have")} results already. Removing a test also removes its results.
+              </Notice>
+            ) : null}
+          </Section>
+        }
+        side={
+          <Section title="Details">
+            <FormGrid className="mt-2">
+              <Field label="Test week name" className="sm:col-span-2">
+                <Input value={draft.name} placeholder="Week 4 testing" onChange={(event) => patch({ name: event.target.value })} />
+              </Field>
+              <Field label="Team" className="sm:col-span-2" hint={team ? `Goes to the whole team, ${plural(team.athleteCount, "athlete")}.` : "Choose who this is for."}>
+                <Select value={draft.teamId} disabled={Boolean(lockedTeam)} onChange={(event) => patch({ teamId: event.target.value })}>
                   {teams.length === 0 ? <option value="">No teams yet</option> : null}
                   {teams.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.name}
                     </option>
                   ))}
-                </select>
-              )}
-              <p className="text-sm text-sk-mute">
-                {team ? `Goes to the whole team, ${plural(team.athleteCount, "athlete")}.` : "Choose who this is for."}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor={`${fieldId}-start`} className="sk-label block">
-                Start date
-              </label>
-              <input
-                id={`${fieldId}-start`}
-                type="date"
-                className="sk-field"
-                value={draft.startDate}
-                onChange={(event) => patch({ startDate: event.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor={`${fieldId}-end`} className="sk-label block">
-                End date
-              </label>
-              <input
-                id={`${fieldId}-end`}
-                type="date"
-                className="sk-field"
-                value={draft.endDate}
-                min={draft.startDate}
-                onChange={(event) => patch({ endDate: event.target.value })}
-              />
-            </div>
-          </div>
-        </Panel>
+                </Select>
+              </Field>
+              <Field label="Start date">
+                <Input type="date" value={draft.startDate} onChange={(event) => patch({ startDate: event.target.value })} />
+              </Field>
+              <Field label="End date">
+                <Input type="date" value={draft.endDate} min={draft.startDate} onChange={(event) => patch({ endDate: event.target.value })} />
+              </Field>
+            </FormGrid>
+          </Section>
+        }
+      />
 
-        <Panel title="Tests" hint="Pick a day, then add what athletes should complete on it." className="min-w-0">
-          <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-            <div role="tablist" aria-label="Day" className="sk-seg">
-              {Array.from({ length: days }, (_, index) => {
-                const count = draft.tests.filter((test) => test.name.trim() && Math.min(test.dayIndex, days - 1) === index).length
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    role="tab"
-                    aria-selected={index === day}
-                    data-active={index === day}
-                    className="sk-seg-item whitespace-nowrap"
-                    onClick={() => setActiveDay(index)}
-                  >
-                    Day {index + 1}
-                    {count > 0 ? <span className="ml-1.5 tabular-nums text-sk-blue">{count}</span> : null}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
-          <h3 className="sk-h3 mt-5">{weekdayDate(addDays(draft.startDate, day))}</h3>
-
-          {dayTests.length === 0 ? (
-            <p className="mt-3 rounded-2xl bg-sk-canvas px-4 py-4 text-sm text-sk-mute">
-              Nothing on day {day + 1} yet. Add a test below, or leave it as a rest day.
-            </p>
-          ) : (
-            <ul className="mt-3 space-y-2.5">
-              {dayTests.map((test, index) => (
-                <li key={test.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto]">
-                  <input
-                    className="sk-field"
-                    aria-label={`Test ${index + 1} name`}
-                    placeholder="Test name, for example 300m"
-                    value={test.name}
-                    autoFocus={focusKey.current === test.key}
-                    onChange={(event) => patchTest(test.key, { name: event.target.value })}
-                  />
-                  <select
-                    className="sk-field col-start-1 row-start-2 sm:col-start-auto sm:row-start-auto"
-                    aria-label={`Test ${index + 1} unit`}
-                    value={test.unit}
-                    onChange={(event) => patchTest(test.key, { unit: event.target.value as TestUnit })}
-                  >
-                    {UNIT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-ghost w-11 px-0"
-                    aria-label={`Remove ${test.name.trim() || `test ${index + 1}`}`}
-                    onClick={() => setDraft((current) => ({ ...current, tests: current.tests.filter((item) => item.key !== test.key) }))}
-                  >
-                    <Trash className="size-5" weight="bold" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-sk-line pt-4">
-            <button type="button" className="sk-btn sk-btn-ink sk-btn-sm" onClick={() => addTest()}>
-              <Plus className="size-4" weight="bold" />
-              Add test
-            </button>
-            {quickAdds.map((quick) => (
-              <button key={quick.name} type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={() => addTest(quick)}>
-                <Plus className="size-4" weight="bold" aria-hidden />
-                <span className="sr-only">Add </span>
-                {quick.name}
-              </button>
-            ))}
-          </div>
-
-          {hasResults ? (
-            <p className="mt-4 rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">
-              {plural(editingWeek?.submittedCount ?? 0, "athlete has", "athletes have")} already submitted. Removing a test also removes its results.
-            </p>
-          ) : null}
-        </Panel>
-      </div>
-
-      {error ? <Alert>{error}</Alert> : null}
-
-      <div className="flex flex-col gap-3 rounded-[20px] border border-sk-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-        <p className="text-sm text-sk-ink-2">
-          <span className="font-bold text-sk-ink">{plural(namedTests.length, "test")}</span> over {plural(usedDays, "day")}
-          {team ? ` for ${plural(team.athleteCount, "athlete")}` : ""}.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="sk-btn sk-btn-ghost" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          {isPublished ? (
-            <button type="button" className="sk-btn sk-btn-primary" onClick={() => submit(true)} disabled={busy}>
-              {busy ? "Saving..." : "Save changes"}
-            </button>
-          ) : (
-            <>
-              <button type="button" className="sk-btn sk-btn-quiet" onClick={() => submit(false)} disabled={busy}>
-                {draft.id ? "Save changes" : "Save draft"}
-              </button>
-              <button type="button" className={cn("sk-btn sk-btn-primary")} onClick={() => submit(true)} disabled={busy}>
-                {busy ? "Publishing..." : "Publish test week"}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+      <FormActions>
+        <Button variant="quiet" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        {isPublished || isClosed ? (
+          <Button variant="primary" onClick={() => submit(Boolean(isPublished))} disabled={busy}>
+            {busy ? "Saving..." : "Save changes"}
+          </Button>
+        ) : (
+          <>
+            <Button onClick={() => submit(false)} disabled={busy}>
+              {draft.id ? "Save changes" : "Save draft"}
+            </Button>
+            <Button variant="primary" onClick={() => submit(true)} disabled={busy}>
+              {busy ? "Publishing..." : "Publish test week"}
+            </Button>
+          </>
+        )}
+      </FormActions>
+    </Screen>
   )
 }

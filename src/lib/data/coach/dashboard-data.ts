@@ -687,7 +687,22 @@ export type CoachAthleteTestRow = {
   testWeekName: string | null
 }
 
+/** Who the athlete is, for the header of the coach's athlete screen. */
+export type CoachAthleteIdentity = {
+  id: string
+  name: string
+  teamId: string | null
+  teamName: string | null
+  eventGroup: EventGroup
+  primaryEvent: string | null
+  /** False for an athlete without a login: staff enter everything for them. */
+  hasLogin: boolean
+  /** From the latest check-in when there is one, otherwise the flag on the roster. Null when there is neither. */
+  readiness: "green" | "yellow" | "red" | null
+}
+
 export type CoachAthleteDetail = {
+  athlete: CoachAthleteIdentity
   dateOfBirth: string | null
   /** The readiness flag stored on the athlete row, null when nobody has set one. */
   readinessFlag: "green" | "yellow" | "red" | null
@@ -718,6 +733,10 @@ type CoachAthleteAccess = {
   dateOfBirth: string | null
   readinessFlag: "green" | "yellow" | "red" | null
   athleteName: string
+  teamId: string | null
+  eventGroup: EventGroup
+  primaryEvent: string | null
+  hasLogin: boolean
 }
 
 async function resolveCoachAthleteAccess(
@@ -753,7 +772,7 @@ async function resolveCoachAthleteAccess(
 
   const { data: athleteRow, error: athleteError } = await clientResult.client
     .from("athletes")
-    .select("id, team_id, first_name, last_name, date_of_birth, readiness")
+    .select("id, team_id, user_id, first_name, last_name, date_of_birth, readiness, event_group, primary_event")
     .eq("tenant_id", tenantId)
     .eq("id", athleteId)
     .maybeSingle()
@@ -769,6 +788,10 @@ async function resolveCoachAthleteAccess(
     dateOfBirth: (athleteRow.date_of_birth as string | null) ?? null,
     readinessFlag: (athleteRow.readiness as "green" | "yellow" | "red" | null) ?? null,
     athleteName: `${athleteRow.first_name as string} ${athleteRow.last_name as string}`.trim(),
+    teamId: (athleteRow.team_id as string | null) ?? null,
+    eventGroup: toEventGroup(athleteRow.event_group as string | null),
+    primaryEvent: (athleteRow.primary_event as string | null) ?? null,
+    hasLogin: athleteRow.user_id !== null,
   })
 }
 
@@ -792,7 +815,7 @@ export async function getCoachAthleteDetailForCurrentUser(
   if (!access.ok) return access
   const { client, dateOfBirth, readinessFlag, athleteName } = access.data
 
-  const [wellnessResult, sessionsResult, completionsResult, prResult, testResult, availabilityResult] = await Promise.all([
+  const [wellnessResult, sessionsResult, completionsResult, prResult, testResult, availabilityResult, teamResult] = await Promise.all([
     client
       .from("wellness_entries")
       .select("id, athlete_id, entry_date, sleep_hours, soreness, fatigue, mood, stress, training_load, readiness, readiness_score, notes")
@@ -824,6 +847,7 @@ export async function getCoachAthleteDetailForCurrentUser(
       .order("submitted_at", { ascending: false })
       .limit(200),
     listAthleteAvailability([athleteId]),
+    access.data.teamId ? client.from("teams").select("name").eq("id", access.data.teamId).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ])
   if (!availabilityResult.ok) console.warn("[coach] could not read athlete availability", availabilityResult.error)
   const availability = availabilityResult.ok ? availabilityResult.data : []
@@ -1060,7 +1084,18 @@ export async function getCoachAthleteDetailForCurrentUser(
   const privateDetails =
     !detailsResult.error && detailsResult.data ? mapAthletePrivateDetailsRow(detailsResult.data as AthletePrivateDetailsRow) : null
 
+  const latestScore = wellness[0]?.readinessScore
   return ok({
+    athlete: {
+      id: athleteId,
+      name: athleteName,
+      teamId: access.data.teamId,
+      teamName: ((teamResult.data as { name?: string } | null)?.name as string | undefined) ?? null,
+      eventGroup: access.data.eventGroup,
+      primaryEvent: access.data.primaryEvent,
+      hasLogin: access.data.hasLogin,
+      readiness: typeof latestScore === "number" ? (latestScore >= 75 ? "green" : latestScore >= 55 ? "yellow" : "red") : readinessFlag,
+    },
     dateOfBirth,
     readinessFlag,
     wellness,

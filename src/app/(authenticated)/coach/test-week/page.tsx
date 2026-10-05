@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import CoachTestWeekPageClient from "@/components/coach/test-week-page-client"
 import CoachTestWeekPageSupabaseClient from "@/components/coach/test-week-page-supabase-client"
+import { ScreenSkeleton } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getBackendMode } from "@/lib/supabase/config"
 type CoachPageRole = "coach" | "club-admin"
@@ -12,7 +13,7 @@ export default function CoachTestWeekPage() {
   // Null means every team (club admins). A coach gets the teams they are assigned to.
   const coachTeamIds = useMemo(() => (role === "coach" ? coachTeams.map((team) => team.id) : null), [coachTeams, role])
 
-  if (coachTeamsLoading) return <div className="sk-page" aria-busy="true" />
+  if (coachTeamsLoading) return <ScreenSkeleton />
 
   return (
     backendMode === "supabase" ? (

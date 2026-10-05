@@ -250,3 +250,101 @@ Deno.test("local preview: localhost app url without provider sends nothing, retu
   const w = makeWorld(); w.env.RESEND_API_KEY = undefined; w.env.NOTIFICATION_FROM_EMAIL = undefined; w.env.PUBLIC_APP_URL = "http://localhost:3007"
   const r = await call(w); assertEquals([r.status, r.body.preview, r.body.actionLink], [200, true, `http://localhost:3007/invite/coach/${INVITE}`]); assertEquals(w.fetchCalls.length, 0)
 })
+
+// ---- Batch mode: { kind, inviteIds } ------------------------------------------------------------
+const I2 = "22222222-2222-4222-8222-222222222222"
+const I3 = "33333333-3333-4333-8333-333333333333"
+const I4 = "44444444-4444-4444-8444-444444444444"
+const I5 = "55555555-5555-4555-8555-555555555555"
+function batchWorld(over: Partial<World> = {}) {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-1"], ...over }, { email: "a1@example.com" }, "athlete_invites")
+  w.tables.teams.push({ id: "team-2", name: "Throws" })
+  const base = { tenant_id: TENANT_A, team_id: "team-1", status: "pending", expires_at: "2026-10-20T12:00:00.000Z", email_send_count: 0, last_email_attempt_at: null, last_email_sent_at: null, last_email_error: null }
+  w.tables.athlete_invites.push(
+    { ...base, id: I2, email: "a2@example.com" },
+    { ...base, id: I3, email: "a3@example.com", team_id: "team-2" },          // a team this coach is not on
+    { ...base, id: I4, email: "a4@example.com", status: "revoked" },
+    { ...base, id: I5, email: "a5@example.com", tenant_id: TENANT_B },        // another club
+  )
+  return w
+}
+Deno.test("batch: invalid payloads", async () => {
+  const tooMany = Array.from({ length: 26 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+  for (const body of [{ kind: "athlete", inviteIds: [] }, { kind: "athlete", inviteIds: "x" }, { kind: "athlete", inviteIds: [INVITE, "nope"] }, { kind: "admin", inviteIds: [INVITE] }, { kind: "athlete", inviteIds: tooMany }, { kind: "athlete", inviteIds: [INVITE, 7] }]) {
+    const w = batchWorld(); const r = await call(w, body)
+    assertEquals([r.status, r.body.code], [400, "invalid_request"]); assertEquals(w.fetchCalls.length, 0)
+  }
+})
+Deno.test("batch: needs a signed-in caller, like a single send", async () => {
+  let r = await call(batchWorld(), { kind: "athlete", inviteIds: [INVITE] }, { auth: false }); assertEquals([r.status, r.body.code], [401, "not_authenticated"])
+  r = await call(batchWorld({ caller: null }), { kind: "athlete", inviteIds: [INVITE] }); assertEquals([r.status, r.body.code], [401, "not_authenticated"])
+})
+Deno.test("batch: every invite gets the single-send checks, results come back per invite and in order", async () => {
+  const w = batchWorld()
+  const r = await call(w, { kind: "athlete", inviteIds: [INVITE, I2, I3, I4, I5, "99999999-9999-4999-8999-999999999999", INVITE] })
+  assertEquals([r.status, r.body.ok, r.body.batch, r.body.sent, r.body.failed], [200, true, true, 2, 4])
+  assertEquals(r.body.results.map((x: any) => [x.inviteId, x.ok, x.code ?? null]), [
+    [INVITE, true, null],
+    [I2, true, null],
+    [I3, false, "not_allowed"],            // other team of the same club
+    [I4, false, "invite_not_sendable"],    // cancelled
+    [I5, false, "not_allowed"],            // other club
+    ["99999999-9999-4999-8999-999999999999", false, "not_allowed"],   // does not exist: same answer
+  ])
+  // The repeated id was sent once.
+  assertEquals(w.fetchCalls.map((c) => c.body.to[0]), ["a1@example.com", "a2@example.com"])
+  assertEquals(w.tables.athlete_invites.map((row) => row.email_send_count), [1, 1, 0, 0, 0])
+  assertEquals(w.tables.audit_events.map((e) => [e.action, e.target]), [["athlete_invite_email_sent", "a1@example.com"], ["athlete_invite_email_sent", "a2@example.com"]])
+  // is_team_coach was asked once per team, never for the other club's invite.
+  assertEquals(w.rpcCalls.filter((c) => c.name === "is_team_coach").map((c: any) => c.args.p_team_id), ["team-1", "team-2"])
+  // Refusals look the same whether the invite exists or not.
+  assertEquals(r.body.results[2].error, r.body.results[5].error)
+})
+Deno.test("batch: per-invite rate limits still apply", async () => {
+  const w = batchWorld()
+  w.tables.athlete_invites[0].last_email_attempt_at = "2026-10-06T11:59:30.000Z"   // sent 30 seconds ago
+  w.tables.athlete_invites[1].email_send_count = 5                                  // at the maximum
+  const r = await call(w, { kind: "athlete", inviteIds: [INVITE, I2] })
+  assertEquals(r.body.results.map((x: any) => [x.ok, x.code, x.reason, x.retryAfterSeconds ?? null]), [[false, "rate_limited", "cooldown", 30], [false, "rate_limited", "max_sends", null]])
+  assertEquals(w.fetchCalls.length, 0)
+  // Sending the same batch twice in a row sends nothing the second time.
+  const w2 = batchWorld()
+  assertEquals((await call(w2, { kind: "athlete", inviteIds: [INVITE, I2] })).body.sent, 2)
+  const again = await call(w2, { kind: "athlete", inviteIds: [INVITE, I2] })
+  assertEquals([again.body.sent, again.body.results.map((x: any) => x.code)], [0, ["rate_limited", "rate_limited"]]); assertEquals(w2.fetchCalls.length, 2)
+})
+Deno.test("batch: one provider failure does not stop the rest, and can be retried", async () => {
+  const w = batchWorld({ isClubAdmin: true })
+  let calls = 0
+  const d = deps(w)
+  const realFetch = d.fetch
+  d.fetch = ((url: string, init: any) => {
+    calls += 1
+    if (calls === 2) { w.fetchCalls.push({ url, init, body: JSON.parse(init.body) }); return Promise.resolve(new Response(JSON.stringify({ message: "rate limit exceeded" }), { status: 429 })) }
+    return realFetch(url, init)
+  }) as any
+  const slept: number[] = []
+  d.sleep = (ms) => { slept.push(ms); return Promise.resolve() }
+  const res = await handleSendInviteEmail(new Request("https://fn/send-invite-email", { method: "POST", headers: { Authorization: "Bearer jwt" }, body: JSON.stringify({ kind: "athlete", inviteIds: [INVITE, I2, I3] }) }), d)
+  const body = await res.json()
+  assertEquals(body.results.map((x: any) => [x.ok, x.code ?? null]), [[true, null], [false, "provider_failure"], [true, null]])
+  assert(!JSON.stringify(body).includes("rate limit exceeded"))
+  // It paused before the second and third provider call, not before the first.
+  assertEquals(slept.length, 2)
+  // The failed one gave its slot back, so a retry right away goes out.
+  const row = w.tables.athlete_invites[1]
+  assertEquals([row.email_send_count, row.last_email_attempt_at, row.last_email_error], [0, null, "provider_failure"])
+  const retry = await call(w, { kind: "athlete", inviteIds: [I2] })
+  assertEquals([retry.body.sent, retry.body.results[0].sendCount], [1, 1])
+})
+Deno.test("batch: a coach cannot batch coach invites, a club admin of another club gets nothing", async () => {
+  const w = makeWorld({ isClubAdmin: false, coachTeamIds: ["team-1"] })
+  let r = await call(w, { kind: "coach", inviteIds: [INVITE] }); assertEquals([r.status, r.body.sent, r.body.results[0].code], [200, 0, "not_allowed"]); assertEquals(w.fetchCalls.length, 0)
+  const other = batchWorld({ isClubAdmin: true, callerTenant: TENANT_B })
+  r = await call(other, { kind: "athlete", inviteIds: [INVITE, I2] }); assertEquals(r.body.results.map((x: any) => x.code), ["not_allowed", "not_allowed"]); assertEquals(other.fetchCalls.length, 0)
+})
+Deno.test("batch: email not configured is reported per invite", async () => {
+  const w = batchWorld(); w.env.RESEND_API_KEY = undefined
+  const r = await call(w, { kind: "athlete", inviteIds: [INVITE, I2] })
+  assertEquals([r.status, r.body.sent, r.body.results.map((x: any) => x.code)], [200, 0, ["email_not_configured", "email_not_configured"]])
+})

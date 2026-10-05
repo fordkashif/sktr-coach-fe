@@ -339,6 +339,15 @@ New notification events: `athlete_unavailable` and `athlete_available_again` (to
 
 Plan adherence (computed in the app, `src/lib/data/session/adherence.ts`): sessions completed / sessions that were due and not excused, last 28 days. Due: `origin = 'plan'` and scheduled up to today. Excused: `status = 'skipped'`, or scheduled inside an `athlete_availability` period, unless the session was completed anyway. No sessions due gives no figure (null), never 100%.
 
+## Roster: Bulk Invites, Join Codes, Athletes Without a Login (migration `20261009090000_roster_bulk_join_codes_managed_athletes.sql`)
+
+- `athletes.user_id` may be NULL: a managed athlete with no login. New columns `created_by_user_id`, `login_linked_at`. Seats (package limit) count rows with `is_active`.
+- `athlete_invites.invitee_name` (name typed by the inviter), `athlete_invites.athlete_id` (a "give them a login" invite for an existing managed athlete).
+- `team_join_codes` (`id`, `tenant_id`, `team_id`, `code` 32 hex, `expires_at`, `max_uses`, `use_count`, `disabled_at`, `disabled_by_user_id`, `created_by_user_id`, `created_at`): at most one row per team with `disabled_at is null`.
+- `team_join_code_uses` (`code_id`, `tenant_id`, `team_id`, `athlete_id`, `user_id`, `outcome` new_athlete or existing_athlete, `joined_at`).
+- Package limits now also live in the database: `tenant_athlete_limit()` (starter 40, pro 150, otherwise none). Keep in step with `src/lib/billing/package-catalog.ts`.
+- New notification types: `athlete_joined_team`, `athlete_moved_team` (in-app, to coaches). New audit actions: `team_join_code_created`, `team_join_code_disabled`, `team_join_code_used`, `athlete_invites_bulk_created`, `managed_athlete_created`, `managed_athlete_updated`, `managed_athlete_removed`, `managed_athlete_login_invited`, `managed_athlete_login_linked`, `athlete_moved_team`.
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)
@@ -363,3 +372,33 @@ Plan adherence (computed in the app, `src/lib/data/session/adherence.ts`): sessi
 - `pr_records` is kept as a projection (new column `event_group`): one row per athlete and event holding the current best, rewritten by trigger from `athlete_results`. Readers are unchanged. Do not write it from the app.
 - `test_results` rows are copied into `athlete_results` by trigger (insert, update, delete, and when a test is renamed).
 - Notification event types: `athlete_new_best` (coaches of the athlete's team, in-app), `competition_entry_added` (the athlete, in-app and email).
+
+
+## Test weeks: close, reopen, results entered by a coach (20261009100000)
+
+- `test_results.entered_by_role text` (nullable; `athlete`, `coach` or `club-admin`): who typed the result. Written by trigger `test_results_guard` from the signed-in user, together with `submitted_by_user_id`; never sent by the app. Backfilled for existing rows where it can be told, otherwise null.
+- `test_weeks.status` keeps its three values. Transitions the app uses: `draft -> published` (publish), `published -> closed` (close), `closed -> published` (reopen). `draft -> closed` is refused. Athletes may enter results only while the status is `published` (unchanged rule), staff also while it is `closed`.
+- Function `set_test_week_open(p_test_week_id uuid, p_open boolean) returns text`: the close and reopen call. Returns the status afterwards; asking for the state the week is already in changes nothing.
+- Trigger functions: `test_results_guard()` (before insert or update on `test_results`), `test_weeks_status_guard()` (before update of `status`), `test_weeks_status_changed()` (after update of `status`: audit and reopen notice). `enqueue_test_week_published_notifications()` is redefined to skip a reopen.
+- Audit actions: `test_week_closed`, `test_week_reopened`. Notification event type: `test_week_reopened` (active athletes of the team with an account, in-app only, at most one per test week per 10 minutes).
+- A coach clearing a result deletes the `test_results` row; its `athlete_results` row goes with it (existing cascade) and the bests are recalculated.
+- No new table and nothing for reports or printing: report date ranges and plan printing are reads of existing tables.
+
+
+
+## Messaging and the staff side of competitions (20261009110000)
+
+- `announcements (tenant_id, audience team|club|coaches, team_id, sender_user_id, sender_role coach|club-admin, body 1 to 1000 characters, created_at)`. `team_id` only for `audience = 'team'`. Never updated.
+- `announcement_recipients (announcement_id, recipient_user_id, tenant_id, read_at)`, primary key on the first two. Who it went to is fixed when it is posted: active members with a login, never the sender. Team: the team's athletes and its other coaches. Club: every athlete, coach and club admin. Coaches: every coach.
+- `message_threads (tenant_id, team_id, coach_user_id, athlete_id, created_by_user_id, last_message_at, coach_last_read_at, athlete_last_read_at)`, unique per coach and athlete. `team_id` is the athlete's team when the coach last opened or wrote in the thread; a coach reads the thread only while assigned to that team.
+- `messages (tenant_id, thread_id, sender_user_id, sender_role coach|athlete, body, hidden_at, created_at)`. `body` is null exactly when `hidden_at` is set. No update or delete through the API.
+- `message_moderation (message_id, tenant_id, thread_id, original_body, reason, hidden_by_user_id, hidden_at)`: the text of a hidden message, club admins only.
+- `message_reports (tenant_id, thread_id, message_id, reporter_user_id, reason, resolution hidden|dismissed, resolved_at, resolved_by_user_id)`, unique per message and reporter.
+- `messaging_settings` (one private row): `dm_per_hour` 30, `announcements_per_day` 20, `max_length` 1000, `dm_email_window` 1 hour.
+- `club_profiles.guardian_cc_enabled boolean not null default false`: reserved, read by nothing that sends.
+- Functions the app calls: `open_message_thread(p_athlete_id, p_coach_user_id) returns uuid`, `send_direct_message(p_thread_id, p_body) returns uuid`, `mark_message_thread_read(p_thread_id)`, `get_message_threads(p_team_id)`, `get_message_thread(p_thread_id)`, `report_message(p_message_id, p_reason)`, `hide_message(p_message_id, p_reason)`, `dismiss_message_reports(p_message_id)`, `get_message_oversight_threads()`, `post_announcement(p_audience, p_body, p_team_id) returns uuid`, `mark_announcement_read(p_announcement_id)`, `get_announcements(p_team_id)`, `get_announcement_recipients(p_announcement_id)`, `get_message_unread_counts()`.
+- Helpers: `clean_message_body(text)`, `message_member_name(user, fallback)`, `message_thread_is_open(thread)`, `current_message_thread_ids()`, `current_announcement_ids()`, `can_manage_announcement(announcement)`.
+- Notification event types: `announcement_posted` (metadata `announcement_id`, `team_id`), `direct_message_received` (metadata `thread_id`), `message_reported` (metadata `thread_id`, `message_id`). All on by default on both channels; `notification_default_enabled()` is not replaced. Screens they open: `supabase/functions/_shared/notification-target.ts`.
+- Audit actions: `message_reported`, `message_hidden`, `message_report_dismissed`.
+- Realtime publication: `messages`, `message_threads`.
+- Competitions: no table or policy change. New index `competition_entries_competition_idx (competition_id)`.

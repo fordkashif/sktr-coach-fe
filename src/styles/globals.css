@@ -470,3 +470,32 @@ body {
 [data-slot="dialog-overlay"] {
   background: rgb(14 19 32 / 0.28);
 }
+
+/* ---- Print ------------------------------------------------------------------------------
+   Any screen prints without the app chrome and without being cut off at one page (the shell
+   scrolls inside <main>, which paper cannot do). A PrintSheet (src/components/sk/print.tsx)
+   replaces the screen on paper while it is mounted. */
+.sk-print-sheet { display: none; }
+@media print {
+  @page { margin: 14mm 12mm; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  [data-shell], [data-sk-actionbar], [data-slot="sheet-overlay"], [data-slot="dialog-overlay"], [data-slot="dialog-content"], [role="region"][aria-label^="Notifications"] { display: none !important; }
+  :has(> #main-content) { display: block !important; height: auto !important; overflow: visible !important; }
+  #main-content { overflow: visible !important; }
+  .sk-page { max-width: none !important; padding: 0 !important; }
+  .sk-table tbody tr, .sk-list > li { break-inside: avoid; }
+
+  html[data-sk-print-sheet] body > :not(.sk-print-sheet) { display: none !important; }
+  html[data-sk-print-sheet] .sk-print-sheet { display: block !important; color: #0e1320; font-size: 10.5pt; line-height: 1.35; }
+  .sk-print-head { margin-bottom: 5mm; }
+  .sk-print-head h1 { font-size: 20pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  .sk-print-head p { margin-top: 1mm; color: #3a4252; }
+  .sk-print-h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; margin: 6mm 0 1.5mm; font-size: 13pt; font-weight: 700; letter-spacing: -0.02em; break-after: avoid; }
+  .sk-print-h2 span { font-size: 10pt; font-weight: 500; color: #3a4252; letter-spacing: 0; }
+  .sk-print-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .sk-print-table th, .sk-print-table td { padding: 2mm 2.5mm 2mm 0; border-bottom: 0.25mm solid #d5d9e3; text-align: left; vertical-align: top; }
+  .sk-print-table thead th { font-size: 9pt; font-weight: 600; color: #5a6274; border-bottom-color: #8a91a1; }
+  .sk-print-table tbody th { font-weight: 700; }
+  .sk-print-table tr { break-inside: avoid; }
+  .sk-print-break { break-before: page; }
+}
