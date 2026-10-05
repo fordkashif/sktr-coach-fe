@@ -36,9 +36,19 @@ export function isAccountPath(pathname: string) {
   return pathname === "/account" || pathname.startsWith("/account/")
 }
 
+/** The full notification history. Every signed-in role has one. */
+export function isNotificationsPath(pathname: string) {
+  return pathname === "/notifications" || pathname.startsWith("/notifications/")
+}
+
+/** Not tied to one role: any signed-in person may open these (a club member still has to be active). */
+function isAnyRolePath(pathname: string) {
+  return isAccountPath(pathname) || isNotificationsPath(pathname)
+}
+
 export function isProtectedPath(pathname: string) {
   return (
-    isAccountPath(pathname) ||
+    isAnyRolePath(pathname) ||
     pathname.startsWith("/athlete") ||
     pathname.startsWith("/coach") ||
     pathname.startsWith("/club-admin") ||
@@ -74,7 +84,7 @@ export function evaluateAccess(input: AccessInput): AccessResult {
     return { allowed: true }
   }
 
-  if (isAccountPath(pathname)) {
+  if (isAnyRolePath(pathname)) {
     if (!role) {
       return { allowed: false, reason: "forbidden-role", redirectTo: "/login" }
     }

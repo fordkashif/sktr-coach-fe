@@ -3,6 +3,7 @@
 import { Check, Copy, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, Tray, UserPlus, UsersThree, X } from "@phosphor-icons/react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { EmptyState, Initials, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { useClubAdmin } from "@/lib/club-admin-context"
 import {
@@ -820,7 +821,7 @@ export default function ClubAdminUsersPage() {
                       >
                         <th scope="row" className="min-w-0 font-normal md:py-3.5 md:pl-6 md:pr-3">
                           <span className="flex min-w-0 items-center gap-3">
-                            <Initials name={user.name} />
+                            <PersonAvatar name={user.name} userId={user.id} email={emailOf(user)} />
                             <span className="min-w-0 truncate font-bold text-sk-ink">
                               {user.name}
                               {self ? <span className="font-normal text-sk-mute"> (you)</span> : null}

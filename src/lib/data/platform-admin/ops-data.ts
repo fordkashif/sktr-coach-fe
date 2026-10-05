@@ -11,6 +11,7 @@ import {
   reviewMockTenantProvisionRequest,
   setMockTenantRequestLifecycleState,
 } from "@/lib/mock-platform-admin"
+import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import type { PackageId } from "@/lib/billing/package-catalog"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -484,6 +485,8 @@ export async function setTenantRequestLifecycleState(params: {
   })
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  // A suspension or a reactivation emails the club's admins.
+  kickNotificationEmails()
   return ok(undefined)
 }
 
@@ -507,6 +510,7 @@ export async function reviewTenantPackageUpgradeRequest(params: {
   })
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  kickNotificationEmails()
   return ok(undefined)
 }
 
@@ -638,6 +642,59 @@ export async function getPlatformTenantSizes(): Promise<Map<string, PlatformTena
       })
     }
     return sizes
+  } catch {
+    return null
+  }
+}
+
+export type PlatformNotificationEmailStats = {
+  /** Emails delivered in the last 24 hours. */
+  sent24h: number
+  /** Emails from the last 24 hours that failed and will not be tried again. */
+  failed24h: number
+  /** Failed at least once and waiting for the next try. */
+  retrying: number
+  /** Queued and not tried yet. */
+  waiting: number
+  /** Held back in the last 24 hours: switched off by the recipient, deactivated, suspended club, or too old. */
+  notSent24h: number
+  oldestWaitingAt: string | null
+  /**
+   * How emails leave: "scheduled" (the database sends every minute), "on_queue" (straight after one is
+   * queued), "waiting_for_address" (the scheduler has not learned where the function lives yet) or
+   * "on_request" (only when the app or the Send queued emails button asks).
+   */
+  deliveryMode: "scheduled" | "on_queue" | "waiting_for_address" | "on_request"
+  lastRunAt: string | null
+}
+
+/**
+ * Notification email counts for the platform admin, from the `get_platform_notification_email_stats`
+ * database function (platform admins only; counts and nothing else).
+ * Null means the counts are not available: demo mode, the function is not deployed yet, or the call failed.
+ */
+export async function getPlatformNotificationEmailStats(): Promise<PlatformNotificationEmailStats | null> {
+  // Demo mode has no email queue, so there is nothing true to show.
+  if (isMockMode()) return null
+
+  const clientResult = requireSupabaseClient("getPlatformNotificationEmailStats")
+  if (!clientResult.ok) return null
+
+  try {
+    const { data, error } = await clientResult.client.rpc("get_platform_notification_email_stats")
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null | undefined
+    if (error || !row) return null
+    const mode = row.delivery_mode
+    return {
+      sent24h: Number(row.sent_24h ?? 0),
+      failed24h: Number(row.failed_24h ?? 0),
+      retrying: Number(row.retrying ?? 0),
+      waiting: Number(row.waiting ?? 0),
+      notSent24h: Number(row.not_sent_24h ?? 0),
+      oldestWaitingAt: typeof row.oldest_waiting_at === "string" ? row.oldest_waiting_at : null,
+      deliveryMode: mode === "scheduled" || mode === "on_queue" || mode === "waiting_for_address" ? mode : "on_request",
+      lastRunAt: typeof row.last_run_at === "string" ? row.last_run_at : null,
+    }
   } catch {
     return null
   }

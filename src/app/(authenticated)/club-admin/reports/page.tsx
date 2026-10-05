@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { DownloadSimple, MagnifyingGlass, Printer } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
+import { EmptyState, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import {
   CLUB_REPORT_WINDOW_DAYS,
   getClubAdminPerformanceReport,
@@ -713,7 +714,7 @@ export default function ClubAdminReportsPage() {
                         <tr key={athlete.id} className="border-b border-sk-line last:border-b-0">
                           <th scope="row" className={`${td} pl-0 font-normal`}>
                             <span className="flex items-center gap-3">
-                              <Initials name={athlete.name} size="sm" />
+                              <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
                               <span>
                                 <span className="block font-bold text-sk-ink">{athlete.name}</span>
                                 <span className="block text-sm text-sk-mute">{athlete.primaryEvent ?? athlete.eventGroup ?? "No event set"}</span>

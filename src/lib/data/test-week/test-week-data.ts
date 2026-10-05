@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js"
+import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import type {
   ActiveTestDefinition,
@@ -696,6 +697,8 @@ export async function createPublishedTestWeekForCurrentCoach(input: {
   )
   if (definitionError) return { ok: false, error: mapPostgrestError(definitionError) }
 
+  // Sends the emails this just queued without waiting for the scheduler (and where there is no scheduler).
+  kickNotificationEmails()
   return ok({ testWeekId })
 }
 
@@ -1084,6 +1087,8 @@ export async function saveTestWeekForCurrentCoach(input: SaveCoachTestWeekInput)
     if (error) return { ok: false, error: mapPostgrestError(error) }
   }
 
+  // Sends the emails this just queued without waiting for the scheduler (and where there is no scheduler).
+  kickNotificationEmails()
   return ok({ testWeekId })
 }
 
@@ -1123,5 +1128,6 @@ export async function updateTestWeekStateForCurrentCoach(
     .select("id")
   if (error) return { ok: false, error: mapPostgrestError(error) }
   if (!data || data.length === 0) return err("NOT_FOUND", "This test week no longer exists, or you cannot change it.")
+  if (next.status === "published") kickNotificationEmails()
   return ok({ testWeekId })
 }

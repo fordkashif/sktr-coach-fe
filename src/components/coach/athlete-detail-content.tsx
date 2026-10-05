@@ -15,7 +15,8 @@ import {
 } from "@phosphor-icons/react"
 import { LineChart } from "@mui/x-charts"
 import { Link } from "react-router-dom"
-import { EmptyState, Initials, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, type TagTone, type Tone } from "@/components/sk"
+import { EmptyState, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, type TagTone, type Tone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { listMockLoggedSessions } from "@/lib/data/session/session-mock"
 import type { LoggedSessionResults } from "@/lib/data/session/types"
 import {
@@ -354,7 +355,7 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
       <PageHeader
         title={
           <span className="flex items-center gap-3 sm:gap-4">
-            <Initials name={athlete.name} size="lg" />
+            <PersonAvatar name={athlete.name} athleteId={athlete.id} size="xl" />
             <span className="min-w-0">{athlete.name}</span>
           </span>
         }

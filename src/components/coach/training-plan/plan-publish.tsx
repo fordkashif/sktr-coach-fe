@@ -1,6 +1,7 @@
 import { ArrowLeft, CheckCircle, MagnifyingGlass, PaperPlaneTilt } from "@phosphor-icons/react"
 import { useState } from "react"
-import { Initials, PageHeader, Panel, Segmented, Tag } from "@/components/sk"
+import { PageHeader, Panel, Segmented, Tag } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import {
   EVENT_GROUPS,
   formatDateRange,
@@ -131,7 +132,7 @@ export function PlanPublish({
                             checked={selected.has(athlete.id)}
                             onChange={() => toggleAthlete(athlete.id)}
                           />
-                          <Initials name={athlete.name} size="sm" />
+                          <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
                           <span className="min-w-0">
                             <span className="block truncate font-semibold text-sk-ink">{athlete.name}</span>
                             <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>

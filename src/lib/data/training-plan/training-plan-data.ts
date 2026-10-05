@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { inferBlockType, planBlueprints, type SessionBlueprint } from "@/lib/data/session/session-from-plan"
 import { removeUnstartedPlanSessions, syncPlanSessions } from "@/lib/data/session/session-plan-sync"
@@ -553,6 +554,8 @@ export async function publishTrainingPlanForCurrentCoach(
     )
   }
 
+  // Sends the emails this just queued without waiting for the scheduler (and where there is no scheduler).
+  kickNotificationEmails()
   return ok({ planId, assignedCount: athleteAssignmentIds.length })
 }
 

@@ -2,8 +2,32 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/((?!assets/|api/|favicon.ico|robots.txt|manifest.webmanifest|site.webmanifest|apple-touch-icon|icon|images/|fonts/).*)",
+      "source": "/((?!assets/|api/|favicon.ico|robots.txt|manifest.webmanifest|site.webmanifest|sw.js|offline.html|apple-touch-icon|icon|images/|fonts/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        }
+      ]
     }
   ]
 }

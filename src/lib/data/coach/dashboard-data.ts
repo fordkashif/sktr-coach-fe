@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { formatSetLog, isLogEmpty, logKindForBlockType } from "@/lib/data/session/session-from-plan"
 import type { LogKind, LoggedSessionResults, SessionBlockType } from "@/lib/data/session/types"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
@@ -1025,5 +1026,6 @@ export async function updateCoachSessionNoteForCurrentUser(
     .select("id")
   if (error) return { ok: false, error: mapPostgrestError(error) }
   if (!data || data.length === 0) return err("NOT_FOUND", "That session could not be updated.")
+  if (coachNote) kickNotificationEmails()
   return ok({ coachNote })
 }

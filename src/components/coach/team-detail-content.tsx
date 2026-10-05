@@ -3,7 +3,8 @@
 import { CaretRight, Check, Copy, EnvelopeSimple, PaperPlaneTilt, Trash, UserPlus, UsersThree, X } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, scoreTone, type TagTone } from "@/components/sk"
+import { EmptyState, Meter, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, scoreTone, type TagTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
   createAthleteInviteForCurrentCoach,
@@ -453,7 +454,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                         to={`/coach/athletes/${athlete.id}`}
                         className="group grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 rounded-xl py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue md:grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1fr)_minmax(140px,200px)_84px_auto]"
                       >
-                        <Initials name={athlete.name} />
+                        <PersonAvatar name={athlete.name} athleteId={athlete.id} />
                         <span className="min-w-0">
                           <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
                           <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>

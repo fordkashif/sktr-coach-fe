@@ -412,7 +412,8 @@ Edge functions:
 |---|---|---|---|
 | `send-invite-email` | signed-in member | asks the database, as the caller, `current_tenant_id()`, `is_club_admin()`, `is_team_coach()` | refused with `not_allowed` (already the case, covered by a handler test) |
 | `claim-coach-invite-account`, `claim-athlete-invite-account` | anyone with an invite id | nobody; checks the invite and the email | now refuses (`403`, code `access_paused`) when the invite's club is suspended or cancelled, through `tenant_access_blocked`. If that check cannot be made the account is created as before; joining the club is still decided by `accept_*_invite` |
-| `platform-admin-send-club-admin-invite`, `platform-admin-preview-club-admin-invite`, `dispatch-notification-emails` | signed-in platform admin | reads `platform_admin_contacts` as the caller | not applicable: platform admins have no club. `dispatch-notification-emails` now escapes subject and body in the HTML it sends |
+| `platform-admin-send-club-admin-invite`, `platform-admin-preview-club-admin-invite` | signed-in platform admin | reads `platform_admin_contacts` as the caller | not applicable: platform admins have no club |
+| `dispatch-notification-emails` | the database scheduler, a platform admin, or an active member for their own club's queue | see "Notifications that reach people" below | a deactivated member and a member of a suspended or cancelled club are refused |
 | `local-preview-password-reset` | anyone, only when `ALLOW_LOCAL_PASSWORD_RESET_PREVIEW=true` | nobody | off on hosted projects, unchanged |
 
 ### Public request form protection (migration `20261006181000_request_form_protection.sql`)
@@ -440,6 +441,78 @@ Edge functions:
 | `submit_account_request(...)` | anyone, signed in or not, could add a request to any club by its name | service role only. No screen calls it |
 | `account_requests` insert (`account_requests_insert_authenticated`) | any member could insert a request for their own club | policy dropped. Club admins still read and review through `account_requests_staff_all` |
 | every other table | no policy for `anon` | unchanged; an anon insert was tried on all 35 tables and refused |
+
+### Account basics and profile photos (migration `20261007100000_account_basics_and_avatars.sql`)
+
+Photos live in the Storage bucket `avatars` (public, 2 MB limit, JPEG/PNG/WebP only) under `<user id>/<random>.jpg`. The bucket is public on purpose: rosters show many photos, and a private bucket needs a signed URL per photo that expires. The address cannot be guessed, the bucket cannot be listed, and the path is only handed out by `get_visible_avatars()`. Someone who was once given an address can open that one image until the owner replaces or removes the photo (the file is deleted). The reasoning is written out at the top of the migration.
+
+| Table / function | athlete | coach | club-admin | platform admin | Notes |
+|---|---|---|---|---|---|
+| `account_avatars` select (`account_avatars_select_own`) | own row | own row | own row | own row | no insert/update/delete policy and no write privilege for any API role |
+| `storage.objects` in `avatars`: insert, update, delete (`avatars_insert_own`, `avatars_update_own`, `avatars_delete_own`) | own folder | own folder | own folder | own folder | name must be `<own user id>/<8 to 64 url-safe chars>.<jpg\|png\|webp>`; refused for a deactivated member, a member of a suspended or cancelled club, and an account with neither a profile nor a platform admin contact |
+| `storage.objects` in `avatars`: select (`avatars_select_own`) | own folder | own folder | own folder | own folder | needed by the storage API to remove or overwrite; reading through the public address does not use policies |
+| `set_current_avatar(path)` | own | own | own | own | path must be in the caller's own folder (or null to remove) and the file must exist; returns the previous path; raises `access_paused` |
+| `update_current_display_name(name)` | refused (uses `update_current_athlete_profile`) | own | own | own (`platform_admin_contacts.display_name`) | raises `access_paused` |
+| `get_current_account()` | own | own | own | own | answers a deactivated member too (their own row) |
+| `get_visible_avatars()` | own, and the coaches of their current team | own, and athletes on the teams they coach | everyone in their club | own | no rows when access is paused; other clubs never |
+
+`profiles` is not widened: the photo path is deliberately not a column on `profiles`, because `profiles_select_tenant_for_staff` lets every coach read every profile row of the club.
+
+Email changes. The app lets a signed-in user ask for a new email (`supabase.auth.updateUser({ email })`). Supabase keeps the old address in `auth.users.email` until the link sent to the new address is opened, so asking for someone else's address gives nothing. On top of that, every function that matches a person by email now requires `email_confirmed_at`:
+
+| Function | Before | Now |
+|---|---|---|
+| `bootstrap_current_profile()` | confirmed email only | unchanged |
+| `accept_coach_invite`, `accept_athlete_invite` | read `auth.users.email` without checking it was confirmed | an unconfirmed address matches no invite (team join codes, which are not addressed, still work for an existing athlete) |
+| `current_athlete_email()`, `get_athlete_invite_preview()` | same | same fix |
+| `platform_admin_contacts` | kept the old address after an email change | email-only rows are linked to their account (`user_id`) by the migration; a trigger on `auth.users` (`sync_platform_admin_contact_email`) moves the contact's email with the account |
+
+Required project setting: Authentication, Sign In / Providers, Email: "Confirm email" must stay ON (and "Secure email change" is recommended). With it off, Supabase changes the address at once with no proof of ownership, and no database rule can tell the difference.
+
+Not following an email change (copies, by design): the club's billing contact email (`billing_contact_email`; the club admin edits it in Billing), `tenant_provision_requests.requestor_email` (history of who asked), `coach_invites.email` / `athlete_invites.email` (a pending invite to the old address can no longer be accepted by that account; send a new one), and notification rows and preferences stored by email address.
+
+### Notifications that reach people (migration `20261007090000_notifications_delivery.sql`)
+
+No row policy changes. A person reads and marks read only their own notifications, exactly as before (`user_notifications_select_self`, `user_notifications_update_self`, `notification_events_select_self`); a member cannot insert a notification for anyone. Checked for athlete, coach and club admin on a throwaway Postgres 16.
+
+Who can be told (decided in one function, `enqueue_notification`, and its in-app twin `enqueue_rollup_notification`):
+
+| Rule | How it is enforced |
+|---|---|
+| never the person who did the thing | `auth.uid()` of the write that fired the trigger is skipped |
+| only an active member of the club the event belongs to | the recipient must have a `profiles` row in that club with `is_active` |
+| nobody in a suspended or cancelled club | `tenant_access_blocked(club)`; the one exception is `club_suspended` itself |
+| a coach only for their own teams | recipients come from `team_coaches` for the athlete's (or the test week's) team, the same rows `is_team_coach()` reads. A coach on no team, or on another team, is never a recipient |
+| never another club | every recipient list is built from rows with the event's `tenant_id` |
+| a channel the person switched off | `notification_channel_enabled`: whole channel off wins, then their choice for that kind of update, then the default (`notification_default_enabled`) |
+| the same thing twice | a dedupe key per subject and a time window, under an advisory lock, so two writes at the same moment still produce one notification |
+| a failed notification never undoes the write | both functions catch every error and return 0 |
+
+The email queue re-checks at delivery time (`claim_notification_emails`), because things change between queueing and sending: a recipient who was deactivated, a club that was suspended, an email switched off, or an email older than 72 hours is marked `suppressed` with the reason in `last_error` and is never sent.
+
+| Function | Callable by | Notes |
+|---|---|---|
+| `notification_default_enabled(text, text)` | authenticated, service role | a constant table of defaults, no data |
+| `notification_channel_enabled(text, text, uuid, text)` | service role | unchanged grant (it would tell anyone whether someone switched notifications off) |
+| `enqueue_notification`, `enqueue_rollup_notification`, `notify_training_plan_audience`, `notification_team_coach_user_ids`, `notification_club_admin_user_ids`, `notification_athlete_name`, `notification_date_label`, `notification_email_max_age`, `request_notification_email_dispatch`, every `enqueue_*` trigger function, `notification_events_request_dispatch` | nobody through the API | called by triggers, which run as the owner |
+| `claim_notification_emails`, `complete_notification_email`, `notification_email_queue_due`, `verify_notification_scheduler_token`, `register_notification_dispatch_url`, `record_notification_dispatch_run` | service role | used only by `dispatch-notification-emails` |
+| `get_platform_notification_email_stats()` | authenticated | returns counts to a platform admin and no rows to anyone else |
+| table `notification_dispatch_config` | nobody through the API | row level security on, no policies, grants revoked from `anon` and `authenticated`. Holds the scheduler token |
+
+Edge function `dispatch-notification-emails` (rewritten, `verify_jwt = false`, it verifies the caller itself):
+
+| Caller | How it knows | What it may do |
+|---|---|---|
+| the database scheduler | header `x-sktr-scheduler-token`, checked by `verify_notification_scheduler_token` | send everything that is due |
+| the deploy workflow | the service role key as bearer | the same |
+| signed-in platform admin | reads `platform_admin_contacts` as the caller | send everything, including rows waiting for a retry; gets recipients and links back |
+| signed-in active member | `current_tenant_id()` asked as the caller | send only their own club's queue; gets counts back, no names |
+| deactivated member, member of a suspended or cancelled club, signed-in user with no club | `current_tenant_id()` is NULL | refused (`403 not_allowed`) |
+| anyone else, or a wrong scheduler token | | refused (`401`) |
+
+Every link in an email is built from the server-side `PUBLIC_APP_URL` and a path derived from the event type and ids; nothing a caller sends and nothing a person typed becomes a link or markup.
+
+Realtime: `user_notifications` is in the `supabase_realtime` publication. Realtime applies the table's row policies, so a subscriber only receives their own rows.
 
 ## Service-Role Only Operations (Documented)
 

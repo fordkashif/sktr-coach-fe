@@ -4,7 +4,8 @@ import { ArrowRight, Plus, UserPlus, UsersThree } from "@phosphor-icons/react"
 import { Link, Navigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import { InviteAthleteDialog } from "@/components/coach/team-detail-content"
-import { EmptyState, Initials, PageHeader, Panel, ReadinessTag, Stat } from "@/components/sk"
+import { EmptyState, PageHeader, Panel, ReadinessTag, Stat } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { useCoachTeams } from "@/lib/coach-teams"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import {
@@ -284,7 +285,7 @@ export default function CoachTeamsPage() {
                     <li key={athlete.id}>
                       <Link to={`/coach/athletes/${athlete.id}`} className="sk-row group">
                         <span className="flex min-w-0 items-center gap-3">
-                          <Initials name={athlete.name} size="sm" />
+                          <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
                           <span className="min-w-0">
                             <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
                             <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { DownloadSimple, MagnifyingGlass, Printer } from "@phosphor-icons/react"
 import { BarChart } from "@mui/x-charts"
 import { Link } from "react-router-dom"
-import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
+import { EmptyState, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import type { Athlete, PR, Team, WellnessEntry } from "@/lib/mock-data"
 import {
@@ -505,7 +506,7 @@ function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId:
                         <tr key={athlete.id} className="border-b border-sk-line last:border-b-0">
                           <th scope="row" className={`${td} pl-0 font-normal`}>
                             <Link to={`/coach/athletes/${athlete.id}`} className="group flex items-center gap-3">
-                              <Initials name={athlete.name} size="sm" />
+                              <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
                               <span>
                                 <span className="block font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
                                 <span className="block text-sm text-sk-mute">{athlete.primaryEvent}</span>

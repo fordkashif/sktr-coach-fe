@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { ArrowsLeftRight, Bell, CaretRight, CheckCircle, PencilSimple, SignOut, WarningCircle } from "@phosphor-icons/react"
-import { EmptyState, Initials, PageHeader, Panel, ReadinessTag } from "@/components/sk"
+import { ArrowsLeftRight, Bell, CaretRight, CheckCircle, PencilSimple, ShieldCheck, SignOut, WarningCircle } from "@phosphor-icons/react"
+import { Avatar, EmptyState, PageHeader, Panel, ReadinessTag } from "@/components/sk"
+import { PhotoSection } from "@/components/account/account-sections"
+import { refreshAccount, useCurrentAccount } from "@/lib/account-store"
 import { clearSessionCookies } from "@/lib/auth-session"
 import {
   ATHLETE_EVENT_GROUP_OPTIONS,
@@ -96,6 +98,7 @@ export default function AthleteProfilePage() {
   const isSupabaseMode = backendMode === "supabase"
   const navigate = useNavigate()
   const { userEmail } = useRole()
+  const { avatarUrl } = useCurrentAccount()
   const formId = useId()
 
   const [loadState, setLoadState] = useState<LoadState>("loading")
@@ -214,6 +217,8 @@ export default function AthleteProfilePage() {
     }
 
     setProfile({ ...profile, ...result.data })
+    // The top bar shows the same name.
+    void refreshAccount()
     setEditing(false)
     setDraft(null)
     setFieldErrors({})
@@ -254,7 +259,7 @@ export default function AthleteProfilePage() {
       <PageHeader
         title={
           <span className="flex items-center gap-3 sm:gap-4">
-            {profile ? <Initials name={fullName} size="lg" /> : null}
+            {profile ? <Avatar name={fullName} src={avatarUrl} size="xl" /> : null}
             <span className="min-w-0 break-words">{fullName}</span>
           </span>
         }
@@ -303,6 +308,7 @@ export default function AthleteProfilePage() {
       {profile ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-8">
           <div className="space-y-6 lg:space-y-8">
+            {!editing ? <PhotoSection hint="Your coaches see this on the roster." /> : null}
             {editing && draft ? (
               <Panel title="Edit your details" hint="Your coach sees these on the roster.">
                 <form className="grid gap-4" onSubmit={handleSave} noValidate>
@@ -467,6 +473,16 @@ export default function AthleteProfilePage() {
                   <span className="flex items-center gap-3">
                     <Bell className="size-5 text-sk-ink-2" weight="bold" aria-hidden />
                     Notification settings
+                  </span>
+                  <CaretRight className="size-4 text-sk-mute" weight="bold" aria-hidden />
+                </Link>
+                <Link
+                  to="/account"
+                  className="sk-row min-h-[56px] font-bold text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+                >
+                  <span className="flex items-center gap-3">
+                    <ShieldCheck className="size-5 text-sk-ink-2" weight="bold" aria-hidden />
+                    Account and security
                   </span>
                   <CaretRight className="size-4 text-sk-mute" weight="bold" aria-hidden />
                 </Link>
