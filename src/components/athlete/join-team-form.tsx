@@ -7,7 +7,6 @@ import { Initials, PageHeader, Panel } from "@/components/sk"
 import { acceptAthleteInviteForCurrentUser, getAthleteInvitePreviewForCurrentUser } from "@/lib/data/athlete/invite-data"
 import {
   MOCK_ATHLETE_ID,
-  MOCK_COACH_NAME,
   eventGroupLabel,
   getCurrentAthleteTeam,
 } from "@/lib/data/athlete/profile-data"
@@ -62,7 +61,6 @@ type ResolvedInvite = {
   teamId: string
   name: string
   group: string | null
-  coachNames: string | null
   athleteCount: number | null
   status: InviteStatus
 }
@@ -181,7 +179,6 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
         teamId: result.data.teamId,
         name: result.data.teamName,
         group: result.data.eventGroup,
-        coachNames: result.data.coachNames,
         athleteCount: null,
         status: result.data.status,
       })
@@ -226,7 +223,6 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
       teamId: mockMatch.id,
       name: mockMatch.name,
       group: mockMatch.eventGroup,
-      coachNames: MOCK_COACH_NAME,
       athleteCount: mockMatch.athleteCount,
       status: "pending",
     }
@@ -356,9 +352,6 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
                     <Initials name={resolvedInvite.name} size="lg" className="rounded-2xl" />
                     <div className="min-w-0">
                       <p className="break-words text-xl font-extrabold tracking-[-0.02em] text-sk-ink">{resolvedInvite.name}</p>
-                      <p className="text-sm text-sk-ink-2">
-                        {resolvedInvite.coachNames ? `Coached by ${resolvedInvite.coachNames}` : "Coach not listed yet"}
-                      </p>
                     </div>
                   </div>
                   {resolvedInvite.group || resolvedInvite.athleteCount !== null ? (

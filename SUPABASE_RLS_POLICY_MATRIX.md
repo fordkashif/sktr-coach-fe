@@ -50,7 +50,7 @@ Legend:
 - club-admin: `R` own profile + tenant profiles
 - writes (`C/U/D`): service-role only
 - athlete self-service: no direct `U`. `update_current_athlete_profile(...)` (security definer, migration `20261005093000`) keeps `display_name` in sync with the athlete's own first and last name. No other profile column is touched.
-- coach names for athletes: athletes cannot read other profiles. `get_current_athlete_team_context()` returns the display names of the coaches on the athlete's own team, and `get_athlete_invite_coach_names(invite_id)` (anon + authenticated, same exposure as `get_public_athlete_invite`) returns them for the team an invite points at.
+- coach names for athletes: athletes cannot read other profiles. `get_current_athlete_team_context()` returns the display names of the coaches on the athlete's own team. Coach names are not exposed through invite links.
 
 ### `teams`
 

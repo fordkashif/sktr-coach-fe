@@ -11,7 +11,7 @@ import {
   getPublicAthleteInvitePreview,
   type AthleteInvitePreview,
 } from "@/lib/data/athlete/invite-claim-data"
-import { MOCK_COACH_NAME, MOCK_ORGANIZATION_NAME, eventGroupLabel } from "@/lib/data/athlete/profile-data"
+import { MOCK_ORGANIZATION_NAME, eventGroupLabel } from "@/lib/data/athlete/profile-data"
 import { resolveSessionActor } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -70,7 +70,6 @@ export default function AthleteClaimPage() {
           status: "pending",
           email: null,
           hasExistingAccount: true,
-          coachNames: MOCK_COACH_NAME,
         })
         setStage("demo")
         setMessage(`You have been invited to train with ${team.name}.`)
@@ -354,12 +353,6 @@ export default function AthleteClaimPage() {
             </div>
             {preview ? (
               <>
-                <div className="sk-row items-baseline">
-                  <dt className="sk-label shrink-0">Coach</dt>
-                  <dd className={preview.coachNames ? "min-w-0 break-words text-right font-bold text-sk-ink" : "text-right text-sk-mute"}>
-                    {preview.coachNames ?? "Not listed yet"}
-                  </dd>
-                </div>
                 <div className="sk-row items-baseline">
                   <dt className="sk-label shrink-0">Club</dt>
                   <dd className="min-w-0 break-words text-right font-bold text-sk-ink">{preview.organizationName}</dd>

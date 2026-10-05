@@ -16,24 +16,6 @@ type InvitePreview = {
   /** Pending invites past their expiry are reported as expired. */
   status: "pending" | "accepted" | "expired" | "revoked"
   expiresAt: string | null
-  /** Comma separated coach names for the team. Null when unknown. */
-  coachNames: string | null
-}
-
-/**
- * Coach names for the team an invite points at. Optional context from a security definer function
- * (athletes cannot read coach profiles), so any failure resolves to null instead of an error.
- */
-export async function getAthleteInviteCoachNames(inviteId: string): Promise<string | null> {
-  const clientResult = requireSupabaseClient("getAthleteInviteCoachNames")
-  if (!clientResult.ok) return null
-  try {
-    const { data, error } = await clientResult.client.rpc("get_athlete_invite_coach_names", { p_invite_id: inviteId })
-    if (error || typeof data !== "string") return null
-    return data.trim() || null
-  } catch {
-    return null
-  }
 }
 
 function requireSupabaseClient(operation: string): ClientResolution {
@@ -155,7 +137,6 @@ export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): P
     eventGroup: team?.event_group ?? null,
     status: isPastExpiry ? "expired" : data.status,
     expiresAt,
-    coachNames: await getAthleteInviteCoachNames(data.id),
   })
 }
 
