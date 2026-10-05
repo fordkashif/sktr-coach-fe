@@ -1,6 +1,6 @@
 # PaceLab Supabase RLS Policy Matrix (v1)
 
-Last updated: March 20, 2026
+Last updated: October 6, 2026
 
 ## Purpose
 
@@ -11,6 +11,7 @@ Define row-level security behavior for Wave 1 through Wave 3 schema entities, al
 
 This matrix is implemented by:
 - `supabase/migrations/20260320113000_schema_v1_rls_policies.sql`
+- `supabase/migrations/20261006120000_coach_team_scope.sql` (coaches only act on the teams they are assigned to; see "Coach team scope" below, which is the current rule for every coach line in this document)
 
 ## Assumptions
 
@@ -62,7 +63,7 @@ Legend:
 ### `teams`
 
 - athlete: `R` tenant teams
-- coach: `R/C/U/D` tenant teams
+- coach: `R` tenant teams (names are club wide). `U` only teams they are assigned to. No `C`, no `D` (from `20261006120000`)
 - club-admin: `R/C/U/D` tenant teams
 
 ### `athletes`
@@ -70,25 +71,25 @@ Legend:
 - athlete: `R` own athlete row only (`athletes.user_id = auth.uid()`)
 - athlete self-service `U`: no update policy. `update_current_athlete_profile(first_name, last_name, date_of_birth, event_group, primary_event)` (security definer, authenticated, athlete role only) updates exactly those five columns on the caller's own row in the caller's tenant. `team_id`, `tenant_id`, `user_id`, `readiness` and `is_active` cannot be changed by an athlete; team changes still go through `accept_athlete_invite`.
 - athlete `C`: none. The self-insert policy `athletes_insert_self_bootstrap` was dropped in `20261005200000`; an athlete's own row is created by `accept_athlete_invite` from the invite's team.
-- coach: `R/C/U/D` tenant athletes
+- coach: `R/C/U/D` only athletes on a team they are assigned to (from `20261006120000`). Athletes with no team: club admins only. Taking an athlete off a team goes through `remove_athlete_from_team(athlete_id, team_id)`
 - club-admin: `R/C/U/D` tenant athletes
 
 ### `sessions`
 
 - athlete: `R` own sessions only (`sessions.athlete_id` belongs to auth user)
-- coach: `R/C/U/D` tenant sessions
+- coach: `R/C/U/D` sessions of athletes on their assigned teams (from `20261006120000`)
 - club-admin: `R/C/U/D` tenant sessions
 
 ### `session_blocks`
 
 - athlete: `R` blocks for own sessions only
-- coach: `R/C/U/D` blocks for tenant sessions
+- coach: `R/C/U/D` blocks of sessions of athletes on their assigned teams
 - club-admin: `R/C/U/D` blocks for tenant sessions
 
 ### `session_block_rows`
 
 - athlete: `R` rows for own sessions only
-- coach: `R/C/U/D` rows for tenant sessions
+- coach: `R/C/U/D` rows of sessions of athletes on their assigned teams
 - club-admin: `R/C/U/D` rows for tenant sessions
 
 ### `session_completions`
@@ -97,19 +98,19 @@ Legend:
   - `R` own completion rows only
   - `C` only for own athlete-session in current tenant
   - `U/D` not allowed
-- coach: `R/C/U/D` tenant completion rows
+- coach: `R/C/U/D` completion rows of athletes on their assigned teams
 - club-admin: `R/C/U/D` tenant completion rows
 
 ### `test_weeks`
 
 - athlete: `R` tenant test weeks
-- coach: `R/C/U/D` tenant test weeks
+- coach: `R/C/U/D` test weeks of their assigned teams, plus test weeks with no team that they created (from `20261006120000`)
 - club-admin: `R/C/U/D` tenant test weeks
 
 ### `test_definitions`
 
 - athlete: `R` definitions for tenant test weeks
-- coach: `R/C/U/D` definitions for tenant test weeks
+- coach: `R/C/U/D` definitions of the test weeks above
 - club-admin: `R/C/U/D` definitions for tenant test weeks
 
 ### `test_results`
@@ -118,25 +119,25 @@ Legend:
   - `R` own results only
   - `C/U` own results only, in current tenant
   - `D` not allowed
-- coach: `R/C/U/D` tenant test results
+- coach: `R/C/U/D` results of athletes on their assigned teams
 - club-admin: `R/C/U/D` tenant test results
 
 ### `training_plans`
 
 - athlete: `R` tenant plans whose status is not `draft` (drafts are never visible; migration `20261004120000_training_plan_drafts.sql`)
-- coach: `R/C/U/D` tenant plans, including drafts
+- coach: `R/C/U/D` plans of their assigned teams (drafts included), plus plans with no team that they created (from `20261006120000`). Other teams' plans are not readable
 - club-admin: `R/C/U/D` tenant plans, including drafts
 
 ### `training_plan_weeks`, `training_plan_days`, `training_plan_blocks`
 
 - athlete: `R` structure of tenant plans whose status is not `draft`
-- coach: `R/C/U/D` structure of tenant plans
+- coach: `R/C/U/D` structure of the plans above
 - club-admin: `R/C/U/D` structure of tenant plans
 
 ### `training_plan_assignments`
 
 - athlete: `R` assignments addressed to own athlete row or own team
-- coach: `R/C/U/D` tenant assignments
+- coach: `R/C/U/D` assignments of the plans above; a new or changed assignment must target a team they are assigned to or an athlete on one
 - club-admin: `R/C/U/D` tenant assignments
 - Draft plans have no assignment rows. Inserting an assignment with `visibility_start = 'immediate'` queues the `training_plan_published` notification, so assignments are only written at publish time.
 
@@ -144,7 +145,7 @@ Legend:
 
 `session_row_logs` (what the athlete did, one row per set):
 - athlete: `R/C/U` own rows only, and only against a row of one of their own sessions in the current tenant. No delete (a set is unticked with `completed = false`).
-- coach: `R` tenant rows (same scope as `sessions_select_tenant_staff`). No write.
+- coach: `R` rows of athletes on their assigned teams (same scope as `sessions_select_tenant_staff`). No write.
 - club-admin: `R` tenant rows. No write.
 
 `session_completions` additions:
@@ -153,7 +154,7 @@ Legend:
 `sessions`, `session_blocks`, `session_block_rows` additions:
 - athlete: `C` only for their own athlete row, only with `status = 'scheduled'` and a plan slot (`plan_id`, `plan_week_number`, `plan_day_index`) pointing at a published plan in the tenant; blocks and rows only under such a session while it is still `scheduled`. This covers athletes who joined after the plan was published. Athletes still cannot update or delete sessions.
 - `sessions.status` is moved by security definer triggers, not by the athlete: first logged set sets `in-progress`, a completion sets `completed`.
-- coach / club-admin: unchanged (`R/C/U/D` tenant). Sessions are created for every assigned athlete when a plan is published.
+- club-admin: `R/C/U/D` tenant. coach: `R/C/U/D` for athletes on their assigned teams. Sessions are created for every assigned athlete when a plan is published.
 
 ### Club admin member access, billing contact and package (migration `20261005140000_club_admin_member_access_and_billing_contact.sql`)
 
@@ -246,6 +247,49 @@ Edge functions changed alongside (not part of the migration, they deploy separat
 
 Still open: `is_platform_admin()` and `bootstrap_current_profile()` trust the account's email. If public sign-up is enabled without email confirmation in the project's Auth settings, a stranger can register somebody else's email before they do. Keep "Confirm email" on, or turn public sign-ups off.
 
+### Coach team scope (migration `20261006120000_coach_team_scope.sql`)
+
+The rule: a coach may only act on teams they are assigned to. Club admins keep full access inside their club. "Assigned" means a `team_coaches` row for that team; the lead coach is the row with `is_primary = true`, so lead counts as assigned. Before this migration every staff policy on team data asked only `is_coach_or_admin()`, so any coach of a club could read and change every team of that club.
+
+Example: Coach Rivera coaches Sprints, Coach Smith coaches Throws. Rivera can no longer see the Throws roster, invite athletes to Throws, or read or change Throws plans, sessions, test weeks, wellness or PRs.
+
+Helpers (all `security definer`, `stable`, `set search_path = public`, executable by `authenticated` and `service_role` only; all answer no for a deactivated member, a member of a suspended or cancelled club, and a user whose profile role is `athlete` even if a stale `team_coaches` row exists):
+
+| Function | Answers |
+|---|---|
+| `is_team_coach(team_id)` | caller is an active coach assigned to this team |
+| `is_coach_of_athlete(athlete_id)` | caller is an active coach assigned to the team this athlete is on now |
+| `can_manage_team(team_id)` | club admin of the team's club, or `is_team_coach` |
+| `can_manage_athlete(athlete_id)` | club admin of the athlete's club, or `is_coach_of_athlete` |
+| `can_manage_training_plan(plan_id)` | club admin; coach assigned to the plan's team; or, for a plan with no team, the coach who created it |
+| `can_manage_test_week(test_week_id)` | the same rule for a test week |
+| `current_coach_team_ids()`, `current_coach_athlete_ids()` | the caller's assigned teams, and the athletes on them, as one list. The policies of the large tables read these once per statement instead of calling a function per row |
+| `remove_athlete_from_team(athlete_id, team_id)` | takes an athlete off a team (`can_manage_team`). Returns `false` when nothing changed. This is how a coach removes an athlete, because a coach may not write `team_id = null` directly |
+| `current_tenant_athlete_count()` | number of athletes in the caller's club, for staff only. Used for the package limit, since a coach can no longer count athletes outside their teams |
+
+What a coach can do, by table (club admin: `R/C/U/D` in own club everywhere, unchanged; athlete: unchanged):
+
+| Table | Coach, own assigned team(s) | Coach, any other team of the club | Notes |
+|---|---|---|---|
+| `teams` | `R`, `U` | `R` (name, event group) | no `C`, no `D` for coaches. Team names stay readable club wide |
+| `team_coaches` | `R` own rows | none | unchanged: only club admins assign coaches |
+| `athletes` | `R/C/U/D` | none | cannot move an athlete to a team they do not coach, cannot write "no team" (use `remove_athlete_from_team`). Athletes with no team: club admins only |
+| `athlete_invites` | `R/C/U/D` | none | athletes keep a club-wide read (join by code looks an invite up by id) |
+| `sessions`, `session_blocks`, `session_block_rows`, `session_completions` | `R/C/U/D` | none | scope follows the athlete's current team |
+| `session_row_logs` | `R` | none | |
+| `wellness_entries`, `pr_records`, `test_results` | `R/C/U/D` | none | scope follows the athlete's current team |
+| `training_plans`, weeks, days, blocks | `R/C/U/D` | none | also own plans with no team. A plan cannot be moved to a team the coach is not assigned to |
+| `training_plan_assignments` | `R/C/U/D` | none | target team or athlete must also be theirs |
+| `test_weeks`, `test_definitions` | `R/C/U/D` | none | also own test weeks with no team |
+
+A coach with no team assignment gets zero rows from all of the above (no error) and can still read team names, their own profile and the club profile. The coach dashboard and the Teams page say "You are not assigned to a team yet".
+
+Scope follows where the athlete is now. When a club admin moves an athlete from Throws to Sprints, the athlete's history (sessions, results, wellness, PRs) becomes visible to the Sprints coaches and stops being visible to the Throws coaches.
+
+Deliberately still club wide for coaches (not changed by this migration): `teams` read, `profiles` read (`profiles_select_tenant_for_staff`: names and roles of club members), `audit_events` read (`audit_events_select_staff`), `club_profiles` and `billing_profiles` read.
+
+Left as it was for athletes: `training_plans_select_tenant` (every plan of the club that is not a draft), `test_weeks_select_tenant` (every test week of the club) and `athlete_invites_select_tenant` (every athlete invite of the club, invited email included).
+
 ### Invite email delivery (migration `20261006090000_invite_email_delivery.sql`)
 
 Coach and athlete invites are emailed by the `send-invite-email` edge function. The migration adds four columns to both `coach_invites` and `athlete_invites`: `last_email_attempt_at`, `last_email_sent_at`, `email_send_count`, `last_email_error` (a short machine code, never the provider's message).
@@ -255,12 +299,12 @@ No policy is added or changed.
 | | Read the four columns | Write the four columns |
 |---|---|---|
 | `coach_invites` | club admins of the club (`coach_invites_staff_all`), as before | service role only |
-| `athlete_invites` | members of the club (`athlete_invites_select_tenant`), as before | service role only |
+| `athlete_invites` | athletes and club admins of the club, and coaches assigned to the invite's team (`athlete_invites_select_tenant`, narrowed for coaches in `20261006120000`) | service role only |
 | anon, other clubs | no rows | no |
 
 - The existing "staff all" policies would let a club admin or coach update any column, including the send counter. The trigger `protect_invite_email_delivery_columns` (before insert or update, security invoker) keeps the four columns unchanged whenever the statement runs as `authenticated` or `anon`, so the resend limit cannot be reset from the API. Every other column behaves as before (revoke still works).
 - `get_public_coach_invite` / `get_public_athlete_invite` list their columns explicitly, so someone holding an invite link does not see delivery state.
-- Who may send: the function asks the database, as the caller, `current_tenant_id()`, `is_club_admin()` and `is_coach_or_admin()`, which are the checks in the insert policies. Coach invite: club admin of the invite's club. Athlete invite: coach or club admin of the invite's club. A deactivated member or a member of a suspended club is refused. A missing invite and another club's invite get the same `not_allowed` answer.
+- Who may send: the function asks the database, as the caller, `current_tenant_id()`, `is_club_admin()` and, for an athlete invite sent by someone who is not a club admin, `is_team_coach(invite.team_id)`, which are the checks in the insert policies. Coach invite: club admin of the invite's club. Athlete invite: club admin of the invite's club, or a coach assigned to the invite's team (any coach of the club until `20261006120000`). A deactivated member or a member of a suspended club is refused. A missing invite, another club's invite and an invite of a team the coach is not assigned to get the same `not_allowed` answer. If `is_team_coach` cannot be called (the migration has not run yet) a coach is refused.
 - Limits: one email per invite per 60 seconds, at most 5 per invite, taken with one conditional update so two simultaneous requests send one email.
 - Each send writes a tenant `audit_events` row (`coach_invite_email_sent`, `coach_invite_email_resent`, `coach_invite_email_failed` and the `athlete_` equivalents) with the inviter as actor and the invited email as target.
 - No double emails: the invite triggers queue only `in-app` notification events when an invite is created, so `dispatch-notification-emails` has nothing to send for it.
@@ -279,6 +323,7 @@ These are intentionally not available to regular authenticated users:
 - Tenant boundary is always checked on tenant-scoped tables.
 - Athlete can never read or write other athletes' rows.
 - Coaches and club-admins operate only within current tenant.
+- A coach operates only on teams they are assigned to, and on athletes currently on those teams. Club admins operate on the whole club.
 - Cross-tenant access is blocked even for coach/admin roles.
 
 ## Review Checklist

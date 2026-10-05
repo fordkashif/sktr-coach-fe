@@ -44,21 +44,24 @@ export function isValidRecipientEmail(value: string | null | undefined): value i
 
 /**
  * Mirrors the RLS insert policies on the invite tables:
- *   coach_invites    is_club_admin()     and tenant_id = current_tenant_id()
- *   athlete_invites  is_coach_or_admin() and tenant_id = current_tenant_id()
- * The three inputs come from those same database functions, called as the signed-in user, so an
+ *   coach_invites    club admin of the invite's club
+ *   athlete_invites  club admin of the invite's club, or a coach assigned to the invite's team
+ * (athlete invites were open to every coach of the club until 20261006120000_coach_team_scope.sql).
+ * The inputs come from the database's own helper functions, called as the signed-in user, so an
  * inactive member or a member of a suspended club is refused here exactly as the database refuses them.
  */
 export function canSendInvite(params: {
   kind: InviteKind
   callerTenantId: string | null
   callerIsClubAdmin: boolean
-  callerIsCoachOrAdmin: boolean
+  /** is_team_coach(invite.team_id) asked as the caller. Only looked at for athlete invites. */
+  callerIsTeamCoach: boolean
   inviteTenantId: string | null
 }): boolean {
   if (!params.callerTenantId || !params.inviteTenantId) return false
   if (params.callerTenantId !== params.inviteTenantId) return false
-  return params.kind === "coach" ? params.callerIsClubAdmin : params.callerIsCoachOrAdmin
+  if (params.callerIsClubAdmin) return true
+  return params.kind === "athlete" && params.callerIsTeamCoach
 }
 
 export type SendableDecision =

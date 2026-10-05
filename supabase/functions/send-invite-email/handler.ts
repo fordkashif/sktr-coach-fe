@@ -103,18 +103,16 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const caller = authData?.user ?? null
   if (authError || !caller) return fail(401, "not_authenticated", "Sign in to send invites.")
 
-  // Ask the database, as the caller, the same three questions the RLS insert policies ask.
-  const [tenantResult, clubAdminResult, staffResult] = await Promise.all([
+  // Ask the database, as the caller, the same questions the RLS insert policies ask.
+  const [tenantResult, clubAdminResult] = await Promise.all([
     userClient.rpc("current_tenant_id"),
     userClient.rpc("is_club_admin"),
-    userClient.rpc("is_coach_or_admin"),
   ])
-  if (tenantResult.error || clubAdminResult.error || staffResult.error) {
+  if (tenantResult.error || clubAdminResult.error) {
     return fail(403, "not_allowed", NOT_ALLOWED_MESSAGE)
   }
   const callerTenantId = typeof tenantResult.data === "string" ? tenantResult.data : null
   const callerIsClubAdmin = clubAdminResult.data === true
-  const callerIsCoachOrAdmin = staffResult.data === true
 
   const table = payload.kind === "coach" ? "coach_invites" : "athlete_invites"
   const { data: inviteData, error: inviteError } = await serviceClient
@@ -124,8 +122,24 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
     .maybeSingle()
   const invite = (inviteData as InviteRow | null) ?? null
 
-  // A missing invite and an invite of another club get the same answer, so the function cannot be used
-  // to find out which invite ids exist.
+  // A coach may only send the athlete invites of a team they are assigned to. The question is only asked
+  // once the invite is known to be in the caller's own club, and any failure to get an answer counts as no.
+  let callerIsTeamCoach = false
+  if (
+    payload.kind === "athlete" &&
+    !inviteError &&
+    invite &&
+    invite.team_id &&
+    !callerIsClubAdmin &&
+    callerTenantId !== null &&
+    callerTenantId === invite.tenant_id
+  ) {
+    const teamCoachResult = await userClient.rpc("is_team_coach", { p_team_id: invite.team_id })
+    callerIsTeamCoach = !teamCoachResult.error && teamCoachResult.data === true
+  }
+
+  // A missing invite, an invite of another club and an invite of a team the coach is not assigned to all
+  // get the same answer, so the function cannot be used to find out which invite ids exist.
   if (
     inviteError ||
     !invite ||
@@ -133,7 +147,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
       kind: payload.kind,
       callerTenantId,
       callerIsClubAdmin,
-      callerIsCoachOrAdmin,
+      callerIsTeamCoach,
       inviteTenantId: invite.tenant_id,
     })
   ) {
