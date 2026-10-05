@@ -1,31 +1,17 @@
-"use client"
-
-import { useEffect, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
-import { FirstAccessSetupPanel } from "@/components/club-admin/first-access-setup-panel"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { Button } from "@/components/ui/button"
+import { useEffect, useState, type FormEvent } from "react"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { ArrowClockwise, ArrowLeft, ArrowRight } from "@phosphor-icons/react"
 import {
-  completeClubAdminFirstAccessSetup,
-  getClubAdminProfileRecord,
-  type ClubAdminProfileRecord,
-} from "@/lib/data/club-admin/ops-data"
-import { Alert02Icon, ArrowLeft01Icon, Link01Icon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+  FirstAccessFrame,
+  FormError,
+  PasswordFields,
+  validateNewPassword,
+} from "@/components/club-admin/first-access-setup-panel"
+import { setClubAdminFirstAccessPassword } from "@/lib/data/club-admin/first-access-data"
+import { getClubAdminProfileRecord } from "@/lib/data/club-admin/ops-data"
 import { resolveSessionActor } from "@/lib/supabase/actor"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-
-const defaultProfile: ClubAdminProfileRecord = {
-  clubName: "",
-  shortName: "",
-  primaryColor: "#1368ff",
-  seasonYear: "2026",
-  seasonStart: "2026-01-10",
-  seasonEnd: "2026-10-30",
-  passwordSetAt: null,
-  onboardingCompletedAt: null,
-}
 
 async function diagnoseClaimFailure(
   supabase: NonNullable<ReturnType<typeof getBrowserSupabaseClient>>,
@@ -66,7 +52,7 @@ async function diagnoseClaimFailure(
   }
 
   if (!requestResult.data) {
-    return "No tenant request was found for this email. Approve a request for this exact email first."
+    return "No club request was found for this email. A request for this exact email has to be approved first."
   }
 
   if (requestResult.data.status !== "approved") {
@@ -74,10 +60,10 @@ async function diagnoseClaimFailure(
   }
 
   if (!requestResult.data.provisioned_tenant_id) {
-    return "The request was approved, but no tenant has been provisioned for it yet."
+    return "The request was approved, but the club workspace has not been created yet."
   }
 
-  return "The claim session exists, but the club-admin profile bootstrap did not complete."
+  return "The claim session exists, but the club admin profile did not finish setting up."
 }
 
 async function getCurrentClubAdminActivationState(
@@ -89,25 +75,33 @@ async function getCurrentClubAdminActivationState(
   return row?.lifecycle_status ?? null
 }
 
+/** Where a claimed admin belongs next, given what is already saved. */
+function nextRouteAfterPassword(lifecycleStatus: string | null, onboardingCompleted: boolean) {
+  if (lifecycleStatus === "approved_pending_billing" || lifecycleStatus === "billing_failed") return "/club-admin/setup/billing"
+  if (!onboardingCompleted) return "/club-admin/get-started"
+  return "/club-admin/dashboard"
+}
+
 export default function ClubAdminClaimPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const isSupabaseMode = getBackendMode() === "supabase"
   const tokenHash = searchParams.get("token_hash")
   const tokenType = searchParams.get("type")
-  const [profile, setProfile] = useState<ClubAdminProfileRecord>(defaultProfile)
+  const [email, setEmail] = useState<string | null>(isSupabaseMode ? null : searchParams.get("email"))
+  const [clubName, setClubName] = useState<string | null>(null)
+  const [lifecycleStatus, setLifecycleStatus] = useState<string | null>(null)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false)
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [loading, setLoading] = useState(isSupabaseMode)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isSupabaseMode) {
-      setError("Club-admin claim is only available in Supabase mode.")
-      setLoading(false)
-      return
-    }
+    // Mock mode has no claim tokens. The page still walks through the same step.
+    if (!isSupabaseMode) return
     if (!isSupabaseEnabled()) {
       setError("Supabase mode is enabled but URL/key are missing in environment.")
       setLoading(false)
@@ -126,24 +120,27 @@ export default function ClubAdminClaimPage() {
     const bootstrapClaim = async () => {
       setLoading(true)
 
+      let verifyError: string | null = null
       if (tokenHash && tokenType) {
         const verifyResult = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: tokenType as "magiclink" | "invite",
         })
         if (cancelled) return
-        if (verifyResult.error) {
-          setError(verifyResult.error.message)
-          setLoading(false)
-          return
-        }
+        // Claim links work once. If this one was already used on this device the
+        // session from that first visit is still valid, so carry on with it.
+        verifyError = verifyResult.error?.message ?? null
       }
 
       const { data } = await supabase.auth.getSession()
       const session = data.session
       if (cancelled) return
       if (!session) {
-        setError("No first-access session found. Open the latest claim link again.")
+        setError(
+          verifyError
+            ? `${verifyError}. Claim links only work once. If you already set a password, sign in with it. If not, ask for a new claim link.`
+            : "No first access session found. Open the latest claim link from your email again.",
+        )
         setLoading(false)
         return
       }
@@ -166,19 +163,19 @@ export default function ClubAdminClaimPage() {
         return
       }
 
-      const lifecycleStatus = await getCurrentClubAdminActivationState(supabase)
+      const lifecycle = await getCurrentClubAdminActivationState(supabase)
       if (cancelled) return
-      if (lifecycleStatus === "approved_pending_billing" || lifecycleStatus === "billing_failed") {
-        navigate("/club-admin/setup/billing", { replace: true })
+
+      const completed = Boolean(profileResult.data.onboardingCompletedAt)
+      if (profileResult.data.passwordSetAt) {
+        navigate(nextRouteAfterPassword(lifecycle, completed), { replace: true })
         return
       }
 
-      if (profileResult.data.passwordSetAt && profileResult.data.onboardingCompletedAt) {
-        navigate("/club-admin/dashboard", { replace: true })
-        return
-      }
-
-      setProfile(profileResult.data)
+      setEmail(session.user.email ?? null)
+      setClubName(profileResult.data.clubName || null)
+      setLifecycleStatus(lifecycle)
+      setOnboardingCompleted(completed)
       setError(null)
       setLoading(false)
     }
@@ -190,84 +187,101 @@ export default function ClubAdminClaimPage() {
     }
   }, [isSupabaseMode, navigate, tokenHash, tokenType])
 
-  const handleSubmit = async () => {
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.")
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const invalid = validateNewPassword(password, confirmPassword)
+    if (invalid) {
+      setFormError(invalid)
+      return
+    }
+
+    if (!isSupabaseMode) {
+      setFormError(null)
+      navigate("/club-admin/setup/billing", { replace: true })
       return
     }
 
     setSaving(true)
-    const result = await completeClubAdminFirstAccessSetup({
-      password,
-      profile,
-    })
+    const result = await setClubAdminFirstAccessPassword(password)
     setSaving(false)
 
     if (!result.ok) {
-      setError(result.error.message)
+      setFormError(result.error.message)
       return
     }
 
-    setError(null)
-    navigate("/club-admin/dashboard", { replace: true })
+    setFormError(null)
+    navigate(nextRouteAfterPassword(lifecycleStatus, onboardingCompleted), { replace: true })
   }
 
-  return loading ? (
-    <section className="mx-auto mt-10 w-full max-w-4xl rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-      Loading claim flow...
-    </section>
-  ) : error ? (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 sm:p-6">
-      <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Club-admin claim</p>
-          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">First access could not continue</h1>
-          <p className="max-w-2xl text-sm leading-6 text-slate-600">
-            This claim flow needs an approved tenant request, a valid first-access session, and a fresh claim link.
-          </p>
-        </div>
-      </section>
+  if (loading) {
+    return (
+      <FirstAccessFrame brand title="Opening your claim link" lede="Checking your link and finding your club.">
+        <p className="text-sm font-semibold text-sk-mute" role="status">
+          Loading...
+        </p>
+      </FirstAccessFrame>
+    )
+  }
 
-      <EmptyStateCard
-        eyebrow="Claim issue"
-        title="Club-admin first access is not ready."
-        description={error}
-        hint="Use the latest claim link after platform-admin approval, or return to login if the session has expired."
-        icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
-        className="rounded-[28px] bg-white px-5 py-6 shadow-sm"
-        actions={
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => navigate("/login")}>
-              <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+  if (error) {
+    return (
+      <FirstAccessFrame
+        brand
+        title="This claim link could not be opened"
+        lede="Nothing has been changed on your account."
+      >
+        <section className="sk-card space-y-5">
+          <FormError>
+            <p>{error}</p>
+            <p className="font-normal text-sk-ink-2">
+              Claim links are sent once your club request is approved, and each link works one time.
+            </p>
+          </FormError>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
+              <ArrowClockwise className="size-5" weight="bold" />
+              Try again
+            </button>
+            <Link to="/login" className="sk-btn sk-btn-quiet">
+              <ArrowLeft className="size-5" weight="bold" />
               Back to login
-            </Button>
-            <Button
-              type="button"
-              className="h-11 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#3f8cff_100%)] px-5 text-white hover:opacity-95"
-              onClick={() => window.location.reload()}
-            >
-              <HugeiconsIcon icon={Link01Icon} className="size-4" />
-              Retry claim
-            </Button>
+            </Link>
           </div>
-        }
-      />
-    </main>
-  ) : (
-    <FirstAccessSetupPanel
-      profile={profile}
-      password={password}
-      confirmPassword={confirmPassword}
-      saving={saving}
-      error={null}
-      loadingCopy="Claiming account..."
-      submitLabel="Claim account and continue"
-      title="Claim your club-admin account"
-      intro="This is the first-access claim flow for your approved organization request. Set your password and complete the minimum club setup before entering the SKTR Coach workspace."
-      onPasswordChange={setPassword}
-      onConfirmPasswordChange={setConfirmPassword}
-      onProfileChange={setProfile}
-      onSubmit={() => void handleSubmit()}
-    />
+        </section>
+      </FirstAccessFrame>
+    )
+  }
+
+  return (
+    <FirstAccessFrame
+      brand
+      step="password"
+      title={clubName ? `Welcome to ${clubName}` : "Claim your club"}
+      lede="Your club request was approved. Set a password first, so you can always get back in. Then we will walk you through the rest."
+    >
+      <form className="sk-card grid gap-4" onSubmit={(event) => void handleSubmit(event)} noValidate>
+        <h2 className="sk-h2">Set your password</h2>
+        {email ? (
+          <p className="-mt-2 text-sm leading-relaxed text-sk-mute">
+            You will sign in as <span className="break-all font-bold text-sk-ink">{email}</span>.
+          </p>
+        ) : null}
+        <PasswordFields
+          email={email}
+          password={password}
+          confirmPassword={confirmPassword}
+          onPasswordChange={setPassword}
+          onConfirmPasswordChange={setConfirmPassword}
+        />
+        <FormError>{formError}</FormError>
+        <div>
+          <button type="submit" disabled={saving} className="sk-btn sk-btn-primary w-full sm:w-auto">
+            {saving ? "Saving password..." : "Save password and continue"}
+            {saving ? null : <ArrowRight className="size-5" weight="bold" />}
+          </button>
+        </div>
+      </form>
+    </FirstAccessFrame>
   )
 }

@@ -1,5 +1,4 @@
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { CaretLeft as CaretLeftGlyph, CaretRight as CaretRightGlyph, DotsThree as DotsThreeGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -72,7 +71,7 @@ function PaginationPrevious({
       className={cn('gap-1 px-2.5 sm:pl-2.5', className)}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowLeft01Icon} />
+      <CaretLeftGlyph weight="bold" />
       <span className="hidden sm:block">Previous</span>
     </PaginationLink>
   )
@@ -90,7 +89,7 @@ function PaginationNext({
       {...props}
     >
       <span className="hidden sm:block">Next</span>
-      <HugeiconsIcon icon={ArrowRight01Icon} />
+      <CaretRightGlyph weight="bold" />
     </PaginationLink>
   )
 }
@@ -106,7 +105,7 @@ function PaginationEllipsis({
       className={cn('flex size-9 items-center justify-center', className)}
       {...props}
     >
-      <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
+      <DotsThreeGlyph weight="bold" className="size-4" />
       <span className="sr-only">More pages</span>
     </span>
   )

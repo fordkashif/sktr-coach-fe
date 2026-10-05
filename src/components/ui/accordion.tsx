@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { CaretDown as CaretDownGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import * as AccordionPrimitive from '@radix-ui/react-accordion'
 import { cn } from '@/lib/utils'
@@ -41,7 +40,7 @@ function AccordionTrigger({
         {...props}
       >
         {children}
-        <HugeiconsIcon icon={ArrowDown01Icon} className="text-muted-foreground pointer-events-none size-4 shrink-0 translate-y-0.5 transition-transform duration-200" />
+        <CaretDownGlyph weight="bold" className="text-muted-foreground pointer-events-none size-4 shrink-0 translate-y-0.5 transition-transform duration-200" />
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   )

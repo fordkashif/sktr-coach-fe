@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon, CircleIcon, Tick01Icon } from "@hugeicons/core-free-icons";
+import { CaretRight as CaretRightGlyph, Check as CheckGlyph, Circle as CircleGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 import { cn } from '@/lib/utils'
@@ -72,7 +71,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <HugeiconsIcon icon={ArrowRight01Icon} className="ml-auto" />
+      <CaretRightGlyph weight="bold" className="ml-auto" />
     </ContextMenuPrimitive.SubTrigger>
   )
 }
@@ -152,7 +151,7 @@ function ContextMenuCheckboxItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <ContextMenuPrimitive.ItemIndicator>
-          <HugeiconsIcon icon={Tick01Icon} className="size-4" />
+          <CheckGlyph weight="bold" className="size-4" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -176,7 +175,7 @@ function ContextMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <ContextMenuPrimitive.ItemIndicator>
-          <HugeiconsIcon icon={CircleIcon} className="size-2 fill-current" />
+          <CircleGlyph weight="fill" className="size-2 fill-current" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
       {children}

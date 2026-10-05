@@ -67,7 +67,7 @@ const athleteLinks: ShellLink[] = [
 const clubAdminLinks: ShellLink[] = [
   { href: "/club-admin/dashboard", label: "Dashboard", icon: SquaresFour },
   { href: "/club-admin/profile", label: "Profile", icon: Buildings },
-  { href: "/club-admin/users", label: "Users", icon: UsersThree },
+  { href: "/club-admin/users", label: "People", icon: UsersThree },
   { href: "/club-admin/teams", label: "Teams", icon: ClipboardText },
   { href: "/club-admin/reports", label: "Reports", icon: ChartBar },
   { href: "/club-admin/audit", label: "Audit", icon: ListChecks },

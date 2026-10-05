@@ -1,33 +1,31 @@
 "use client"
 
 import { Link } from "react-router-dom"
-import { Button } from "@/components/ui/button"
+import { AUTH_PHOTOS, AuthSplit } from "@/layouts/auth-layout"
 
 export default function CreateClubAccountPage() {
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-4 sm:p-6">
-      <section className="page-intro">
-        <div className="space-y-2">
-          <h1 className="page-intro-title">Organization Provisioning</h1>
-          <p className="page-intro-copy">
-            Direct self-serve club creation is disabled. New organizations must submit a request for platform review.
+    <AuthSplit
+      photo={AUTH_PHOTOS.lanes}
+      headline="Put your whole club on one plan."
+      body="Coaches write the training, athletes log it, and you see every team from one place."
+    >
+      <div className="space-y-7">
+        <header className="space-y-3">
+          <h1 className="sk-title">Clubs join by request</h1>
+          <p className="sk-lede">
+            You cannot create a club account on your own yet. Send us a short request instead and we will set your club up, usually within two working days.
           </p>
+        </header>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/login?mode=request" className="sk-btn sk-btn-primary">
+            Request access for your club
+          </Link>
+          <Link to="/login" className="sk-btn sk-btn-quiet">
+            Back to sign in
+          </Link>
         </div>
-      </section>
-
-      <section className="mobile-card-primary space-y-4">
-        <p className="text-sm text-slate-600">
-          This route is intentionally non-provisioning while the request-only onboarding model is active.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild className="h-11 rounded-full px-5">
-            <Link to="/login?mode=request">Open request form</Link>
-          </Button>
-          <Button asChild variant="outline" className="h-11 rounded-full px-5">
-            <Link to="/login">Back to sign in</Link>
-          </Button>
-        </div>
-      </section>
-    </main>
+      </div>
+    </AuthSplit>
   )
 }

@@ -1,5 +1,4 @@
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { CaretRight as CaretRightGlyph, DotsThree as DotsThreeGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cn } from '@/lib/utils'
@@ -75,7 +74,7 @@ function BreadcrumbSeparator({
       className={cn('[&>svg]:size-3.5', className)}
       {...props}
     >
-      {children ?? <HugeiconsIcon icon={ArrowRight01Icon} />}
+      {children ?? <CaretRightGlyph weight="bold" />}
     </li>
   )
 }
@@ -92,7 +91,7 @@ function BreadcrumbEllipsis({
       className={cn('flex size-9 items-center justify-center', className)}
       {...props}
     >
-      <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
+      <DotsThreeGlyph weight="bold" className="size-4" />
       <span className="sr-only">More</span>
     </span>
   )

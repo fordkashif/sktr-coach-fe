@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PanelLeftIcon } from "@hugeicons/core-free-icons";
+import { SidebarSimple as SidebarSimpleGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva, VariantProps } from 'class-variance-authority'
@@ -273,7 +272,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <HugeiconsIcon icon={PanelLeftIcon} />
+      <SidebarSimpleGlyph weight="bold" />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   )

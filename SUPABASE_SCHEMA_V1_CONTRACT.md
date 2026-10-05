@@ -163,6 +163,16 @@ Flow: coach publishes a plan, the client creates one `sessions` row (with `sessi
 - `session_completions`: `rpe smallint` (1 to 10), `athlete_comment text`, `updated_at`.
 - Triggers: `mark_session_in_progress_on_log` (first log sets `sessions.status = 'in-progress'`), `mark_session_completed_on_completion` (sets `completed` and `completed_at`).
 
+## Club Admin Functions (migration `20261005140000_club_admin_member_access_and_billing_contact.sql`)
+
+Functions only. No tables, columns, constraints or data were changed.
+
+- `set_tenant_member_access(p_user_id uuid, p_role text, p_is_active boolean)` returns `table (user_id uuid, role text, is_active boolean)`. Updates `profiles.role` and `profiles.is_active`. Removes the member's `team_coaches` rows when the new role is `athlete`.
+- `get_tenant_member_emails()` returns `table (user_id uuid, email text)` (lower-cased `auth.users.email`).
+- `update_current_club_admin_billing_contact(p_billing_contact_name text, p_billing_contact_email text)` returns `void`. Updates `tenant_provision_requests.billing_contact_name` and `billing_contact_email` on the tenant's latest row.
+- `get_current_tenant_package()` returns `table (requested_plan text, lifecycle_status text)`. `requested_plan` is the plan in force: approving a package upgrade request rewrites it.
+- `complete_current_club_admin_mock_billing_setup(text, text, text)`: lifecycle transition is now `approved_pending_billing | billing_failed -> active_onboarding`.
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

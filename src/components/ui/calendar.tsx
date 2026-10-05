@@ -1,7 +1,6 @@
 'use client'
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { CaretDown as CaretDownGlyph, CaretLeft as CaretLeftGlyph, CaretRight as CaretRightGlyph } from "@phosphor-icons/react"
 import * as React from 'react'
 import { DayButton, DayPicker, getDefaultClassNames } from 'react-day-picker'
 
@@ -135,18 +134,18 @@ function Calendar({
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === 'left') {
             return (
-              <HugeiconsIcon icon={ArrowLeft01Icon} className={cn('size-4', className)} {...props} />
+              <CaretLeftGlyph weight="bold" className={cn('size-4', className)} {...props} />
             )
           }
 
           if (orientation === 'right') {
             return (
-              <HugeiconsIcon icon={ArrowRight01Icon} className={cn('size-4', className)} {...props} />
+              <CaretRightGlyph weight="bold" className={cn('size-4', className)} {...props} />
             )
           }
 
           return (
-            <HugeiconsIcon icon={ArrowDown01Icon} className={cn('size-4', className)} {...props} />
+            <CaretDownGlyph weight="bold" className={cn('size-4', className)} {...props} />
           )
         },
         DayButton: CalendarDayButton,

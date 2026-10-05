@@ -51,6 +51,7 @@ Legend:
 - writes (`C/U/D`): service-role only
 - athlete self-service: no direct `U`. `update_current_athlete_profile(...)` (security definer, migration `20261005093000`) keeps `display_name` in sync with the athlete's own first and last name. No other profile column is touched.
 - coach names for athletes: athletes cannot read other profiles. `get_current_athlete_team_context()` returns the display names of the coaches on the athlete's own team. Coach names are not exposed through invite links.
+- club-admin member access: no direct `U`. `set_tenant_member_access(p_user_id, p_role, p_is_active)` (security definer, migration `20261005140000`) changes only `role` and `is_active`. See "Club admin member access, billing contact and package" below.
 
 ### `teams`
 
@@ -146,6 +147,34 @@ Legend:
 - athlete: `C` only for their own athlete row, only with `status = 'scheduled'` and a plan slot (`plan_id`, `plan_week_number`, `plan_day_index`) pointing at a published plan in the tenant; blocks and rows only under such a session while it is still `scheduled`. This covers athletes who joined after the plan was published. Athletes still cannot update or delete sessions.
 - `sessions.status` is moved by security definer triggers, not by the athlete: first logged set sets `in-progress`, a completion sets `completed`.
 - coach / club-admin: unchanged (`R/C/U/D` tenant). Sessions are created for every assigned athlete when a plan is published.
+
+### Club admin member access, billing contact and package (migration `20261005140000_club_admin_member_access_and_billing_contact.sql`)
+
+All are security definer functions with `set search_path = public`, executable by `authenticated` only (revoked from `public` and `anon`). No table policy was widened.
+
+`set_tenant_member_access(p_user_id uuid, p_role text, p_is_active boolean)` returns `(user_id, role, is_active)`:
+- caller: active club-admin only (re-checked after row locks are taken).
+- target: a profile in the caller's tenant. Other tenants and unknown users both raise `Member not found in this club`.
+- roles: `athlete`, `coach`, `club-admin` only. `platform-admin` is never a profile role.
+- caller cannot change their own role or deactivate themselves.
+- the last active club-admin of a tenant cannot be demoted or deactivated.
+- writes: `profiles.role`, `profiles.is_active` only. Changing someone to `athlete` deletes their `team_coaches` rows in the tenant (staff assignments must not outlive the staff role). Deactivating keeps `team_coaches` so reactivating restores the same teams. `athletes` rows and all training data are never touched.
+
+`get_tenant_member_emails()` returns `(user_id, email)`:
+- active club-admin: account emails from `auth.users` for profiles in their own tenant.
+- coach, athlete, deactivated admin, no profile: zero rows.
+
+`update_current_club_admin_billing_contact(p_billing_contact_name text, p_billing_contact_email text)` returns `void`:
+- caller: active club-admin only.
+- validates a non-empty name (120 characters max) and a plausible email.
+- writes: `billing_contact_name`, `billing_contact_email` on the latest `tenant_provision_requests` row of the caller's tenant. Refused when that row's lifecycle status is `cancelled`. Lifecycle and billing status are not changed.
+
+`get_current_tenant_package()` returns `(requested_plan, lifecycle_status)`:
+- any member of the tenant (club-admin, coach, athlete): the plan key and lifecycle status from the latest `tenant_provision_requests` row of their own tenant. Nothing else from that row is exposed.
+- zero rows when the caller has no profile or the tenant has no provisioning record.
+- used by package limit enforcement, because the direct `R` on `tenant_provision_requests` is limited to the original requestor and platform admins.
+
+`complete_current_club_admin_mock_billing_setup(...)`: unchanged except that it now accepts lifecycle status `billing_failed` as well as `approved_pending_billing`, so a club sent back to billing setup after a failed attempt can retry.
 
 ## Service-Role Only Operations (Documented)
 
