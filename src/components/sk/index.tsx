@@ -20,7 +20,7 @@ export function PageHeader({
   className?: string
 }) {
   return (
-    <header className={cn("flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:pr-16", className)}>
+    <header className={cn("flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between", className)}>
       <div className="min-w-0 space-y-3">
         <h1 className="sk-title">{title}</h1>
         {lede ? <p className="sk-lede">{lede}</p> : null}

@@ -80,6 +80,10 @@ async function getCurrentAthleteContext(client: SupabaseClient): Promise<Result<
 }
 
 export type PublishTrainingPlanInput = {
+  /** Existing plan to publish or update. Omit to create a new plan. */
+  planId?: string | null
+  /** Coach builder model, stored on the plan so it can be reopened and edited. */
+  builderState?: Record<string, unknown> | null
   name: string
   startDate: string
   weeks: number
@@ -114,6 +118,65 @@ export type PublishTrainingPlanInput = {
 export type PublishTrainingPlanOutput = {
   planId: string
   assignedCount: number
+}
+
+export type SaveTrainingPlanDraftInput = {
+  /** Existing draft to overwrite. Omit to create a new draft. */
+  planId?: string | null
+  name: string
+  startDate: string
+  weeks: number
+  notes?: string | null
+  teamId: string | null
+  builderState: Record<string, unknown>
+}
+
+export type TrainingPlanAssignmentRow = {
+  id: string
+  planId: string
+  scope: "team" | "athlete"
+  teamId: string | null
+  athleteId: string | null
+  visibilityStart: "immediate" | "scheduled"
+  visibilityDate: string | null
+}
+
+export type CoachTrainingPlanListItem = TrainingPlanSummary & {
+  updatedAt: string | null
+  assignments: TrainingPlanAssignmentRow[]
+}
+
+export type TrainingPlanBuilderRecord = {
+  plan: TrainingPlanSummary & { notes: string | null; updatedAt: string | null }
+  /** Null for plans published before the builder stored its model. */
+  builderState: Record<string, unknown> | null
+  assignments: TrainingPlanAssignmentRow[]
+  /** Published structure, used to rebuild the editor when builderState is null. */
+  detail: TrainingPlanDetail | null
+}
+
+type AssignmentDbRow = {
+  id: string
+  plan_id: string
+  scope: "team" | "athlete"
+  team_id: string | null
+  athlete_id: string | null
+  visibility_start: "immediate" | "scheduled"
+  visibility_date: string | null
+}
+
+const ASSIGNMENT_COLUMNS = "id, plan_id, scope, team_id, athlete_id, visibility_start, visibility_date"
+
+function mapAssignmentRow(row: AssignmentDbRow): TrainingPlanAssignmentRow {
+  return {
+    id: row.id,
+    planId: row.plan_id,
+    scope: row.scope,
+    teamId: row.team_id,
+    athleteId: row.athlete_id,
+    visibilityStart: row.visibility_start,
+    visibilityDate: row.visibility_date,
+  }
 }
 
 async function resolveAthleteAssignmentIds(
@@ -158,60 +221,36 @@ async function resolveAthleteAssignmentIds(
   return ok(resolvedIds)
 }
 
-export async function publishTrainingPlanForCurrentCoach(
-  input: PublishTrainingPlanInput,
-): Promise<Result<PublishTrainingPlanOutput>> {
-  const clientResult = requireSupabaseClient("publishTrainingPlanForCurrentCoach")
-  if (!clientResult.ok) return clientResult
+/**
+ * Replaces the athlete-facing structure (weeks, days, blocks) of a plan.
+ * Deleting the weeks cascades to days and blocks.
+ */
+async function replaceTrainingPlanStructure(
+  client: SupabaseClient,
+  planId: string,
+  structure: PublishTrainingPlanInput["structure"],
+): Promise<Result<null>> {
+  const { error: clearError } = await client.from("training_plan_weeks").delete().eq("plan_id", planId)
+  if (clearError) return { ok: false, error: mapPostgrestError(clearError) }
 
-  const contextResult = await getCurrentCoachContext(clientResult.client)
-  if (!contextResult.ok) return contextResult
-
-  const athleteAssignmentsResult = await resolveAthleteAssignmentIds(clientResult.client, input)
-  if (!athleteAssignmentsResult.ok) return athleteAssignmentsResult
-  const athleteAssignmentIds = athleteAssignmentsResult.data
-
-  const { data: insertedPlan, error: planError } = await clientResult.client
-    .from("training_plans")
-    .insert({
-      tenant_id: contextResult.data.tenantId,
-      team_id: isUuid(input.teamId) ? input.teamId : null,
-      name: input.name,
-      start_date: input.startDate,
-      weeks: input.weeks,
-      status: "published",
-      notes: input.notes ?? null,
-      created_by_user_id: contextResult.data.userId,
-      published_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single()
-
-  if (planError) return { ok: false, error: mapPostgrestError(planError) }
-  const planId = insertedPlan.id as string
-
-  const weekInserts = input.structure.map((week) => ({
-    plan_id: planId,
-    week_number: week.weekNumber,
-    emphasis: week.emphasis,
-    status: week.status,
-  }))
-  if (weekInserts.length === 0) return err("VALIDATION", "Training plan must include at least one week.")
-
-  const { error: weekInsertError } = await clientResult.client.from("training_plan_weeks").insert(weekInserts)
+  const { data: storedWeeks, error: weekInsertError } = await client
+    .from("training_plan_weeks")
+    .insert(
+      structure.map((week) => ({
+        plan_id: planId,
+        week_number: week.weekNumber,
+        emphasis: week.emphasis,
+        status: week.status,
+      })),
+    )
+    .select("id, week_number")
   if (weekInsertError) return { ok: false, error: mapPostgrestError(weekInsertError) }
 
-  const { data: storedWeeks, error: weekFetchError } = await clientResult.client
-    .from("training_plan_weeks")
-    .select("id, week_number")
-    .eq("plan_id", planId)
-
-  if (weekFetchError) return { ok: false, error: mapPostgrestError(weekFetchError) }
   const weekIdByNumber = new Map(
-    (((storedWeeks as Array<{ id: string; week_number: number }> | null) ?? [])).map((row) => [row.week_number, row.id]),
+    ((storedWeeks as Array<{ id: string; week_number: number }> | null) ?? []).map((row) => [row.week_number, row.id]),
   )
 
-  const dayInserts = input.structure.flatMap((week) =>
+  const dayInserts = structure.flatMap((week) =>
     week.days.map((day) => ({
       plan_week_id: weekIdByNumber.get(week.weekNumber) ?? "",
       day_index: day.dayIndex,
@@ -227,34 +266,25 @@ export async function publishTrainingPlanForCurrentCoach(
       is_training_day: day.isTrainingDay,
     })),
   )
-
   if (dayInserts.some((day) => !isUuid(day.plan_week_id))) {
-    return err("UNKNOWN", "Failed to map plan weeks while publishing day structure.")
+    return err("UNKNOWN", "Failed to map plan weeks while saving the day structure.")
   }
-  if (dayInserts.length > 0) {
-    const { error: dayInsertError } = await clientResult.client.from("training_plan_days").insert(dayInserts)
-    if (dayInsertError) return { ok: false, error: mapPostgrestError(dayInsertError) }
-  }
+  if (dayInserts.length === 0) return ok(null)
 
-  const planWeekIds = [...weekIdByNumber.values()]
-  let dayIdByWeekAndIndex = new Map<string, string>()
-  if (planWeekIds.length > 0) {
-    const { data: storedDays, error: dayFetchError } = await clientResult.client
-      .from("training_plan_days")
-      .select("id, plan_week_id, day_index")
-      .in("plan_week_id", planWeekIds)
+  const { data: storedDays, error: dayInsertError } = await client
+    .from("training_plan_days")
+    .insert(dayInserts)
+    .select("id, plan_week_id, day_index")
+  if (dayInsertError) return { ok: false, error: mapPostgrestError(dayInsertError) }
 
-    if (dayFetchError) return { ok: false, error: mapPostgrestError(dayFetchError) }
+  const dayIdByWeekAndIndex = new Map(
+    ((storedDays as Array<{ id: string; plan_week_id: string; day_index: number }> | null) ?? []).map((row) => [
+      `${row.plan_week_id}:${row.day_index}`,
+      row.id,
+    ]),
+  )
 
-    dayIdByWeekAndIndex = new Map(
-      (((storedDays as Array<{ id: string; plan_week_id: string; day_index: number }> | null) ?? [])).map((row) => [
-        `${row.plan_week_id}:${row.day_index}`,
-        row.id,
-      ]),
-    )
-  }
-
-  const blockInserts = input.structure.flatMap((week) =>
+  const blockInserts = structure.flatMap((week) =>
     week.days.flatMap((day) => {
       const weekId = weekIdByNumber.get(week.weekNumber)
       const dayId = weekId ? dayIdByWeekAndIndex.get(`${weekId}:${day.dayIndex}`) : undefined
@@ -266,45 +296,355 @@ export async function publishTrainingPlanForCurrentCoach(
       }))
     }),
   )
-
   if (blockInserts.length > 0) {
-    const { error: blockInsertError } = await clientResult.client.from("training_plan_blocks").insert(blockInserts)
+    const { error: blockInsertError } = await client.from("training_plan_blocks").insert(blockInserts)
     if (blockInsertError) return { ok: false, error: mapPostgrestError(blockInsertError) }
   }
 
-  const assignmentInserts =
+  return ok(null)
+}
+
+/**
+ * Makes the assignment rows of a plan match the requested target.
+ * Rows that are still wanted are kept (so athletes are not notified twice),
+ * rows that are no longer wanted are removed, and only new rows are inserted.
+ * Inserting an immediate assignment is what queues the athlete notification.
+ */
+async function syncTrainingPlanAssignments(
+  client: SupabaseClient,
+  context: CoachContext,
+  planId: string,
+  input: PublishTrainingPlanInput,
+  athleteAssignmentIds: string[],
+): Promise<Result<null>> {
+  const visibilityDate = input.visibilityStart === "scheduled" ? input.visibilityDate : null
+  const desired =
     input.assignTarget === "team"
-      ? [
-          {
-            tenant_id: contextResult.data.tenantId,
-            plan_id: planId,
-            scope: "team" as const,
-            team_id: input.teamId,
-            athlete_id: null,
-            visibility_start: input.visibilityStart,
-            visibility_date: input.visibilityStart === "scheduled" ? input.visibilityDate : null,
-            created_by_user_id: contextResult.data.userId,
-          },
-        ]
+      ? [{ key: `team:${input.teamId}`, scope: "team" as const, team_id: input.teamId, athlete_id: null as string | null }]
       : athleteAssignmentIds.map((athleteId) => ({
-          tenant_id: contextResult.data.tenantId,
-          plan_id: planId,
+          key: `athlete:${athleteId}`,
           scope: "athlete" as const,
-          team_id: null,
-          athlete_id: athleteId,
-          visibility_start: input.visibilityStart,
-          visibility_date: input.visibilityStart === "scheduled" ? input.visibilityDate : null,
-          created_by_user_id: contextResult.data.userId,
+          team_id: null as string | null,
+          athlete_id: athleteId as string | null,
         }))
 
-  if (assignmentInserts.length > 0) {
-    const { error: assignmentError } = await clientResult.client.from("training_plan_assignments").insert(assignmentInserts)
-    if (assignmentError) return { ok: false, error: mapPostgrestError(assignmentError) }
+  const { data: existingRows, error: existingError } = await client
+    .from("training_plan_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("plan_id", planId)
+    .eq("tenant_id", context.tenantId)
+  if (existingError) return { ok: false, error: mapPostgrestError(existingError) }
+
+  const existing = ((existingRows as AssignmentDbRow[] | null) ?? []).map((row) => ({
+    id: row.id,
+    key: row.scope === "team" ? `team:${row.team_id}` : `athlete:${row.athlete_id}`,
+  }))
+  const desiredKeys = new Set(desired.map((row) => row.key))
+  const existingKeys = new Set(existing.map((row) => row.key))
+  const removeIds = existing.filter((row) => !desiredKeys.has(row.key)).map((row) => row.id)
+  const keepIds = existing.filter((row) => desiredKeys.has(row.key)).map((row) => row.id)
+  const inserts = desired
+    .filter((row) => !existingKeys.has(row.key))
+    .map((row) => ({
+      tenant_id: context.tenantId,
+      plan_id: planId,
+      scope: row.scope,
+      team_id: row.team_id,
+      athlete_id: row.athlete_id,
+      visibility_start: input.visibilityStart,
+      visibility_date: visibilityDate,
+      created_by_user_id: context.userId,
+    }))
+
+  if (removeIds.length > 0) {
+    const { error } = await client.from("training_plan_assignments").delete().in("id", removeIds)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+  }
+  if (keepIds.length > 0) {
+    const { error } = await client
+      .from("training_plan_assignments")
+      .update({ visibility_start: input.visibilityStart, visibility_date: visibilityDate })
+      .in("id", keepIds)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+  }
+  if (inserts.length > 0) {
+    const { error } = await client.from("training_plan_assignments").insert(inserts)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+  }
+
+  return ok(null)
+}
+
+/**
+ * Publishes a new plan, publishes an existing draft, or updates a plan that is already published.
+ *
+ * There is no client-side transaction, so the writes are ordered to fail safe:
+ * 1. the plan row is written while it is still a draft (or left published on an update),
+ * 2. the week/day/block structure is replaced,
+ * 3. the status flips to published,
+ * 4. assignments are synced last, which is the step that makes the plan reach athletes and notifies them.
+ * A failure before step 3 leaves a draft that can be published again. Every step is safe to retry.
+ */
+export async function publishTrainingPlanForCurrentCoach(
+  input: PublishTrainingPlanInput,
+): Promise<Result<PublishTrainingPlanOutput>> {
+  const clientResult = requireSupabaseClient("publishTrainingPlanForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+
+  const contextResult = await getCurrentCoachContext(client)
+  if (!contextResult.ok) return contextResult
+  const context = contextResult.data
+
+  if (!input.name.trim()) return err("VALIDATION", "Give the plan a name before publishing.")
+  if (input.structure.length === 0) return err("VALIDATION", "Training plan must include at least one week.")
+  if (input.planId && !isUuid(input.planId)) return err("VALIDATION", "This plan has an invalid id.")
+
+  const athleteAssignmentsResult = await resolveAthleteAssignmentIds(client, input)
+  if (!athleteAssignmentsResult.ok) return athleteAssignmentsResult
+  const athleteAssignmentIds = athleteAssignmentsResult.data
+
+  const planFields: Record<string, unknown> = {
+    team_id: isUuid(input.teamId) ? input.teamId : null,
+    name: input.name.trim(),
+    start_date: input.startDate,
+    weeks: input.weeks,
+    notes: input.notes ?? null,
+  }
+  if (input.builderState !== undefined) planFields.builder_state = input.builderState
+
+  let planId: string
+  let alreadyPublished = false
+
+  if (input.planId) {
+    const { data: existingPlan, error: existingError } = await client
+      .from("training_plans")
+      .select("id, status")
+      .eq("id", input.planId)
+      .eq("tenant_id", context.tenantId)
+      .maybeSingle()
+    if (existingError) return { ok: false, error: mapPostgrestError(existingError) }
+    if (!existingPlan) return err("NOT_FOUND", "This plan no longer exists. Reload your plans and try again.")
+    if (existingPlan.status === "archived") {
+      return err("VALIDATION", "Archived plans cannot be changed. Duplicate it as a new draft instead.")
+    }
+    alreadyPublished = existingPlan.status === "published"
+    planId = existingPlan.id as string
+
+    const { data: updatedRows, error: updateError } = await client
+      .from("training_plans")
+      .update(planFields)
+      .eq("id", planId)
+      .eq("tenant_id", context.tenantId)
+      .select("id")
+    if (updateError) return { ok: false, error: mapPostgrestError(updateError) }
+    if (((updatedRows as Array<{ id: string }> | null) ?? []).length === 0) {
+      return err("FORBIDDEN", "You do not have permission to change this plan.")
+    }
+  } else {
+    const { data: insertedPlan, error: planError } = await client
+      .from("training_plans")
+      .insert({
+        ...planFields,
+        tenant_id: context.tenantId,
+        status: "draft",
+        created_by_user_id: context.userId,
+      })
+      .select("id")
+      .single()
+    if (planError) return { ok: false, error: mapPostgrestError(planError) }
+    planId = insertedPlan.id as string
+  }
+
+  const structureResult = await replaceTrainingPlanStructure(client, planId, input.structure)
+  if (!structureResult.ok) return structureResult
+
+  if (!alreadyPublished) {
+    const { error: statusError } = await client
+      .from("training_plans")
+      .update({ status: "published", published_at: new Date().toISOString() })
+      .eq("id", planId)
+      .eq("tenant_id", context.tenantId)
+    if (statusError) return { ok: false, error: mapPostgrestError(statusError) }
+  }
+
+  const assignmentResult = await syncTrainingPlanAssignments(client, context, planId, input, athleteAssignmentIds)
+  if (!assignmentResult.ok) return assignmentResult
+
+  return ok({ planId, assignedCount: athleteAssignmentIds.length })
+}
+
+/**
+ * Creates or overwrites a draft. A draft is a single row (the builder model lives in builder_state),
+ * so the save is one atomic write. Drafts get no structure rows and no assignments,
+ * which means athletes cannot reach them and no notification is queued.
+ */
+export async function saveTrainingPlanDraftForCurrentCoach(
+  input: SaveTrainingPlanDraftInput,
+): Promise<Result<{ planId: string }>> {
+  const clientResult = requireSupabaseClient("saveTrainingPlanDraftForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+
+  const contextResult = await getCurrentCoachContext(client)
+  if (!contextResult.ok) return contextResult
+  const context = contextResult.data
+
+  if (!input.name.trim()) return err("VALIDATION", "Give the plan a name before saving.")
+  if (!input.startDate) return err("VALIDATION", "Pick a start date before saving.")
+  if (!Number.isInteger(input.weeks) || input.weeks <= 0) return err("VALIDATION", "Weeks must be a positive number.")
+
+  const fields = {
+    team_id: isUuid(input.teamId) ? input.teamId : null,
+    name: input.name.trim(),
+    start_date: input.startDate,
+    weeks: input.weeks,
+    notes: input.notes ?? null,
+    builder_state: input.builderState,
+  }
+
+  if (input.planId) {
+    if (!isUuid(input.planId)) return err("VALIDATION", "This plan has an invalid id.")
+    const { data: updatedRows, error } = await client
+      .from("training_plans")
+      .update(fields)
+      .eq("id", input.planId)
+      .eq("tenant_id", context.tenantId)
+      .eq("status", "draft")
+      .select("id")
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    if (((updatedRows as Array<{ id: string }> | null) ?? []).length === 0) {
+      return err("CONFLICT", "This plan is no longer a draft, so it was not saved. Reload your plans and try again.")
+    }
+    return ok({ planId: input.planId })
+  }
+
+  const { data: insertedPlan, error: insertError } = await client
+    .from("training_plans")
+    .insert({
+      ...fields,
+      tenant_id: context.tenantId,
+      status: "draft",
+      created_by_user_id: context.userId,
+    })
+    .select("id")
+    .single()
+  if (insertError) return { ok: false, error: mapPostgrestError(insertError) }
+  return ok({ planId: insertedPlan.id as string })
+}
+
+/** Plans for the coach list (drafts, published and archived) with their assignment rows. */
+export async function listCoachTrainingPlansForCurrentUser(params?: {
+  scopeTeamId?: string | null
+}): Promise<Result<CoachTrainingPlanListItem[]>> {
+  const clientResult = requireSupabaseClient("listCoachTrainingPlansForCurrentUser")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+
+  const contextResult = await getCurrentCoachContext(client)
+  if (!contextResult.ok) return contextResult
+
+  let query = client
+    .from("training_plans")
+    .select("id, name, team_id, start_date, weeks, status, updated_at")
+    .eq("tenant_id", contextResult.data.tenantId)
+    .order("start_date", { ascending: false })
+    .limit(100)
+  if (params?.scopeTeamId) query = query.eq("team_id", params.scopeTeamId)
+
+  const { data, error } = await query
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const rows =
+    (data as Array<{
+      id: string
+      name: string
+      team_id: string | null
+      start_date: string
+      weeks: number
+      status: TrainingPlanSummary["status"]
+      updated_at: string | null
+    }> | null) ?? []
+
+  let assignmentRows: AssignmentDbRow[] = []
+  if (rows.length > 0) {
+    const { data: assignments, error: assignmentsError } = await client
+      .from("training_plan_assignments")
+      .select(ASSIGNMENT_COLUMNS)
+      .eq("tenant_id", contextResult.data.tenantId)
+      .in(
+        "plan_id",
+        rows.map((row) => row.id),
+      )
+    if (assignmentsError) return { ok: false, error: mapPostgrestError(assignmentsError) }
+    assignmentRows = (assignments as AssignmentDbRow[] | null) ?? []
+  }
+
+  return ok(
+    rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      teamId: row.team_id,
+      startDate: row.start_date,
+      weeks: row.weeks,
+      status: row.status,
+      updatedAt: row.updated_at,
+      assignments: assignmentRows.filter((assignment) => assignment.plan_id === row.id).map(mapAssignmentRow),
+    })),
+  )
+}
+
+/** Everything the builder needs to reopen one plan. */
+export async function getTrainingPlanForBuilder(planId: string): Promise<Result<TrainingPlanBuilderRecord>> {
+  const clientResult = requireSupabaseClient("getTrainingPlanForBuilder")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+
+  const contextResult = await getCurrentCoachContext(client)
+  if (!contextResult.ok) return contextResult
+
+  const { data: plan, error: planError } = await client
+    .from("training_plans")
+    .select("id, name, team_id, start_date, weeks, status, notes, updated_at, builder_state")
+    .eq("id", planId)
+    .eq("tenant_id", contextResult.data.tenantId)
+    .maybeSingle()
+  if (planError) return { ok: false, error: mapPostgrestError(planError) }
+  if (!plan) return err("NOT_FOUND", "This plan no longer exists.")
+
+  const { data: assignments, error: assignmentsError } = await client
+    .from("training_plan_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("plan_id", planId)
+    .eq("tenant_id", contextResult.data.tenantId)
+  if (assignmentsError) return { ok: false, error: mapPostgrestError(assignmentsError) }
+
+  const builderState =
+    plan.builder_state && typeof plan.builder_state === "object" && !Array.isArray(plan.builder_state)
+      ? (plan.builder_state as Record<string, unknown>)
+      : null
+
+  let detail: TrainingPlanDetail | null = null
+  if (!builderState) {
+    const detailResult = await getTrainingPlanDetail(planId)
+    if (!detailResult.ok) return detailResult
+    detail = detailResult.data
   }
 
   return ok({
-    planId,
-    assignedCount: input.assignTarget === "team" ? athleteAssignmentIds.length : assignmentInserts.length,
+    plan: {
+      id: plan.id as string,
+      name: plan.name as string,
+      teamId: (plan.team_id as string | null) ?? null,
+      startDate: plan.start_date as string,
+      weeks: plan.weeks as number,
+      status: plan.status as TrainingPlanSummary["status"],
+      notes: (plan.notes as string | null) ?? null,
+      updatedAt: (plan.updated_at as string | null) ?? null,
+    },
+    builderState,
+    assignments: ((assignments as AssignmentDbRow[] | null) ?? []).map(mapAssignmentRow),
+    detail,
   })
 }
 
@@ -358,13 +698,17 @@ export async function archiveTrainingPlanForCurrentCoach(planId: string): Promis
   const contextResult = await getCurrentCoachContext(clientResult.client)
   if (!contextResult.ok) return contextResult
 
-  const { error } = await clientResult.client
+  const { data, error } = await clientResult.client
     .from("training_plans")
     .update({ status: "archived" })
     .eq("id", planId)
     .eq("tenant_id", contextResult.data.tenantId)
+    .select("id")
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (((data as Array<{ id: string }> | null) ?? []).length === 0) {
+    return err("NOT_FOUND", "This plan could not be archived. It may have been removed, or you may not have access.")
+  }
   return ok({ planId })
 }
 
@@ -375,13 +719,17 @@ export async function deleteTrainingPlanForCurrentCoach(planId: string): Promise
   const contextResult = await getCurrentCoachContext(clientResult.client)
   if (!contextResult.ok) return contextResult
 
-  const { error } = await clientResult.client
+  const { data, error } = await clientResult.client
     .from("training_plans")
     .delete()
     .eq("id", planId)
     .eq("tenant_id", contextResult.data.tenantId)
+    .select("id")
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (((data as Array<{ id: string }> | null) ?? []).length === 0) {
+    return err("NOT_FOUND", "This plan could not be deleted. It may already be gone, or you may not have access.")
+  }
   return ok({ planId })
 }
 
@@ -406,6 +754,7 @@ export async function getAssignedTrainingPlansForCurrentAthlete(): Promise<Resul
     .from("training_plans")
     .select("id, name, team_id, start_date, weeks, status")
     .in("id", planIds)
+    .neq("status", "draft")
     .order("start_date", { ascending: false })
 
   if (plansError) return { ok: false, error: mapPostgrestError(plansError) }

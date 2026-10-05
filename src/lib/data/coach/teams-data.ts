@@ -169,3 +169,25 @@ export async function getCoachTeamsSnapshotForCurrentUser(): Promise<Result<Coac
     coachTeamsSnapshotInflight = null
   }
 }
+
+/** Takes an athlete off a team roster. The athlete account and history are kept. */
+export async function removeAthleteFromTeamForCurrentCoach(params: {
+  athleteId: string
+  teamId: string
+}): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("removeAthleteFromTeamForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client
+    .from("athletes")
+    .update({ team_id: null })
+    .eq("id", params.athleteId)
+    .eq("team_id", params.teamId)
+    .select("id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "This athlete is no longer on the team.")
+
+  coachTeamsSnapshotCache = null
+  return ok(undefined)
+}

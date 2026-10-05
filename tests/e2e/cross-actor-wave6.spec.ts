@@ -42,6 +42,7 @@ test("coach exports remain scoped to the assigned team", async ({ page }) => {
   expect(adherenceCsv).not.toContain("Marcus Johnson")
 
   const prDownload = page.waitForEvent("download")
+  await page.locator("#main-content").getByRole("tab", { name: "PRs", exact: true }).click()
   await page.locator("#main-content").getByRole("button", { name: /^PR CSV$/ }).first().click()
   const prCsv = await readDownloadText(await prDownload)
   expect(prCsv).toContain("Shot Put")

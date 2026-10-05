@@ -18,7 +18,9 @@ test.describe("ui workflow audit", () => {
     await page.goto("/coach/training-plan")
     await page.waitForLoadState("networkidle")
     await expect(page.locator("main")).toBeVisible()
-    await page.getByRole("button", { name: "Create program" }).click()
+    await page.getByRole("button", { name: "New plan" }).click()
+    await page.getByLabel("Plan name").fill("Audit plan")
+    await page.getByRole("tab", { name: "Template" }).click()
     await page.waitForTimeout(250)
     await page.screenshot({
       path: path.join(screenshotDir, "coach-training-plan-setup.png"),
@@ -34,8 +36,8 @@ test.describe("ui workflow audit", () => {
 
     await page.goto("/coach/test-week")
     await page.waitForLoadState("networkidle")
-    await page.getByRole("button", { name: "Create test" }).click()
-    await expect(page.locator("main")).toContainText("Create Test Week")
+    await page.getByRole("button", { name: "New test week" }).click()
+    await expect(page.locator("main")).toContainText("New test week")
     await page.waitForTimeout(250)
     await page.screenshot({
       path: path.join(screenshotDir, "coach-test-week-setup.png"),
@@ -45,7 +47,7 @@ test.describe("ui workflow audit", () => {
     await page.goto("/coach/teams/t4")
     await page.waitForLoadState("networkidle")
     await page.getByRole("tab", { name: "Invites" }).click()
-    await page.getByRole("button", { name: /generate invite/i }).click()
+    await page.getByRole("button", { name: /invite athlete/i }).first().click()
     await expect(page.getByRole("dialog")).toBeVisible()
     await page.waitForTimeout(250)
     await page.screenshot({

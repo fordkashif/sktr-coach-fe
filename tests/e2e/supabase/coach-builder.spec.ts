@@ -16,9 +16,10 @@ test.describe("coach supabase builders", () => {
 
     await page.goto("/coach/training-plan")
     await expect(page).toHaveURL(/\/coach\/training-plan$/)
-    await expect(page.getByRole("heading", { name: "Training Plans" })).toBeVisible()
-    await expect(page.locator("body")).toContainText("Supabase mode")
-    await expect(page.getByRole("heading", { name: "Create Plan" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Training plans" })).toBeVisible()
+    await page.getByRole("button", { name: "New plan" }).click()
+    await expect(page.getByRole("heading", { name: "New plan" })).toBeVisible()
+    await expect(page.getByLabel("Plan name")).toBeVisible()
 
     await context.close()
   })
@@ -33,9 +34,10 @@ test.describe("coach supabase builders", () => {
 
     await page.goto("/coach/test-week")
     await expect(page).toHaveURL(/\/coach\/test-week$/)
-    await expect(page.getByRole("heading", { name: "Test Weeks" })).toBeVisible()
-    await expect(page.locator("body")).toContainText("Supabase mode")
-    await expect(page.getByRole("heading", { name: "Create Test Week" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Test weeks" })).toBeVisible()
+    await page.getByRole("button", { name: "New test week" }).click()
+    await expect(page.getByRole("heading", { name: "New test week" })).toBeVisible()
+    await expect(page.getByLabel("Test week name")).toBeVisible()
 
     await context.close()
   })

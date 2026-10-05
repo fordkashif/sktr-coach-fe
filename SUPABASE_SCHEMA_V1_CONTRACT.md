@@ -88,6 +88,19 @@ Implemented via `check` constraints:
 - Athlete values per `(test_week, test_definition)`.
 - Supports both text and numeric representations.
 
+12. `training_plans` (Wave 4, drafts added October 2026)
+- Multi-week plan header per tenant and team. `status` is `draft`, `published` or `archived`.
+- `builder_state jsonb` (migration `20261004120000_training_plan_drafts.sql`) holds the coach builder model: `{ version, weekFocus, sessions[], assign }`. It is the only storage for a draft and is kept on publish so the plan can be reopened and edited.
+- A draft has no rows in `training_plan_weeks`, `training_plan_days`, `training_plan_blocks` or `training_plan_assignments`. Those are written when the plan is published, and rewritten when a published plan is updated.
+- Athletes cannot select draft plans or anything under them (see RLS matrix).
+
+13. `training_plan_weeks`, `training_plan_days`, `training_plan_blocks`
+- Published, athlete-facing structure: one row per week, per training day, and per block preview line.
+
+14. `training_plan_assignments`
+- Who a published plan is delivered to (`scope` of `team` or `athlete`) and when it becomes visible.
+- An insert with immediate visibility queues athlete notifications.
+
 ## Keys and Relationships
 
 - `profiles.user_id -> auth.users.id`

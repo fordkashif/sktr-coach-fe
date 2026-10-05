@@ -1,21 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import {
-  ArrowUp01Icon,
-  ChartAverageIcon,
-  CheckmarkCircle02Icon,
-  FileDownloadIcon,
-  Search01Icon,
-  NoteEditIcon,
-  PrinterIcon,
-  WorkoutRunIcon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { DownloadSimple, MagnifyingGlass, Printer } from "@phosphor-icons/react"
 import { BarChart } from "@mui/x-charts"
-import { Button } from "@/components/ui/button"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { StandardPageHeader } from "@/components/ui/standard-page-header"
+import { Link } from "react-router-dom"
+import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import type { Athlete, PR, Team, WellnessEntry } from "@/lib/mock-data"
 import {
@@ -24,25 +13,17 @@ import {
   type CoachDashboardSnapshot,
 } from "@/lib/data/coach/dashboard-data"
 import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
+
+type ReportKey = "adherence" | "prs" | "wellness"
+type ReadinessFilter = "all" | "green" | "yellow" | "red"
+
+const READINESS_LABEL = { green: "Ready", yellow: "Watch", red: "Review" } as const
 
 const chartSx = {
-  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
-    stroke: "#cbd5e1",
-  },
-  "& .MuiChartsAxis-tickLabel": {
-    fill: "#64748b",
-    fontSize: 11,
-    fontFamily: "inherit",
-  },
-  "& .MuiChartsGrid-line": {
-    stroke: "#dbe4f0",
-    strokeDasharray: "4 6",
-  },
-  "& .MuiBarElement-root": {
-    rx: 8,
-    ry: 8,
-  },
+  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "transparent" },
+  "& .MuiChartsAxis-tickLabel": { fill: "#6a7385", fontSize: 12, fontFamily: "inherit", fontWeight: 600 },
+  "& .MuiChartsGrid-line": { stroke: "#e3e6ee" },
+  "& .MuiBarElement-root": { rx: 8, ry: 8 },
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
@@ -54,6 +35,38 @@ function downloadCsv(filename: string, rows: string[][]) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function prLegality(pr: PR) {
+  if (pr.legal) return pr.wind ? `Legal (${pr.wind})` : "Legal"
+  return pr.wind ? `Wind assisted (${pr.wind})` : "Not legal"
+}
+
+function longDate(isoDate: string) {
+  const parsed = new Date(`${isoDate}T00:00:00`)
+  return Number.isNaN(parsed.getTime())
+    ? isoDate
+    : parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+}
+
+function average(values: number[]) {
+  return values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1) : null
+}
+
+function Summary({ items }: { items: Array<{ label: string; value: string | number; unit?: string }> }) {
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl bg-sk-canvas p-4 sm:flex sm:flex-wrap sm:gap-x-10 sm:px-5">
+      {items.map((item) => (
+        <div key={item.label} className="flex flex-col-reverse gap-1">
+          <dt className="text-sm font-semibold text-sk-mute">{item.label}</dt>
+          <dd className="sk-num text-[1.75rem]">
+            {item.value}
+            {item.unit ? <span className="ml-0.5 text-sm font-bold tracking-normal text-sk-mute">{item.unit}</span> : null}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
 export default function CoachReportsPage() {
@@ -69,6 +82,13 @@ export default function CoachReportsPage() {
     teams: Team[]
     wellness: WellnessEntry[]
   }>({ athletes: [], prs: [], teams: [], wellness: [] })
+  const [mockLoaded, setMockLoaded] = useState(false)
+  const [report, setReport] = useState<ReportKey>("adherence")
+  const [search, setSearch] = useState("")
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>("all")
+  const [categoryFilter, setCategoryFilter] = useState("all")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
 
   useEffect(() => {
     if (backendMode !== "supabase") return
@@ -113,6 +133,7 @@ export default function CoachReportsPage() {
           teams: module.mockTeams,
           wellness: module.mockWellness,
         })
+        setMockLoaded(true)
       }
     })
 
@@ -132,449 +153,467 @@ export default function CoachReportsPage() {
   const scopedWellness = sourceWellness.filter((entry) => athleteIds.has(entry.athleteId))
   const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
-  const readinessSummary = {
-    green: scopedAthletes.filter((athlete) => athlete.readiness === "green").length,
-    yellow: scopedAthletes.filter((athlete) => athlete.readiness === "yellow").length,
-    red: scopedAthletes.filter((athlete) => athlete.readiness === "red").length,
-  }
 
-  const readinessTotal = readinessSummary.green + readinessSummary.yellow + readinessSummary.red
-  const adherenceAverage =
-    scopedAthletes.length > 0
-      ? Math.round(scopedAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / scopedAthletes.length)
-      : 0
+  const loading = backendMode === "supabase" ? !backendSnapshot && !backendError : !mockLoaded
+  const athleteNameById = new Map(scopedAthletes.map((athlete) => [athlete.id, athlete.name]))
+  const query = search.trim().toLowerCase()
+  const matchesSearch = (name: string) => !query || name.toLowerCase().includes(query)
 
-  const lowAdherenceRows = [...scopedAthletes].sort((left, right) => left.adherence - right.adherence).slice(0, 6)
-  const recentPrs = [...scopedPrs].slice(0, 5)
-  const prByCategory = Object.entries(
-    scopedPrs.reduce<Record<string, number>>((acc, pr) => {
+  const adherenceRows = [...scopedAthletes]
+    .filter((athlete) => matchesSearch(athlete.name))
+    .filter((athlete) => readinessFilter === "all" || athlete.readiness === readinessFilter)
+    .sort((left, right) => left.adherence - right.adherence)
+
+  const prCategories = [...new Set(scopedPrs.map((pr) => pr.category))].sort()
+  const prRows = scopedPrs
+    .filter((pr) => matchesSearch(pr.athleteName) || pr.event.toLowerCase().includes(query))
+    .filter((pr) => categoryFilter === "all" || pr.category === categoryFilter)
+  const prChartRows = Object.entries(
+    prRows.reduce<Record<string, number>>((acc, pr) => {
       acc[pr.category] = (acc[pr.category] ?? 0) + 1
       return acc
     }, {}),
   )
     .sort((left, right) => right[1] - left[1])
-    .slice(0, 5)
-  const prChartRows = prByCategory.map(([category, count]) => ({ category, count }))
-  const adherenceChartRows = lowAdherenceRows.map((athlete) => ({
-    athlete: athlete.name.split(" ")[0],
-    adherence: athlete.adherence,
-  }))
+    .map(([category, count]) => ({ category, count }))
 
-  const wellnessAverages = scopedWellness.length
-    ? {
-        sleep: Number((scopedWellness.reduce((sum, entry) => sum + entry.sleep, 0) / scopedWellness.length).toFixed(1)),
-        soreness: Number((scopedWellness.reduce((sum, entry) => sum + entry.soreness, 0) / scopedWellness.length).toFixed(1)),
-        fatigue: Number((scopedWellness.reduce((sum, entry) => sum + entry.fatigue, 0) / scopedWellness.length).toFixed(1)),
-        mood: Number((scopedWellness.reduce((sum, entry) => sum + entry.mood, 0) / scopedWellness.length).toFixed(1)),
-        stress: Number((scopedWellness.reduce((sum, entry) => sum + entry.stress, 0) / scopedWellness.length).toFixed(1)),
-      }
-    : { sleep: 0, soreness: 0, fatigue: 0, mood: 0, stress: 0 }
+  const wellnessRows = scopedWellness
+    .map((entry) => ({ ...entry, athleteName: athleteNameById.get(entry.athleteId) ?? "Athlete" }))
+    .filter((entry) => matchesSearch(entry.athleteName))
+    .filter((entry) => readinessFilter === "all" || entry.readiness === readinessFilter)
+    .filter((entry) => (!dateFrom || entry.date >= dateFrom) && (!dateTo || entry.date <= dateTo))
+    .sort((left, right) => right.date.localeCompare(left.date))
 
-  const wellnessBars = [
-    { label: "Sleep", value: wellnessAverages.sleep, max: 10, tone: "bg-[#1f8cff]" },
-    { label: "Mood", value: wellnessAverages.mood, max: 5, tone: "bg-[#4759ff]" },
-    { label: "Fatigue", value: wellnessAverages.fatigue, max: 5, tone: "bg-amber-400" },
-    { label: "Stress", value: wellnessAverages.stress, max: 5, tone: "bg-rose-400" },
-  ]
-  const overviewCards = [
-    {
-      label: "Readiness",
-      value: readinessSummary.green,
-      suffix: readinessTotal ? `/${readinessTotal} ready` : "No athletes",
-      tone: "border-slate-200 bg-white",
-      badgeTone: "bg-[#e8f2ff]",
-      icon: CheckmarkCircle02Icon,
-    },
-    {
-      label: "Plan Adherence",
-      value: adherenceAverage,
-      suffix: "% avg",
-      tone: "border-slate-200 bg-white",
-      badgeTone: "bg-[#f0e9ff]",
-      icon: ChartAverageIcon,
-    },
-    {
-      label: "PR Movement",
-      value: scopedPrs.length,
-      suffix: "records",
-      tone: "border-slate-200 bg-white",
-      badgeTone: "bg-[#fff0e5]",
-      icon: WorkoutRunIcon,
-    },
-    {
-      label: "Daily Logs",
-      value: scopedWellness.length,
-      suffix: "wellness",
-      tone: "border-slate-200 bg-white",
-      badgeTone: "bg-[#edf5df]",
-      icon: NoteEditIcon,
-    },
-  ]
-  const headerStats = overviewCards.map((card) => ({
-    label: card.label,
-    value: (
-      <div className="flex items-end gap-1">
-        <span>{card.value}</span>
-        <span className="pb-1 text-sm font-medium text-slate-500">{card.suffix}</span>
-      </div>
-    ),
-  }))
+  const filtersActive =
+    Boolean(query) ||
+    (report !== "prs" && readinessFilter !== "all") ||
+    (report === "prs" && categoryFilter !== "all") ||
+    (report === "wellness" && Boolean(dateFrom || dateTo))
+  const clearFilters = () => {
+    setSearch("")
+    setReadinessFilter("all")
+    setCategoryFilter("all")
+    setDateFrom("")
+    setDateTo("")
+  }
 
   const exportAthleteAdherence = () => {
-    const rows = [
-      ["Athlete", "Group", "Readiness", "Plan Adherence", "Last Wellness"],
-      ...scopedAthletes.map((athlete) => [
+    downloadCsv("coach-athlete-adherence.csv", [
+      ["Athlete", "Event group", "Primary event", "Readiness", "Plan adherence (%)", "Last check-in"],
+      ...adherenceRows.map((athlete) => [
         athlete.name,
         athlete.eventGroup,
-        athlete.readiness,
-        `${athlete.adherence}%`,
-        athlete.lastWellness,
+        athlete.primaryEvent,
+        READINESS_LABEL[athlete.readiness],
+        String(athlete.adherence),
+        athlete.lastWellness === "-" ? "" : athlete.lastWellness,
       ]),
-    ]
-    downloadCsv("coach-athlete-adherence.csv", rows)
+    ])
   }
 
   const exportPrs = () => {
-    const rows = [
-      ["Athlete", "Event", "Best", "Previous", "Date", "Legal/Wind"],
-      ...scopedPrs.map((pr) => [
-        pr.athleteName,
-        pr.event,
-        pr.bestValue,
-        pr.previousValue ?? "-",
-        pr.date,
-        pr.wind ? `Legal (${pr.wind})` : pr.legal ? "Legal" : "Wind assisted",
-      ]),
-    ]
-    downloadCsv("coach-pr-report.csv", rows)
+    downloadCsv("coach-pr-report.csv", [
+      ["Athlete", "Event", "Category", "Best", "Previous", "Date", "Legal / wind"],
+      ...prRows.map((pr) => [pr.athleteName, pr.event, pr.category, pr.bestValue, pr.previousValue ?? "", pr.date, prLegality(pr)]),
+    ])
   }
 
   const exportWellness = () => {
-    const rows = [
-      ["Athlete ID", "Date", "Sleep", "Soreness", "Fatigue", "Mood", "Stress", "Readiness"],
-      ...scopedWellness.map((entry) => [
-        entry.athleteId,
+    downloadCsv("coach-wellness-export.csv", [
+      ["Athlete", "Date", "Sleep (hours)", "Soreness (1-5)", "Fatigue (1-5)", "Mood (1-5)", "Stress (1-5)", "Readiness", "Notes"],
+      ...wellnessRows.map((entry) => [
+        entry.athleteName,
         entry.date,
         String(entry.sleep),
         String(entry.soreness),
         String(entry.fatigue),
         String(entry.mood),
         String(entry.stress),
-        entry.readiness,
+        READINESS_LABEL[entry.readiness],
+        entry.notes ?? "",
       ]),
-    ]
-    downloadCsv("coach-wellness-export.csv", rows)
+    ])
   }
 
+  const reports = {
+    adherence: {
+      title: "Plan adherence",
+      hint: "Lowest adherence first, so you can see who to follow up with.",
+      count: adherenceRows.length,
+      total: scopedAthletes.length,
+      noun: "athletes",
+      exportLabel: "Adherence CSV",
+      onExport: exportAthleteAdherence,
+    },
+    prs: {
+      title: "Personal records",
+      hint: "Every personal best logged for your athletes.",
+      count: prRows.length,
+      total: scopedPrs.length,
+      noun: "records",
+      exportLabel: "PR CSV",
+      onExport: exportPrs,
+    },
+    wellness: {
+      title: "Wellness check-ins",
+      hint: "Daily check-ins from your athletes, newest first.",
+      count: wellnessRows.length,
+      total: scopedWellness.length,
+      noun: "check-ins",
+      exportLabel: "Wellness CSV",
+      onExport: exportWellness,
+    },
+  } satisfies Record<ReportKey, unknown>
+  const active = reports[report]
+
+  const adherenceAverage = adherenceRows.length
+    ? Math.round(adherenceRows.reduce((sum, athlete) => sum + athlete.adherence, 0) / adherenceRows.length)
+    : null
+
+  const th = "whitespace-nowrap px-3 py-2.5 font-semibold"
+  const td = "whitespace-nowrap px-3 py-3.5"
+  const num = "text-right tabular-nums"
+
   return (
-    <div className="mx-auto w-full max-w-8xl space-y-5 p-4 sm:space-y-6 sm:p-6 print:p-0">
-      <section className="space-y-4 pt-1">
-        {backendError ? (
-          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Backend sync issue: {backendError}
-          </div>
-        ) : null}
-        <StandardPageHeader
-          eyebrow="Coach reports"
-          title="Reports"
-          description={`Review adherence risk, wellness signals, and PR movement across the active squad.${scopedTeam ? ` Viewing ${scopedTeam.name}.` : ""}`}
-          stats={headerStats}
-          trailing={
+    <div className="sk-page print:p-0">
+      {backendError ? (
+        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+          We could not load your reports. {backendError}
+        </p>
+      ) : null}
+
+      <PageHeader
+        title="Reports"
+        lede={
+          scopedTeam
+            ? `Adherence, personal records and wellness for ${scopedTeam.name}. What you see in the table is what you download.`
+            : "Adherence, personal records and wellness for your athletes. What you see in the table is what you download."
+        }
+        actions={
+          <button type="button" className="sk-btn sk-btn-quiet print:hidden" onClick={() => window.print()}>
+            <Printer className="size-5" weight="bold" aria-hidden />
+            Print / PDF
+          </button>
+        }
+      />
+
+      <Segmented<ReportKey>
+        label="Choose a report"
+        value={report}
+        onChange={setReport}
+        className="print:hidden"
+        options={[
+          { value: "adherence", label: "Adherence" },
+          { value: "prs", label: "PRs" },
+          { value: "wellness", label: "Wellness" },
+        ]}
+      />
+
+      <Panel
+        title={active.title}
+        hint={active.hint}
+        action={
+          <button
+            type="button"
+            className="sk-btn sk-btn-primary hidden sm:inline-flex print:hidden"
+            onClick={active.onExport}
+          >
+            <DownloadSimple className="size-5" weight="bold" aria-hidden />
+            {active.exportLabel}
+          </button>
+        }
+      >
+        <div role="tabpanel" aria-label={active.title} className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 lg:flex lg:flex-wrap lg:items-end print:hidden">
+            {active.total > 0 ? (
+              <>
+            <label className="col-span-2 block lg:w-72">
+              <span className="sk-label mb-1.5 block">{report === "prs" ? "Search athlete or event" : "Search athlete"}</span>
+              <span className="relative block">
+                <MagnifyingGlass className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-sk-mute" weight="bold" aria-hidden />
+                <input
+                  type="search"
+                  className="sk-field pl-11"
+                  placeholder={report === "prs" ? "Name or event" : "Name"}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </span>
+            </label>
+
+            {report === "prs" ? (
+              <label className="col-span-2 block lg:w-48">
+                <span className="sk-label mb-1.5 block">Category</span>
+                <select className="sk-field" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                  <option value="all">All categories</option>
+                  {prCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="col-span-2 block lg:w-48">
+                <span className="sk-label mb-1.5 block">Readiness</span>
+                <select
+                  className="sk-field"
+                  value={readinessFilter}
+                  onChange={(event) => setReadinessFilter(event.target.value as ReadinessFilter)}
+                >
+                  <option value="all">All</option>
+                  <option value="green">Ready</option>
+                  <option value="yellow">Watch</option>
+                  <option value="red">Review</option>
+                </select>
+              </label>
+            )}
+
+            {report === "wellness" ? (
+              <>
+                <label className="block min-w-0 lg:w-44">
+                  <span className="sk-label mb-1.5 block">From</span>
+                  <input type="date" className="sk-field" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} />
+                </label>
+                <label className="block min-w-0 lg:w-44">
+                  <span className="sk-label mb-1.5 block">To</span>
+                  <input type="date" className="sk-field" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} />
+                </label>
+              </>
+            ) : null}
+
+            {filtersActive ? (
+              <button type="button" className="sk-btn sk-btn-ghost col-span-2 justify-self-start" onClick={clearFilters}>
+                Clear filters
+              </button>
+            ) : null}
+
+              </>
+            ) : null}
+
             <button
               type="button"
-              onClick={exportWellness}
-              aria-label="Export wellness CSV"
-              className="flex size-14 shrink-0 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.14),0_14px_34px_rgba(31,140,255,0.32),0_0_28px_rgba(71,89,255,0.18)] hover:opacity-95"
+              className="sk-btn sk-btn-primary col-span-2 sm:hidden"
+              onClick={active.onExport}
             >
-              <HugeiconsIcon icon={FileDownloadIcon} className="size-5" />
+              <DownloadSimple className="size-5" weight="bold" aria-hidden />
+              {active.exportLabel}
             </button>
-          }
-        />
-
-        <div className="grid grid-cols-2 gap-2 lg:hidden">
-          <Button type="button" variant="outline" className="mobile-action-secondary bg-white" onClick={exportAthleteAdherence}>
-            <HugeiconsIcon icon={FileDownloadIcon} className="size-4" />
-            Adherence
-          </Button>
-          <Button type="button" variant="outline" className="mobile-action-secondary bg-white" onClick={exportPrs}>
-            <HugeiconsIcon icon={FileDownloadIcon} className="size-4" />
-            PR CSV
-          </Button>
-        </div>
-        <div className="hidden flex-wrap gap-2 lg:flex">
-          <Button
-            type="button"
-            variant="outline"
-            className="mobile-action-secondary bg-white px-5"
-            onClick={exportAthleteAdherence}
-          >
-            <HugeiconsIcon icon={FileDownloadIcon} className="size-4" />
-            Adherence CSV
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="mobile-action-secondary bg-white px-5"
-            onClick={exportPrs}
-          >
-            <HugeiconsIcon icon={FileDownloadIcon} className="size-4" />
-            PR CSV
-          </Button>
-          <Button
-            type="button"
-            className="mobile-action-primary"
-            onClick={exportWellness}
-          >
-            <HugeiconsIcon icon={FileDownloadIcon} className="size-4" />
-            Wellness CSV
-          </Button>
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
-        <div className="mobile-card-primary">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Readiness Snapshot</p>
-              <h2 className="text-[1.8rem] font-semibold leading-none tracking-[-0.055em] text-slate-950">Current Squad State</h2>
-              <p className="text-sm text-slate-500">One view of readiness mix, adherence, and daily recovery.</p>
-            </div>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)]">
-            <div className="space-y-4">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.05)] sm:p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-medium text-slate-950">Readiness Status</p>
-                  <p className="text-xs text-slate-500">{readinessTotal} athletes</p>
-                </div>
-                <div className="mt-3 space-y-2.5">
-                  {[
-                    { label: "Ready", value: readinessSummary.green, tone: "bg-[#1f8cff]" },
-                    { label: "Watch", value: readinessSummary.yellow, tone: "bg-amber-400" },
-                    { label: "Review", value: readinessSummary.red, tone: "bg-rose-500" },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-[18px] border border-slate-200 bg-[#fbfcfe] px-4 py-3.5 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className={cn("size-2.5 rounded-full", item.tone)} />
-                          <div>
-                            <p className="text-sm font-medium text-slate-950">{item.label}</p>
-                            <p className="text-xs text-slate-500">
-                              {item.label === "Ready"
-                                ? "Available to train"
-                                : item.label === "Watch"
-                                  ? "Monitor workload"
-                                  : "Needs review"}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-2xl font-semibold tracking-[-0.05em] text-slate-950">{item.value}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-slate-200 bg-[#fffaf4] p-4 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Plan Adherence</p>
-                <div className="mt-2 flex items-end justify-between gap-3">
-                  <p className="text-3xl font-semibold tracking-[-0.05em] text-slate-950">{adherenceAverage}%</p>
-                  <p className="hidden max-w-[13rem] text-right text-sm text-slate-500 sm:block">
-                    Baseline adherence for the current reporting scope.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-slate-200 bg-[#f9fcf5] p-4 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Wellness Signals</p>
-                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">Daily Recovery</h3>
-                </div>
-                <p className="text-xs text-slate-500">Avg values</p>
-              </div>
-              <div className="mt-4 space-y-3">
-                {wellnessBars.map((item) => (
-                  <div key={item.label}>
-                    <div className="mb-1.5 flex items-center justify-between text-sm">
-                      <span className="font-medium text-slate-950">{item.label}</span>
-                      <span className="text-slate-500">{item.value}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-slate-200">
-                      <div className={cn("h-2 rounded-full", item.tone)} style={{ width: `${(item.value / item.max) * 100}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Exports</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Takeaway Actions</h2>
-          </div>
-          <div className="mt-4 space-y-3">
-            {[
-              {
-                title: "Adherence CSV",
-                body: "Roster-level readiness, plan adherence, and last wellness timestamp.",
-                action: exportAthleteAdherence,
-                primary: true,
-              },
-              {
-                title: "PR CSV",
-                body: "Scoped record movement with previous marks and legality context.",
-                action: exportPrs,
-                primary: false,
-              },
-              {
-                title: "Wellness CSV",
-                body: "Daily wellness responses for meetings, review, and historical export.",
-                action: exportWellness,
-                primary: false,
-              },
-            ].map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={item.action}
-                className={cn(
-                  "w-full rounded-[18px] border px-4 py-4 text-left transition hover:-translate-y-0.5",
-                  item.primary
-                    ? "border-[#cfe2ff] bg-[linear-gradient(135deg,#eff6ff_0%,#f8fbff_100%)] shadow-[0_12px_28px_rgba(31,140,255,0.12)]"
-                    : "border-slate-200 bg-slate-50 hover:border-[#cfe2ff] hover:bg-[#f8fbff]",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-950">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{item.body}</p>
-                  </div>
-                  <HugeiconsIcon icon={FileDownloadIcon} className="mt-0.5 size-4 text-[#1f8cff]" />
-                </div>
-              </button>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              className="mobile-action-secondary w-full"
-              onClick={() => window.print()}
-            >
-              <HugeiconsIcon icon={PrinterIcon} className="size-4" />
-              Print / PDF
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Adherence Risk</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Who Needs Follow-Up</h2>
-          </div>
-          <div className="mt-4">
-            {lowAdherenceRows.length > 0 ? (
-              <div className="mobile-card-secondary overflow-hidden p-2.5 sm:p-3">
-                <BarChart
-                  dataset={adherenceChartRows}
-                  xAxis={[{ scaleType: "band", dataKey: "athlete" }]}
-                  yAxis={[{ min: 0, max: 100 }]}
-                  series={[{ dataKey: "adherence", label: "Plan Adherence", color: "#1f8cff" }]}
-                  grid={{ horizontal: true }}
-                  margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-                  height={280}
-                  sx={chartSx}
-                />
-              </div>
-            ) : (
-              <EmptyStateCard
-                eyebrow="Adherence risk"
-                title="No adherence risks in the current scope."
-                description="No athlete in the current reporting scope is below the follow-up threshold right now."
-                hint="That usually means plan completion is healthy enough that a manual intervention list is not needed."
-                icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-3"
+          {loading ? (
+            <p className="py-10 text-center text-sm font-semibold text-sk-mute" role="status">
+              Loading your reports
+            </p>
+          ) : active.total === 0 ? (
+            report === "adherence" ? (
+              <EmptyState
+                className="border-0 bg-sk-canvas"
+                title="No athletes on your roster yet"
+                body="Once athletes join your team and have sessions scheduled, their plan adherence shows up here."
+                action={
+                  <Link to="/coach/teams" className="sk-btn sk-btn-quiet sk-btn-sm">
+                    Go to teams
+                  </Link>
+                }
               />
-            )}
-          </div>
-        </div>
-
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">PR Movement</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Where Improvement Is Landing</h2>
-          </div>
-          <div className="mt-4">
-            {prByCategory.length > 0 ? (
-              <div className="mobile-card-secondary overflow-hidden p-2.5 sm:p-3">
-                <BarChart
-                  dataset={prChartRows}
-                  xAxis={[{ scaleType: "band", dataKey: "category" }]}
-                  series={[{ dataKey: "count", label: "PR count", color: "#4759ff" }]}
-                  grid={{ horizontal: true }}
-                  margin={{ left: 28, right: 16, top: 18, bottom: 24 }}
-                  height={260}
-                  sx={chartSx}
-                />
-              </div>
-            ) : (
-              <EmptyStateCard
-                eyebrow="PR movement"
-                title="No PR movement in the current scope."
-                description="No personal-record activity is available for the current team scope yet."
-                hint="PR charts begin to populate after coaches or athletes log measurable improvements."
-                icon={<HugeiconsIcon icon={WorkoutRunIcon} className="size-5" />}
-                className="rounded-[20px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-3"
+            ) : report === "prs" ? (
+              <EmptyState
+                className="border-0 bg-sk-canvas"
+                title="No personal records yet"
+                body="When you or your athletes log a new best mark, it lands in this report."
               />
-            )}
-          </div>
-
-          <div className="mobile-card-secondary mt-5">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recent Records</p>
-              <h3 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Latest Improvements</h3>
-            </div>
-            <div className="mt-4 space-y-3">
-              {recentPrs.length > 0 ? (
-                recentPrs.map((pr) => (
-                  <div key={pr.id} className="rounded-[20px] border border-slate-200 bg-[#fbfcfe] px-3.5 py-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-950">{pr.athleteName}</p>
-                        <p className="text-sm text-slate-500">{pr.event}</p>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f8cff]">
-                        <HugeiconsIcon icon={ArrowUp01Icon} className="size-4" />
-                        {pr.bestValue}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {pr.previousValue ? `${pr.previousValue} -> ` : ""}{pr.date}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <EmptyStateCard
-                  eyebrow="Recent records"
-                  title="No PR records available."
-                  description="There are no recent PR entries to show in this summary panel."
-                  hint="Once marks are logged, the latest improvements will appear here automatically."
-                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                  className="rounded-[20px] bg-white px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
+            ) : (
+              <EmptyState
+                className="border-0 bg-sk-canvas"
+                title="No wellness check-ins yet"
+                body="Each daily check-in an athlete submits (sleep, soreness, fatigue, mood, stress) appears here."
+              />
+            )
+          ) : active.count === 0 ? (
+            <EmptyState
+              className="border-0 bg-sk-canvas"
+              title="Nothing matches these filters"
+              body={`There are ${active.total} ${active.noun} in this report, but none fit the current search and filters.`}
+              action={
+                <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              }
+            />
+          ) : (
+            <>
+              {report === "adherence" ? (
+                <Summary
+                  items={[
+                    { label: "Average adherence", value: adherenceAverage ?? 0, unit: "%" },
+                    { label: "Ready", value: adherenceRows.filter((athlete) => athlete.readiness === "green").length },
+                    { label: "Watch", value: adherenceRows.filter((athlete) => athlete.readiness === "yellow").length },
+                    { label: "Review", value: adherenceRows.filter((athlete) => athlete.readiness === "red").length },
+                  ]}
                 />
-              )}
-            </div>
-          </div>
+              ) : null}
+
+              {report === "prs" && prChartRows.length > 1 ? (
+                <div className="rounded-2xl bg-sk-canvas p-3">
+                  <p className="px-2 pt-1 text-sm font-semibold text-sk-mute">Records by category</p>
+                  <BarChart
+                    dataset={prChartRows}
+                    xAxis={[{ scaleType: "band", dataKey: "category", disableLine: true, disableTicks: true, tickLabelStyle: { fill: "#6a7385", fontSize: 12, fontFamily: "inherit", fontWeight: 600 } }]}
+                    yAxis={[{ tickMinStep: 1, disableLine: true, disableTicks: true, tickLabelStyle: { fill: "#6a7385", fontSize: 12, fontFamily: "inherit", fontWeight: 600 } }]}
+                    series={[{ dataKey: "count", label: "Records", color: "#2152ff" }]}
+                    grid={{ horizontal: true }}
+                    hideLegend
+                    margin={{ left: 0, right: 12, top: 16, bottom: 0 }}
+                    height={200}
+                    sx={chartSx}
+                  />
+                </div>
+              ) : null}
+
+              {report === "wellness" ? (
+                <Summary
+                  items={[
+                    { label: "Average sleep", value: average(wellnessRows.map((entry) => entry.sleep)) ?? "0", unit: "h" },
+                    { label: "Soreness", value: average(wellnessRows.map((entry) => entry.soreness)) ?? "0", unit: "/ 5" },
+                    { label: "Fatigue", value: average(wellnessRows.map((entry) => entry.fatigue)) ?? "0", unit: "/ 5" },
+                    { label: "Mood", value: average(wellnessRows.map((entry) => entry.mood)) ?? "0", unit: "/ 5" },
+                    { label: "Stress", value: average(wellnessRows.map((entry) => entry.stress)) ?? "0", unit: "/ 5" },
+                  ]}
+                />
+              ) : null}
+
+              <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6 print:overflow-visible">
+                {report === "adherence" ? (
+                  <table className="w-full min-w-[680px] text-left">
+                    <caption className="sr-only">Plan adherence by athlete</caption>
+                    <thead>
+                      <tr className="border-b border-sk-line text-sm text-sk-mute">
+                        <th scope="col" className={`${th} pl-0`}>Athlete</th>
+                        <th scope="col" className={th}>Event group</th>
+                        <th scope="col" className={th}>Readiness</th>
+                        <th scope="col" className={th}>Plan adherence</th>
+                        <th scope="col" className={`${th} pr-0 text-right`}>Last check-in</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adherenceRows.map((athlete) => (
+                        <tr key={athlete.id} className="border-b border-sk-line last:border-b-0">
+                          <th scope="row" className={`${td} pl-0 font-normal`}>
+                            <Link to={`/coach/athletes/${athlete.id}`} className="group flex items-center gap-3">
+                              <Initials name={athlete.name} size="sm" />
+                              <span>
+                                <span className="block font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
+                                <span className="block text-sm text-sk-mute">{athlete.primaryEvent}</span>
+                              </span>
+                            </Link>
+                          </th>
+                          <td className={`${td} text-sk-ink-2`}>{athlete.eventGroup}</td>
+                          <td className={td}>
+                            <ReadinessTag status={athlete.readiness} />
+                          </td>
+                          <td className={td}>
+                            <span className="flex items-center gap-3">
+                              <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} className="w-28" />
+                              <span className="w-11 text-right font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
+                            </span>
+                          </td>
+                          <td className={`${td} pr-0 text-right text-sk-ink-2`}>
+                            {athlete.lastWellness && athlete.lastWellness !== "-" ? athlete.lastWellness : <span className="text-sk-mute">None yet</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : null}
+
+                {report === "prs" ? (
+                  <table className="w-full min-w-[720px] text-left">
+                    <caption className="sr-only">Personal records</caption>
+                    <thead>
+                      <tr className="border-b border-sk-line text-sm text-sk-mute">
+                        <th scope="col" className={`${th} pl-0`}>Athlete</th>
+                        <th scope="col" className={th}>Event</th>
+                        <th scope="col" className={th}>Category</th>
+                        <th scope="col" className={`${th} text-right`}>Best</th>
+                        <th scope="col" className={`${th} text-right`}>Previous</th>
+                        <th scope="col" className={th}>Date</th>
+                        <th scope="col" className={`${th} pr-0`}>Legal / wind</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prRows.map((pr) => (
+                        <tr key={pr.id} className="border-b border-sk-line last:border-b-0">
+                          <th scope="row" className={`${td} pl-0 font-bold text-sk-ink`}>
+                            <Link to={`/coach/athletes/${pr.athleteId}`} className="hover:text-sk-blue">
+                              {pr.athleteName}
+                            </Link>
+                          </th>
+                          <td className={`${td} text-sk-ink-2`}>{pr.event}</td>
+                          <td className={`${td} text-sk-ink-2`}>{pr.category}</td>
+                          <td className={`${td} ${num} text-lg font-extrabold text-sk-ink`}>{pr.bestValue}</td>
+                          <td className={`${td} ${num} text-sk-mute`}>{pr.previousValue ?? "First mark"}</td>
+                          <td className={`${td} text-sk-ink-2`}>{pr.date}</td>
+                          <td className={`${td} pr-0`}>
+                            {pr.legal ? <span className="text-sk-ink-2">{prLegality(pr)}</span> : <Tag tone="yellow">{prLegality(pr)}</Tag>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : null}
+
+                {report === "wellness" ? (
+                  <table className="w-full min-w-[860px] text-left">
+                    <caption className="sr-only">Wellness check-ins</caption>
+                    <thead>
+                      <tr className="border-b border-sk-line text-sm text-sk-mute">
+                        <th scope="col" className={`${th} pl-0`}>Athlete</th>
+                        <th scope="col" className={th}>Date</th>
+                        <th scope="col" className={`${th} text-right`}>Sleep (h)</th>
+                        <th scope="col" className={`${th} text-right`}>Soreness</th>
+                        <th scope="col" className={`${th} text-right`}>Fatigue</th>
+                        <th scope="col" className={`${th} text-right`}>Mood</th>
+                        <th scope="col" className={`${th} text-right`}>Stress</th>
+                        <th scope="col" className={th}>Readiness</th>
+                        <th scope="col" className={`${th} pr-0`}>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wellnessRows.map((entry) => (
+                        <tr key={entry.id} className="border-b border-sk-line last:border-b-0">
+                          <th scope="row" className={`${td} pl-0 font-bold text-sk-ink`}>
+                            <Link to={`/coach/athletes/${entry.athleteId}`} className="hover:text-sk-blue">
+                              {entry.athleteName}
+                            </Link>
+                          </th>
+                          <td className={`${td} text-sk-ink-2`}>{longDate(entry.date)}</td>
+                          <td className={`${td} ${num} font-semibold text-sk-ink`}>{entry.sleep}</td>
+                          <td className={`${td} ${num} font-semibold text-sk-ink`}>{entry.soreness}</td>
+                          <td className={`${td} ${num} font-semibold text-sk-ink`}>{entry.fatigue}</td>
+                          <td className={`${td} ${num} font-semibold text-sk-ink`}>{entry.mood}</td>
+                          <td className={`${td} ${num} font-semibold text-sk-ink`}>{entry.stress}</td>
+                          <td className={td}>
+                            <ReadinessTag status={entry.readiness} />
+                          </td>
+                          <td className="max-w-[260px] truncate px-3 py-3.5 pr-0 text-sm text-sk-ink-2" title={entry.notes}>
+                            {entry.notes ?? ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : null}
+              </div>
+
+              <p className="text-sm text-sk-mute" aria-live="polite">
+                Showing {active.count} of {active.total} {active.noun}
+                {report === "wellness" ? ". Soreness, fatigue, mood and stress are scored 1 to 5." : "."}
+              </p>
+            </>
+          )}
         </div>
-      </section>
+      </Panel>
     </div>
   )
 }

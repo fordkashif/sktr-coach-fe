@@ -158,6 +158,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
@@ -382,6 +383,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-ink">SKTR Coach</p>
               <p className="text-sm text-sk-mute">{getRoleLabel(role)}</p>
             </div>
+            {useAthleteDrawerMenu ? null : (
+              <button type="button" className={cn(iconButton, "ml-auto")} aria-label="Notifications" onClick={() => setPanelOpen(true)}>
+                <Bell className="size-5" weight="bold" />
+                {unreadNotifications.length > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral px-1 text-[11px] font-bold leading-5 text-white">
+                    {unreadNotifications.length}
+                  </span>
+                ) : null}
+              </button>
+            )}
           </div>
 
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1 px-3">
@@ -430,7 +441,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.875rem)] sm:px-6 lg:absolute lg:right-0 lg:top-0 lg:z-20 lg:px-10 lg:pb-0 lg:pt-8">
+        <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.875rem)] sm:px-6 lg:hidden">
           <div className="min-w-0 lg:hidden">
             {mobileDetailMode ? (
               <button type="button" className={iconButton} aria-label="Back" onClick={handleMobileBack}>
@@ -459,7 +470,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {isRestrictedClubAdminSetupRoute ? null : (
-              <Sheet>
+              <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
                 <SheetTrigger asChild>
                   <button type="button" className={iconButton} aria-label={useAthleteDrawerMenu ? "Open menu" : "Notifications"}>
                     {useAthleteDrawerMenu ? <List className="size-5" weight="bold" /> : <Bell className="size-5" weight="bold" />}

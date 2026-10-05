@@ -62,14 +62,18 @@ export default function CoachTeamDetailPage() {
   const team = teamsSource.find((item) => item.id === teamId)
 
   if (backendMode === "supabase" && !backendSnapshot && !backendError) {
-    return <div className="p-6 text-sm text-slate-500">Loading team details...</div>
+    return (
+      <div className="sk-page">
+        <p className="text-sm text-sk-mute">Loading team...</p>
+      </div>
+    )
   }
 
   if (!team) {
     return (
       <InvalidEntityPage
         title="Team not found"
-        description="The requested team does not exist in the current SKTR Coach workspace."
+        description="This team does not exist in your SKTR Coach workspace."
         backTo="/coach/teams"
       />
     )
@@ -79,7 +83,7 @@ export default function CoachTeamDetailPage() {
     return (
       <InvalidEntityPage
         title="Team unavailable"
-        description="This team is outside the currently assigned coach scope."
+        description="This team is not one you are assigned to coach."
         backTo="/coach/teams"
       />
     )
@@ -88,8 +92,10 @@ export default function CoachTeamDetailPage() {
   return (
     <>
       {backendError ? (
-        <div className="mx-auto mt-4 max-w-8xl rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          Backend sync issue: {backendError}
+        <div className="mx-auto w-full max-w-[1320px] px-4 pt-2 sm:px-6 lg:px-10 lg:pt-8">
+          <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+            Could not load the latest data: {backendError}
+          </p>
         </div>
       ) : null}
       <CoachTeamDetailContent

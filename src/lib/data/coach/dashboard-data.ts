@@ -388,9 +388,10 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
     value_text: string
     value_numeric: number | null
     submitted_at: string
-    test_definitions: Array<{ name: string }> | null
+    test_definitions: Array<{ name: string }> | { name: string } | null
   }> | null) ?? []).reduce<Record<string, TestWeekResult>>((acc, row) => {
-    const metricName = row.test_definitions?.[0]?.name
+    // PostgREST returns a single object for this many-to-one embed, not an array.
+    const metricName = firstRelation(row.test_definitions)?.name
     if (!metricName) return acc
     const key = metricKey(metricName)
     if (!key) return acc
@@ -622,4 +623,327 @@ export async function getCoachAthleteSessionLogsForCurrentUser(
       details: row.status === "completed" ? "Session completed." : row.status === "in-progress" ? "Session in progress." : "Session scheduled.",
     })),
   )
+}
+
+function firstRelation<T>(value: T[] | T | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null
+  return value ?? null
+}
+
+export type CoachAthleteWellnessRow = WellnessEntry & {
+  readinessScore: number
+  trainingLoad: number
+}
+
+export type CoachAthleteSessionRow = LogEntry & {
+  isoDate: string
+  status: "scheduled" | "in-progress" | "completed"
+  coachNote: string | null
+  completedOn: string | null
+  durationMinutes: number | null
+}
+
+export type CoachAthletePrRow = PR & {
+  isoDate: string
+  note: string | null
+  source: "manual" | "test-week" | "import"
+}
+
+export type CoachAthleteTestRow = {
+  id: string
+  testName: string
+  unit: "time" | "distance" | "weight" | "height" | "score"
+  value: string
+  previousValue: string | null
+  change: "up" | "down" | "same" | null
+  submittedAt: string
+  testWeekName: string | null
+}
+
+export type CoachAthleteDetail = {
+  dateOfBirth: string | null
+  /** The readiness flag stored on the athlete row, null when nobody has set one. */
+  readinessFlag: "green" | "yellow" | "red" | null
+  wellness: CoachAthleteWellnessRow[]
+  sessions: CoachAthleteSessionRow[]
+  prs: CoachAthletePrRow[]
+  tests: CoachAthleteTestRow[]
+}
+
+type CoachAthleteAccess = {
+  client: SupabaseClient
+  tenantId: string
+  dateOfBirth: string | null
+  readinessFlag: "green" | "yellow" | "red" | null
+  athleteName: string
+}
+
+async function resolveCoachAthleteAccess(
+  operation: string,
+  athleteId: string,
+  options?: ScopedOptions,
+): Promise<Result<CoachAthleteAccess>> {
+  const clientResult = requireSupabaseClient(operation)
+  if (!clientResult.ok) return clientResult
+
+  const { data: authSession } = await clientResult.client.auth.getSession()
+  const userId = authSession.session?.user.id
+  if (!userId) return err("UNAUTHORIZED", "No authenticated Supabase session found.")
+
+  const { data: profile, error: profileError } = await clientResult.client
+    .from("profiles")
+    .select("tenant_id, role")
+    .eq("user_id", userId)
+    .maybeSingle()
+  if (profileError) return { ok: false, error: mapPostgrestError(profileError) }
+  if (!profile) return err("NOT_FOUND", "No profile found for current user.")
+  if (profile.role !== "coach" && profile.role !== "club-admin") {
+    return err("FORBIDDEN", "Only coach and club-admin users can access athlete details.")
+  }
+
+  const tenantId = profile.tenant_id as string
+  const scopedTeamIdsResult = await resolveScopedCoachTeamIds(clientResult.client, tenantId, userId, profile.role, options?.scopeTeamId)
+  if (!scopedTeamIdsResult.ok) return scopedTeamIdsResult
+  const scopedTeamIds = scopedTeamIdsResult.data
+  if (Array.isArray(scopedTeamIds) && scopedTeamIds.length === 0) {
+    return err("FORBIDDEN", "No team is assigned for this coach profile.")
+  }
+
+  const { data: athleteRow, error: athleteError } = await clientResult.client
+    .from("athletes")
+    .select("id, team_id, first_name, last_name, date_of_birth, readiness")
+    .eq("tenant_id", tenantId)
+    .eq("id", athleteId)
+    .maybeSingle()
+  if (athleteError) return { ok: false, error: mapPostgrestError(athleteError) }
+  if (!athleteRow) return err("NOT_FOUND", "Athlete not found in current tenant.")
+  if (scopedTeamIds && !scopedTeamIds.includes(athleteRow.team_id as string)) {
+    return err("FORBIDDEN", "Athlete is outside the assigned coach team scope.")
+  }
+
+  return ok({
+    client: clientResult.client,
+    tenantId,
+    dateOfBirth: (athleteRow.date_of_birth as string | null) ?? null,
+    readinessFlag: (athleteRow.readiness as "green" | "yellow" | "red" | null) ?? null,
+    athleteName: `${athleteRow.first_name as string} ${athleteRow.last_name as string}`.trim(),
+  })
+}
+
+/** Lower is better for timed tests, higher is better for everything else. */
+function testChange(unit: CoachAthleteTestRow["unit"], current: number | null, previous: number | null): CoachAthleteTestRow["change"] {
+  if (current === null || previous === null) return null
+  if (current === previous) return "same"
+  const improved = unit === "time" ? current < previous : current > previous
+  return improved ? "up" : "down"
+}
+
+/**
+ * Everything the backend holds for one athlete, for the coach athlete screen:
+ * wellness check-ins, sessions with completion state and coach note, PRs and test results.
+ */
+export async function getCoachAthleteDetailForCurrentUser(
+  athleteId: string,
+  options?: ScopedOptions,
+): Promise<Result<CoachAthleteDetail>> {
+  const access = await resolveCoachAthleteAccess("getCoachAthleteDetailForCurrentUser", athleteId, options)
+  if (!access.ok) return access
+  const { client, dateOfBirth, readinessFlag, athleteName } = access.data
+
+  const [wellnessResult, sessionsResult, completionsResult, prResult, testResult] = await Promise.all([
+    client
+      .from("wellness_entries")
+      .select("id, athlete_id, entry_date, sleep_hours, soreness, fatigue, mood, stress, training_load, readiness, readiness_score, notes")
+      .eq("athlete_id", athleteId)
+      .order("entry_date", { ascending: false })
+      .limit(60),
+    client
+      .from("sessions")
+      .select("id, athlete_id, title, scheduled_for, status, coach_note, estimated_duration_minutes, completed_at")
+      .eq("athlete_id", athleteId)
+      .order("scheduled_for", { ascending: false })
+      .limit(60),
+    client
+      .from("session_completions")
+      .select("session_id, completion_date")
+      .eq("athlete_id", athleteId)
+      .order("completion_date", { ascending: false })
+      .limit(200),
+    client
+      .from("pr_records")
+      .select("id, athlete_id, event, category, best_value, previous_value, measured_on, is_legal, wind, note, source_type")
+      .eq("athlete_id", athleteId)
+      .order("measured_on", { ascending: false })
+      .limit(100),
+    client
+      .from("test_results")
+      .select("id, value_text, value_numeric, submitted_at, test_definitions(name, unit), test_weeks(name)")
+      .eq("athlete_id", athleteId)
+      .order("submitted_at", { ascending: false })
+      .limit(200),
+  ])
+  if (wellnessResult.error) return { ok: false, error: mapPostgrestError(wellnessResult.error) }
+  if (sessionsResult.error) return { ok: false, error: mapPostgrestError(sessionsResult.error) }
+  if (completionsResult.error) return { ok: false, error: mapPostgrestError(completionsResult.error) }
+  if (prResult.error) return { ok: false, error: mapPostgrestError(prResult.error) }
+  if (testResult.error) return { ok: false, error: mapPostgrestError(testResult.error) }
+
+  const wellness: CoachAthleteWellnessRow[] = ((wellnessResult.data as Array<{
+    id: string
+    athlete_id: string
+    entry_date: string
+    sleep_hours: number
+    soreness: number
+    fatigue: number
+    mood: number
+    stress: number
+    training_load: number
+    readiness: "green" | "yellow" | "red"
+    readiness_score: number
+    notes: string | null
+  }> | null) ?? []).map((row) => ({
+    id: row.id,
+    athleteId: row.athlete_id,
+    date: row.entry_date,
+    sleep: Number(row.sleep_hours),
+    soreness: row.soreness,
+    fatigue: row.fatigue,
+    mood: row.mood,
+    stress: row.stress,
+    notes: row.notes ?? undefined,
+    readiness: row.readiness,
+    readinessScore: row.readiness_score,
+    trainingLoad: row.training_load,
+  }))
+
+  const completionBySession = new Map<string, string>()
+  for (const row of (completionsResult.data as Array<{ session_id: string; completion_date: string }> | null) ?? []) {
+    if (!completionBySession.has(row.session_id)) completionBySession.set(row.session_id, row.completion_date)
+  }
+
+  const sessions: CoachAthleteSessionRow[] = ((sessionsResult.data as Array<{
+    id: string
+    athlete_id: string
+    title: string
+    scheduled_for: string
+    status: "scheduled" | "in-progress" | "completed"
+    coach_note: string | null
+    estimated_duration_minutes: number | null
+    completed_at: string | null
+  }> | null) ?? []).map((row) => {
+    const completedOn = completionBySession.get(row.id) ?? (row.completed_at ? row.completed_at.slice(0, 10) : null)
+    const status = completedOn ? "completed" : row.status
+    return {
+      id: row.id,
+      athleteId: row.athlete_id,
+      type: inferLogType(row.title),
+      title: row.title,
+      date: toLocaleShortDate(row.scheduled_for),
+      details: status === "completed" ? "Session completed." : status === "in-progress" ? "Session in progress." : "Session scheduled.",
+      isoDate: row.scheduled_for,
+      status,
+      coachNote: row.coach_note,
+      completedOn,
+      durationMinutes: row.estimated_duration_minutes,
+    }
+  })
+
+  const prs: CoachAthletePrRow[] = ((prResult.data as Array<{
+    id: string
+    athlete_id: string
+    event: string
+    category: string
+    best_value: string
+    previous_value: string | null
+    measured_on: string
+    is_legal: boolean
+    wind: string | null
+    note: string | null
+    source_type: "manual" | "test-week" | "import"
+  }> | null) ?? []).map((row) => ({
+    id: row.id,
+    athleteId: row.athlete_id,
+    athleteName,
+    event: row.event,
+    category: toCategory(row.category),
+    bestValue: row.best_value,
+    previousValue: row.previous_value ?? undefined,
+    date: toLocaleShortDate(row.measured_on),
+    legal: row.is_legal,
+    wind: row.wind ?? undefined,
+    type: "Training",
+    isoDate: row.measured_on,
+    note: row.note,
+    source: row.source_type,
+  }))
+
+  // Rows arrive newest first: the first hit per test is the latest result, the second is what it is compared with.
+  const testsByName = new Map<string, CoachAthleteTestRow & { latestNumeric: number | null; compared: boolean }>()
+  for (const row of (testResult.data as Array<{
+    id: string
+    value_text: string
+    value_numeric: number | null
+    submitted_at: string
+    test_definitions: Array<{ name: string; unit: CoachAthleteTestRow["unit"] }> | { name: string; unit: CoachAthleteTestRow["unit"] } | null
+    test_weeks: Array<{ name: string }> | { name: string } | null
+  }> | null) ?? []) {
+    const definition = firstRelation(row.test_definitions)
+    if (!definition?.name) continue
+    const key = definition.name.trim().toLowerCase()
+    const numeric = row.value_numeric === null ? parseNumericValue(row.value_text) : Number(row.value_numeric)
+    const existing = testsByName.get(key)
+    if (!existing) {
+      testsByName.set(key, {
+        id: row.id,
+        testName: definition.name,
+        unit: definition.unit,
+        value: row.value_text,
+        previousValue: null,
+        change: null,
+        submittedAt: row.submitted_at,
+        testWeekName: firstRelation(row.test_weeks)?.name ?? null,
+        latestNumeric: numeric,
+        compared: false,
+      })
+    } else if (!existing.compared) {
+      existing.previousValue = row.value_text
+      existing.change = testChange(existing.unit, existing.latestNumeric, numeric)
+      existing.compared = true
+    }
+  }
+  const tests: CoachAthleteTestRow[] = [...testsByName.values()].map((row) => ({
+    id: row.id,
+    testName: row.testName,
+    unit: row.unit,
+    value: row.value,
+    previousValue: row.previousValue,
+    change: row.change,
+    submittedAt: row.submittedAt,
+    testWeekName: row.testWeekName,
+  }))
+
+  return ok({ dateOfBirth, readinessFlag, wellness, sessions, prs, tests })
+}
+
+/** Saves the coach note on one of the athlete's sessions. The athlete sees it when they open that session. */
+export async function updateCoachSessionNoteForCurrentUser(
+  athleteId: string,
+  sessionId: string,
+  note: string,
+  options?: ScopedOptions,
+): Promise<Result<{ coachNote: string | null }>> {
+  const access = await resolveCoachAthleteAccess("updateCoachSessionNoteForCurrentUser", athleteId, options)
+  if (!access.ok) return access
+
+  const coachNote = note.trim() ? note.trim() : null
+  const { data, error } = await access.data.client
+    .from("sessions")
+    .update({ coach_note: coachNote })
+    .eq("id", sessionId)
+    .eq("athlete_id", athleteId)
+    .eq("tenant_id", access.data.tenantId)
+    .select("id")
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "That session could not be updated.")
+  return ok({ coachNote })
 }

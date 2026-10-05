@@ -1,67 +1,220 @@
 "use client"
 
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight01Icon, FilePasteIcon, Link01Icon, Search01Icon } from "@hugeicons/core-free-icons"
+import { CaretRight, Check, Copy, EnvelopeSimple, LinkSimple, Trash, UserPlus, UsersThree, X } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { useEffect, useState } from "react"
-import { ReadinessBadge } from "@/components/badges"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, scoreTone, type TagTone } from "@/components/sk"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { createAthleteInviteForCurrentCoach } from "@/lib/data/athlete/invite-data"
+  createAthleteInviteForCurrentCoach,
+  getAthleteInvitesForTeam,
+  revokeAthleteInviteForCurrentCoach,
+  type AthleteInviteStatus,
+  type TeamAthleteInvite,
+} from "@/lib/data/athlete/invite-data"
+import { removeAthleteFromTeamForCurrentCoach } from "@/lib/data/coach/teams-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import type { Athlete, PR, Team } from "@/lib/mock-data"
-import { cn } from "@/lib/utils"
 
 function getTeamDisciplineLabel(team: Pick<Team, "disciplines" | "eventGroup"> | null | undefined) {
   if (!team) return ""
-  if (team.disciplines?.length) return team.disciplines.join(" / ")
+  if (team.disciplines?.length) return team.disciplines.join(", ")
   return team.eventGroup
 }
 
-function AthleteReadinessPill({ readiness }: { readiness: "green" | "yellow" | "red" }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold",
-        readiness === "green" && "bg-[#eef5ff] text-[#1f5fd1] ring-1 ring-[#cfe2ff]",
-        readiness === "yellow" && "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
-        readiness === "red" && "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
-      )}
-    >
-      <span
-        className={cn(
-          "size-2 rounded-full",
-          readiness === "green" && "bg-[#1f8cff]",
-          readiness === "yellow" && "bg-amber-500",
-          readiness === "red" && "bg-rose-500",
-        )}
-      />
-      {readiness === "green" ? "Ready" : readiness === "yellow" ? "Watch" : "Review"}
-    </span>
-  )
+function toAbsoluteLink(path: string) {
+  return typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path
 }
 
-function AthleteStatusPill() {
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function shortDate(value: string | null) {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+}
+
+const INVITE_STATUS: Record<AthleteInviteStatus, { label: string; tone: TagTone }> = {
+  pending: { label: "Waiting", tone: "yellow" },
+  accepted: { label: "Joined", tone: "green" },
+  expired: { label: "Expired", tone: "coral" },
+  revoked: { label: "Cancelled", tone: "plain" },
+}
+
+/**
+ * Athletes removed in this browser session. The coach dashboard snapshot is cached for a short
+ * while, so this keeps a removed athlete from flashing back onto the roster before it refreshes.
+ */
+const removedAthleteIds = new Set<string>()
+
+export function InviteAthleteDialog({
+  teamId,
+  teamName,
+  trigger,
+  onCreated,
+}: {
+  teamId: string
+  teamName: string
+  trigger: ReactNode
+  onCreated?: (invite: TeamAthleteInvite) => void
+}) {
+  const isSupabaseMode = getBackendMode() === "supabase"
+  const [open, setOpen] = useState(false)
+  const [email, setEmail] = useState("")
+  const [expiryDays, setExpiryDays] = useState("7")
+  const [created, setCreated] = useState<{ email: string; link: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const reset = () => {
+    setEmail("")
+    setCreated(null)
+    setError(null)
+    setCopied(false)
+  }
+
+  const createInvite = async () => {
+    const cleanEmail = email.trim().toLowerCase()
+    if (!cleanEmail) return
+    setError(null)
+    setBusy(true)
+    const days = Number.parseInt(expiryDays, 10)
+    const createdAt = new Date().toISOString()
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+
+    let inviteId: string
+    let invitePath: string
+    if (isSupabaseMode) {
+      const result = await createAthleteInviteForCurrentCoach({ teamId, email: cleanEmail, expiresInDays: days })
+      if (!result.ok) {
+        setBusy(false)
+        setError(result.error.message)
+        return
+      }
+      inviteId = result.data.inviteId
+      invitePath = result.data.invitePath
+    } else {
+      inviteId = Date.now().toString(36)
+      invitePath = `/athlete/claim/${teamId}?token=${inviteId}`
+    }
+
+    setBusy(false)
+    setCopied(false)
+    setCreated({ email: cleanEmail, link: toAbsoluteLink(invitePath) })
+    onCreated?.({ id: inviteId, email: cleanEmail, status: "pending", createdAt, expiresAt, invitePath })
+  }
+
   return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
-      <span className="size-2 rounded-full bg-cyan-300" />
-      On roster
-    </span>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) reset()
+      }}
+    >
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent showCloseButton={false} className="gap-5 rounded-[20px] border-sk-line bg-white p-5 shadow-none sm:max-w-md sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <DialogTitle className="sk-h2">Invite an athlete</DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed text-sk-mute">
+              They get a personal link to join {teamName}. It works once, for the email you enter.
+            </DialogDescription>
+          </div>
+          <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
+            <X className="size-5" weight="bold" />
+          </DialogClose>
+        </div>
+
+        {created ? (
+          <div className="space-y-4">
+            <div className="sk-well space-y-3">
+              <p className="text-sm text-sk-ink-2">
+                Invite ready for <span className="font-bold text-sk-ink">{created.email}</span>. Send them this link.
+              </p>
+              <input
+                readOnly
+                aria-label="Invite link"
+                value={created.link}
+                className="sk-field text-sm"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" className="sk-btn sk-btn-quiet" onClick={reset}>
+                Invite another
+              </button>
+              <button
+                type="button"
+                className="sk-btn sk-btn-primary"
+                onClick={async () => setCopied(await copyText(created.link))}
+              >
+                {copied ? <Check className="size-5" weight="bold" /> : <Copy className="size-5" weight="bold" />}
+                {copied ? "Link copied" : "Copy link"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void createInvite()
+            }}
+          >
+            <div className="space-y-1.5">
+              <label htmlFor={`invite-email-${teamId}`} className="sk-label">
+                Athlete email
+              </label>
+              <input
+                id={`invite-email-${teamId}`}
+                type="email"
+                required
+                autoComplete="off"
+                placeholder="athlete@email.com"
+                className="sk-field"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor={`invite-expiry-${teamId}`} className="sk-label">
+                Link works for
+              </label>
+              <select
+                id={`invite-expiry-${teamId}`}
+                className="sk-field"
+                value={expiryDays}
+                onChange={(event) => setExpiryDays(event.target.value)}
+              >
+                <option value="1">24 hours</option>
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+              </select>
+            </div>
+            {error ? (
+              <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex justify-end">
+              <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={busy || !email.trim()}>
+                <LinkSimple className="size-5" weight="bold" />
+                {busy ? "Creating..." : "Create invite link"}
+              </button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -83,17 +236,20 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const athletesSource = data?.athletes ?? mockData.athletes
   const prsSource = data?.prs ?? mockData.prs
   const [rosterIds, setRosterIds] = useState<string[]>(() =>
-    athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id),
+    athletesSource
+      .filter((athlete) => athlete.teamId === teamId && !removedAthleteIds.has(athlete.id))
+      .map((athlete) => athlete.id),
   )
-  const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null)
-  const [inviteError, setInviteError] = useState<string | null>(null)
-  const [inviteExpiryDays, setInviteExpiryDays] = useState("7")
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [activeTab, setActiveTab] = useState("roster")
+  const [activeTab, setActiveTab] = useState<"roster" | "invites">("roster")
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [rosterError, setRosterError] = useState<string | null>(null)
+  const [invites, setInvites] = useState<TeamAthleteInvite[]>([])
+  const [invitesLoading, setInvitesLoading] = useState(isSupabaseMode)
+  const [invitesError, setInvitesError] = useState<string | null>(null)
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
+  const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
   const team = teamsSource.find((item) => item.id === teamId)
-  const inviteLink = generatedInviteLink
-  const fullInviteLink =
-    typeof window !== "undefined" && inviteLink ? new URL(inviteLink, window.location.origin).toString() : inviteLink
 
   useEffect(() => {
     if (isSupabaseMode || data) return
@@ -115,8 +271,28 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   }, [data, isSupabaseMode])
 
   useEffect(() => {
-    setRosterIds(athletesSource.filter((athlete) => athlete.teamId === teamId).map((athlete) => athlete.id))
+    setRosterIds(
+      athletesSource
+        .filter((athlete) => athlete.teamId === teamId && !removedAthleteIds.has(athlete.id))
+        .map((athlete) => athlete.id),
+    )
   }, [athletesSource, teamId])
+
+  const loadInvites = useCallback(async () => {
+    if (!isSupabaseMode) return
+    const result = await getAthleteInvitesForTeam(teamId)
+    setInvitesLoading(false)
+    if (!result.ok) {
+      setInvitesError(result.error.message)
+      return
+    }
+    setInvitesError(null)
+    setInvites(result.data)
+  }, [isSupabaseMode, teamId])
+
+  useEffect(() => {
+    void loadInvites()
+  }, [loadInvites])
 
   if (!team) {
     return null
@@ -125,13 +301,13 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const teamAthletes = athletesSource.filter((athlete) => rosterIds.includes(athlete.id))
   const disciplineLabel = getTeamDisciplineLabel(team)
   const athleteIds = new Set(teamAthletes.map((athlete) => athlete.id))
-  const readinessAlerts = teamAthletes.filter((athlete) => athlete.readiness !== "green").length
+  const readyCount = teamAthletes.filter((athlete) => athlete.readiness === "green").length
+  const readinessAlerts = teamAthletes.length - readyCount
   const adherenceRiskCount = teamAthletes.filter((athlete) => athlete.adherence < 75).length
   const averageAdherence =
     teamAthletes.length > 0
       ? Math.round(teamAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / teamAthletes.length)
-      : 0
-  const heroImage = team.eventGroup === "Throws" ? "/rotational.png" : null
+      : null
   const latestPrByAthlete = new Map<string, (typeof prsSource)[number]>()
   for (const pr of prsSource) {
     if (!athleteIds.has(pr.athleteId)) continue
@@ -139,420 +315,269 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
       latestPrByAthlete.set(pr.athleteId, pr)
     }
   }
+  const pendingInvites = invites.filter((invite) => invite.status === "pending")
+
+  const removeAthlete = async (athlete: Athlete) => {
+    setRosterError(null)
+    if (isSupabaseMode) {
+      setRemovingId(athlete.id)
+      const result = await removeAthleteFromTeamForCurrentCoach({ athleteId: athlete.id, teamId })
+      setRemovingId(null)
+      if (!result.ok) {
+        setRosterError(`Could not remove ${athlete.name}: ${result.error.message}`)
+        return
+      }
+      removedAthleteIds.add(athlete.id)
+    }
+    setConfirmRemoveId(null)
+    setRosterIds((current) => current.filter((id) => id !== athlete.id))
+  }
+
+  const revokeInvite = async (invite: TeamAthleteInvite) => {
+    setInvitesError(null)
+    if (isSupabaseMode) {
+      setRevokingInviteId(invite.id)
+      const result = await revokeAthleteInviteForCurrentCoach(invite.id)
+      setRevokingInviteId(null)
+      if (!result.ok) {
+        setInvitesError(result.error.message)
+        void loadInvites()
+        return
+      }
+    }
+    setInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, status: "revoked" } : item)))
+  }
+
+  const copyInvite = async (invite: TeamAthleteInvite) => {
+    if (await copyText(toAbsoluteLink(invite.invitePath))) {
+      setCopiedInviteId(invite.id)
+      window.setTimeout(() => setCopiedInviteId((current) => (current === invite.id ? null : current)), 2000)
+    }
+  }
+
+  const onInviteCreated = (invite: TeamAthleteInvite) => {
+    setInvites((current) => [invite, ...current.filter((item) => item.id !== invite.id)])
+    setActiveTab("invites")
+  }
+
+  const rosterCount = teamAthletes.length
+  const lede =
+    rosterCount === 0
+      ? `${disciplineLabel}. Nobody on the roster yet, so invite your first athlete.`
+      : `${disciplineLabel}. ${rosterCount} ${rosterCount === 1 ? "athlete" : "athletes"}, ${
+          readinessAlerts === 0 ? "all ready to train" : `${readinessAlerts} to check on`
+        }.`
+
+  const inviteButton = (label: string, className: string) => (
+    <InviteAthleteDialog
+      teamId={teamId}
+      teamName={team.name}
+      onCreated={onInviteCreated}
+      trigger={
+        <button type="button" className={className}>
+          <UserPlus className="size-5" weight="bold" />
+          {label}
+        </button>
+      }
+    />
+  )
 
   return (
-    <div className="space-y-6 px-4 pb-8 pt-4 sm:px-6 sm:pb-10 sm:pt-6 lg:px-8">
-      <section className="relative pt-2 lg:pt-6">
-        <div className="relative overflow-visible">
-          <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,#0a1730_0%,#102647_45%,#2f5fb6_100%)] text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)]">
-            {heroImage ? (
-              <>
-                <div className="absolute right-[-6%] top-1/2 h-[82%] w-[50%] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.08)_42%,transparent_72%)] blur-2xl" />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(10,23,48,0.98)_0%,rgba(10,23,48,0.93)_46%,rgba(10,23,48,0.58)_68%,rgba(10,23,48,0.18)_100%)]" />
-                <div className="absolute inset-y-0 right-0 hidden w-[34%] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.05)_100%)] lg:block" />
-              </>
-            ) : null}
-            <div className="relative grid gap-6 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,420px)] lg:px-8 lg:py-9 xl:px-10">
-              <div className="space-y-3 lg:space-y-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6fb6ff]">{disciplineLabel}</p>
-                <h1 className="max-w-[10ch] text-[clamp(2rem,8vw,4.7rem)] font-semibold leading-[0.92] tracking-[-0.05em] text-white">
-                  {team.name}
-                </h1>
-                <p className="hidden max-w-[58ch] text-sm leading-7 text-white/72 sm:text-base lg:block">
-                  Operational roster and invite management for this group. Review athlete status, remove roster members,
-                  and generate invite access without leaving the team workspace.
-                </p>
-              </div>
+    <div className="sk-page">
+      <PageHeader title={team.name} lede={lede} actions={inviteButton("Invite athlete", "sk-btn sk-btn-primary")} />
 
-              <div className="hidden rounded-[28px] border border-white/12 bg-white/[0.08] p-5 backdrop-blur-sm lg:block lg:self-end">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#6fb6ff]">Current state</p>
-                <div className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
-                    <span>Roster size</span>
-                    <span className="font-semibold text-white">{teamAthletes.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3 text-sm text-white/72">
-                    <span>Readiness alerts</span>
-                    <span className="font-semibold text-white">{readinessAlerts}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-sm text-white/72">
-                    <span>Adherence avg.</span>
-                    <span className="font-semibold text-white">{averageAdherence}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          {heroImage ? (
-            <div className="pointer-events-none absolute bottom-[-24%] right-[-8%] z-20 h-[138%] w-[64%] sm:bottom-[-24%] sm:right-[-5%] sm:h-[146%] sm:w-[52%] lg:bottom-[-34%] lg:right-[0%] lg:h-[182%] lg:w-[38%]">
-              <img
-                src={heroImage}
-                alt=""
-                aria-hidden="true"
-                className="h-full w-full object-contain object-bottom drop-shadow-[0_34px_48px_rgba(6,16,29,0.42)]"
-              />
-            </div>
+      <section aria-label="Team at a glance" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Athletes" value={rosterCount} hint="On the roster" />
+        <Stat
+          tone="blue"
+          label="Plan adherence"
+          value={averageAdherence ?? "0"}
+          unit="%"
+          hint={
+            averageAdherence === null
+              ? "No athletes yet"
+              : adherenceRiskCount > 0
+                ? `${adherenceRiskCount} under 75%`
+                : "Everyone above 75%"
+          }
+        />
+        <Stat tone="green" label="Ready to train" value={readyCount} hint={`of ${rosterCount}`} />
+        <Stat
+          tone={readinessAlerts > 0 ? "coral" : "plain"}
+          label="Need a look"
+          value={readinessAlerts}
+          hint={readinessAlerts > 0 ? "Watch or review" : "Nobody flagged"}
+        />
+      </section>
+
+      <Segmented
+        label="Team sections"
+        value={activeTab}
+        onChange={setActiveTab}
+        options={[
+          { value: "roster", label: "Roster" },
+          {
+            value: "invites",
+            label: pendingInvites.length > 0 ? `Invites (${pendingInvites.length})` : "Invites",
+          },
+        ]}
+      />
+
+      {activeTab === "roster" ? (
+        <Panel title="Roster" hint={rosterCount > 0 ? "Tap an athlete to open their profile." : undefined}>
+          {rosterError ? (
+            <p role="alert" className="mb-3 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+              {rosterError}
+            </p>
           ) : null}
-        </div>
-      </section>
-
-      <section className="hidden lg:block">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.05)]">
-            <div className="space-y-1 border-b border-slate-200 pb-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Roster State</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Group Snapshot</h2>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {[
-                { label: "Roster", value: teamAthletes.length, body: "athletes in scope" },
-                { label: "Alerts", value: readinessAlerts, body: "need review" },
-                { label: "Plan Adherence", value: `${averageAdherence}%`, body: `${adherenceRiskCount} under 75% adherence` },
-              ].map((item) => (
-                <div key={item.label} className="rounded-[20px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-slate-950">{item.value}</p>
-                  <p className="mt-1 text-sm text-slate-500">{item.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-[28px] border border-[#d7e5f8] bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-            <div className="space-y-1 border-b border-slate-200 pb-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Coaching Focus</p>
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Attention Areas</h2>
-            </div>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-[20px] border border-[#d7e5f8] bg-white px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Readiness</p>
-                <p className="mt-1 text-lg font-semibold text-slate-950">
-                  {readinessAlerts > 0 ? `${readinessAlerts} athlete${readinessAlerts === 1 ? "" : "s"} flagged` : "No active readiness flags"}
-                </p>
-              </div>
-              <div className="rounded-[20px] border border-[#d7e5f8] bg-white px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Invites</p>
-                <p className="mt-1 text-lg font-semibold text-slate-950">Generate access without leaving the group</p>
-                <p className="mt-1 text-sm text-slate-500">Use the invite tab to issue links for new athletes.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:w-auto">
-          <TabsTrigger value="roster" className="rounded-full px-4 py-2.5 data-[state=active]:bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] data-[state=active]:text-white data-[state=active]:shadow-[0_10px_22px_rgba(31,140,255,0.22)]">
-            Roster
-          </TabsTrigger>
-          <TabsTrigger value="invites" className="rounded-full px-4 py-2.5 data-[state=active]:bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] data-[state=active]:text-white data-[state=active]:shadow-[0_10px_22px_rgba(31,140,255,0.22)]">
-            Invites
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="roster" className="mt-0">
-          <section className="space-y-4 px-2 py-1">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Roster</h2>
-                <p className="mt-1 text-sm text-slate-500">Manage athletes, check status, and open athlete detail.</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 md:hidden">
-              {teamAthletes.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Roster"
-                  title="No athletes are on this roster yet."
-                  description="This team exists, but no athletes are currently attached to it."
-                  hint="Generate an athlete invite or add athletes from the team-management flow."
-                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                  className="rounded-[24px] bg-white px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => setActiveTab("invites")}>
-                      Open invites
-                    </Button>
-                  }
-                />
-              ) : teamAthletes.map((athlete) => (
-                <div
-                  key={athlete.id}
-                  className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.05)]"
-                >
-                  <Link
-                    to={`/coach/athletes/${athlete.id}`}
-                    className="block p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0d172b_0%,#315fb9_100%)] text-sm font-semibold text-white shadow-[0_10px_24px_rgba(19,104,255,0.16)]">
-                          {athlete.name
-                            .split(" ")
-                            .map((part) => part[0])
-                            .slice(0, 2)
-                            .join("")}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-950">{athlete.name}</p>
-                          <p className="text-sm text-slate-500">Age {athlete.age} | {athlete.eventGroup}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <AthleteReadinessPill readiness={athlete.readiness} />
-                        <div className="flex size-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors group-hover:bg-slate-200">
-                          <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-4 grid gap-3 rounded-[22px] bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Primary event</p>
-                          <p className="mt-1 text-base font-medium text-slate-800">{athlete.primaryEvent}</p>
-                        </div>
-                        <AthleteStatusPill />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Latest PR</p>
-                          {latestPrByAthlete.get(athlete.id) ? (
-                            <p className="mt-1 text-sm text-slate-600">
-                              PR: {latestPrByAthlete.get(athlete.id)?.event} {latestPrByAthlete.get(athlete.id)?.bestValue}
-                            </p>
+          {rosterCount === 0 ? (
+            <EmptyState
+              icon={<UsersThree className="size-6" weight="fill" />}
+              title="No athletes yet"
+              body="Athletes show up here with their readiness and adherence as soon as they accept an invite."
+              action={inviteButton("Invite athlete", "sk-btn sk-btn-ink sk-btn-sm")}
+              className="border-0 bg-sk-canvas"
+            />
+          ) : (
+            <ul>
+              {teamAthletes.map((athlete) => {
+                const pr = latestPrByAthlete.get(athlete.id)
+                const confirming = confirmRemoveId === athlete.id
+                return (
+                  <li key={athlete.id} className="border-b border-sk-line last:border-b-0">
+                    <div className="flex items-center gap-1 sm:gap-3">
+                      <Link
+                        to={`/coach/athletes/${athlete.id}`}
+                        className="group grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 rounded-xl py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue md:grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1fr)_minmax(140px,200px)_84px_auto]"
+                      >
+                        <Initials name={athlete.name} />
+                        <span className="min-w-0">
+                          <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
+                          <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>
+                        </span>
+                        <span className="col-span-3 row-start-3 min-w-0 text-sm md:col-span-1 md:row-start-auto">
+                          <span className="text-sk-mute">Latest PR </span>
+                          {pr ? (
+                            <span className="font-semibold text-sk-ink">
+                              {pr.event} {pr.bestValue}
+                            </span>
                           ) : (
-                            <div className="mt-1 rounded-[14px] border border-dashed border-slate-200 bg-white/80 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Latest PR</p>
-                              <p className="mt-1 text-xs leading-5 text-slate-500">No PR is recorded for this athlete yet.</p>
-                            </div>
+                            <span className="text-sk-mute">not logged yet</span>
                           )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Plan Adherence</p>
-                          <p className="mt-1 text-sm font-medium text-slate-700">{athlete.adherence}%</p>
-                        </div>
-                      </div>
+                        </span>
+                        <span className="col-span-3 row-start-2 md:col-span-1 md:row-start-auto">
+                          <span className="mb-1.5 flex items-baseline justify-between text-sm">
+                            <span className="text-sk-mute">Adherence</span>
+                            <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
+                          </span>
+                          <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
+                        </span>
+                        <span className="col-start-3 row-start-1 justify-self-end md:col-start-auto md:row-start-auto md:justify-self-start">
+                          <ReadinessTag status={athlete.readiness} />
+                        </span>
+                        <CaretRight className="hidden size-4 text-sk-mute group-hover:text-sk-blue md:block" weight="bold" />
+                      </Link>
+                      <button
+                        type="button"
+                        className="sk-btn sk-btn-ghost size-11 shrink-0 self-start px-0 hover:bg-sk-coral-tint hover:text-[#c7300f] max-md:mt-3.5 md:self-center"
+                        aria-label={`Remove ${athlete.name} from ${team.name}`}
+                        aria-expanded={confirming}
+                        onClick={() => setConfirmRemoveId(confirming ? null : athlete.id)}
+                      >
+                        <Trash className="size-5" weight="bold" />
+                      </button>
                     </div>
-                  </Link>
-                </div>
-              ))}
-            </div>
-
-            <div className="hidden overflow-hidden rounded-[24px] border border-slate-200 md:block">
-              {teamAthletes.length === 0 ? (
-                <div className="bg-white p-4">
-                  <EmptyStateCard
-                    eyebrow="Roster"
-                    title="No athletes are on this roster yet."
-                    description="This team exists, but the roster has not been populated with any athletes."
-                    hint="Use invites to add new athletes, then return here to review readiness and adherence."
-                    icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                    className="rounded-[24px] bg-slate-50 px-4 py-5 shadow-none"
-                    contentClassName="gap-3"
-                    actions={
-                      <Button type="button" variant="outline" className="h-10 rounded-full border-slate-200 px-4" onClick={() => setActiveTab("invites")}>
-                        Open invites
-                      </Button>
-                    }
-                  />
-                </div>
-              ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Athlete</TableHead>
-                    <TableHead>Events</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Readiness</TableHead>
-                    <TableHead>Plan Adherence</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {teamAthletes.map((athlete) => (
-                    <TableRow key={athlete.id}>
-                      <TableCell className="font-medium">{athlete.name}</TableCell>
-                      <TableCell>{athlete.primaryEvent}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={athlete.readiness === "red" ? "status-chip-danger" : "status-chip-neutral"}
-                        >
-                          {athlete.readiness === "red" ? "Needs Review" : "Active"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <ReadinessBadge status={athlete.readiness} />
-                      </TableCell>
-                      <TableCell>{athlete.adherence}%</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button asChild variant="outline" size="sm" className="rounded-full border-slate-200 px-4 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950">
-                            <Link to={`/coach/athletes/${athlete.id}`}>Open</Link>
-                          </Button>
-                          <Button
+                    {confirming ? (
+                      <div className="mb-4 flex flex-col gap-3 rounded-2xl bg-sk-coral-tint p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-sk-ink">
+                          <span className="font-bold">Remove {athlete.name} from {team.name}?</span> They keep their account and training history.
+                        </p>
+                        <div className="flex shrink-0 gap-2">
+                          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={() => setConfirmRemoveId(null)}>
+                            Keep
+                          </button>
+                          <button
                             type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="rounded-full px-4"
-                            onClick={() => setRosterIds((current) => current.filter((id) => id !== athlete.id))}
+                            className="sk-btn sk-btn-danger sk-btn-sm"
+                            disabled={removingId === athlete.id}
+                            onClick={() => void removeAthlete(athlete)}
                           >
-                            Remove
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              )}
-            </div>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="invites" className="mt-0">
-          <section className="space-y-5 px-0 py-1">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Invites</h2>
-                <p className="mt-1 text-sm text-slate-500">Generate and share temporary invite access for new roster additions.</p>
-              </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button type="button" className="h-12 rounded-full bg-[linear-gradient(135deg,#1368ff_0%,#2f80ff_100%)] px-5 text-white shadow-[0_12px_32px_rgba(28,101,255,0.22)] hover:opacity-95">
-                    <HugeiconsIcon icon={Link01Icon} className="size-4" />
-                    Generate invite
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl rounded-[28px] border border-slate-200 bg-white p-0">
-                  <DialogHeader className="border-b border-slate-200 px-6 pb-4 pt-6 text-left">
-                    <DialogTitle>Invite athletes to {team.name}</DialogTitle>
-                    <DialogDescription>
-                      Enter the athlete email, choose the invite lifetime, then generate a one-time claim link for that athlete.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 px-6 py-5">
-                    <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Invite flow</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">
-                        SKTR Coach checks whether this athlete email already exists and routes sign-in or first-time setup automatically.
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="detail-invite-email">Athlete email</Label>
-                      <Input
-                        id="detail-invite-email"
-                        type="email"
-                        placeholder="athlete@email.com"
-                        value={inviteEmail}
-                        onChange={(event) => setInviteEmail(event.target.value)}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Invite expiration</Label>
-                      <Select value={inviteExpiryDays} onValueChange={setInviteExpiryDays}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">24 hours</SelectItem>
-                          <SelectItem value="7">7 days</SelectItem>
-                          <SelectItem value="30">30 days</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {fullInviteLink ? (
-                      <div className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Generated invite</p>
-                          <p className="mt-1 text-sm text-slate-600">
-                            Send this link to <span className="font-medium text-slate-950">{inviteEmail.trim().toLowerCase()}</span>.
-                          </p>
-                        </div>
-                        <Input
-                          value={fullInviteLink}
-                          readOnly
-                          className="text-slate-950 selection:bg-[#dbeafe] selection:text-slate-950"
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-10 rounded-full border-slate-200 px-4"
-                            onClick={() => navigator.clipboard.writeText(fullInviteLink)}
-                          >
-                            <HugeiconsIcon icon={FilePasteIcon} className="size-4" />
-                            Copy link
-                          </Button>
-                          <Button
-                            type="button"
-                            className="h-10 rounded-full px-4"
-                            onClick={() => window.open(fullInviteLink, "_blank", "noopener,noreferrer")}
-                          >
-                            Open link
-                          </Button>
+                            {removingId === athlete.id ? "Removing..." : "Remove from roster"}
+                          </button>
                         </div>
                       </div>
                     ) : null}
-                  </div>
-                  <DialogFooter className="border-t border-slate-200 px-6 py-4">
-                    <Button
-                      type="button"
-                      className="h-11 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] px-5 text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-                      disabled={!inviteEmail.trim()}
-                      onClick={async () => {
-                        setInviteError(null)
-                        if (isSupabaseMode) {
-                          const result = await createAthleteInviteForCurrentCoach({
-                            teamId,
-                            email: inviteEmail,
-                            expiresInDays: Number.parseInt(inviteExpiryDays, 10),
-                          })
-                          if (!result.ok) {
-                            setInviteError(result.error.message)
-                            return
-                          }
-                          setGeneratedInviteLink(result.data.invitePath)
-                          return
-                        }
-                        setGeneratedInviteLink(`/athlete/claim/${teamId}?token=${Date.now().toString(36)}`)
-                      }}
-                    >
-                      Generate Invite
-                    </Button>
-                  </DialogFooter>
-                  {inviteError ? <p className="px-6 pb-5 text-sm text-rose-600">{inviteError}</p> : null}
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Status</p>
-              {generatedInviteLink ? (
-                <>
-                  <p className="mt-3 text-sm text-slate-600">Latest invite generated and ready to share.</p>
-                  <div className="mt-4 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                    {generatedInviteLink}
-                  </div>
-                </>
-              ) : (
-                <div className="mt-3">
-                  <EmptyStateCard
-                    eyebrow="Invite status"
-                    title="No active invites yet."
-                    description="No current athlete invite has been generated for this team yet."
-                    hint="Create an invite when a new athlete needs direct claim access into this roster."
-                    icon={<HugeiconsIcon icon={Link01Icon} className="size-5" />}
-                    className="rounded-[20px] bg-white px-4 py-5 shadow-none"
-                    contentClassName="gap-3"
-                  />
-                </div>
-              )}
-            </div>
-          </section>
-        </TabsContent>
-      </Tabs>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Panel>
+      ) : (
+        <Panel
+          title="Invites"
+          hint="Every invite link you have created for this team, newest first."
+        >
+          {invitesError ? (
+            <p role="alert" className="mb-3 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+              Could not update invites: {invitesError}
+            </p>
+          ) : null}
+          {invitesLoading ? (
+            <p className="py-6 text-sm text-sk-mute">Loading invites...</p>
+          ) : invites.length === 0 ? (
+            <EmptyState
+              icon={<EnvelopeSimple className="size-6" weight="fill" />}
+              title="No invites sent yet"
+              body="Create an invite link for an athlete and it appears here, so you can see who has joined and who is still waiting."
+              action={inviteButton("Invite athlete", "sk-btn sk-btn-ink sk-btn-sm")}
+              className="border-0 bg-sk-canvas"
+            />
+          ) : (
+            <ul>
+              {invites.map((invite) => {
+                const status = INVITE_STATUS[invite.status]
+                const sent = shortDate(invite.createdAt)
+                const expires = shortDate(invite.expiresAt)
+                const isPending = invite.status === "pending"
+                return (
+                  <li
+                    key={invite.id}
+                    className="flex flex-col gap-3 border-b border-sk-line py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex min-w-0 items-center justify-between gap-3 sm:flex-1">
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-sk-ink">{invite.email || "No email on this invite"}</p>
+                        <p className="truncate text-sm text-sk-mute">
+                          {sent ? `Sent ${sent}` : "Sent"}
+                          {isPending && expires ? `, link works until ${expires}` : ""}
+                        </p>
+                      </div>
+                      <Tag tone={status.tone} className="shrink-0">{status.label}</Tag>
+                    </div>
+                    {isPending ? (
+                      <div className="flex shrink-0 gap-2">
+                        <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => void copyInvite(invite)}>
+                          {copiedInviteId === invite.id ? <Check className="size-4" weight="bold" /> : <Copy className="size-4" weight="bold" />}
+                          {copiedInviteId === invite.id ? "Copied" : "Copy link"}
+                        </button>
+                        <button
+                          type="button"
+                          className="sk-btn sk-btn-ghost sk-btn-sm max-sm:h-11 max-sm:flex-1"
+                          disabled={revokingInviteId === invite.id}
+                          onClick={() => void revokeInvite(invite)}
+                        >
+                          {revokingInviteId === invite.id ? "Cancelling..." : "Cancel invite"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Panel>
+      )}
     </div>
   )
 }
