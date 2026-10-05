@@ -216,3 +216,14 @@ test("request form: server-side validation refusals become plain sentences, neve
     assert.notEqual(shown, raw)
   }
 })
+
+test("the account screen needs a session and is open to every signed-in role", () => {
+  assert.equal(evaluateAccess({ pathname: "/account", isAuthenticated: false, role: null, tenantId: null }).allowed, false)
+  for (const role of ["athlete", "coach", "club-admin"] as const) {
+    assert.equal(evaluateAccess({ pathname: "/account", isAuthenticated: true, role, tenantId: "club-1" }).allowed, true)
+  }
+  assert.equal(evaluateAccess({ pathname: "/account", isAuthenticated: true, role: "platform-admin", tenantId: null }).allowed, true)
+  assert.equal(evaluateAccess({ pathname: "/account", isAuthenticated: true, role: "coach", tenantId: null }).reason, "missing-tenant")
+  const paused = evaluateAccess({ pathname: "/account", isAuthenticated: true, role: "athlete", tenantId: "club-1", memberActive: false })
+  assert.equal(paused.blocked, "member-inactive")
+})

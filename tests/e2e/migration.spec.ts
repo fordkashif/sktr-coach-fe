@@ -143,13 +143,39 @@ test("invalid coach entity routes render not-found equivalents", async ({ page }
   await expect(page.locator("body")).toContainText("Athlete not found")
 })
 
-test("desktop shell shows the sidebar navigation", async ({ page }) => {
+test("desktop shell shows the top bar navigation", async ({ page }) => {
   await seedSession(page, "coach")
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/dashboard")
 
-  await expect(page.locator("aside")).toContainText("SKTR Coach")
-  await expect(page.locator("aside")).toContainText("Dashboard")
+  const topBar = page.locator("header[data-shell='topbar']")
+  await expect(topBar).toBeVisible()
+  await expect(topBar).toContainText("SKTR Coach")
+  const nav = topBar.getByRole("navigation", { name: "Main" })
+  for (const name of ["Dashboard", "Athletes", "Plans", "Test weeks", "Reports"]) {
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible()
+  }
+  await expect(nav.getByRole("link", { name: "Dashboard", exact: true })).toHaveAttribute("aria-current", "page")
+  // There is no sidebar any more, and the phone tab bar stays out of the way on desktop.
+  await expect(page.locator("aside")).toHaveCount(0)
+  await expect(page.locator("nav[data-shell='tabbar']")).toBeHidden()
+})
+
+test("the top bar keeps every club admin destination on one row at 1024px", async ({ page }) => {
+  await seedSession(page, "club-admin")
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await page.goto("/club-admin/dashboard")
+
+  const nav = page.locator("header[data-shell='topbar']").getByRole("navigation", { name: "Main" })
+  for (const name of ["Dashboard", "People", "Teams", "Reports", "Club", "Activity", "Billing"]) {
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible()
+  }
+  const layout = await nav.evaluate((element) => ({
+    rows: new Set([...element.children].map((child) => Math.round(child.getBoundingClientRect().top))).size,
+    clipped: element.scrollWidth > element.clientWidth + 1,
+    pageScrolls: document.documentElement.scrollWidth > window.innerWidth,
+  }))
+  expect(layout).toEqual({ rows: 1, clipped: false, pageScrolls: false })
 })
 
 test("mobile shell shows the bottom navigation", async ({ page }) => {
@@ -157,8 +183,73 @@ test("mobile shell shows the bottom navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/athlete/trends")
 
-  await expect(page.locator("nav.fixed")).toContainText("Home")
-  await expect(page.locator("nav.fixed a")).toHaveCount(5)
+  const tabBar = page.locator("nav[data-shell='tabbar']")
+  await expect(tabBar).toBeVisible()
+  await expect(tabBar).toContainText("Home")
+  await expect(tabBar.locator("a")).toHaveCount(5)
+  await expect(tabBar.getByRole("link", { name: "Progress" })).toHaveAttribute("aria-current", "page")
+  // The athlete's centre item is the log button.
+  await tabBar.getByRole("link", { name: "Log a session" }).click()
+  await expect(page).toHaveURL(/\/athlete\/log$/)
+  await expect(page.locator("header[data-shell='topbar']")).toBeHidden()
+})
+
+test("a role with more than five destinations gets a More tab on a phone", async ({ page }) => {
+  await seedSession(page, "club-admin")
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/club-admin/dashboard")
+
+  const tabBar = page.locator("nav[data-shell='tabbar']")
+  await expect(tabBar.locator("a")).toHaveCount(4)
+  await tabBar.getByRole("button", { name: "More" }).click()
+  const sheet = page.getByRole("dialog", { name: "More" })
+  for (const name of ["Club", "Activity", "Billing"]) {
+    await expect(sheet.getByRole("link", { name })).toBeVisible()
+  }
+  await sheet.getByRole("link", { name: "Billing" }).click()
+  await expect(page).toHaveURL(/\/club-admin\/billing$/)
+  await expect(sheet).toBeHidden()
+})
+
+test("the profile menu opens the account screen for every signed-in role", async ({ page }) => {
+  await seedSession(page, "coach")
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/coach/dashboard")
+
+  await page.locator("header[data-shell='topbar']").getByRole("button", { name: "Open profile menu" }).click()
+  await page.getByRole("menuitem", { name: "Your account" }).click()
+  await expect(page).toHaveURL(/\/account$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible()
+})
+
+test("athlete home shows today's session, the week and what is left to do", async ({ page }) => {
+  await seedSession(page, "athlete")
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/athlete/home")
+
+  const main = page.locator("#main-content")
+  await expect(main.getByRole("heading", { level: 1 })).toBeVisible()
+  // One colour block at most, and it carries the primary action.
+  await expect(main.locator("[data-sk-hero]")).toHaveCount(1)
+  await expect(main.locator("[data-sk-hero]").getByRole("link", { name: /session$/ })).toHaveAttribute("href", "/athlete/log")
+  await expect(main.getByRole("list", { name: "This week" }).getByRole("listitem")).toHaveCount(7)
+  await expect(main.getByRole("link", { name: /Wellness check-in/ })).toHaveAttribute("href", "/athlete/wellness")
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test("coach dashboard lists the team's athletes in a table that links to each athlete", async ({ page }) => {
+  await seedSession(page, "coach")
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/coach/dashboard")
+
+  const main = page.locator("#main-content")
+  await expect(main.getByRole("heading", { level: 1, name: "Throws Group" })).toBeVisible()
+  const table = main.getByRole("table", { name: "Athletes on this team" })
+  await expect(table.getByRole("columnheader")).toHaveText(["Athlete", "Readiness", "Last check-in", "Adherence"])
+  await expect(table.getByRole("rowheader")).toHaveCount(2)
+  await expect(main.locator("[data-sk-hero]")).toHaveCount(0)
+  await table.getByRole("link", { name: /Mia Anderson/ }).click()
+  await expect(page).toHaveURL(/\/coach\/athletes\/a8$/)
 })
 
 test("coach can complete the training plan setup-build-review-publish flow", async ({ page }) => {

@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType } from "react"
 import { Route, Routes } from "react-router-dom"
+import { ScreenSkeleton } from "@/components/sk"
 import { RootLayout } from "@/layouts/root-layout"
 import { AuthLayout } from "@/layouts/auth-layout"
 import { AuthenticatedLayout } from "@/layouts/authenticated-layout"
@@ -47,17 +48,12 @@ const PlatformAdminBillingPage = lazy(() => import("@/app/(authenticated)/platfo
 const PlatformAdminCommercialPage = lazy(() => import("@/app/(authenticated)/platform-admin/commercial/page"))
 const PlatformAdminAuditPage = lazy(() => import("@/app/(authenticated)/platform-admin/audit/page"))
 const PlatformAdminDashboardPage = lazy(() => import("@/app/(authenticated)/platform-admin/dashboard/page"))
+const AccountPage = lazy(() => import("@/app/(authenticated)/account/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
 
 function routeElement(Component: ComponentType) {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto w-full max-w-8xl p-4 text-sm text-slate-500 sm:p-6">
-          Loading...
-        </div>
-      }
-    >
+    <Suspense fallback={<ScreenSkeleton />}>
       <Component />
     </Suspense>
   )
@@ -119,6 +115,7 @@ export function AppRouter() {
             <Route path="/platform-admin/commercial" element={routeElement(PlatformAdminCommercialPage)} />
             <Route path="/platform-admin/audit" element={routeElement(PlatformAdminAuditPage)} />
 
+            <Route path="/account" element={routeElement(AccountPage)} />
             <Route path="/settings/notifications" element={routeElement(NotificationSettingsPage)} />
           </Route>
         </Route>

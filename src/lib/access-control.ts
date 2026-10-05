@@ -31,8 +31,14 @@ export interface AccessResult {
   blocked?: AccessBlock
 }
 
+/** Screens every signed-in role can open: their own account. */
+export function isAccountPath(pathname: string) {
+  return pathname === "/account" || pathname.startsWith("/account/")
+}
+
 export function isProtectedPath(pathname: string) {
   return (
+    isAccountPath(pathname) ||
     pathname.startsWith("/athlete") ||
     pathname.startsWith("/coach") ||
     pathname.startsWith("/club-admin") ||
@@ -66,6 +72,16 @@ export function evaluateAccess(input: AccessInput): AccessResult {
     }
 
     return { allowed: true }
+  }
+
+  if (isAccountPath(pathname)) {
+    if (!role) {
+      return { allowed: false, reason: "forbidden-role", redirectTo: "/login" }
+    }
+    // A platform admin has no club. Everyone else falls through to the club and member checks below.
+    if (role === "platform-admin") {
+      return { allowed: true }
+    }
   }
 
   if (!tenantId) {

@@ -1,26 +1,26 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState } from "react"
+import { Check, Play } from "@phosphor-icons/react"
 import {
-  ArrowRight,
-  ArrowUp,
-  Barbell,
-  CalendarBlank,
-  CaretRight,
-  Check,
-  CheckCircle,
-  ClipboardText,
-  Heartbeat,
-  Lightning,
-  MapPin,
-  MoonStars,
-  PersonSimpleRun,
-  Play,
-  Target,
-  Timer,
-} from "@phosphor-icons/react"
-import { Link } from "react-router-dom"
-import { EmptyState, PageHeader, Panel, Tag } from "@/components/sk"
+  Button,
+  DayStrip,
+  EmptyState,
+  HeroAction,
+  HeroBlock,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  Section,
+  SkeletonRows,
+  Split,
+  StatusDot,
+  StatusText,
+  type DayStripDay,
+} from "@/components/sk"
 import {
   dateKeyLocal,
   defaultSessionProgress,
@@ -46,7 +46,6 @@ import type { TrainingPlanDay } from "@/lib/data/training-plan/types"
 import { getCurrentAthleteWellnessEntries } from "@/lib/data/wellness/wellness-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { cn } from "@/lib/utils"
 import type { CurrentSession } from "@/lib/mock-data"
 
 const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-submission"
@@ -92,29 +91,16 @@ function longDate(key: string) {
   return parseDateKey(key).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
 }
 
-function BlockIcon({ type }: { type: CurrentSession["blocks"][number]["type"] }) {
-  const className = "size-5"
-  if (type === "Strength") return <Barbell className={className} weight="bold" />
-  if (type === "Run") return <PersonSimpleRun className={className} weight="bold" />
-  if (type === "Jumps") return <ArrowUp className={className} weight="bold" />
-  if (type === "Throws") return <Target className={className} weight="bold" />
-  return <Lightning className={className} weight="bold" />
+function greeting(date: Date) {
+  const hour = date.getHours()
+  return hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
 }
 
-function TodoRow({ to, icon, title, body }: { to: string; icon: ReactNode; title: string; body: string }) {
-  return (
-    <li>
-      <Link to={to} className="group flex min-h-[64px] items-center gap-3 border-b border-sk-line py-3.5 last:border-b-0">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-sk-yellow text-sk-ink">{icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-bold text-sk-ink group-hover:text-sk-blue">{title}</span>
-          <span className="block text-sm text-sk-mute">{body}</span>
-        </span>
-        <CaretRight className="size-5 shrink-0 text-sk-mute" weight="bold" />
-      </Link>
-    </li>
-  )
-}
+const SETUP_STEPS = [
+  { to: "/athlete/profile", title: "Check your profile", body: "Make sure your team, event group and name are right." },
+  { to: "/athlete/wellness", title: "Do a wellness check-in", body: "It takes a minute and tells your coach how ready you are." },
+  { to: "/athlete/training-plan", title: "Look at your plan", body: "See what is coming once your coach assigns one." },
+]
 
 export default function AthleteHomePage() {
   const backendMode = getBackendMode()
@@ -347,37 +333,40 @@ export default function AthleteHomePage() {
     todaySession?.status === "completed" ||
     Boolean(todaySession && todaySession.blocks.length > 0 && completedBlockCount === todaySession.blocks.length)
   const inProgress = !todayDone && (completedBlockCount > 0 || todaySession?.status === "in-progress")
-  const nextActionLabel = todayDone ? "Review workout" : inProgress ? "Resume workout" : "Start workout"
+  const nextActionLabel = todayDone ? "Review session" : inProgress ? "Resume session" : "Start session"
 
   const loadingToday = isSupabase && !backendLoaded
   const athleteNeedsGuide = isSupabase && backendLoaded && !backendSessionDetail?.session.id
 
   /* Week ------------------------------------------------------------ */
-  const week = Array.from({ length: 7 }, (_, index) => {
+  const week: DayStripDay[] = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(startOfWeek)
     date.setDate(startOfWeek.getDate() + index)
     const key = dateKeyLocal(date)
+    const isToday = key === todayKey
     const planned =
       (planDays ?? []).some((day) => day.date.slice(0, 10) === key) || (currentSession !== null && sessionDateKey === key)
+    const completed = completionDateSet.has(key) || (isToday && todayDone)
+    const state: DayStripDay["state"] = completed ? "done" : isToday ? "today" : planned ? "planned" : "rest"
+    const longLabel = date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
     return {
       key,
-      label: date.toLocaleDateString(undefined, { weekday: "short" }),
-      longLabel: date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
-      day: date.getDate(),
-      completed: completionDateSet.has(key) || (key === todayKey && todayDone),
-      planned,
-      isToday: key === todayKey,
+      letter: date.toLocaleDateString(undefined, { weekday: "narrow" }),
+      number: date.getDate(),
+      state,
+      isToday,
+      label: `${longLabel}: ${completed ? "session done" : planned ? "session planned" : hasPlan ? "rest day" : "nothing logged"}`,
     }
   })
-  const doneThisWeek = week.filter((day) => day.completed).length
-  const plannedThisWeek = week.filter((day) => day.planned || day.completed).length
+  const doneThisWeek = week.filter((day) => day.state === "done").length
+  const plannedThisWeek = week.filter((day) => day.state !== "rest").length
   const weekSummary = hasPlan
     ? plannedThisWeek > 0
-      ? `${doneThisWeek} of ${plannedThisWeek} sessions done`
-      : "No sessions planned this week"
+      ? `${doneThisWeek} of ${plannedThisWeek} done`
+      : "Nothing planned"
     : doneThisWeek > 0
-      ? `${doneThisWeek} ${doneThisWeek === 1 ? "session" : "sessions"} done`
-      : "Nothing logged yet this week"
+      ? `${doneThisWeek} done`
+      : "Nothing logged yet"
 
   /* To do ----------------------------------------------------------- */
   const utcTodayKey = now.toISOString().slice(0, 10)
@@ -391,13 +380,12 @@ export default function AthleteHomePage() {
       ? testWeek
       : null
   const showMockTestWeekTodo = !isSupabase && !mockTestWeekSubmitted
-  const todoCount = [showWellnessTodo, Boolean(openTestWeek), showMockTestWeekTodo, Boolean(overdueSession)].filter(Boolean).length
+  const coachNote = (!todayDone && (todaySession?.coachNote || planDayToday?.coachNote)) || ""
+  const todoCount = [showWellnessTodo, Boolean(openTestWeek), showMockTestWeekTodo, Boolean(overdueSession), Boolean(coachNote)].filter(Boolean).length
 
   const firstName = displayName.trim().split(/\s+/)[0] || backendSessionDetail?.athleteFirstName || ""
-  const weekdayName = now.toLocaleDateString(undefined, { weekday: "long" })
-  const dateLine = now.toLocaleDateString(undefined, { day: "numeric", month: "long" })
-  const title = firstName && firstName !== "Athlete" ? `Hey, ${firstName}` : weekdayName
-  const lede = firstName && firstName !== "Athlete" ? `${weekdayName}, ${dateLine}` : dateLine
+  const title = firstName && firstName !== "Athlete" ? `${greeting(now)}, ${firstName}` : `Good ${greeting(now).toLowerCase()}`
+  const dateLine = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
 
   const toggleGuide = async (dismissed: boolean) => {
     setSetupGuideSaving(true)
@@ -410,368 +398,153 @@ export default function AthleteHomePage() {
     setSetupGuideDismissedAt(dismissed ? new Date().toISOString() : null)
   }
 
-  const startButton = (
-    <Link to="/athlete/log" className="sk-btn sk-btn-primary hidden h-12 px-6 text-base lg:inline-flex">
-      {todayDone ? <CheckCircle className="size-5" weight="fill" /> : <Play className="size-5" weight="fill" />}
-      {nextActionLabel}
-    </Link>
-  )
+  /* Today: the one colour block, only when there is a session to do --- */
+  const sessionSummary = todaySession
+    ? todaySession.blocks
+        .flatMap((block) => (block.rows.length > 0 ? block.rows.map((row) => `${row.label} ${row.target}`) : [block.name]))
+        .join(", ")
+    : planDayToday
+      ? planDayToday.blockPreview.join(", ") || planDayToday.focus
+      : ""
+  const sessionMeta = todaySession
+    ? inProgress && todaySession.blocks.length > 0
+      ? `${completedBlockCount} of ${todaySession.blocks.length} blocks done`
+      : todaySession.estimatedDuration
+    : planDayToday?.durationMinutes
+      ? `${planDayToday.durationMinutes} min`
+      : null
+  const heroSession = todaySession ?? planDayToday
 
   return (
-    <div className="sk-page">
-      <PageHeader title={title} lede={lede} />
+    <Screen>
+      <ScreenHeader fact={dateLine} title={title} />
 
-      {backendError ? (
-        <div role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-          We could not load your session. {backendError}
-        </div>
-      ) : null}
+      {backendError ? <Notice tone="error">We could not load your session. {backendError}</Notice> : null}
 
       {athleteNeedsGuide && !setupGuideDismissedAt ? (
-        <section aria-label="Getting started" className="rounded-[20px] bg-sk-yellow-tint p-5 sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="sk-h2">Three things to get set up</h2>
-              <p className="mt-1 max-w-[52ch] text-sm leading-relaxed text-sk-ink-2">
-                Your coach has not sent a session yet. Use the time to get your details right.
-              </p>
-            </div>
-            <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm self-start" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
+        <Section
+          aria-label="Getting started"
+          title="Three things to get set up"
+          hint="Your coach has not sent a session yet. Use the time to get your details right."
+          action={
+            <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
               {setupGuideSaving ? "Saving..." : "Hide these steps"}
-            </button>
-          </div>
-          <ol className="mt-4 grid gap-3 md:grid-cols-3">
-            {[
-              {
-                step: 1,
-                title: "Check your profile",
-                body: "Make sure your team, event group and name are right.",
-                links: [{ to: "/athlete/profile", label: "Open profile" }],
-              },
-              {
-                step: 2,
-                title: "Do a wellness check-in",
-                body: "It takes a minute and tells your coach how ready you are.",
-                links: [{ to: "/athlete/wellness", label: "Check in" }],
-              },
-              {
-                step: 3,
-                title: "Look at your plan",
-                body: "See what is coming once your coach assigns one.",
-                links: [{ to: "/athlete/training-plan", label: "Open plan" }],
-              },
-            ].map((item) => (
-              <li key={item.step} className="flex flex-col gap-3 rounded-2xl bg-white p-4">
-                <span className="flex size-9 items-center justify-center rounded-full bg-sk-blue text-sm font-extrabold text-white">{item.step}</span>
-                <div>
-                  <p className="sk-h3">{item.title}</p>
-                  <p className="mt-1 text-sm text-sk-mute">{item.body}</p>
-                </div>
-                <div className="mt-auto flex flex-wrap gap-2">
-                  {item.links.map((link) => (
-                    <Link key={link.to} to={link.to} className="sk-btn sk-btn-quiet sk-btn-sm">
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              </li>
+            </Button>
+          }
+        >
+          <List ordered>
+            {SETUP_STEPS.map((step, index) => (
+              <ListRow key={step.to} to={step.to} leading={<span className="w-5 text-center font-bold text-sk-blue-link">{index + 1}</span>} title={step.title} subtitle={step.body} />
             ))}
-          </ol>
-        </section>
+          </List>
+        </Section>
       ) : null}
 
       {athleteNeedsGuide && setupGuideDismissedAt ? (
-        <div className="flex flex-col gap-3 rounded-[20px] border border-sk-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-semibold text-sk-ink">Setup steps are hidden.</p>
-          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm self-start" disabled={setupGuideSaving} onClick={() => void toggleGuide(false)}>
-            {setupGuideSaving ? "Saving..." : "Show setup steps"}
-          </button>
-        </div>
+        <Notice
+          action={
+            <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(false)}>
+              {setupGuideSaving ? "Saving..." : "Show setup steps"}
+            </Button>
+          }
+        >
+          Setup steps are hidden.
+        </Notice>
       ) : null}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
-        {/* What am I doing today */}
-        <section aria-label="Today" className="sk-card">
-          {loadingToday ? (
-            <p className="py-6 text-sk-mute">Getting today ready...</p>
-          ) : todaySession ? (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <p className="sk-label">Today</p>
-                {todayDone ? (
-                  <Tag tone="green">
-                    <Check className="size-3.5" weight="bold" />
-                    Completed
-                  </Tag>
-                ) : null}
-              </div>
-              <h2 className="mt-2 text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] text-sk-ink sm:text-[2.25rem]">
-                {todaySession.title}
-              </h2>
-              <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-sk-ink-2">
-                {todaySession.estimatedDuration ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Timer className="size-4 text-sk-mute" weight="bold" />
-                    {todaySession.estimatedDuration}
-                  </span>
-                ) : null}
-                {todaySession.blocks.length > 0 ? (
-                  <span>
-                    {inProgress
-                      ? `${completedBlockCount} of ${todaySession.blocks.length} blocks done`
-                      : `${todaySession.blocks.length} ${todaySession.blocks.length === 1 ? "block" : "blocks"}`}
-                  </span>
-                ) : null}
-              </p>
-
-              {todaySession.coachNote ? (
-                <p className="mt-4 rounded-2xl bg-sk-canvas p-4 text-sm leading-relaxed text-sk-ink-2">
-                  <span className="font-bold text-sk-ink">Coach says: </span>
-                  {todaySession.coachNote}
-                </p>
-              ) : null}
-
-              {todaySession.blocks.length > 0 ? (
-                <ol className="mt-4">
-                  {todaySession.blocks.map((block) => {
-                    const blockDone = todayDone || progress.completedBlockIds.includes(block.id)
-                    return (
-                      <li key={block.id} className="flex items-center gap-3 border-b border-sk-line py-3.5 last:border-b-0">
-                        <span
-                          className={cn(
-                            "flex size-11 shrink-0 items-center justify-center rounded-2xl",
-                            blockDone ? "bg-sk-green-tint text-[#07673f]" : "bg-sk-blue-tint text-sk-blue",
-                          )}
-                        >
-                          {blockDone ? <Check className="size-5" weight="bold" /> : <BlockIcon type={block.type} />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-bold text-sk-ink">{block.name}</span>
-                          {block.rows[0]?.target || block.focus ? (
-                            <span className="block truncate text-sm text-sk-mute">{block.rows.length > 0 ? block.rows.map((row) => row.target).filter((target, index, all) => all.indexOf(target) === index).join(", ") : block.focus}</span>
-                          ) : null}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ol>
-              ) : (
-                <p className="mt-4 text-sm text-sk-mute">Your coach has not added the detail for this session yet.</p>
-              )}
-
-              <div className="mt-5 hidden lg:block">{startButton}</div>
-            </>
-          ) : planDayToday ? (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <p className="sk-label">Today</p>
-                {todayDone ? (
-                  <Tag tone="green">
-                    <Check className="size-3.5" weight="bold" />
-                    Completed
-                  </Tag>
-                ) : null}
-              </div>
-              <h2 className="mt-2 text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] text-sk-ink sm:text-[2.25rem]">
-                {planDayToday.title}
-              </h2>
-              {planDayToday.focus ? <p className="mt-2 text-sk-ink-2">{planDayToday.focus}</p> : null}
-              <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-sk-ink-2">
-                {planDayToday.durationMinutes ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Timer className="size-4 text-sk-mute" weight="bold" />
-                    {planDayToday.durationMinutes} min
-                  </span>
-                ) : null}
-                {planDayToday.location ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="size-4 text-sk-mute" weight="bold" />
-                    {planDayToday.location}
-                  </span>
-                ) : null}
-              </p>
-              {planDayToday.coachNote ? (
-                <p className="mt-4 rounded-2xl bg-sk-canvas p-4 text-sm leading-relaxed text-sk-ink-2">
-                  <span className="font-bold text-sk-ink">Coach says: </span>
-                  {planDayToday.coachNote}
-                </p>
-              ) : null}
-              {planDayToday.blockPreview.length > 0 ? (
-                <ol className="mt-4">
-                  {planDayToday.blockPreview.map((block, index) => (
-                    <li key={`${index}-${block}`} className="flex items-center gap-3 border-b border-sk-line py-3 last:border-b-0">
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-sk-blue-tint text-sm font-extrabold text-sk-blue">
-                        {index + 1}
-                      </span>
-                      <span className="min-w-0 font-semibold text-sk-ink">{block}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              {planDaysToday.length > 1 ? (
-                <p className="mt-3 text-sm text-sk-mute">
-                  Plus {planDaysToday.length - 1} more today: {planDaysToday.slice(1).map((day) => day.title).join(", ")}.
-                </p>
-              ) : null}
-              <div className="mt-5 flex flex-wrap items-center gap-2">
-                {startButton}
-                <Link to="/athlete/training-plan" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3 lg:ml-0">
-                  See it in your plan
-                  <ArrowRight className="size-4" weight="bold" />
-                </Link>
-              </div>
-            </>
-          ) : hasPlan ? (
-            <div className="flex flex-col items-start gap-3">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-sk-green-tint text-[#07673f]">
-                <MoonStars className="size-6" weight="fill" />
-              </span>
-              <div>
-                <p className="sk-label">Today</p>
-                <h2 className="mt-1 text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] text-sk-ink sm:text-[2.25rem]">Rest day</h2>
-                <p className="mt-2 max-w-[46ch] text-sk-mute">
-                  {nextPlanDay
-                    ? `Nothing planned today. Next up is ${nextPlanDay.title} on ${longDate(nextPlanDay.date)}.`
-                    : `Nothing planned today, and that is the last of ${planName ?? "your plan"}.`}
-                </p>
-              </div>
-              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet sk-btn-sm">
-                Open your plan
-              </Link>
-            </div>
-          ) : upcomingSession ? (
-            <div className="flex flex-col items-start gap-3">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-sk-blue-tint text-sk-blue">
-                <CalendarBlank className="size-6" weight="fill" />
-              </span>
-              <div>
-                <p className="sk-label">Today</p>
-                <h2 className="mt-1 text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] text-sk-ink sm:text-[2.25rem]">Nothing today</h2>
-                <p className="mt-2 max-w-[46ch] text-sk-mute">
-                  Next up is {upcomingSession.title} on {longDate(upcomingSession.scheduledFor)}.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <EmptyState
-              icon={<CalendarBlank className="size-6" weight="fill" />}
-              title={planDays === null && isSupabase ? "No session today" : "No plan yet"}
+      <Split
+        main={
+          loadingToday ? (
+            <Section aria-label="Today" title="Today">
+              <SkeletonRows rows={2} label="Getting today ready" />
+            </Section>
+          ) : heroSession ? (
+            <HeroBlock
+              label={todayDone ? "Today's session, done" : "Today's session"}
+              meta={sessionMeta}
+              title={heroSession.title}
               body={
-                planDays === null && isSupabase
-                  ? "When your coach schedules a session for today, it shows up here."
-                  : "Your coach has not assigned you a training plan. Once they do, today's session shows up here."
+                sessionSummary ||
+                (todaySession ? "Your coach has not added the detail for this session yet." : undefined)
               }
               action={
-                <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet sk-btn-sm">
-                  Open your plan
-                </Link>
+                <HeroAction to="/athlete/log">
+                  {todayDone ? <Check className="size-[18px]" weight="bold" aria-hidden /> : <Play className="size-[18px]" weight="fill" aria-hidden />}
+                  {nextActionLabel}
+                </HeroAction>
               }
-              className="border-0 p-0"
             />
-          )}
-        </section>
-
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
-          {/* How is my week going */}
-          <Panel
-            title="This week"
-            hint={weekSummary}
-            action={
-              <Link to="/athlete/training-plan" className="sk-btn sk-btn-ghost sk-btn-sm -mr-2">
-                Plan
-                <ArrowRight className="size-4" weight="bold" />
-              </Link>
-            }
-          >
-            <ol className="grid grid-cols-7 gap-1">
-              {week.map((day) => (
-                <li
-                  key={day.key}
-                  aria-current={day.isToday ? "date" : undefined}
-                  aria-label={`${day.longLabel}: ${day.completed ? "session done" : day.planned ? "session planned" : hasPlan ? "rest day" : "nothing logged"}`}
-                  className="flex flex-col items-center gap-2"
-                >
-                  <span className={cn("text-xs font-bold", day.isToday ? "text-sk-blue" : "text-sk-mute")}>{day.label}</span>
-                  <span
-                    className={cn(
-                      "flex size-10 items-center justify-center rounded-full text-sm font-extrabold tabular-nums",
-                      day.completed
-                        ? "bg-sk-green text-white"
-                        : day.isToday
-                          ? "bg-sk-blue text-white"
-                          : day.planned
-                            ? "border-2 border-sk-ink bg-white text-sk-ink"
-                            : "bg-sk-canvas text-sk-mute",
-                    )}
-                  >
-                    {day.completed ? <Check className="size-5" weight="bold" /> : day.day}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sk-line pt-3 text-xs font-semibold text-sk-mute">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 rounded-full bg-sk-green" /> Done
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 rounded-full bg-sk-blue" /> Today
-              </span>
-              {hasPlan ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2.5 rounded-full border-2 border-sk-ink" /> Planned
-                </span>
-              ) : null}
-            </p>
-          </Panel>
-
-          {/* Is there anything I need to do */}
-          <Panel title="To do">
-            {todoCount > 0 ? (
-              <ul className="-my-2">
-                {overdueSession ? (
-                  <TodoRow
-                    to="/athlete/log"
-                    icon={<Play className="size-5" weight="fill" />}
-                    title={`Finish ${overdueSession.title}`}
-                    body={`Scheduled for ${longDate(overdueSession.scheduledFor)} and not logged yet.`}
-                  />
-                ) : null}
-                {showWellnessTodo ? (
-                  <TodoRow
-                    to="/athlete/wellness"
-                    icon={<Heartbeat className="size-5" weight="bold" />}
-                    title="Do today's wellness check-in"
-                    body="Sleep, soreness and mood. It takes a minute."
-                  />
-                ) : null}
-                {openTestWeek ? (
-                  <TodoRow
-                    to="/athlete/test-week"
-                    icon={<ClipboardText className="size-5" weight="bold" />}
-                    title={`Enter your results for ${openTestWeek.testWeekName}`}
-                    body={`${openTestWeek.tests.length} ${openTestWeek.tests.length === 1 ? "test" : "tests"}, open until ${longDate(openTestWeek.endDate)}.`}
-                  />
-                ) : null}
-                {showMockTestWeekTodo ? (
-                  <TodoRow
-                    to="/athlete/test-week"
-                    icon={<ClipboardText className="size-5" weight="bold" />}
-                    title="Enter your test week results"
-                    body="Your coach is waiting on these."
-                  />
-                ) : null}
-              </ul>
-            ) : wellnessKnown ? (
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#07673f]">
-                <CheckCircle className="size-5" weight="fill" />
-                Check-in done, nothing else waiting.
+          ) : (
+            <Section aria-label="Today" title={hasPlan ? "Rest day" : upcomingSession ? "Nothing today" : planDays === null && isSupabase ? "No session today" : "No plan yet"}>
+              <EmptyState
+                title={
+                  hasPlan
+                    ? nextPlanDay
+                      ? `Next up is ${nextPlanDay.title} on ${longDate(nextPlanDay.date)}.`
+                      : `That was the last session of ${planName ?? "your plan"}.`
+                    : upcomingSession
+                      ? `Next up is ${upcomingSession.title} on ${longDate(upcomingSession.scheduledFor)}.`
+                      : planDays === null && isSupabase
+                        ? "When your coach schedules a session for today, it shows up here."
+                        : "Your coach has not assigned you a training plan yet."
+                }
+                body={hasPlan || upcomingSession ? "Nothing is planned for today." : "Once they do, today's session shows up here."}
+                action={
+                  <LinkButton to="/athlete/training-plan" size="sm">
+                    Open your plan
+                  </LinkButton>
+                }
+              />
+            </Section>
+          )
+        }
+        side={
+          <Section title="This week" meta={weekSummary}>
+            <DayStrip days={week} aria-label="This week" className="mt-1" />
+            {planDaysToday.length > 1 ? (
+              <p className="mt-3 text-sm text-sk-mute">
+                Also today: {planDaysToday.slice(1).map((day) => day.title).join(", ")}.
               </p>
-            ) : (
-              <p className="text-sm text-sk-mute">Checking...</p>
-            )}
-          </Panel>
-        </div>
-      </div>
-    </div>
+            ) : null}
+          </Section>
+        }
+      />
+
+      <Section title="To do">
+        {todoCount > 0 ? (
+          <List>
+            {overdueSession ? (
+              <ListRow
+                to="/athlete/log"
+                leading={<StatusDot tone="coral" />}
+                title={`Finish ${overdueSession.title}`}
+                subtitle={`Planned for ${longDate(overdueSession.scheduledFor)}, not logged yet`}
+              />
+            ) : null}
+            {showWellnessTodo ? (
+              <ListRow to="/athlete/wellness" leading={<StatusDot tone="coral" />} title="Wellness check-in" subtitle="Sleep, soreness and mood. It takes a minute." />
+            ) : null}
+            {openTestWeek ? (
+              <ListRow
+                to="/athlete/test-week"
+                leading={<StatusDot tone="yellow" />}
+                title={openTestWeek.testWeekName}
+                subtitle={`${openTestWeek.tests.length} ${openTestWeek.tests.length === 1 ? "result" : "results"} to enter, closes ${longDate(openTestWeek.endDate)}`}
+              />
+            ) : null}
+            {showMockTestWeekTodo ? (
+              <ListRow to="/athlete/test-week" leading={<StatusDot tone="yellow" />} title="Test week results" subtitle="Your coach is waiting on these" />
+            ) : null}
+            {coachNote ? <ListRow to="/athlete/log" leading={<StatusDot tone="blue" />} title="Note from your coach" subtitle={coachNote} /> : null}
+          </List>
+        ) : wellnessKnown ? (
+          <p className="py-3.5">
+            <StatusText tone="green">Check-in done, nothing else waiting.</StatusText>
+          </p>
+        ) : (
+          <SkeletonRows rows={2} label="Checking what is left to do" />
+        )}
+      </Section>
+    </Screen>
   )
 }

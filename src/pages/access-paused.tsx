@@ -57,7 +57,7 @@ export function AccessPausedPage({ block, isClubAdmin }: { block: AccessBlock; i
   }
 
   return (
-    <div className="min-h-dvh bg-sk-canvas">
+    <div className="min-h-dvh bg-white">
       <main className="mx-auto flex min-h-dvh w-full max-w-[1080px] flex-col px-4 pb-12 pt-6 sm:px-6 sm:pt-8">
         <AuthBrand className="self-start" />
         <div className="flex flex-1 items-center py-8">

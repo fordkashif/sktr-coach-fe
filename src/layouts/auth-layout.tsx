@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 export function AuthLayout() {
   return (
-    <div className="min-h-dvh bg-sk-canvas">
+    <div className="min-h-dvh bg-white">
       <Outlet />
     </div>
   )

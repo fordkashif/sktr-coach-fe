@@ -5,6 +5,7 @@ import { seedMockSession } from "./helpers/session"
 // The coach is put on both teams with the mock mechanism in tests/e2e/helpers/session.ts (coachTeamIds).
 
 const main = (page: Page) => page.locator("#main-content")
+const topBar = (page: Page) => page.locator("header[data-shell='topbar']")
 const switcher = (page: Page) => page.getByRole("button", { name: /^Switch team/ })
 
 async function switchTo(page: Page, teamName: string) {
@@ -46,7 +47,7 @@ test("a coach on two teams can switch team and every screen follows", async ({ p
   expect(await page.evaluate(() => (window as typeof window & { __NO_RELOAD_MARK?: boolean }).__NO_RELOAD_MARK)).toBe(true)
 
   // The roster is team B's.
-  await page.locator("aside").getByRole("link", { name: "Teams" }).click()
+  await topBar(page).getByRole("link", { name: "Athletes" }).click()
   await expect(page).toHaveURL(/\/coach\/teams\/t4$/)
   await expect(main(page).getByRole("heading", { level: 1, name: "Throws Group" })).toBeVisible()
   await expect(main(page)).toContainText("Liam Patel")
@@ -94,7 +95,7 @@ test("a coach on two teams can switch team and every screen follows", async ({ p
   await page.goto("/coach/teams/t1")
   await expect(main(page).getByRole("heading", { level: 1, name: "Sprint Group" })).toBeVisible()
   await expect(switcher(page)).toContainText("Sprint Group")
-  await page.locator("aside").getByRole("link", { name: "Dashboard" }).click()
+  await topBar(page).getByRole("link", { name: "Dashboard" }).click()
   await expect(main(page).getByRole("heading", { level: 1, name: "Sprint Group" })).toBeVisible()
 
   // Switching while on a team page moves to the new team's page.

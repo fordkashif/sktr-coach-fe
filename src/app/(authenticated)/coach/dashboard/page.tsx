@@ -1,10 +1,27 @@
 import { useEffect, useState } from "react"
-import { ArrowDown, ArrowRight, ArrowUp, CheckCircle, ClipboardText, Minus, Timer, Trophy } from "@phosphor-icons/react"
+import { ArrowDown, ArrowUp, Minus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { LineChart } from "@mui/x-charts"
 import { useCoachTeamScope } from "@/lib/coach-teams"
-import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Stat, scoreTone } from "@/components/sk"
-import type { Athlete, PR, Team, TestWeekResult, TrendPoint } from "@/lib/mock-data"
+import {
+  Button,
+  DataTable,
+  EmptyState,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  ReadinessText,
+  Screen,
+  ScreenHeader,
+  Section,
+  SkeletonRows,
+  Split,
+  Stat,
+  StatStrip,
+  TableSub,
+  type DataTableColumn,
+} from "@/components/sk"
+import type { Athlete, PR, Team, TestWeekResult } from "@/lib/mock-data"
 import {
   getCoachDashboardSnapshotForCurrentUser,
   peekCachedCoachDashboardSnapshot,
@@ -14,16 +31,17 @@ import {
   getCurrentCoachOnboardingState,
   setCurrentCoachSetupGuideDismissed,
 } from "@/lib/data/coach/invite-claim-data"
+import { getCurrentPlanWeekForCoachTeam, pickTeamPlanWeek, type TeamPlanWeek } from "@/lib/data/training-plan/training-plan-data"
+import { dateKeyLocal } from "@/lib/athlete-session"
 import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
 
-const chartSx = {
-  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "transparent" },
-  "& .MuiChartsAxis-tickLabel": { fill: "#6a7385", fontSize: 12, fontFamily: "inherit", fontWeight: 600 },
-  "& .MuiChartsGrid-line": { stroke: "#e3e6ee" },
-  "& .MuiMarkElement-root": { strokeWidth: 2, fill: "#ffffff" },
-  "& .MuiLineElement-root": { strokeLinecap: "round", strokeWidth: 3 },
-}
+const TEST_COLUMNS: Array<{ header: string; pick: (row: TestWeekResult) => TestWeekResult["thirtyM"] }> = [
+  { header: "30m", pick: (row) => row.thirtyM },
+  { header: "Flying 30m", pick: (row) => row.flyingThirtyM },
+  { header: "150m", pick: (row) => row.oneHundredFiftyM },
+  { header: "Squat 1RM", pick: (row) => row.squat1RM },
+  { header: "CMJ", pick: (row) => row.cmj },
+]
 
 function Change({ change }: { change: "up" | "down" | "same" }) {
   if (change === "up") return <ArrowUp className="size-4 text-sk-green" weight="bold" aria-label="Improved" />
@@ -31,9 +49,10 @@ function Change({ change }: { change: "up" | "down" | "same" }) {
   return <Minus className="size-4 text-sk-mute" weight="bold" aria-label="No change" />
 }
 
-function shortDay(date: string) {
-  const parsed = new Date(date)
-  return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { weekday: "short" })
+/** Athletes who need a look come first, then by name. */
+function byAttention(left: Athlete, right: Athlete) {
+  const rank = (athlete: Athlete) => (athlete.readiness === "red" ? 0 : athlete.readiness === "yellow" ? 1 : athlete.adherence < 75 ? 2 : 3)
+  return rank(left) - rank(right) || left.name.localeCompare(right.name)
 }
 
 export default function CoachDashboardPage() {
@@ -55,8 +74,10 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
     prs: PR[]
     teams: Team[]
     tests: TestWeekResult[]
-    trendSeries: Record<string, TrendPoint[]>
-  }>({ athletes: [], prs: [], teams: [], tests: [], trendSeries: {} })
+  } | null>(null)
+  // undefined while loading, null when no published plan covers this week.
+  const [planWeek, setPlanWeek] = useState<TeamPlanWeek | null | undefined>(undefined)
+  const todayKey = dateKeyLocal(new Date())
 
   useEffect(() => {
     if (backendMode !== "supabase") return
@@ -79,11 +100,19 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       }
     }
 
+    const loadPlanWeek = async () => {
+      const result = await getCurrentPlanWeekForCoachTeam({ scopeTeamId: role === "coach" ? coachTeamId : null, todayKey })
+      if (cancelled) return
+      // The plan list is secondary: if it fails the column says there is no plan, the rest still works.
+      setPlanWeek(result.ok ? result.data : null)
+    }
+
     void loadSnapshot()
+    void loadPlanWeek()
     return () => {
       cancelled = true
     }
-  }, [backendMode, coachTeamId, role])
+  }, [backendMode, coachTeamId, role, todayKey])
 
   useEffect(() => {
     if (backendMode === "supabase") return
@@ -96,81 +125,46 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
           prs: module.mockPRs,
           teams: module.mockTeams,
           tests: module.mockTestWeekResults,
-          trendSeries: module.mockTrendSeries,
         })
+        // Demo data: the team's plan, on the week marked current.
+        const plan = module.mockTrainingPlans.find((item) => (coachTeamId ? item.teamId === coachTeamId : true))
+        const detail = plan ? module.mockAthleteTrainingPlanDetails.find((item) => item.planId === plan.id) : undefined
+        setPlanWeek(plan && detail ? pickTeamPlanWeek(plan, detail.weeks, todayKey, true) : null)
       }
     })
 
     return () => {
       cancelled = true
     }
-  }, [backendMode])
+  }, [backendMode, coachTeamId, todayKey])
 
-  const sourceAthletes = backendMode === "supabase" ? (backendSnapshot?.athletes ?? []) : mockData.athletes
-  const sourcePrs = backendMode === "supabase" ? (backendSnapshot?.prs ?? []) : mockData.prs
-  const sourceTests = backendMode === "supabase" ? (backendSnapshot?.tests ?? []) : mockData.tests
-  const sourceTeams = backendMode === "supabase" ? (backendSnapshot?.teams ?? []) : mockData.teams
-  const sourceTrends = backendMode === "supabase" ? (backendSnapshot?.trendSeries ?? {}) : mockData.trendSeries
+  const loading = backendMode === "supabase" ? backendSnapshot === null && !backendError : mockData === null
+  const sourceAthletes = (backendMode === "supabase" ? backendSnapshot?.athletes : mockData?.athletes) ?? []
+  const sourcePrs = (backendMode === "supabase" ? backendSnapshot?.prs : mockData?.prs) ?? []
+  const sourceTests = (backendMode === "supabase" ? backendSnapshot?.tests : mockData?.tests) ?? []
+  const sourceTeams = (backendMode === "supabase" ? backendSnapshot?.teams : mockData?.teams) ?? []
 
-  const scopedAthletes =
+  const scopedAthletes = (
     role === "coach" && coachTeamId ? sourceAthletes.filter((athlete) => athlete.teamId === coachTeamId) : sourceAthletes
+  )
+    .slice()
+    .sort(byAttention)
   const athleteIds = new Set(scopedAthletes.map((athlete) => athlete.id))
   const scopedPrs = sourcePrs.filter((pr) => athleteIds.has(pr.athleteId))
   const scopedTests = sourceTests.filter((row) => athleteIds.has(row.athleteId))
   const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
-  const readinessSummary = {
-    green: scopedAthletes.filter((athlete) => athlete.readiness === "green").length,
-    yellow: scopedAthletes.filter((athlete) => athlete.readiness === "yellow").length,
-    red: scopedAthletes.filter((athlete) => athlete.readiness === "red").length,
-  }
-
+  const readyCount = scopedAthletes.filter((athlete) => athlete.readiness === "green").length
+  const needLookCount = scopedAthletes.filter((athlete) => athlete.readiness !== "green" || athlete.adherence < 75).length
   const adherenceAverage =
     scopedAthletes.length > 0
       ? Math.round(scopedAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / scopedAthletes.length)
       : 0
+  const athleteTotal = scopedAthletes.length
 
   const rosterHref = role === "coach" && coachTeamId ? `/coach/teams/${coachTeamId}` : "/coach/teams"
-  const alertRows = scopedAthletes
-    .filter((athlete) => athlete.readiness !== "green" || athlete.adherence < 75)
-    .sort((left, right) => left.adherence - right.adherence)
-    .slice(0, 5)
-
-  const prMomentum = Object.entries(
-    scopedPrs.reduce<Record<string, number>>((acc, pr) => {
-      acc[pr.category] = (acc[pr.category] ?? 0) + 1
-      return acc
-    }, {}),
-  )
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, 5)
-
-  const adherenceRows = [...scopedAthletes].sort((left, right) => right.adherence - left.adherence).slice(0, 6)
-
-  const trendRows = scopedAthletes.map((athlete) => sourceTrends[athlete.id]).filter((series): series is NonNullable<
-    typeof sourceTrends[string]
-  > => Boolean(series))
-
-  const trendDates = trendRows[0]?.map((point) => point.date) ?? []
-  const readinessTrendValues = trendDates.map((date, index) => {
-    const dayPoints = trendRows
-      .map((series) => series[index])
-      .filter((point) => point?.date === date)
-    if (!dayPoints.length) return 0
-    return Math.round(dayPoints.reduce((sum, point) => sum + point.readiness, 0) / dayPoints.length)
-  })
-  const trainingLoadValues = trendDates.map((date, index) => {
-    const dayPoints = trendRows
-      .map((series) => series[index])
-      .filter((point) => point?.date === date)
-    if (!dayPoints.length) return 0
-    return Math.round(dayPoints.reduce((sum, point) => sum + point.trainingLoad, 0) / dayPoints.length)
-  })
-  const readinessTotal = scopedAthletes.length
-  const prTotal = scopedPrs.length
   const coachNeedsGuide =
     backendMode === "supabase" && (sourceTeams.length === 0 || scopedAthletes.length === 0 || scopedTests.length === 0)
-  const latestReadiness = readinessTrendValues.at(-1)
 
   const toggleGuide = async (dismissed: boolean) => {
     setSetupGuideSaving(true)
@@ -185,340 +179,183 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
 
   // A coach only sees the teams a club admin assigned them to. With none, there is nothing to invite into yet.
   const coachHasNoTeam = backendMode === "supabase" && role === "coach" && backendSnapshot !== null && sourceTeams.length === 0
+  const weekLine = planWeek ? `Week ${planWeek.weekNumber} of ${planWeek.totalWeeks}${planWeek.emphasis ? `, ${planWeek.emphasis.toLowerCase()}` : ""}. ` : ""
   const lede = coachHasNoTeam
     ? "You are not assigned to a team yet. Ask a club admin to add you to one, then your roster, readiness and adherence show up here."
-    : readinessTotal === 0
-      ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
-      : alertRows.length === 0
-        ? `${readinessTotal} ${readinessTotal === 1 ? "athlete" : "athletes"}, all on track today.`
-        : `${readinessTotal} ${readinessTotal === 1 ? "athlete" : "athletes"}. ${alertRows.length} ${alertRows.length === 1 ? "needs" : "need"} a look today.`
+    : loading
+      ? "Getting your squad..."
+      : athleteTotal === 0
+        ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
+        : needLookCount === 0
+          ? `${weekLine}${athleteTotal} ${athleteTotal === 1 ? "athlete" : "athletes"}, all on track today.`
+          : `${weekLine}${needLookCount} ${needLookCount === 1 ? "athlete needs" : "athletes need"} a look today.`
+
+  const athleteColumns: Array<DataTableColumn<Athlete>> = [
+    {
+      key: "athlete",
+      header: "Athlete",
+      cell: (athlete) => (
+        <Link to={`/coach/athletes/${athlete.id}`} className="hover:text-sk-blue-link">
+          {athlete.name}
+          <TableSub>{athlete.primaryEvent}</TableSub>
+        </Link>
+      ),
+    },
+    { key: "readiness", header: "Readiness", phone: "plain", cell: (athlete) => <ReadinessText status={athlete.readiness} /> },
+    { key: "checkin", header: "Last check-in", phone: "hide", cell: (athlete) => athlete.lastWellness || "None yet" },
+    { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => `${athlete.adherence}%` },
+  ]
+
+  const testColumns: Array<DataTableColumn<TestWeekResult>> = [
+    {
+      key: "athlete",
+      header: "Athlete",
+      cell: (row) => (
+        <Link to={`/coach/athletes/${row.athleteId}`} className="hover:text-sk-blue-link">
+          {row.athleteName}
+        </Link>
+      ),
+    },
+    ...TEST_COLUMNS.map((column) => ({
+      key: column.header,
+      header: column.header,
+      align: "right" as const,
+      cell: (row: TestWeekResult) => {
+        const metric = column.pick(row)
+        return metric ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-sk-ink">
+            {metric.value}
+            <Change change={metric.change} />
+          </span>
+        ) : (
+          "n/a"
+        )
+      },
+    })),
+  ]
 
   return (
-    <div className="sk-page">
-      {backendError ? (
-        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-          Could not load the latest data: {backendError}
-        </p>
-      ) : null}
-
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title={scopedTeam?.name ?? "Your squad"}
         lede={lede}
         actions={
           <>
-            <Link to="/coach/test-week" className="sk-btn sk-btn-quiet">
-              <Timer className="size-5" weight="bold" />
-              New test week
-            </Link>
-            <Link to="/coach/training-plan" className="sk-btn sk-btn-primary">
-              <ClipboardText className="size-5" weight="bold" />
+            <LinkButton to="/coach/test-week">New test week</LinkButton>
+            <LinkButton to="/coach/training-plan" variant="primary">
               Build a plan
-            </Link>
+            </LinkButton>
           </>
         }
       />
 
+      {backendError ? <Notice tone="error">Could not load the latest data: {backendError}</Notice> : null}
+
       {coachNeedsGuide && !setupGuideDismissedAt ? (
-        <section className="rounded-[20px] bg-sk-yellow p-5 sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="sk-h2">Get set up in three steps</h2>
-              <p className="mt-1 max-w-[56ch] text-sk-ink-2">Do these in order and your dashboard fills itself in.</p>
-            </div>
-            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm self-start" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
+        <Section
+          title="Get set up in three steps"
+          hint="Do these in order and your dashboard fills itself in."
+          action={
+            <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
               {setupGuideSaving ? "Saving..." : "Hide for now"}
-            </button>
-          </div>
-          <ol className="mt-5 grid gap-3 md:grid-cols-3">
+            </Button>
+          }
+        >
+          <List ordered>
             {[
-              { step: 1, title: "Check your team", body: "See which squad and event groups you coach.", links: [{ to: "/coach/teams", label: "Open teams" }] },
-              { step: 2, title: "Invite your athletes", body: "Review the roster and send invite links to anyone missing.", links: [{ to: rosterHref, label: "Open roster" }] },
-              {
-                step: 3,
-                title: "Build the first cycle",
-                body: "Publish a training plan or set up a test week.",
-                links: [
-                  { to: "/coach/training-plan", label: "Training plans" },
-                  { to: "/coach/test-week", label: "Test weeks" },
-                ],
-              },
-            ].map((item) => (
-              <li key={item.step} className="flex flex-col gap-3 rounded-2xl bg-white p-4">
-                <span className="flex size-9 items-center justify-center rounded-full bg-sk-ink text-sm font-extrabold text-white">{item.step}</span>
-                <div>
-                  <p className="sk-h3">{item.title}</p>
-                  <p className="mt-1 text-sm text-sk-mute">{item.body}</p>
-                </div>
-                <div className="mt-auto flex flex-wrap gap-2">
-                  {item.links.map((link) => (
-                    <Link key={link.to} to={link.to} className="sk-btn sk-btn-quiet sk-btn-sm">
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              </li>
+              { to: "/coach/teams", title: "Check your team", body: "See which squad and event groups you coach." },
+              { to: rosterHref, title: "Invite your athletes", body: "Review the roster and send invite links to anyone missing." },
+              { to: "/coach/training-plan", title: "Build the first cycle", body: "Publish a training plan, or set up a test week from Test weeks." },
+            ].map((step, index) => (
+              <ListRow key={step.title} to={step.to} leading={<span className="w-5 text-center font-bold text-sk-blue-link">{index + 1}</span>} title={step.title} subtitle={step.body} />
             ))}
-          </ol>
-        </section>
+          </List>
+        </Section>
       ) : null}
 
       {coachNeedsGuide && setupGuideDismissedAt ? (
-        <div className="flex flex-col gap-3 rounded-[20px] border border-sk-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-semibold text-sk-ink">Setup is not finished yet.</p>
-          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(false)}>
-            {setupGuideSaving ? "Saving..." : "Show setup steps"}
-          </button>
-        </div>
+        <Notice
+          action={
+            <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(false)}>
+              {setupGuideSaving ? "Saving..." : "Show setup steps"}
+            </Button>
+          }
+        >
+          Setup is not finished yet.
+        </Notice>
       ) : null}
 
-      <section aria-label="Today at a glance" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat tone="blue" label="Plan adherence" value={adherenceAverage} unit="%" hint="Squad average" />
-        <Stat tone="green" label="Ready to train" value={readinessSummary.green} hint={`of ${readinessTotal}`} />
-        <Stat
-          tone={alertRows.length > 0 ? "coral" : "plain"}
-          label="Need a look"
-          value={alertRows.length}
-          hint={alertRows.length > 0 ? "Readiness or adherence" : "Nobody flagged"}
-        />
-        <Stat tone="yellow" label="PRs logged" value={prTotal} hint={prMomentum[0] ? `Most in ${prMomentum[0][0]}` : "None yet"} />
-      </section>
+      <StatStrip aria-label="Today at a glance">
+        <Stat label="Plan adherence" value={adherenceAverage} unit="%" />
+        <Stat label="Ready to train" value={readyCount} of={athleteTotal} />
+        <Stat label="Need a look" value={needLookCount} />
+        <Stat label="Personal records" value={scopedPrs.length} />
+      </StatStrip>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <Panel
-          title="Who needs you"
-          hint="Athletes flagged on readiness, or under 75% adherence."
-          action={
-            <Link to={rosterHref} className="sk-btn sk-btn-ghost sk-btn-sm">
-              Full roster
-              <ArrowRight className="size-4" weight="bold" />
-            </Link>
-          }
-        >
-          {alertRows.length > 0 ? (
-            <ul>
-              {alertRows.map((athlete) => (
-                <li key={athlete.id}>
-                  <Link
-                    to={`/coach/athletes/${athlete.id}`}
-                    className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-sk-line py-4 last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_minmax(140px,200px)_auto]"
-                  >
-                    <Initials name={athlete.name} />
-                    <span className="min-w-0">
-                      <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{athlete.name}</span>
-                      <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span>
-                    </span>
-                    <span className="col-span-3 row-start-2 sm:col-span-1 sm:row-start-auto">
-                      <span className="mb-1.5 flex items-baseline justify-between text-sm">
-                        <span className="text-sk-mute">Adherence</span>
-                        <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
-                      </span>
-                      <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
-                    </span>
-                    <ReadinessTag status={athlete.readiness} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState
-              icon={<CheckCircle className="size-6" weight="fill" />}
-              title="Nobody is flagged"
-              body="When an athlete reports low readiness or falls behind on the plan, they show up here."
-              className="border-0 bg-sk-canvas"
-            />
-          )}
-        </Panel>
-
-        <Panel title="Readiness" hint={readinessTrendValues.length > 0 ? `Squad average, last ${readinessTrendValues.length} check-ins` : undefined}>
-          {readinessTrendValues.length > 0 ? (
-            <>
-              <p className="sk-num text-[3.5rem]">
-                {latestReadiness}
-                <span className="ml-1 text-base font-bold tracking-normal text-sk-mute">/ 100 latest</span>
-              </p>
-              <div className="mt-5 flex h-36 items-end gap-2" role="img" aria-label={`Readiness by check-in: ${readinessTrendValues.join(", ")}`}>
-                {readinessTrendValues.map((value, index) => {
-                  const isLatest = index === readinessTrendValues.length - 1
+      <Split
+        main={
+          <Section title="Athletes" action={<Link to={rosterHref} className="sk-link">Open roster</Link>}>
+            {loading ? (
+              <SkeletonRows rows={4} label="Loading athletes" />
+            ) : scopedAthletes.length > 0 ? (
+              <DataTable caption="Athletes on this team" columns={athleteColumns} rows={scopedAthletes} rowKey={(athlete) => athlete.id} />
+            ) : (
+              <EmptyState
+                title="No athletes yet"
+                body="Readiness and adherence show up here once athletes are on your roster."
+                action={
+                  <LinkButton to={rosterHref} size="sm">
+                    Invite athletes
+                  </LinkButton>
+                }
+              />
+            )}
+          </Section>
+        }
+        side={
+          <Section title="This week's plan">
+            {planWeek === undefined ? (
+              <SkeletonRows rows={4} label="Loading this week's plan" />
+            ) : planWeek && planWeek.days.length > 0 ? (
+              <List>
+                {planWeek.days.map((day) => {
+                  const isToday = backendMode === "supabase" ? day.date === todayKey : day.dayLabel === new Date().toLocaleDateString("en-GB", { weekday: "short" })
                   return (
-                    <div key={trendDates[index]} className="flex h-full flex-1 flex-col justify-end gap-2">
-                      <div
-                        className={cn("flex items-start justify-center rounded-xl pt-2 text-xs font-bold", isLatest ? "bg-sk-blue text-white" : "bg-sk-blue-tint text-[#1638b8]")}
-                        style={{ height: `${Math.max(value, 18)}%` }}
-                      >
-                        {value}
-                      </div>
-                      <p className={cn("text-center text-xs font-semibold", isLatest ? "text-sk-ink" : "text-sk-mute")}>{shortDay(trendDates[index])}</p>
-                    </div>
+                    <ListRow
+                      key={day.id}
+                      className="items-start"
+                      aria-current={isToday ? "date" : undefined}
+                      leading={<span className={isToday ? "w-10 text-left font-bold text-sk-blue" : "w-10 text-left font-bold text-sk-mute"}>{day.dayLabel}</span>}
+                      title={<span className="font-bold">{day.title}</span>}
+                      subtitle={isToday && day.summary ? `Today. ${day.summary}` : isToday ? "Today" : day.summary}
+                    />
                   )
                 })}
-              </div>
-              <dl className="mt-5 grid grid-cols-3 gap-2 border-t border-sk-line pt-4 text-center">
-                {[
-                  { label: "Ready", value: readinessSummary.green, dot: "bg-sk-green" },
-                  { label: "Watch", value: readinessSummary.yellow, dot: "bg-sk-yellow" },
-                  { label: "Review", value: readinessSummary.red, dot: "bg-sk-coral" },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <dd className="sk-num text-2xl">{item.value}</dd>
-                    <dt className="mt-1 inline-flex items-center gap-1.5 text-sm text-sk-mute">
-                      <span className={cn("size-2 rounded-full", item.dot)} />
-                      {item.label}
-                    </dt>
-                  </div>
-                ))}
-              </dl>
-            </>
-          ) : (
-            <EmptyState
-              title="No check-ins yet"
-              body="Readiness appears once athletes start submitting their daily wellness check-in."
-              className="border-0 bg-sk-canvas"
-            />
-          )}
-        </Panel>
-      </div>
+              </List>
+            ) : (
+              <EmptyState
+                title="No plan this week"
+                body="Publish a training plan and the week's sessions are listed here."
+                action={
+                  <LinkButton to="/coach/training-plan" size="sm">
+                    Open plans
+                  </LinkButton>
+                }
+              />
+            )}
+          </Section>
+        }
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <Panel
-          title="Readiness against training load"
-          action={
-            <div className="flex items-center gap-4 text-sm font-semibold text-sk-ink-2">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-1 w-4 rounded-full bg-sk-blue" /> Readiness
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-1 w-4 rounded-full bg-sk-ink" /> Load
-              </span>
-            </div>
-          }
-        >
-          {readinessTrendValues.length > 1 ? (
-            <LineChart
-              xAxis={[
-                {
-                  scaleType: "point",
-                  data: trendDates.map((date) => new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
-                },
-              ]}
-              yAxis={[{ min: 0, max: 100 }]}
-              series={[
-                { data: readinessTrendValues, label: "Readiness", color: "#2152ff", curve: "monotoneX" },
-                { data: trainingLoadValues, label: "Training load", color: "#0e1320", curve: "monotoneX" },
-              ]}
-              grid={{ horizontal: true }}
-              margin={{ left: 28, right: 16, top: 12, bottom: 24 }}
-              height={240}
-              hideLegend
-              sx={chartSx}
-            />
-          ) : (
-            <EmptyState
-              title="Not enough history yet"
-              body="This chart needs at least two days of wellness and session data."
-              className="border-0 bg-sk-canvas"
-            />
-          )}
-        </Panel>
-
-        <Panel title="Adherence by athlete" hint="Share of planned sessions completed.">
-          {adherenceRows.length > 0 ? (
-            <ul className="space-y-4">
-              {adherenceRows.map((athlete) => (
-                <li key={athlete.id}>
-                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                    <Link to={`/coach/athletes/${athlete.id}`} className="truncate font-semibold text-sk-ink hover:text-sk-blue">
-                      {athlete.name}
-                    </Link>
-                    <span className="font-bold tabular-nums text-sk-ink">{athlete.adherence}%</span>
-                  </div>
-                  <Meter value={athlete.adherence} tone={scoreTone(athlete.adherence)} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState title="No athletes yet" body="Adherence shows up once athletes are on your roster and have a plan." className="border-0 bg-sk-canvas" />
-          )}
-        </Panel>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-        <Panel title="Where the PRs are" hint={prTotal > 0 ? `${prTotal} logged in total` : undefined}>
-          {prMomentum.length > 0 ? (
-            <ul className="space-y-4">
-              {prMomentum.map(([category, count]) => (
-                <li key={category} className="grid grid-cols-[minmax(72px,auto)_minmax(0,1fr)_auto] items-center gap-3">
-                  <span className="font-semibold text-sk-ink">{category}</span>
-                  <span className="h-7 rounded-lg bg-sk-canvas">
-                    <span className="block h-full rounded-lg bg-sk-yellow" style={{ width: `${Math.max((count / Math.max(prMomentum[0][1], 1)) * 100, 8)}%` }} />
-                  </span>
-                  <span className="sk-num w-6 text-right text-xl">{count}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState
-              icon={<Trophy className="size-6" weight="fill" />}
-              title="No PRs logged yet"
-              body="Personal records land here by category as athletes hit them."
-              className="border-0 bg-sk-canvas"
-            />
-          )}
-        </Panel>
-
-        <Panel
-          title="Latest test results"
-          action={
-            <Link to="/coach/test-week" className="sk-btn sk-btn-ghost sk-btn-sm">
-              Test weeks
-              <ArrowRight className="size-4" weight="bold" />
-            </Link>
-          }
-        >
-          {scopedTests.length > 0 ? (
-            <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-              <table className="w-full min-w-[560px] text-left">
-                <thead>
-                  <tr className="border-b border-sk-line text-sm text-sk-mute">
-                    <th scope="col" className="py-2 pr-4 font-semibold">Athlete</th>
-                    {["30m", "Flying 30m", "150m", "Squat 1RM", "CMJ"].map((label) => (
-                      <th key={label} scope="col" className="px-2 py-2 text-right font-semibold">{label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {scopedTests.map((row) => (
-                    <tr key={row.athleteId} className="border-b border-sk-line last:border-b-0">
-                      <th scope="row" className="py-3.5 pr-4 font-bold text-sk-ink">
-                        <Link to={`/coach/athletes/${row.athleteId}`} className="hover:text-sk-blue">{row.athleteName}</Link>
-                      </th>
-                      {[row.thirtyM, row.flyingThirtyM, row.oneHundredFiftyM, row.squat1RM, row.cmj].map((metric, index) => (
-                        <td key={index} className="px-2 py-3.5 text-right">
-                          <span className="inline-flex items-center justify-end gap-1 font-semibold tabular-nums text-sk-ink">
-                            {metric?.value ?? <span className="text-sk-mute">n/a</span>}
-                            {metric ? <Change change={metric.change} /> : null}
-                          </span>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Timer className="size-6" weight="fill" />}
-              title="No test results yet"
-              body="Publish a test week and results appear here as athletes submit them."
-              action={
-                <Link to="/coach/test-week" className="sk-btn sk-btn-ink sk-btn-sm">
-                  Set up a test week
-                </Link>
-              }
-              className="border-0 bg-sk-canvas"
-            />
-          )}
-        </Panel>
-      </div>
-    </div>
+      <Section title="Latest test results" action={<Link to="/coach/test-week" className="sk-link">Test weeks</Link>}>
+        {loading ? (
+          <SkeletonRows rows={3} label="Loading test results" />
+        ) : scopedTests.length > 0 ? (
+          <DataTable caption="Latest test results by athlete" columns={testColumns} rows={scopedTests} rowKey={(row) => row.athleteId} />
+        ) : (
+          <EmptyState title="No test results yet" body="Publish a test week and results appear here as athletes submit them." />
+        )}
+      </Section>
+    </Screen>
   )
 }

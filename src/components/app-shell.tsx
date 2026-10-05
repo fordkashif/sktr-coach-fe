@@ -5,23 +5,21 @@ import {
   Bell,
   Briefcase,
   Buildings,
+  CalendarBlank,
   ChartBar,
   ClipboardText,
+  DotsThree,
   House,
   type Icon,
-  List,
   ListChecks,
-  NotePencil,
-  Play,
+  Plus,
   Receipt,
-  SignOut,
   SquaresFour,
   Timer,
   Tray,
   TrendUp,
   User,
   UsersThree,
-  X,
 } from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
@@ -44,45 +42,65 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Initials } from "@/components/sk"
-import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Avatar, Button, EmptyState, List, ListRow, Notice, Sheet, SkeletonRows, StatusDot } from "@/components/sk"
 
-type ShellLink = { href: string; label: string; icon: Icon }
+/**
+ * App shell. See DESIGN.md, "Navigation".
+ * Desktop (1024px and up): one top bar. Brand, team switcher, the role's destinations, bell, profile menu.
+ * Phone: a slim app bar (brand or team switcher or back, bell, profile menu) and a bottom tab bar of at
+ * most five items. A role with more destinations gets "More" as the fifth, opening a sheet.
+ * There is no sidebar.
+ */
+
+type ShellLink = {
+  id: string
+  href: string
+  /** Desktop top bar label. */
+  label: string
+  /** Phone tab label when the desktop one is too long. */
+  short?: string
+  icon: Icon
+}
 
 const coachLinks: ShellLink[] = [
-  { href: "/coach/dashboard", label: "Dashboard", icon: SquaresFour },
-  { href: "/coach/teams", label: "Teams", icon: UsersThree },
-  { href: "/coach/training-plan", label: "Plan", icon: ClipboardText },
-  { href: "/coach/test-week", label: "Test", icon: Timer },
-  { href: "/coach/reports", label: "Reports", icon: ChartBar },
+  { id: "dashboard", href: "/coach/dashboard", label: "Dashboard", icon: SquaresFour },
+  { id: "teams", href: "/coach/teams", label: "Athletes", icon: UsersThree },
+  { id: "plans", href: "/coach/training-plan", label: "Plans", icon: ClipboardText },
+  { id: "tests", href: "/coach/test-week", label: "Test weeks", short: "Tests", icon: Timer },
+  { id: "reports", href: "/coach/reports", label: "Reports", icon: ChartBar },
 ]
 
+/** The athlete's third item is the log action: a raised round button in the phone tab bar. */
+const ATHLETE_LOG_ID = "log"
 const athleteLinks: ShellLink[] = [
-  { href: "/athlete/home", label: "Home", icon: House },
-  { href: "/athlete/training-plan", label: "Plan", icon: ClipboardText },
-  { href: "/athlete/log", label: "Log", icon: NotePencil },
-  { href: "/athlete/trends", label: "Progress", icon: TrendUp },
-  { href: "/athlete/profile", label: "Profile", icon: User },
+  { id: "home", href: "/athlete/home", label: "Home", icon: House },
+  { id: "plan", href: "/athlete/training-plan", label: "Plan", icon: CalendarBlank },
+  { id: ATHLETE_LOG_ID, href: "/athlete/log", label: "Log", icon: Plus },
+  { id: "progress", href: "/athlete/trends", label: "Progress", icon: TrendUp },
+  { id: "profile", href: "/athlete/profile", label: "Profile", short: "Me", icon: User },
 ]
 
 const clubAdminLinks: ShellLink[] = [
-  { href: "/club-admin/dashboard", label: "Dashboard", icon: SquaresFour },
-  { href: "/club-admin/profile", label: "Profile", icon: Buildings },
-  { href: "/club-admin/users", label: "People", icon: UsersThree },
-  { href: "/club-admin/teams", label: "Teams", icon: ClipboardText },
-  { href: "/club-admin/reports", label: "Reports", icon: ChartBar },
-  { href: "/club-admin/audit", label: "Activity", icon: ListChecks },
-  { href: "/club-admin/billing", label: "Billing", icon: Receipt },
+  { id: "dashboard", href: "/club-admin/dashboard", label: "Dashboard", icon: SquaresFour },
+  { id: "people", href: "/club-admin/users", label: "People", icon: UsersThree },
+  { id: "teams", href: "/club-admin/teams", label: "Teams", icon: ClipboardText },
+  { id: "reports", href: "/club-admin/reports", label: "Reports", icon: ChartBar },
+  { id: "club", href: "/club-admin/profile", label: "Club", icon: Buildings },
+  { id: "activity", href: "/club-admin/audit", label: "Activity", icon: ListChecks },
+  { id: "billing", href: "/club-admin/billing", label: "Billing", icon: Receipt },
 ]
 
 const platformAdminLinks: ShellLink[] = [
-  { href: "/platform-admin/dashboard", label: "Dashboard", icon: SquaresFour },
-  { href: "/platform-admin/requests", label: "Requests", icon: Tray },
-  { href: "/platform-admin/tenants", label: "Clubs", icon: Buildings },
-  { href: "/platform-admin/billing", label: "Billing", icon: Receipt },
-  { href: "/platform-admin/commercial", label: "Packages", icon: Briefcase },
-  { href: "/platform-admin/audit", label: "Activity", icon: ListChecks },
+  { id: "dashboard", href: "/platform-admin/dashboard", label: "Dashboard", icon: SquaresFour },
+  { id: "requests", href: "/platform-admin/requests", label: "Requests", icon: Tray },
+  { id: "clubs", href: "/platform-admin/tenants", label: "Clubs", icon: Buildings },
+  { id: "billing", href: "/platform-admin/billing", label: "Billing", icon: Receipt },
+  { id: "packages", href: "/platform-admin/commercial", label: "Packages", icon: Briefcase },
+  { id: "activity", href: "/platform-admin/audit", label: "Activity", icon: ListChecks },
 ]
+
+/** The phone tab bar holds five items. With more destinations, four stay and the rest go behind "More". */
+const PHONE_TAB_LIMIT = 5
 
 function getRoleLabel(role: string) {
   if (role === "platform-admin") return "Platform Admin"
@@ -140,11 +158,11 @@ function prefetchCoachTestWeekRoute() {
   return coachTestWeekRoutePrefetchPromise
 }
 
-function prefetchCoachLink(linkLabel: string) {
-  if (linkLabel === "Teams") return prefetchCoachTeamRoute()
-  if (linkLabel === "Reports") return prefetchCoachReportsRoute()
-  if (linkLabel === "Plan") return prefetchCoachTrainingPlanRoute()
-  if (linkLabel === "Test") return prefetchCoachTestWeekRoute()
+function prefetchCoachLink(linkId: string) {
+  if (linkId === "teams") return prefetchCoachTeamRoute()
+  if (linkId === "reports") return prefetchCoachReportsRoute()
+  if (linkId === "plans") return prefetchCoachTrainingPlanRoute()
+  if (linkId === "tests") return prefetchCoachTestWeekRoute()
   return Promise.resolve()
 }
 
@@ -154,6 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
@@ -161,7 +180,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showTeamSwitcher = role === "coach" && coachTeams.length > 1
   const isRestrictedClubAdminSetupRoute =
     pathname === "/club-admin/setup/billing" || pathname === "/club-admin/get-started"
-  const useAthleteHomeActionNav = pathname.startsWith("/athlete/home")
   const hideMobileNav = mobileDetailMode
 
   // The Teams tab opens the selected team. With no team it opens the page that explains why.
@@ -183,16 +201,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return clubAdminLinks
   }, [coachTeamsHref, role])
 
-  // A coach's Teams tab points at one team, so it stays lit on any team page.
+  // A coach's Athletes tab points at one team, so it stays lit on any team or athlete page.
   const isLinkActive = (link: ShellLink) =>
-    role === "coach" && link.label === "Teams" ? pathname.startsWith("/coach/teams") : pathname.startsWith(link.href)
+    role === "coach" && link.id === "teams"
+      ? pathname.startsWith("/coach/teams") || pathname.startsWith("/coach/athletes")
+      : pathname.startsWith(link.href)
 
-  const useAthleteDrawerMenu = role === "athlete"
+  const homeHref = links[0]?.href ?? "/"
+  const accountHref = role === "athlete" ? "/athlete/profile" : "/account"
+  const phoneTabs = links.length > PHONE_TAB_LIMIT ? links.slice(0, PHONE_TAB_LIMIT - 1) : links
+  const moreLinks = links.length > PHONE_TAB_LIMIT ? links.slice(PHONE_TAB_LIMIT - 1) : []
+  const moreActive = moreLinks.some(isLinkActive)
+
+  const isAthlete = role === "athlete"
   const displayName = displayNameFromEmail(userEmail, role)
   const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.state === "unread")
 
   useEffect(() => {
-    if (getBackendMode() !== "supabase" || useAthleteDrawerMenu) return
+    if (getBackendMode() !== "supabase" || isAthlete) return
 
     let cancelled = false
 
@@ -216,7 +242,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [pathname, role, useAthleteDrawerMenu, userEmail])
+  }, [pathname, role, isAthlete, userEmail])
   useEffect(() => {
     const scroller = document.getElementById("main-content")
     if (scroller) {
@@ -263,349 +289,279 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     navigate("/login")
   }
 
-  const prefetchHandlers = (label: string) =>
+  const prefetchHandlers = (linkId: string) =>
     role === "coach"
       ? {
-          onMouseEnter: () => void prefetchCoachLink(label),
-          onFocus: () => void prefetchCoachLink(label),
-          onPointerDown: () => void prefetchCoachLink(label),
+          onMouseEnter: () => void prefetchCoachLink(linkId),
+          onFocus: () => void prefetchCoachLink(linkId),
+          onPointerDown: () => void prefetchCoachLink(linkId),
         }
       : {}
 
-  const iconButton =
-    "relative inline-flex size-11 items-center justify-center rounded-[14px] border border-sk-line bg-white text-sk-ink transition-colors hover:border-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+  const markAllRead = async () => {
+    const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
+    const result = await markNotificationsRead(pendingIds)
+    if (!result.ok) {
+      setNotificationsError(result.error.message)
+      return
+    }
+    setNotifications((current) =>
+      current.map((item) => (pendingIds.includes(item.userNotificationId) ? { ...item, state: "read", readAt: new Date().toISOString() } : item)),
+    )
+    setNotificationsError(null)
+  }
 
-  const profileMenuItems = (
-    <>
-      <DropdownMenuItem asChild>
-        <Link to="/settings/notifications">Notification settings</Link>
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onSelect={() => {
-          void handleSignOut()
-        }}
-      >
-        Sign out
-      </DropdownMenuItem>
-    </>
+
+  const showChrome = !isRestrictedClubAdminSetupRoute
+  const showBell = showChrome && !isAthlete
+
+  const bell = showBell ? (
+    <button type="button" className="sk-icon-btn" aria-label="Notifications" onClick={() => setPanelOpen(true)}>
+      <Bell className="size-5" weight="bold" aria-hidden />
+      {unreadNotifications.length > 0 ? (
+        <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral-ink px-1 text-[11px] font-bold leading-5 text-white">
+          {unreadNotifications.length}
+          <span className="sr-only"> unread</span>
+        </span>
+      ) : null}
+    </button>
+  ) : null
+
+  const menuItem = "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold text-sk-ink focus:bg-sk-soft"
+  const profileMenu = (size: "md" | "lg") => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+          aria-label="Open profile menu"
+        >
+          <Avatar name={displayName} size={size} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-64 rounded-2xl border-sk-line-strong bg-white p-1.5">
+        <div className="px-3 pb-2 pt-2">
+          <p className="truncate text-base font-bold text-sk-ink">{displayName}</p>
+          <p className="truncate text-sm text-sk-mute">{userEmail ?? getRoleLabel(role)}</p>
+        </div>
+        <div className="my-1 h-px bg-sk-line" />
+        <DropdownMenuItem asChild className={menuItem}>
+          <Link to={accountHref}>Your account</Link>
+        </DropdownMenuItem>
+        {role === "athlete" ? (
+          <DropdownMenuItem asChild className={menuItem}>
+            <Link to="/athlete/join">Join a team</Link>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem asChild className={menuItem}>
+          <Link to="/settings/notifications">Notification settings</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className={menuItem}
+          onSelect={() => {
+            void handleSignOut()
+          }}
+        >
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  const brand = (
+    <Link
+      to={homeHref}
+      className="shrink-0 rounded-[6px] text-xl font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue"
+    >
+      SKTR Coach
+    </Link>
   )
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-sk-canvas text-sk-ink">
+    <div className="flex h-dvh flex-col overflow-hidden bg-white text-sk-ink">
       <a
         href="#main-content"
-        className="sr-only z-[60] rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
+        className="sr-only z-[60] rounded-[12px] bg-sk-blue px-4 py-2.5 font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
       >
         Skip to main content
       </a>
 
-      {!isRestrictedClubAdminSetupRoute ? (
-        <aside className="hidden w-[264px] shrink-0 flex-col border-r border-sk-line bg-white lg:flex">
-          <div className="flex items-center gap-3 px-6 pb-6 pt-7">
-            <img src="/app-icon.png" alt="" className="size-11 rounded-[14px] object-contain" />
-            <div className="leading-tight">
-              <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-ink">SKTR Coach</p>
-              <p className="text-sm text-sk-mute">{getRoleLabel(role)}</p>
-            </div>
-            {useAthleteDrawerMenu ? null : (
-              <button type="button" className={cn(iconButton, "ml-auto")} aria-label="Notifications" onClick={() => setPanelOpen(true)}>
-                <Bell className="size-5" weight="bold" />
-                {unreadNotifications.length > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral px-1 text-[11px] font-bold leading-5 text-white">
-                    {unreadNotifications.length}
-                  </span>
-                ) : null}
-              </button>
-            )}
-          </div>
-
-          {showTeamSwitcher ? (
-            <div className="px-3 pb-4">
-              <CoachTeamSwitcher variant="sidebar" onSwitched={handleTeamSwitched} />
-            </div>
-          ) : null}
-
-          <nav aria-label="Main" className="flex flex-1 flex-col gap-1 px-3">
+      {/* Desktop: the top bar */}
+      {showChrome ? (
+        <header
+          data-shell="topbar"
+          className="hidden h-[69px] shrink-0 items-center gap-5 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
+        >
+          {brand}
+          {showTeamSwitcher ? <CoachTeamSwitcher variant="topbar" onSwitched={handleTeamSwitched} /> : null}
+          <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
             {links.map((link) => {
               const isActive = isLinkActive(link)
-              const LinkIcon = link.icon
               return (
                 <Link
-                  key={link.href}
+                  key={link.id}
                   to={link.href}
-                  {...prefetchHandlers(link.label)}
+                  {...prefetchHandlers(link.id)}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "flex items-center gap-3 rounded-[14px] px-3.5 py-3 text-[0.98rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-                    isActive ? "bg-sk-blue text-white" : "text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink",
+                    "shrink-0 whitespace-nowrap rounded-[12px] px-3.5 py-2.5 text-[0.9375rem] leading-5 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sk-blue",
+                    isActive ? "bg-sk-blue-tint font-bold text-sk-blue-ink" : "font-semibold text-sk-ink-2 hover:bg-sk-soft hover:text-sk-ink",
                   )}
                 >
-                  <LinkIcon className="size-5" weight={isActive ? "fill" : "bold"} />
                   {link.label}
                 </Link>
               )
             })}
           </nav>
-
-          <div className="border-t border-sk-line p-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-[14px] p-2.5 text-left transition-colors hover:bg-sk-canvas focus-visible:outline-2 focus-visible:outline-sk-blue"
-                  aria-label="Open profile menu"
-                >
-                  <Initials name={displayName} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-sk-ink">{displayName}</span>
-                    <span className="block truncate text-xs text-sk-mute">{userEmail}</span>
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-56">
-                {profileMenuItems}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </aside>
-      ) : null}
-
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.875rem)] sm:px-6 lg:hidden">
-          <div className={cn("min-w-0 lg:hidden", showTeamSwitcher && "shrink-0")}>
-            {mobileDetailMode ? (
-              <button type="button" className={iconButton} aria-label="Back" onClick={handleMobileBack}>
-                <ArrowLeft className="size-5" weight="bold" />
-              </button>
-            ) : role === "athlete" ? (
-              <Link to="/athlete/profile" className="flex items-center gap-3">
-                <Initials name={displayName} className="size-11" />
-                <span className="truncate text-base font-bold text-sk-ink">{displayName}</span>
-              </Link>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className="flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-sk-blue" aria-label="Open profile menu">
-                    <Initials name={displayName} className="size-11" />
-                    {/* The team switcher takes the room next to the avatar on phones. */}
-                    <span className={cn("min-w-0 text-left leading-tight", showTeamSwitcher && "sr-only")}>
-                      <span className="block truncate text-base font-bold text-sk-ink">{displayName}</span>
-                      {displayName !== getRoleLabel(role) ? <span className="block text-sm text-sk-mute">{getRoleLabel(role)}</span> : null}
-                    </span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">{profileMenuItems}</DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-
-          {showTeamSwitcher && !mobileDetailMode ? (
-            <CoachTeamSwitcher variant="bar" onSwitched={handleTeamSwitched} className="flex-1" />
-          ) : null}
-
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {isRestrictedClubAdminSetupRoute ? null : (
-              <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
-                <SheetTrigger asChild>
-                  <button type="button" className={iconButton} aria-label={useAthleteDrawerMenu ? "Open menu" : "Notifications"}>
-                    {useAthleteDrawerMenu ? <List className="size-5" weight="bold" /> : <Bell className="size-5" weight="bold" />}
-                    {!useAthleteDrawerMenu && unreadNotifications.length > 0 ? (
-                      <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral px-1 text-[11px] font-bold leading-5 text-white">
-                        {unreadNotifications.length}
-                      </span>
-                    ) : null}
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="right" showCloseButton={false} className="w-full border-l-sk-line bg-white sm:max-w-md">
-                  {useAthleteDrawerMenu ? (
-                    <div className="flex h-full flex-col px-5 pb-5 pt-6">
-                      <SheetHeader className="sr-only">
-                        <SheetTitle>Menu</SheetTitle>
-                      </SheetHeader>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Initials name={displayName} className="size-11" />
-                          <div className="min-w-0">
-                            <p className="truncate text-lg font-bold tracking-[-0.02em] text-sk-ink">{displayName}</p>
-                            <p className="truncate text-sm text-sk-mute">{getRoleLabel(role)}</p>
-                          </div>
-                        </div>
-                        <SheetClose asChild>
-                          <button type="button" className={iconButton} aria-label="Close menu">
-                            <X className="size-5" weight="bold" />
-                          </button>
-                        </SheetClose>
-                      </div>
-
-                      <div className="mt-6 space-y-1">
-                        {links.map((link) => {
-                          const isActive = isLinkActive(link)
-                          const LinkIcon = link.icon
-                          return (
-                            <SheetClose asChild key={link.href}>
-                              <Link
-                                to={link.href}
-                                className={cn(
-                                  "flex items-center gap-3 rounded-[14px] px-3.5 py-3.5 text-lg font-bold",
-                                  isActive ? "bg-sk-blue text-white" : "text-sk-ink hover:bg-sk-canvas",
-                                )}
-                              >
-                                <LinkIcon className="size-5" weight={isActive ? "fill" : "bold"} />
-                                {link.label}
-                              </Link>
-                            </SheetClose>
-                          )
-                        })}
-                      </div>
-
-                      <div className="mt-5 space-y-1 border-t border-sk-line pt-5">
-                        <SheetClose asChild>
-                          <Link to="/athlete/join" className="block rounded-[14px] px-3.5 py-3 font-semibold text-sk-ink-2 hover:bg-sk-canvas">
-                            Join a team
-                          </Link>
-                        </SheetClose>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-[14px] px-3.5 py-3 text-left font-semibold text-sk-ink-2 hover:bg-sk-canvas"
-                          onClick={() => {
-                            void handleSignOut()
-                          }}
-                        >
-                          <SignOut className="size-5" weight="bold" />
-                          Sign out
-                        </button>
-                      </div>
-
-                      <div className="mt-auto pt-6">
-                        <SheetClose asChild>
-                          <Link to="/athlete/log" className="sk-btn sk-btn-primary h-14 w-full text-base">
-                            <Play className="size-5" weight="fill" />
-                            Start workout
-                          </Link>
-                        </SheetClose>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <SheetHeader className="border-b border-sk-line px-5 py-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <SheetTitle className="text-xl font-extrabold tracking-[-0.02em] text-sk-ink">Notifications</SheetTitle>
-                          <SheetClose asChild>
-                            <button type="button" className={iconButton} aria-label="Close notifications">
-                              <X className="size-5" weight="bold" />
-                            </button>
-                          </SheetClose>
-                        </div>
-                      </SheetHeader>
-                      <div className="space-y-3 overflow-y-auto p-5">
-                        {notificationsLoading ? <p className="text-sm text-sk-mute">Loading notifications...</p> : null}
-                        {notificationsError ? (
-                          <p className="rounded-2xl bg-sk-coral-tint p-4 text-sm font-semibold text-[#b32a0c]">{notificationsError}</p>
-                        ) : null}
-                        {!notificationsLoading && !notificationsError && notifications.length === 0 ? (
-                          <div className="rounded-2xl bg-sk-canvas p-5">
-                            <p className="font-bold text-sk-ink">You are all caught up</p>
-                            <p className="mt-1 text-sm text-sk-mute">New invites, plans and test weeks show up here.</p>
-                          </div>
-                        ) : null}
-                        {!notificationsLoading && !notificationsError && notifications.length > 0 ? (
-                          <>
-                            {unreadNotifications.length > 0 ? (
-                              <button
-                                type="button"
-                                className="sk-btn sk-btn-quiet sk-btn-sm"
-                                onClick={async () => {
-                                  const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
-                                  const result = await markNotificationsRead(pendingIds)
-                                  if (!result.ok) {
-                                    setNotificationsError(result.error.message)
-                                    return
-                                  }
-                                  setNotifications((current) =>
-                                    current.map((item) =>
-                                      pendingIds.includes(item.userNotificationId)
-                                        ? { ...item, state: "read", readAt: new Date().toISOString() }
-                                        : item,
-                                    ),
-                                  )
-                                  setNotificationsError(null)
-                                }}
-                              >
-                                Mark all read
-                              </button>
-                            ) : null}
-                            {notifications.map((item) => (
-                              <div
-                                key={item.id}
-                                className={cn(
-                                  "rounded-2xl border p-4",
-                                  item.state === "unread" ? "border-sk-blue/30 bg-sk-blue-tint" : "border-sk-line bg-white",
-                                )}
-                              >
-                                <p className="font-bold text-sk-ink">{item.subject}</p>
-                                {item.body ? <p className="mt-1 text-sm leading-relaxed text-sk-ink-2">{item.body}</p> : null}
-                                <p className="mt-2 text-xs text-sk-mute">{formatNotificationTime(item.createdAt)}</p>
-                              </div>
-                            ))}
-                          </>
-                        ) : null}
-                      </div>
-                    </>
-                  )}
-                </SheetContent>
-              </Sheet>
-            )}
+          <div className="flex shrink-0 items-center gap-3">
+            {bell}
+            {profileMenu("md")}
           </div>
         </header>
+      ) : null}
 
-        <main
-          id="main-content"
-          className={cn("flex-1 overflow-y-auto lg:pb-0", mobileDetailMode ? "pb-0" : "pb-28")}
-        >
-          <div className="min-h-full">{children}</div>
-        </main>
-      </div>
+      {/* Phone: the app bar */}
+      <header data-shell="appbar" className="box-content flex h-14 shrink-0 items-center gap-3 bg-white px-5 pt-[env(safe-area-inset-top)] sm:px-6 lg:hidden">
+        <div className="flex min-w-0 flex-1 items-center">
+          {mobileDetailMode ? (
+            <button type="button" className="sk-icon-btn" aria-label="Back" onClick={handleMobileBack}>
+              <ArrowLeft className="size-5" weight="bold" aria-hidden />
+            </button>
+          ) : showTeamSwitcher ? (
+            <CoachTeamSwitcher variant="bar" onSwitched={handleTeamSwitched} />
+          ) : (
+            brand
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          {bell}
+          {profileMenu("lg")}
+        </div>
+      </header>
 
-      {!isRestrictedClubAdminSetupRoute ? (
+      <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-full">{children}</div>
+      </main>
+
+      {/* Phone: the tab bar */}
+      {showChrome ? (
         <nav
           aria-label="Main"
+          data-shell="tabbar"
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 border-t border-sk-line bg-white px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
+            "relative z-40 shrink-0 border-t border-sk-line bg-white px-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
             hideMobileNav && "hidden",
           )}
         >
-          {useAthleteHomeActionNav ? (
-            <div className="mx-auto max-w-md px-2 pb-1">
-              <Link to="/athlete/log" className="sk-btn sk-btn-primary h-14 w-full text-base">
-                <Play className="size-5" weight="fill" />
-                Start workout
-              </Link>
-            </div>
-          ) : (
-            <div className="mx-auto grid max-w-lg gap-1" style={{ gridTemplateColumns: `repeat(${links.length}, minmax(0, 1fr))` }}>
-              {links.map((link) => {
-                const isActive = isLinkActive(link)
-                const LinkIcon = link.icon
+          <div className="mx-auto grid max-w-lg items-center" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + (moreLinks.length > 0 ? 1 : 0)}, minmax(0, 1fr))` }}>
+            {phoneTabs.map((link) => {
+              const isActive = isLinkActive(link)
+              const LinkIcon = link.icon
+              if (role === "athlete" && link.id === ATHLETE_LOG_ID) {
                 return (
                   <Link
-                    key={link.href}
+                    key={link.id}
                     to={link.href}
-                    {...prefetchHandlers(link.label)}
+                    aria-label="Log a session"
                     aria-current={isActive ? "page" : undefined}
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-1 rounded-[14px] py-2 font-bold transition-colors",
-                      links.length > 5 ? "px-0 text-[11px] tracking-tight" : "px-1 text-xs",
-                      isActive ? "bg-sk-blue text-white" : "text-sk-mute hover:text-sk-ink",
-                    )}
+                    className="-mt-[22px] flex size-14 items-center justify-center justify-self-center rounded-full bg-sk-ink text-white outline-offset-2 transition-transform focus-visible:outline-2 focus-visible:outline-sk-blue active:scale-95"
                   >
-                    <LinkIcon className="size-6" weight={isActive ? "fill" : "bold"} />
-                    <span className="truncate">{link.label}</span>
+                    <Plus className="size-6" weight="bold" aria-hidden />
                   </Link>
                 )
-              })}
-            </div>
-          )}
+              }
+              return (
+                <Link
+                  key={link.id}
+                  to={link.href}
+                  {...prefetchHandlers(link.id)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex min-h-12 flex-col items-center justify-center gap-[3px] rounded-[12px] text-xs outline-offset-0 focus-visible:outline-2 focus-visible:outline-sk-blue",
+                    isActive ? "font-bold text-sk-blue" : "font-semibold text-sk-mute",
+                  )}
+                >
+                  <LinkIcon className="size-6" weight={isActive ? "fill" : "regular"} aria-hidden />
+                  <span className="max-w-full truncate">{link.short ?? link.label}</span>
+                </Link>
+              )
+            })}
+            {moreLinks.length > 0 ? (
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                onClick={() => setMoreOpen(true)}
+                className={cn(
+                  "flex min-h-12 cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[12px] text-xs focus-visible:outline-2 focus-visible:outline-sk-blue",
+                  moreActive ? "font-bold text-sk-blue" : "font-semibold text-sk-mute",
+                )}
+              >
+                <DotsThree className="size-6" weight="bold" aria-hidden />
+                More
+              </button>
+            ) : null}
+          </div>
         </nav>
+      ) : null}
+
+      {moreLinks.length > 0 ? (
+        <Sheet open={moreOpen} onOpenChange={setMoreOpen} side="bottom" title="More">
+          <List>
+            {moreLinks.map((link) => {
+              const LinkIcon = link.icon
+              const isActive = isLinkActive(link)
+              return (
+                <ListRow
+                  key={link.id}
+                  to={link.href}
+                  onNavigate={() => setMoreOpen(false)}
+                  aria-current={isActive ? "page" : undefined}
+                  leading={<LinkIcon className={cn("size-6", isActive ? "text-sk-blue" : "text-sk-ink-2")} weight={isActive ? "fill" : "regular"} aria-hidden />}
+                  title={link.label}
+                />
+              )
+            })}
+          </List>
+        </Sheet>
+      ) : null}
+
+      {showBell ? (
+        <Sheet
+          open={panelOpen}
+          onOpenChange={setPanelOpen}
+          title="Notifications"
+          footer={
+            unreadNotifications.length > 0 ? (
+              <Button size="sm" onClick={() => void markAllRead()}>
+                Mark all read
+              </Button>
+            ) : undefined
+          }
+        >
+          {notificationsError ? <Notice tone="error">{notificationsError}</Notice> : null}
+          {notificationsLoading && notifications.length === 0 ? <SkeletonRows rows={4} label="Loading notifications" /> : null}
+          {!notificationsLoading && !notificationsError && notifications.length === 0 ? (
+            <EmptyState title="You are all caught up" body="New invites, plans and test weeks show up here." />
+          ) : null}
+          {notifications.length > 0 ? (
+            <List aria-label="Notifications">
+              {notifications.map((item) => (
+                <ListRow
+                  key={item.id}
+                  className="items-start"
+                  leading={<StatusDot tone={item.state === "unread" ? "blue" : "neutral"} className={cn("mt-1.5", item.state !== "unread" && "opacity-0")} />}
+                >
+                  <span className={cn("sk-list-title", item.state === "unread" && "font-bold")}>
+                    {item.subject}
+                    {item.state === "unread" ? <span className="sr-only"> (unread)</span> : null}
+                  </span>
+                  {item.body ? <span className="sk-list-sub mt-0.5 text-sk-ink-2">{item.body}</span> : null}
+                  <span className="sk-list-sub mt-1">{formatNotificationTime(item.createdAt)}</span>
+                </ListRow>
+              ))}
+            </List>
+          ) : null}
+        </Sheet>
       ) : null}
     </div>
   )
