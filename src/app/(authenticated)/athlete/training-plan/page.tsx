@@ -1,31 +1,43 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CalendarBlank, CaretDown, CaretLeft, CaretRight, CheckCircle, MapPin, MoonStars, Play, Timer } from "@phosphor-icons/react"
-import { Link } from "react-router-dom"
-import { EmptyState, PageHeader, Tag } from "@/components/sk"
-import { dateKeyLocal, parseSessionCompletions, SESSION_COMPLETIONS_STORAGE_KEY } from "@/lib/athlete-session"
+import { useSearchParams } from "react-router-dom"
+import { Play, Plus } from "@phosphor-icons/react"
+import { AvailabilityDialog, AvailabilityNotice, useMyAvailability } from "@/components/athlete/availability"
+import { SkipDialog } from "@/components/athlete/log/log-parts"
+import { useSessionLog } from "@/components/athlete/log/use-session-log"
+import {
+  Button,
+  DayLabel,
+  EmptyState,
+  Fact,
+  FactList,
+  Field,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  Section,
+  Select,
+  SkeletonRows,
+  Split,
+  StatusText,
+  WeekPager,
+  notify,
+  notifyError,
+  type StateTone,
+} from "@/components/sk"
+import { dateKeyLocal } from "@/lib/athlete-session"
+import { availabilityCovers, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { getCurrentAthleteProfileSnapshot } from "@/lib/data/athlete/profile-data"
-import { getCurrentAthleteWeeklySessionCompletions } from "@/lib/data/session/session-data"
+import { listAthleteSessions } from "@/lib/data/session/session-log-data"
+import { mockAthletePlans } from "@/lib/data/session/session-mock"
+import { skipReasonLabel, skippedLabel, type AthleteSessionRef } from "@/lib/data/session/types"
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, TrainingPlanWeek } from "@/lib/data/training-plan/types"
-import { tenantStorageKey } from "@/lib/tenant-storage"
 import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
-
-const ASSIGNMENT_STORAGE_KEY = "pacelab:plan-assignments"
-
-interface PlanAssignment {
-  planId: string
-  scope: "team" | "athlete"
-  teamId: string
-  athleteId?: string
-}
-
-const fallbackAthlete = {
-  id: "fallback-athlete",
-  teamId: "fallback-team",
-}
 
 function parseDateKey(key: string) {
   return new Date(`${key.slice(0, 10)}T00:00:00`)
@@ -37,118 +49,12 @@ function addDays(key: string, amount: number) {
   return dateKeyLocal(date)
 }
 
-/* Mock mode only: a small demo plan built around the current date so the week view has something to show. */
-function mockPlanStartKey() {
-  const start = new Date()
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - 7)
-  return dateKeyLocal(start)
-}
-
-const MOCK_WEEK_TEMPLATE: Array<{
-  offset: number
-  title: string
-  type: TrainingPlanDay["sessionType"]
-  focus: string
-  duration: number
-  location: string
-  coachNote?: string
-  blockPreview: string[]
-}> = [
-  {
-    offset: 0,
-    title: "Acceleration and gym",
-    type: "Mixed",
-    focus: "First steps and squat intent",
-    duration: 75,
-    location: "Track and gym",
-    coachNote: "Stay sharp and relaxed.",
-    blockPreview: ["Starts 4 x 20m", "Sled accel 4 x 15m", "Back squat 4 x 4"],
-  },
-  {
-    offset: 1,
-    title: "Tempo and mobility",
-    type: "Recovery",
-    focus: "Easy running, loosen up",
-    duration: 50,
-    location: "Track",
-    blockPreview: ["6 x 200m tempo", "Mobility circuit"],
-  },
-  {
-    offset: 3,
-    title: "Max velocity",
-    type: "Track",
-    focus: "Upright mechanics",
-    duration: 70,
-    location: "Track",
-    blockPreview: ["Wickets 6 x 30m", "Flying 30m x 4", "Bounds 3 x 40m"],
-  },
-  {
-    offset: 4,
-    title: "Lower body strength",
-    type: "Gym",
-    focus: "Heavy and fast",
-    duration: 60,
-    location: "Gym",
-    blockPreview: ["Power clean 5 x 2", "Trap bar deadlift 4 x 3", "Core"],
-  },
-]
-
-/** Keeps the demo in step with the mock home screen, which always has a session today. */
-function mockTemplateForToday(startDate: string) {
-  const todayOffset = (((new Date().getDay() + 6) % 7) - ((parseDateKey(startDate).getDay() + 6) % 7) + 7) % 7
-  if (MOCK_WEEK_TEMPLATE.some((template) => template.offset === todayOffset)) return MOCK_WEEK_TEMPLATE
-  return [...MOCK_WEEK_TEMPLATE.filter((template) => template.offset !== 0), { ...MOCK_WEEK_TEMPLATE[0], offset: todayOffset }].sort(
-    (left, right) => left.offset - right.offset,
-  )
-}
-
-const MOCK_WEEK_EMPHASIS = ["Getting back into rhythm", "Speed and strength", "Sharpen up"]
-
-function buildFallbackPlans() {
-  return [
-    {
-      id: "fallback-plan",
-      name: "General Performance Block",
-      teamId: "fallback-team",
-      startDate: mockPlanStartKey(),
-      weeks: MOCK_WEEK_EMPHASIS.length,
-      assignedTo: "team" as "team" | "athlete",
-      assignedAthleteIds: undefined as string[] | undefined,
-    },
-  ]
-}
-
-function buildFallbackPlanDetail(planId: string, startDate: string): TrainingPlanDetail {
-  return {
-    planId,
-    weeks: MOCK_WEEK_EMPHASIS.map((emphasis, weekIndex) => ({
-      id: `${planId}-week-${weekIndex + 1}`,
-      weekNumber: weekIndex + 1,
-      emphasis,
-      status: weekIndex === 0 ? "completed" : weekIndex === 1 ? "current" : "up-next",
-      days: mockTemplateForToday(startDate).map((template) => {
-        const date = addDays(startDate, weekIndex * 7 + template.offset)
-        return {
-          id: `${planId}-w${weekIndex + 1}-${template.offset}`,
-          dayIndex: template.offset,
-          dayLabel: parseDateKey(date).toLocaleDateString(undefined, { weekday: "short" }),
-          date,
-          title: template.title,
-          sessionType: template.type,
-          focus: template.focus,
-          status: weekIndex === 0 ? "completed" : "scheduled",
-          durationMinutes: template.duration,
-          location: template.location,
-          coachNote: template.coachNote ?? null,
-          blockPreview: template.blockPreview,
-        }
-      }),
-    })),
-  }
-}
-
 function shortDate(key: string, withYear = false) {
   return parseDateKey(key).toLocaleDateString(undefined, { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) })
+}
+
+function longDate(key: string) {
+  return parseDateKey(key).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
 }
 
 function planEndKey(plan: Pick<TrainingPlanSummary, "startDate" | "weeks">) {
@@ -181,158 +87,233 @@ function buildWeekRows(week: TrainingPlanWeek, planStartDate: string, weekPositi
   })
 }
 
-function DayDetail({
-  day,
-  isToday,
-  isDone,
-  isPast,
-  showTitle,
+/** One short line for a day in the week list. The full detail is one tap away. */
+function daySummary(day: TrainingPlanDay) {
+  const facts = [day.durationMinutes ? `${day.durationMinutes} min` : null, day.location].filter(Boolean).join(", ")
+  if (day.blockPreview.length === 0) return facts || day.focus || `${day.sessionType} session`
+  const shown = day.blockPreview.slice(0, 2).join(", ")
+  const more = day.blockPreview.length - 2
+  return more > 0 ? `${shown} and ${more} more` : shown
+}
+
+type DayState = { kind: "done" | "skipped" | "today" | "started" | "missed" | "excused" | "upcoming" | "unknown"; tone: StateTone; label: string | null }
+
+/** Where a planned day stands, from the athlete's sessions and the periods they were unavailable. */
+function planDayState(day: TrainingPlanDay, refs: AthleteSessionRef[], periods: AthleteAvailability[], today: string): DayState {
+  const date = day.date.slice(0, 10)
+  const planned = refs.filter((ref) => ref.origin === "plan" && ref.date === date)
+  const done = planned.find((ref) => ref.status === "completed")
+  if (done || day.status === "completed") return { kind: "done", tone: "green", label: "Done" }
+  const skipped = planned.find((ref) => ref.status === "skipped")
+  if (skipped) return { kind: "skipped", tone: "neutral", label: skippedLabel(skipped.skipReason) }
+  const excused = periods.some((period) => availabilityCovers(period, date))
+  if (date === today) {
+    if (planned.some((ref) => ref.status === "in-progress")) return { kind: "started", tone: "blue", label: "Started" }
+    return excused ? { kind: "excused", tone: "neutral", label: "Excused" } : { kind: "today", tone: "blue", label: "Today" }
+  }
+  if (date > today) return excused ? { kind: "excused", tone: "neutral", label: "Excused" } : { kind: "upcoming", tone: "neutral", label: null }
+  if (excused) return { kind: "excused", tone: "neutral", label: "Excused" }
+  // A past day with no session of the athlete's (they joined the team later) was never due.
+  if (planned.length === 0) return { kind: "unknown", tone: "neutral", label: null }
+  return { kind: "missed", tone: "coral", label: "Missed" }
+}
+
+/** One day of the plan: what is planned, the coach note and what to do about it. */
+function PlanDayScreen({
+  date,
+  planName,
+  planDay,
+  backTo,
+  current,
+  onChanged,
 }: {
-  day: TrainingPlanDay
-  isToday: boolean
-  isDone: boolean
-  isPast: boolean
-  showTitle: boolean
+  date: string
+  planName: string
+  planDay: TrainingPlanDay | null
+  backTo: string
+  current: AthleteAvailability | null
+  onChanged: () => void
 }) {
+  const today = dateKeyLocal(new Date())
+  const log = useSessionLog(date)
+  const { day, session } = log
+  const [skipOpen, setSkipOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const title = session?.title ?? planDay?.title ?? (day && !day.session ? "Rest day" : "Session")
+  const duration = session?.estimatedDurationMinutes ?? planDay?.durationMinutes ?? null
+  const location = session?.location ?? planDay?.location ?? null
+  const lede = [planDay ? `${planDay.sessionType} session` : null, duration ? `${duration} min` : null, location].filter(Boolean).join(", ")
+  const coachNote = session?.coachNote ?? planDay?.coachNote ?? null
+  const completed = session?.status === "completed"
+  const skipped = session?.status === "skipped"
+  const started = session?.status === "in-progress"
+  const excused = Boolean(day?.excused) && !completed && !skipped
+  const logPath = date === today ? "/athlete/log" : `/athlete/log?date=${date}`
+
+  const state: { tone: StateTone; label: string; detail: string } | null = !session
+    ? null
+    : completed
+      ? { tone: "green", label: "Done", detail: session.overallRpe ? `Effort ${session.overallRpe} of 10.` : "Logged." }
+      : skipped
+        ? { tone: "neutral", label: skippedLabel(session.skipReason), detail: session.skipNote ?? "It does not count as missed." }
+        : excused
+          ? { tone: "neutral", label: "Excused", detail: "You are marked as unavailable on this day. It does not count as missed." }
+          : started
+            ? { tone: "blue", label: "Started", detail: "You have logged part of it." }
+            : date === today
+              ? { tone: "blue", label: "Today", detail: "Not logged yet." }
+              : date < today
+                ? { tone: "coral", label: "Missed", detail: "Not logged. You can still log it or say why you could not do it." }
+                : null
+
+  const unskip = async () => {
+    setBusy(true)
+    const result = await log.unskip()
+    setBusy(false)
+    if (!result.ok) {
+      notifyError("Could not undo the skip", result.error.message)
+      return
+    }
+    onChanged()
+  }
+
   return (
-    <div className="space-y-4">
-      {showTitle ? (
-        <div>
-          <p className="sk-label">
-            {parseDateKey(day.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-          <h2 className="mt-1 text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] text-sk-ink">{day.title}</h2>
-        </div>
+    <Screen width="narrow">
+      <ScreenHeader back={{ to: backTo, label: planName }} fact={date === today ? `Today, ${longDate(date)}` : longDate(date)} title={title} lede={lede || undefined} />
+
+      <AvailabilityNotice current={current} />
+
+      {log.loadError ? (
+        <Notice
+          tone="error"
+          action={
+            <Button size="sm" onClick={log.reload}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load this session. {log.loadError}
+        </Notice>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {isDone ? (
-          <Tag tone="green">
-            <CheckCircle className="size-3.5" weight="fill" />
-            Completed
-          </Tag>
-        ) : isToday ? (
-          <Tag tone="blue">Today</Tag>
-        ) : isPast ? (
-          <Tag>Not logged</Tag>
-        ) : null}
-        <span className="text-sm font-semibold text-sk-ink-2">{day.sessionType} session</span>
-      </div>
+      {state ? (
+        <Section aria-label="Status">
+          <List>
+            <ListRow title={<StatusText tone={state.tone}>{state.label}</StatusText>} subtitle={state.detail} />
+          </List>
+        </Section>
+      ) : null}
 
-      {day.focus ? <p className="text-sk-ink-2">{day.focus}</p> : null}
+      {coachNote ? (
+        <Section title="From your coach">
+          <p className="pt-1 text-base leading-relaxed text-sk-ink">{coachNote}</p>
+        </Section>
+      ) : null}
 
-      {day.durationMinutes || day.location ? (
-        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-sk-ink-2">
-          {day.durationMinutes ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Timer className="size-4 text-sk-mute" weight="bold" />
-              {day.durationMinutes} min
-            </span>
+      {!day && !log.loadError ? (
+        <Section title="What is planned">
+          <SkeletonRows rows={4} label="Getting the session" />
+        </Section>
+      ) : session && session.blocks.length > 0 ? (
+        session.blocks.map((block) => (
+          <Section key={block.id} title={block.name} hint={[block.focus, block.coachNote].filter(Boolean).join(" ") || undefined}>
+            <List>
+              {block.rows.map((row) =>
+                block.rows.length === 1 && row.label === block.name ? (
+                  <ListRow key={row.id} title={row.target} />
+                ) : (
+                  <ListRow key={row.id} title={row.label} subtitle={row.helper ?? undefined} trailing={row.target} />
+                ),
+              )}
+            </List>
+          </Section>
+        ))
+      ) : planDay && planDay.blockPreview.length > 0 ? (
+        <Section title="What is planned">
+          <List ordered>
+            {planDay.blockPreview.map((block, index) => (
+              <ListRow key={`${index}-${block}`} title={block} />
+            ))}
+          </List>
+        </Section>
+      ) : day ? (
+        <Section aria-label="What is planned">
+          <EmptyState
+            title={session || planDay ? "No detail for this session yet" : "Nothing is planned for this day"}
+            body={session || planDay ? "Your coach has not listed the blocks for this session." : "Enjoy the rest, or add a session of your own."}
+          />
+        </Section>
+      ) : null}
+
+      {day ? (
+        <Section aria-label="Actions" className="gap-2">
+          {session && skipped ? (
+            <Button variant="primary" size="lg" block disabled={busy} onClick={() => void unskip()}>
+              {busy ? "Saving..." : "Undo skip"}
+            </Button>
+          ) : session ? (
+            <LinkButton variant="primary" size="lg" block to={logPath}>
+              {completed ? null : <Play className="size-[18px]" weight="fill" aria-hidden />}
+              {completed ? "See what you logged" : started ? "Resume session" : excused ? "Log anyway" : date === today ? "Start session" : date < today ? "Log this session" : "Log it early"}
+            </LinkButton>
+          ) : (
+            <LinkButton size="lg" block to="/athlete/log/new">
+              <Plus className="size-[18px]" weight="bold" aria-hidden />
+              Add a session
+            </LinkButton>
+          )}
+          {session && !completed && !skipped ? (
+            <Button variant="quiet" block onClick={() => setSkipOpen(true)}>
+              Can't do this one
+            </Button>
           ) : null}
-          {day.location ? (
-            <span className="inline-flex items-center gap-1.5">
-              <MapPin className="size-4 text-sk-mute" weight="bold" />
-              {day.location}
-            </span>
-          ) : null}
-        </p>
+        </Section>
       ) : null}
 
-      {day.blockPreview.length > 0 ? (
-        <ol>
-          {day.blockPreview.map((block, index) => (
-            <li key={`${index}-${block}`} className="flex items-center gap-3 border-b border-sk-line py-3 last:border-b-0">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-sk-blue-tint text-sm font-extrabold text-sk-blue">
-                {index + 1}
-              </span>
-              <span className="min-w-0 font-semibold text-sk-ink">{block}</span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="text-sm text-sk-mute">Your coach has not listed the blocks for this session.</p>
-      )}
-
-      {day.coachNote ? (
-        <p className="rounded-2xl bg-sk-yellow-tint p-4 text-sm leading-relaxed text-sk-ink-2">
-          <span className="font-bold text-sk-ink">Coach says: </span>
-          {day.coachNote}
-        </p>
+      {session ? (
+        <SkipDialog
+          open={skipOpen}
+          onOpenChange={setSkipOpen}
+          sessionTitle={session.title}
+          onSkip={async (reason, note) => {
+            const result = await log.skip(reason, note)
+            if (result.ok) {
+              notify("Session skipped", `Reason: ${skipReasonLabel(reason).toLowerCase()}.`)
+              onChanged()
+            }
+            return result
+          }}
+        />
       ) : null}
-
-      {isToday ? (
-        <Link to="/athlete/log" className="sk-btn sk-btn-primary h-12 w-full text-base sm:w-auto">
-          <Play className="size-5" weight="fill" />
-          {isDone ? "Review workout" : "Start workout"}
-        </Link>
-      ) : null}
-    </div>
+    </Screen>
   )
 }
 
 export default function AthleteTrainingPlanPage() {
   const backendMode = getBackendMode()
-  const athlete = fallbackAthlete
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
-  const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null)
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  const isSupabase = backendMode === "supabase"
+  const [searchParams, setSearchParams] = useSearchParams()
+  const availability = useMyAvailability()
+  const [availabilityOpen, setAvailabilityOpen] = useState(false)
   const [backendPlans, setBackendPlans] = useState<TrainingPlanSummary[]>([])
   const [backendPlanDetail, setBackendPlanDetail] = useState<TrainingPlanDetail | null>(null)
   const [backendDetailLoadedFor, setBackendDetailLoadedFor] = useState<string | null>(null)
   const [backendTeamName, setBackendTeamName] = useState<string | null>(null)
-  const [backendLoading, setBackendLoading] = useState(backendMode === "supabase")
+  const [backendLoading, setBackendLoading] = useState(isSupabase)
   const [backendError, setBackendError] = useState<string | null>(null)
-  const [backendCompletionDates, setBackendCompletionDates] = useState<string[]>([])
+  const [refs, setRefs] = useState<AthleteSessionRef[]>([])
+  const [refsToken, setRefsToken] = useState(0)
   const [todayKey] = useState(() => dateKeyLocal(new Date()))
-  const [fallbackPlans] = useState(buildFallbackPlans)
-  const [storageAssignments] = useState<PlanAssignment[]>(() => {
-    if (typeof window === "undefined" || backendMode === "supabase") return []
-    const raw = window.localStorage.getItem(tenantStorageKey(ASSIGNMENT_STORAGE_KEY))
-    if (!raw) return []
-    try {
-      return JSON.parse(raw) as PlanAssignment[]
-    } catch {
-      return []
-    }
-  })
-  const [mockCompletionDates] = useState<string[]>(() => {
-    if (typeof window === "undefined" || backendMode === "supabase") return []
-    return parseSessionCompletions(window.localStorage.getItem(tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)))
-  })
+  const [mockPlans] = useState(() => (isSupabase ? [] : mockAthletePlans()))
+
+  const selectedPlanId = searchParams.get("plan")
+  const weekParam = Number.parseInt(searchParams.get("week") ?? "", 10)
+  const dayParam = searchParams.get("day")
+  const openDay = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : null
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    ;(window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }).__PACELAB_MOBILE_DETAIL_MODE = true
-    window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: true } }))
-    const handleBack = () => window.history.back()
-    window.addEventListener("pacelab:mobile-detail-back", handleBack)
-
-    return () => {
-      ;(window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }).__PACELAB_MOBILE_DETAIL_MODE = false
-      window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: false } }))
-      window.removeEventListener("pacelab:mobile-detail-back", handleBack)
-    }
-  }, [])
-
-  const mockPlans = useMemo(() => {
-    const base = fallbackPlans.filter(
-      (plan) => plan.teamId === athlete.teamId || (plan.assignedTo === "athlete" && plan.assignedAthleteIds?.includes(athlete.id)),
-    )
-
-    const fromAssignments = storageAssignments
-      .filter((assignment) => {
-        if (assignment.scope === "team") return assignment.teamId === athlete.teamId
-        return assignment.athleteId === athlete.id
-      })
-      .map((assignment) => fallbackPlans.find((plan) => plan.id === assignment.planId))
-      .filter((plan): plan is (typeof fallbackPlans)[number] => Boolean(plan))
-
-    const deduped = new Map([...base, ...fromAssignments].map((plan) => [plan.id, plan]))
-    return [...deduped.values()]
-  }, [athlete.id, athlete.teamId, fallbackPlans, storageAssignments])
-
-  useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (!isSupabase) return
     let cancelled = false
 
     const loadPlans = async () => {
@@ -347,12 +328,9 @@ export default function AthleteTrainingPlanPage() {
         setBackendLoading(false)
         return
       }
-
       setBackendPlans(result.data)
       setBackendLoading(false)
     }
-
-    void loadPlans()
 
     const loadProfile = async () => {
       const profileResult = await getCurrentAthleteProfileSnapshot()
@@ -365,26 +343,14 @@ export default function AthleteTrainingPlanPage() {
       setBackendTeamName(profileResult.data.teamName)
     }
 
+    void loadPlans()
     void loadProfile()
     return () => {
       cancelled = true
     }
-  }, [backendMode])
+  }, [isSupabase])
 
-  const plans: TrainingPlanSummary[] = useMemo(
-    () =>
-      backendMode === "supabase"
-        ? backendPlans
-        : mockPlans.map((plan) => ({
-            id: plan.id,
-            name: plan.name,
-            teamId: plan.teamId,
-            startDate: plan.startDate,
-            weeks: plan.weeks,
-            status: "published" as const,
-          })),
-    [backendMode, backendPlans, mockPlans],
-  )
+  const plans: TrainingPlanSummary[] = useMemo(() => (isSupabase ? backendPlans : mockPlans.map((plan) => plan.summary)), [backendPlans, isSupabase, mockPlans])
 
   // Default to the plan that is running today, otherwise the most recent one.
   const activePlan =
@@ -397,12 +363,11 @@ export default function AthleteTrainingPlanPage() {
   const activePlanWeeks = activePlan?.weeks
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (!isSupabase) return
     if (!activePlanId) {
       setBackendPlanDetail(null)
       return
     }
-
     let cancelled = false
     const loadDetail = async () => {
       const result = await getTrainingPlanDetail(activePlanId)
@@ -416,42 +381,34 @@ export default function AthleteTrainingPlanPage() {
       setBackendPlanDetail(result.data)
       setBackendDetailLoadedFor(activePlanId)
     }
-
     void loadDetail()
     return () => {
       cancelled = true
     }
-  }, [activePlanId, backendMode])
+  }, [activePlanId, isSupabase])
 
+  // The athlete's own sessions over the plan: done, skipped, started, and the ones they added.
   useEffect(() => {
-    if (backendMode !== "supabase" || !activePlanId || !activePlanStart) return
+    if (!activePlanId || !activePlanStart) return
     let cancelled = false
-
-    const loadCompletions = async () => {
-      // A week before and after covers plans whose day dates drift outside the nominal range.
-      const result = await getCurrentAthleteWeeklySessionCompletions(
-        addDays(activePlanStart, -7),
-        addDays(activePlanStart, Math.max(activePlanWeeks ?? 1, 1) * 7 + 6),
-      )
+    // A week before and after covers plans whose day dates drift outside the nominal range.
+    void listAthleteSessions(addDays(activePlanStart, -7), addDays(activePlanStart, Math.max(activePlanWeeks ?? 1, 1) * 7 + 6)).then((result) => {
       if (cancelled) return
       if (!result.ok) {
-        console.warn("[training-plan] failed to load session completions", result.error)
+        console.warn("[training-plan] failed to load sessions", result.error)
         return
       }
-      setBackendCompletionDates(result.data.map((item) => item.completionDate.slice(0, 10)))
-    }
-
-    void loadCompletions()
+      setRefs(result.data)
+    })
     return () => {
       cancelled = true
     }
-  }, [activePlanId, activePlanStart, activePlanWeeks, backendMode])
+  }, [activePlanId, activePlanStart, activePlanWeeks, refsToken])
 
   const activePlanDetail = useMemo<TrainingPlanDetail | null>(() => {
-    if (backendMode === "supabase") return backendPlanDetail?.planId === activePlanId ? backendPlanDetail : null
-    if (!activePlanId || !activePlanStart) return null
-    return buildFallbackPlanDetail(activePlanId, activePlanStart)
-  }, [activePlanId, activePlanStart, backendMode, backendPlanDetail])
+    if (isSupabase) return backendPlanDetail?.planId === activePlanId ? backendPlanDetail : null
+    return mockPlans.find((plan) => plan.summary.id === activePlanId)?.detail ?? null
+  }, [activePlanId, backendPlanDetail, isSupabase, mockPlans])
 
   const weeks = useMemo(() => {
     if (!activePlanDetail || !activePlanStart) return []
@@ -472,266 +429,223 @@ export default function AthleteTrainingPlanPage() {
     weeks.find((item) => item.week.status === "current") ??
     weeks[0] ??
     null
-  const selected = weeks.find((item) => item.week.weekNumber === selectedWeekNumber) ?? defaultWeek
+  const selected = weeks.find((item) => item.week.weekNumber === weekParam) ?? defaultWeek
   const selectedIndex = selected ? weeks.indexOf(selected) : -1
 
-  const completionDateSet = useMemo(
-    () => new Set(backendMode === "supabase" ? backendCompletionDates : mockCompletionDates),
-    [backendCompletionDates, backendMode, mockCompletionDates],
-  )
-  const isDayDone = (day: TrainingPlanDay) => day.status === "completed" || completionDateSet.has(day.date.slice(0, 10))
-
-  const trainingRows = selected?.rows.filter((row): row is WeekRow & { day: TrainingPlanDay } => row.day !== null) ?? []
-  const selectedRow =
-    trainingRows.find((row) => row.day.id === selectedDayId) ??
-    trainingRows.find((row) => row.dateKey === todayKey) ??
-    trainingRows.find((row) => row.dateKey > todayKey) ??
-    trainingRows[0] ??
-    null
-  const doneInWeek = trainingRows.filter((row) => isDayDone(row.day)).length
-
-  useEffect(() => {
-    setSelectedWeekNumber(null)
-    setSelectedDayId(null)
-  }, [activePlanId])
+  const planQuery = (changes: { week?: number | null; day?: string | null; plan?: string | null }) => {
+    const params = new URLSearchParams()
+    const plan = changes.plan !== undefined ? changes.plan : selectedPlanId
+    const week = changes.week !== undefined ? changes.week : selected && selected !== defaultWeek ? selected.week.weekNumber : null
+    if (plan) params.set("plan", plan)
+    if (week) params.set("week", String(week))
+    if (changes.day) params.set("day", changes.day)
+    const query = params.toString()
+    return query ? `/athlete/training-plan?${query}` : "/athlete/training-plan"
+  }
 
   const goToWeek = (index: number) => {
     const target = weeks[index]
     if (!target) return
-    setSelectedWeekNumber(target.week.weekNumber)
-    setSelectedDayId(null)
+    const params = new URLSearchParams()
+    if (selectedPlanId) params.set("plan", selectedPlanId)
+    if (target !== defaultWeek) params.set("week", String(target.week.weekNumber))
+    setSearchParams(params, { replace: true })
   }
 
-  const detailPending = backendMode === "supabase" && Boolean(activePlanId) && backendDetailLoadedFor !== activePlanId
-  const teamLabel = backendMode === "supabase" ? backendTeamName : null
+  const detailPending = isSupabase && Boolean(activePlanId) && backendDetailLoadedFor !== activePlanId
+  const teamLabel = isSupabase ? backendTeamName : null
 
-  if (backendMode === "supabase" && (backendLoading || detailPending) && !backendError) {
+  if (isSupabase && (backendLoading || detailPending) && !backendError) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Your plan" />
-        <p className="text-sk-mute">Getting your plan...</p>
-      </div>
+      <Screen>
+        <ScreenHeader title="Your plan" />
+        <Section title="This week">
+          <SkeletonRows rows={7} label="Getting your plan" />
+        </Section>
+      </Screen>
     )
   }
 
-  if (backendMode === "supabase" && backendError && !(activePlan && selected)) {
+  if (isSupabase && backendError && !(activePlan && selected)) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Your plan" />
-        <div role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-          We could not load your plan. {backendError}
-        </div>
-      </div>
+      <Screen>
+        <ScreenHeader title="Your plan" />
+        <Notice tone="error">We could not load your plan. {backendError}</Notice>
+      </Screen>
     )
   }
+
+  const moreSection = (
+    <Section title="More">
+      <List>
+        <ListRow to="/athlete/log/history" title="Session history" subtitle="What you did, skipped and missed." />
+        <ListRow to="/athlete/log/new" title="Add a session" subtitle="Log something that was not in your plan." />
+        {!availability.current ? (
+          <ListRow onClick={() => setAvailabilityOpen(true)} chevron title="I can't train for a while" subtitle="Injured, sick or away. Your coach is told." />
+        ) : null}
+      </List>
+    </Section>
+  )
 
   if (!activePlan) {
     return (
-      <div className="sk-page">
-        <PageHeader title="Your plan" />
-        <EmptyState
-          icon={<CalendarBlank className="size-6" weight="fill" />}
-          title="No plan assigned yet"
-          body="When your coach publishes a training plan for you or your team, every week of it shows up here."
-          action={
-            <Link to="/athlete/home" className="sk-btn sk-btn-quiet sk-btn-sm">
-              Back to home
-            </Link>
-          }
-        />
-      </div>
+      <Screen>
+        <ScreenHeader title="Your plan" />
+        <AvailabilityNotice current={availability.current} />
+        <Section aria-label="Plan">
+          <EmptyState
+            title="No plan assigned yet"
+            body="When your coach publishes a training plan for you or your team, every week of it shows up here."
+            action={
+              <LinkButton size="sm" to="/athlete/home">
+                Back to home
+              </LinkButton>
+            }
+          />
+        </Section>
+        {moreSection}
+        <AvailabilityDialog open={availabilityOpen} onOpenChange={setAvailabilityOpen} />
+      </Screen>
     )
   }
 
-  const planPicker =
-    plans.length > 1 ? (
-      <label className="flex max-w-sm flex-col gap-1.5 text-sm font-semibold text-sk-mute">
-        Showing plan
-        <select className="sk-field" value={activePlan.id} onChange={(event) => setSelectedPlanId(event.target.value)}>
-          {plans.map((plan) => (
-            <option key={plan.id} value={plan.id}>
-              {plan.name}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : null
+  if (openDay) {
+    const planDay = weeks.flatMap((item) => item.week.days).find((day) => day.date.slice(0, 10) === openDay) ?? null
+    return (
+      <PlanDayScreen
+        key={openDay}
+        date={openDay}
+        planName={activePlan.name}
+        planDay={planDay}
+        backTo={planQuery({ day: null })}
+        current={availability.current}
+        onChanged={() => setRefsToken((value) => value + 1)}
+      />
+    )
+  }
 
   const planLede = `${shortDate(activePlan.startDate)} to ${shortDate(planEndKey(activePlan), true)}, ${activePlan.weeks} ${activePlan.weeks === 1 ? "week" : "weeks"}${teamLabel ? `, ${teamLabel}` : ""}`
+  const header = (
+    <ScreenHeader title={activePlan.name} lede={planLede} />
+  )
 
   if (!selected) {
     return (
-      <div className="sk-page">
-        <PageHeader title={activePlan.name} lede={planLede}>
-          {planPicker}
-        </PageHeader>
-        <EmptyState
-          icon={<CalendarBlank className="size-6" weight="fill" />}
-          title="No sessions in this plan yet"
-          body="Your coach has assigned this plan but has not added any weeks or sessions to it. Check back soon."
-          action={
-            <Link to="/athlete/home" className="sk-btn sk-btn-quiet sk-btn-sm">
-              Back to home
-            </Link>
-          }
-        />
-      </div>
+      <Screen>
+        {header}
+        <AvailabilityNotice current={availability.current} />
+        <Section aria-label="Plan">
+          <EmptyState title="No sessions in this plan yet" body="Your coach has assigned this plan but has not added any weeks or sessions to it. Check back soon." />
+        </Section>
+        {moreSection}
+        <AvailabilityDialog open={availabilityOpen} onOpenChange={setAvailabilityOpen} />
+      </Screen>
     )
   }
 
-  const isThisWeek = selected === todayWeek
+  const trainingRows = selected.rows.filter((row): row is WeekRow & { day: TrainingPlanDay } => row.day !== null)
+  const states = new Map(trainingRows.map((row) => [row.key, planDayState(row.day, refs, availability.periods, todayKey)]))
+  const doneInWeek = trainingRows.filter((row) => states.get(row.key)?.kind === "done").length
+  const excusedInWeek = trainingRows.filter((row) => ["skipped", "excused"].includes(states.get(row.key)?.kind ?? "")).length
+  const extrasInWeek = refs.filter((ref) => ref.origin === "athlete" && ref.date >= selected.startKey && ref.date <= selected.endKey)
+  const totalWeeks = Math.max(activePlan.weeks, weeks.length)
 
   return (
-    <div className="sk-page">
-      <PageHeader title={activePlan.name} lede={planLede}>
-        {planPicker}
-      </PageHeader>
+    <Screen>
+      {header}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
-        <section aria-label={`Week ${selected.week.weekNumber}`} className="sk-card p-0 sm:p-0">
-          <div className="flex items-center gap-2 border-b border-sk-line p-3 sm:p-4">
-            <button
-              type="button"
-              aria-label="Previous week"
-              className="sk-btn sk-btn-quiet size-11 shrink-0 px-0"
-              disabled={selectedIndex <= 0}
-              onClick={() => goToWeek(selectedIndex - 1)}
-            >
-              <CaretLeft className="size-5" weight="bold" />
-            </button>
-            <div className="min-w-0 flex-1 text-center" aria-live="polite">
-              <p className="text-lg font-extrabold tracking-[-0.02em] text-sk-ink">
-                Week {selected.week.weekNumber} <span className="font-semibold text-sk-mute">of {Math.max(activePlan.weeks, weeks.length)}</span>
-              </p>
-              <p className="text-sm font-semibold text-sk-mute">
-                {shortDate(selected.startKey)} to {shortDate(selected.endKey)}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Next week"
-              className="sk-btn sk-btn-quiet size-11 shrink-0 px-0"
-              disabled={selectedIndex >= weeks.length - 1}
-              onClick={() => goToWeek(selectedIndex + 1)}
-            >
-              <CaretRight className="size-5" weight="bold" />
-            </button>
-          </div>
+      <AvailabilityNotice current={availability.current} />
+      {backendError ? <Notice tone="error">Some of your plan could not be loaded. {backendError}</Notice> : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4 sm:px-6">
-            <p className="min-w-0 text-sk-ink-2">
-              {selected.week.emphasis ? (
-                <>
-                  <span className="font-bold text-sk-ink">Focus: </span>
-                  {selected.week.emphasis}
-                </>
-              ) : (
-                <span className="text-sk-mute">No focus set for this week.</span>
-              )}
-            </p>
-            <div className="flex items-center gap-3">
-              {trainingRows.length > 0 ? (
-                <span className="text-sm font-bold tabular-nums text-sk-ink-2">
-                  {doneInWeek} of {trainingRows.length} done
-                </span>
-              ) : null}
-              {isThisWeek ? (
-                <Tag tone="blue">This week</Tag>
-              ) : todayWeek ? (
-                <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -mr-2" onClick={() => goToWeek(weeks.indexOf(todayWeek))}>
-                  Back to this week
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <ol className="mt-3 px-2 pb-2 sm:px-3 sm:pb-3">
-            {selected.rows.map((row) => {
-              const date = parseDateKey(row.dateKey)
-              const isToday = row.dateKey === todayKey
-              const isPast = row.dateKey < todayKey
-              const weekday = date.toLocaleDateString(undefined, { weekday: "short" })
-              const dateBlock = (
-                <span
-                  className={cn(
-                    "flex size-12 shrink-0 flex-col items-center justify-center rounded-2xl leading-none",
-                    isToday ? "bg-sk-blue text-white" : row.day ? "bg-sk-canvas text-sk-ink" : "text-sk-mute",
-                  )}
-                >
-                  <span className="text-[0.7rem] font-bold">{weekday}</span>
-                  <span className="mt-0.5 text-lg font-extrabold tabular-nums">{date.getDate()}</span>
-                </span>
-              )
-
-              if (!row.day) {
-                return (
-                  <li key={row.key} aria-current={isToday ? "date" : undefined} className="flex items-center gap-3 px-3 py-1.5">
-                    {dateBlock}
-                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-sk-mute">
-                      <MoonStars className="size-4" weight="bold" />
-                      {isToday ? "Rest day today" : "Rest day"}
-                    </span>
-                  </li>
-                )
+      <Split
+        main={
+          <Section aria-label={`Week ${selected.week.weekNumber}`}>
+            <WeekPager
+              title={`Week ${selected.week.weekNumber} of ${totalWeeks}`}
+              subtitle={`${shortDate(selected.startKey)} to ${shortDate(selected.endKey)}${selected === todayWeek ? ", this week" : ""}`}
+              onPrevious={selectedIndex > 0 ? () => goToWeek(selectedIndex - 1) : undefined}
+              onNext={selectedIndex < weeks.length - 1 ? () => goToWeek(selectedIndex + 1) : undefined}
+              action={
+                todayWeek && selected !== todayWeek ? (
+                  <Button variant="quiet" size="sm" onClick={() => goToWeek(weeks.indexOf(todayWeek))}>
+                    This week
+                  </Button>
+                ) : null
               }
-
-              const day = row.day
-              const done = isDayDone(day)
-              const isSelected = selectedRow?.day.id === day.id
-              return (
-                <li key={row.key} aria-current={isToday ? "date" : undefined}>
-                  <button
-                    type="button"
-                    aria-expanded={isSelected}
-                    onClick={() => setSelectedDayId(day.id)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-                      isSelected ? "bg-sk-blue-tint" : "hover:bg-sk-canvas",
-                    )}
-                  >
-                    {dateBlock}
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-bold leading-snug text-sk-ink">{day.title}</span>
-                      <span className="mt-0.5 block truncate text-sm text-sk-mute">
-                        {day.blockPreview.length > 0 ? day.blockPreview.join(", ") : day.focus || `${day.sessionType} session`}
-                      </span>
-                    </span>
-                    {done ? (
-                      <CheckCircle className="size-6 shrink-0 text-sk-green" weight="fill" aria-label="Completed" />
-                    ) : null}
-                    <CaretDown className={cn("size-4 shrink-0 text-sk-mute transition-transform lg:hidden", isSelected && "rotate-180")} weight="bold" />
-                    <CaretRight className="hidden size-4 shrink-0 text-sk-mute lg:block" weight="bold" />
-                  </button>
-                  {isSelected ? (
-                    <div className="px-3 pb-4 pt-3 lg:hidden">
-                      <DayDetail day={day} isToday={isToday} isDone={done} isPast={isPast} showTitle={false} />
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-
-        <section aria-label="Session detail" className="sk-card hidden lg:sticky lg:top-6 lg:block">
-          {selectedRow ? (
-            <DayDetail
-              day={selectedRow.day}
-              isToday={selectedRow.dateKey === todayKey}
-              isDone={isDayDone(selectedRow.day)}
-              isPast={selectedRow.dateKey < todayKey}
-              showTitle
+              className="mb-1.5"
             />
-          ) : (
-            <EmptyState
-              icon={<MoonStars className="size-6" weight="fill" />}
-              title="A full rest week"
-              body="Nothing is planned for this week. Flip to another week to see sessions."
-              className="border-0 p-0"
-            />
-          )}
-        </section>
-      </div>
-    </div>
+            <List ordered aria-label="Days of this week">
+              {selected.rows.flatMap((row) => {
+                const date = parseDateKey(row.dateKey)
+                const isToday = row.dateKey === todayKey
+                const leading = <DayLabel weekday={date.toLocaleDateString(undefined, { weekday: "short" })} number={date.getDate()} today={isToday} muted={!row.day} />
+                const extras = extrasInWeek.filter((ref) => ref.date === row.dateKey)
+                const extraRows = extras.map((ref) => (
+                  <ListRow
+                    key={ref.id}
+                    to={`/athlete/log?${new URLSearchParams({ ...(ref.date !== todayKey ? { date: ref.date } : {}), session: ref.id }).toString()}`}
+                    leading={row.day ? <span className="w-9" aria-hidden /> : leading}
+                    title={ref.title}
+                    subtitle="Added by you"
+                    trailing={ref.status === "completed" ? <StatusText tone="green">Done</StatusText> : undefined}
+                    aria-current={isToday && !row.day ? "date" : undefined}
+                  />
+                ))
+                if (!row.day) {
+                  if (extras.length > 0) return extraRows
+                  return [
+                    <ListRow key={row.key} leading={leading} aria-current={isToday ? "date" : undefined}>
+                      <span className="sk-list-sub">{isToday ? "Rest day today" : "Rest day"}</span>
+                    </ListRow>,
+                  ]
+                }
+                const day = row.day
+                const state = states.get(row.key)
+                return [
+                  <ListRow
+                    key={row.key}
+                    to={planQuery({ day: row.dateKey })}
+                    leading={leading}
+                    title={day.title}
+                    subtitle={daySummary(day)}
+                    trailing={state?.label ? <StatusText tone={state.tone}>{state.kind === "skipped" ? "Skipped" : state.label}</StatusText> : undefined}
+                    aria-current={isToday ? "date" : undefined}
+                  />,
+                  ...extraRows,
+                ]
+              })}
+            </List>
+          </Section>
+        }
+        side={
+          <>
+            <Section title="This week">
+              <FactList>
+                <Fact label="Focus" empty="No focus set">
+                  {selected.week.emphasis}
+                </Fact>
+                <Fact label="Sessions done">{trainingRows.length > 0 ? `${doneInWeek} of ${trainingRows.length}` : "Rest week"}</Fact>
+                {excusedInWeek > 0 ? <Fact label="Skipped or excused">{excusedInWeek}</Fact> : null}
+                {extrasInWeek.length > 0 ? <Fact label="Added by you">{extrasInWeek.length}</Fact> : null}
+              </FactList>
+              {plans.length > 1 ? (
+                <Field label="Showing plan" className="mt-4">
+                  <Select value={activePlan.id} onChange={(event) => setSearchParams({ plan: event.target.value }, { replace: true })}>
+                    {plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : null}
+            </Section>
+            {moreSection}
+          </>
+        }
+      />
+
+      <AvailabilityDialog open={availabilityOpen} onOpenChange={setAvailabilityOpen} />
+    </Screen>
   )
 }

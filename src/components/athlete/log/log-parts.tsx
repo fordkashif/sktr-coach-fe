@@ -1,23 +1,40 @@
-import { useEffect, useId, useState } from "react"
+import { useEffect, useState } from "react"
 import {
-  CaretLeft,
-  CaretRight,
-  Check,
-  CheckCircle,
-  CloudArrowUp,
-  CloudCheck,
-  CloudSlash,
-  Plus,
-  WarningCircle,
-} from "@phosphor-icons/react"
-import { formatSeconds, formatSetLog, isLogEmpty, parseSeconds, targetValues } from "@/lib/data/session/session-from-plan"
+  Button,
+  Choices,
+  DayPicker,
+  Dialog,
+  Field,
+  Input,
+  List,
+  ListRow,
+  Meter,
+  Notice,
+  NumberInput,
+  Select,
+  SetGroup,
+  SetRow,
+  StatusText,
+  TickButton,
+  WeekPager,
+  type DayPickerDay,
+} from "@/components/sk"
+import type { Result } from "@/lib/data/result"
+import { formatSetLog, isLogEmpty, MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
 import type { SyncState } from "@/lib/data/session/session-log-sync"
-import type { AthleteWeekDay, LoggableBlock, LoggableRow, SessionRowLog } from "@/lib/data/session/types"
+import {
+  SKIP_REASONS,
+  type AthleteWeekDay,
+  type ExtraExerciseInput,
+  type LastTimeResult,
+  type LogKind,
+  type LoggableBlock,
+  type LoggableRow,
+  type SessionRowLog,
+  type SkipReason,
+} from "@/lib/data/session/types"
 import { addDaysIso } from "@/lib/data/training-plan/plan-builder-model"
-import { cn } from "@/lib/utils"
-import { setKey, type LogField } from "./use-session-log"
-
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+import { repeatTarget, setKey, type LogField } from "./use-session-log"
 
 function parseDay(dateIso: string) {
   return new Date(`${dateIso}T00:00:00Z`)
@@ -27,233 +44,131 @@ export function formatLongDay(dateIso: string) {
   return parseDay(dateIso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" })
 }
 
-export function WeekStrip({
-  week,
-  selected,
-  today,
-  onSelect,
-}: {
-  week: AthleteWeekDay[]
-  selected: string
-  today: string
-  onSelect: (date: string) => void
-}) {
+export function formatShortDay(dateIso: string) {
+  return parseDay(dateIso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" })
+}
+
+/** The state of one day as the day picker and the lists show it. */
+export function dayState(entry: AthleteWeekDay, today: string): DayPickerDay["state"] {
+  if (entry.done) return "done"
+  if (entry.kind !== "session") return entry.date === today ? "today" : "rest"
+  if (entry.skipped) return "skipped"
+  if (entry.date === today) return "today"
+  if (entry.date < today) return entry.excused ? "skipped" : "missed"
+  return "planned"
+}
+
+const DAY_STATE_WORDS: Record<DayPickerDay["state"], string> = {
+  done: "session done",
+  today: "today",
+  planned: "session planned",
+  skipped: "session skipped or excused",
+  missed: "session not logged",
+  rest: "no session",
+}
+
+/** Pick a day: the week with previous and next, and seven days to tap. */
+export function DayNav({ week, selected, today, onSelect }: { week: AthleteWeekDay[]; selected: string; today: string; onSelect: (date: string) => void }) {
   const first = week[0]?.date ?? selected
   const last = week[6]?.date ?? selected
   const holdsToday = today >= first && today <= last
-  const range = `${parseDay(first).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" })} to ${parseDay(last).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" })}`
-
+  const range = `${formatShortDay(first)} to ${formatShortDay(last)}`
+  const days: DayPickerDay[] = week.map((entry) => {
+    const state = dayState(entry, today)
+    const isToday = entry.date === today
+    return {
+      key: entry.date,
+      letter: parseDay(entry.date).toLocaleDateString(undefined, { weekday: "narrow", timeZone: "UTC" }),
+      number: parseDay(entry.date).getUTCDate(),
+      state,
+      isToday,
+      label: `${formatLongDay(entry.date)}${isToday && state !== "today" ? ", today" : ""}, ${entry.kind === "session" && state === "today" ? "today, session planned" : DAY_STATE_WORDS[state]}`,
+    }
+  })
   return (
-    <nav aria-label="Choose a day" className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-sk-mute">{holdsToday ? "This week" : range}</p>
-        <div className="flex items-center gap-1">
-          {selected !== today ? (
-            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm h-11" onClick={() => onSelect(today)}>
+    <nav aria-label="Choose a day" className="flex flex-col gap-3">
+      <WeekPager
+        title={holdsToday ? "This week" : range}
+        subtitle={holdsToday ? range : undefined}
+        onPrevious={() => onSelect(addDaysIso(selected, -7))}
+        onNext={() => onSelect(addDaysIso(selected, 7))}
+        action={
+          selected !== today ? (
+            <Button variant="quiet" size="sm" onClick={() => onSelect(today)}>
               Today
-            </button>
-          ) : null}
-          <button type="button" className="sk-btn sk-btn-ghost size-11 px-0" aria-label="Previous week" onClick={() => onSelect(addDaysIso(selected, -7))}>
-            <CaretLeft className="size-5" weight="bold" />
-          </button>
-          <button type="button" className="sk-btn sk-btn-ghost size-11 px-0" aria-label="Next week" onClick={() => onSelect(addDaysIso(selected, 7))}>
-            <CaretRight className="size-5" weight="bold" />
-          </button>
-        </div>
-      </div>
-      <ol className="grid grid-cols-7 gap-1.5">
-        {week.map((entry, index) => {
-          const active = entry.date === selected
-          const isToday = entry.date === today
-          const state = entry.done ? "done" : entry.kind === "session" ? "planned" : "rest"
-          return (
-            <li key={entry.date}>
-              <button
-                type="button"
-                aria-current={active ? "date" : undefined}
-                aria-label={`${formatLongDay(entry.date)}${isToday ? ", today" : ""}, ${
-                  state === "done" ? "session done" : state === "planned" ? "session planned" : "no session"
-                }`}
-                onClick={() => onSelect(entry.date)}
-                className={cn(
-                  "flex h-[68px] w-full flex-col items-center justify-center gap-0.5 rounded-[14px] border text-sk-ink transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-                  active ? "border-sk-blue bg-sk-blue text-white" : "border-sk-line bg-white hover:border-sk-ink",
-                )}
-              >
-                <span className={cn("text-xs font-semibold", active ? "text-white/85" : isToday ? "text-sk-blue" : "text-sk-mute")}>
-                  {WEEKDAYS[index]}
-                </span>
-                <span className="text-lg font-extrabold leading-none tabular-nums">{parseDay(entry.date).getUTCDate()}</span>
-                <span className="flex h-3 items-center" aria-hidden>
-                  {state === "done" ? (
-                    <Check className={cn("size-3", active ? "text-white" : "text-sk-green")} weight="bold" />
-                  ) : state === "planned" ? (
-                    <span className={cn("size-1.5 rounded-full", active ? "bg-white" : "bg-sk-blue")} />
-                  ) : null}
-                </span>
-              </button>
-            </li>
-          )
-        })}
-      </ol>
+            </Button>
+          ) : null
+        }
+      />
+      <DayPicker days={days} selected={selected} onSelect={onSelect} />
     </nav>
   )
 }
 
+/** Saved, saving, not saved yet (retrying on its own), or refused with a way to try again. */
 export function SyncStatus({ sync, onRetry, className }: { sync: SyncState; onRetry: () => void; className?: string }) {
   return (
-    <div role="status" aria-live="polite" data-sync={sync.status} className={cn("flex min-w-0 items-center gap-1.5 text-sm font-bold", className)}>
+    <div role="status" aria-live="polite" data-sync={sync.status} className={className}>
       {sync.status === "saved" ? (
-        <>
-          <CloudCheck className="size-5 shrink-0 text-sk-green" weight="fill" aria-hidden />
-          <span className="text-[#07673f]">Saved</span>
-        </>
+        <StatusText tone="green">Saved</StatusText>
       ) : sync.status === "saving" ? (
-        <>
-          <CloudArrowUp className="size-5 shrink-0 text-sk-mute" weight="bold" aria-hidden />
-          <span className="text-sk-ink-2">Saving</span>
-        </>
+        <StatusText tone="neutral">Saving</StatusText>
       ) : sync.status === "retrying" ? (
-        <>
-          <CloudSlash className="size-5 shrink-0 text-[#b32a0c]" weight="bold" aria-hidden />
-          <span className="text-[#b32a0c]">Not saved yet, retrying</span>
-        </>
+        <StatusText tone="amber">Not sent yet, retrying</StatusText>
       ) : (
-        <>
-          <WarningCircle className="size-5 shrink-0 text-[#b32a0c]" weight="fill" aria-hidden />
-          <span className="truncate text-[#b32a0c]">Could not save</span>
-          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm ml-1" onClick={onRetry}>
+        <span className="flex items-center gap-2">
+          <StatusText tone="coral">Could not save</StatusText>
+          <Button size="sm" onClick={onRetry}>
             Try again
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
-function formatPlain(value: number) {
-  return String(Math.round(value * 1000) / 1000)
-}
-
-function parsePlain(text: string): number | null {
-  const cleaned = text.trim().replace(",", ".")
-  if (!cleaned) return null
-  const parsed = Number.parseFloat(cleaned)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
-}
-
-/** Accepts seconds ("7.12") or minutes and seconds ("1:05.3"). */
-function parseTime(text: string): number | null {
-  const cleaned = text.trim().replace(",", ".")
-  if (!cleaned) return null
-  if (cleaned.includes(":")) return parseSeconds(cleaned)
-  return parsePlain(cleaned)
-}
-
-function formatTime(value: number) {
-  return value < 60 ? formatPlain(value) : formatSeconds(value)
-}
-
-/**
- * Big numeric field. Keeps what is being typed locally (so "102." is not rewritten mid entry)
- * and reports a number on every change, which is what triggers the autosave.
- */
-function NumberField({
-  label,
-  unit,
-  value,
-  time = false,
-  onChange,
-}: {
-  label: string
-  unit?: string
-  value: number | null
-  time?: boolean
-  onChange: (value: number | null) => void
-}) {
-  const id = useId()
-  const format = time ? formatTime : formatPlain
-  const [text, setText] = useState(value === null ? "" : format(value))
-  const [focused, setFocused] = useState(false)
-
-  useEffect(() => {
-    if (!focused) setText(value === null ? "" : (time ? formatTime : formatPlain)(value))
-  }, [focused, time, value])
-
-  return (
-    <div className="relative min-w-0 flex-1">
-      <label htmlFor={id} className="sr-only">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="text"
-        inputMode="decimal"
-        autoComplete="off"
-        enterKeyHint="done"
-        placeholder="0"
-        value={text}
-        onFocus={(event) => {
-          setFocused(true)
-          event.currentTarget.select()
-        }}
-        onBlur={() => setFocused(false)}
-        onChange={(event) => {
-          const next = event.target.value.replace(time ? /[^0-9.,:]/g : /[^0-9.,]/g, "").slice(0, 9)
-          setText(next)
-          onChange(time ? parseTime(next) : parsePlain(next))
-        }}
-        className={cn(
-          "h-14 w-full rounded-[14px] border border-[#d5d9e3] bg-white px-2 text-center text-xl font-extrabold tabular-nums text-sk-ink placeholder:font-semibold placeholder:text-[#c3c8d3] focus:border-sk-blue focus:outline-none focus:ring-2 focus:ring-sk-blue/20",
-          unit && "px-11",
-        )}
-      />
-      {unit ? (
-        <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-sm font-semibold text-sk-mute" aria-hidden>
-          {unit}
+          </Button>
         </span>
-      ) : null}
+      )}
     </div>
   )
 }
 
-function TickButton({ done, label, onClick }: { done: boolean; label: string; onClick: () => void }) {
+/** "3 of 12 done" with a thin bar, for the sticky bar while logging. */
+export function LogProgress({ done, total }: { done: number; total: number }) {
   return (
-    <button
-      type="button"
-      aria-pressed={done}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        "flex size-14 shrink-0 items-center justify-center rounded-[14px] border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-        done ? "border-sk-green bg-sk-green text-white" : "border-[#cdd2de] bg-white text-[#b6bcc9] hover:border-sk-ink hover:text-sk-ink",
-      )}
-    >
-      <Check className="size-7" weight="bold" aria-hidden />
-    </button>
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-bold text-sk-ink">
+        <span className="tabular-nums">
+          {done} of {total}
+        </span>{" "}
+        done
+      </p>
+      <Meter value={total > 0 ? (done / total) * 100 : 0} tone="green" className="mt-1.5" label="Sets done" />
+    </div>
   )
 }
 
 const SET_NOUN: Record<LoggableRow["kind"], string> = { strength: "Set", time: "Rep", mark: "Attempt", check: "Set" }
 
-export function ExerciseRow({
+function trim(value: number | null | undefined) {
+  return value === null || value === undefined ? undefined : String(Math.round(value * 1000) / 1000)
+}
+
+/** One exercise of the session being logged: its sets, "Same as target", "Repeat set", "Add set". */
+export function ExerciseLog({
   row,
   logs,
   count,
-  canAddSet,
+  lastTime,
   onToggle,
   onValue,
   onFill,
+  onRepeat,
   onAddSet,
   hideLabel = false,
 }: {
   row: LoggableRow
   logs: Record<string, SessionRowLog>
   count: number
-  canAddSet: boolean
+  lastTime: LastTimeResult | null
   onToggle: (setIndex: number) => void
   onValue: (setIndex: number, field: LogField, value: number | null) => void
   onFill: () => void
+  onRepeat: () => void
   onAddSet: () => void
   /** The block title already says it (a block with a single item and no exercises). */
   hideLabel?: boolean
@@ -265,144 +180,286 @@ export function ExerciseRow({
   const single = row.kind === "check" && count === 1
   const target = targetValues(row)
   const hasTarget = row.kind === "strength" ? target.reps != null || target.loadKg != null : row.kind === "time" ? target.timeSeconds != null : target.mark != null
+  const repeat = allDone ? null : repeatTarget(row, logs, count)
+  const canAddSet = row.kind !== "check" && count < MAX_SETS
+  const hint = [row.helper, lastTime ? `Last time: ${lastTime.summary} (${formatShortDay(lastTime.date)})` : null].filter(Boolean).join(". ") || undefined
+
+  if (single) {
+    return (
+      <SetGroup
+        data-exercise={row.label}
+        title={hideLabel ? undefined : row.label}
+        target={row.target}
+        hint={hint}
+        trailing={<TickButton done={allDone} label={`${row.label}, ${allDone ? "done" : "mark as done"}`} onClick={() => onToggle(1)} />}
+      />
+    )
+  }
 
   return (
-    <li data-exercise={row.label} className="border-b border-sk-line py-4 first:pt-1 last:border-b-0 last:pb-0">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          {hideLabel ? (
-            <p className="text-base leading-snug text-sk-ink">{row.target}</p>
-          ) : (
-            <>
-              <h3 className="text-lg font-bold leading-tight tracking-[-0.01em] text-sk-ink">{row.label}</h3>
-              <p className="mt-0.5 text-[0.95rem] text-sk-ink-2">{row.target}</p>
-            </>
-          )}
-          {row.helper ? <p className="mt-0.5 text-sm text-sk-mute">{row.helper}</p> : null}
-        </div>
-        {single ? (
-          <TickButton done={allDone} label={`${row.label}, ${allDone ? "done" : "mark as done"}`} onClick={() => onToggle(1)} />
-        ) : allDone ? (
-          <CheckCircle className="size-7 shrink-0 text-sk-green" weight="fill" aria-label="All done" />
-        ) : (
-          <span className="shrink-0 text-sm font-bold tabular-nums text-sk-mute">
-            {doneCount}/{count}
-          </span>
-        )}
-      </div>
-
-      {single ? null : (
+    <SetGroup
+      data-exercise={row.label}
+      title={hideLabel ? undefined : row.label}
+      target={row.target}
+      hint={hint}
+      status={allDone ? <StatusText tone="green">Done</StatusText> : `${doneCount} of ${count}`}
+      columns={row.kind === "strength" ? ["Reps", "kg"] : undefined}
+      actions={
         <>
-          {row.kind === "strength" ? (
-            <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-sk-mute" aria-hidden>
-              <span className="w-7 shrink-0" />
-              <span className="flex-1 text-center">Reps</span>
-              <span className="flex-1 text-center">Load, kg</span>
-              <span className="w-14 shrink-0 text-center">Done</span>
-            </div>
+          {!allDone && row.kind !== "check" ? (
+            <Button variant="quiet" size="sm" onClick={onFill}>
+              {hasTarget ? "Same as target" : "Tick all"}
+            </Button>
           ) : null}
-          <ol className={cn("space-y-2", row.kind === "strength" ? "mt-1.5" : "mt-3")}>
-            {sets.map((setIndex) => {
-              const log = logs[setKey(row.id, setIndex)]
-              const done = Boolean(log?.completed)
-              return (
-                <li key={setIndex} className="flex items-center gap-2">
-                  <span className="w-7 shrink-0 text-center text-base font-extrabold tabular-nums text-sk-mute" aria-hidden>
-                    {setIndex}
-                  </span>
-                  {row.kind === "strength" ? (
-                    <>
-                      <NumberField
-                        label={`${row.label}, set ${setIndex}, reps`}
-                        value={log?.reps ?? null}
-                        onChange={(value) => onValue(setIndex, "reps", value)}
-                      />
-                      <NumberField
-                        label={`${row.label}, set ${setIndex}, load in kilograms`}
-                        value={log?.loadKg ?? null}
-                        onChange={(value) => onValue(setIndex, "loadKg", value)}
-                      />
-                    </>
-                  ) : row.kind === "time" ? (
-                    <NumberField
-                      label={`${row.label}, rep ${setIndex}, time in seconds`}
-                      unit="sec"
-                      time
-                      value={log?.timeSeconds ?? null}
-                      onChange={(value) => onValue(setIndex, "timeSeconds", value)}
-                    />
-                  ) : row.kind === "mark" ? (
-                    <NumberField
-                      label={`${row.label}, attempt ${setIndex}, mark in metres`}
-                      unit="m"
-                      value={log?.mark ?? null}
-                      onChange={(value) => onValue(setIndex, "mark", value)}
-                    />
-                  ) : (
-                    <span className="flex-1 text-base font-semibold text-sk-ink-2">
-                      {noun} {setIndex}
-                    </span>
-                  )}
-                  <TickButton
-                    done={done}
-                    label={`${row.label}, ${noun.toLowerCase()} ${setIndex}, ${done ? "done" : "mark as done"}`}
-                    onClick={() => onToggle(setIndex)}
-                  />
-                </li>
-              )
-            })}
-          </ol>
-          <div className="mt-2 flex flex-wrap items-center gap-1 pl-7">
-            {!allDone && row.kind !== "check" ? (
-              <button type="button" className="sk-btn sk-btn-quiet h-11 px-4 text-sm" onClick={onFill}>
-                <Check className="size-4" weight="bold" aria-hidden />
-                {hasTarget ? "Same as target" : "Tick all"}
-              </button>
-            ) : null}
-            {canAddSet ? (
-              <button type="button" className="sk-btn sk-btn-ghost h-11 text-sm" onClick={onAddSet}>
-                <Plus className="size-4" weight="bold" aria-hidden />
-                Add {noun.toLowerCase()}
-              </button>
-            ) : null}
-          </div>
+          {repeat ? (
+            <Button variant="quiet" size="sm" onClick={onRepeat}>
+              Repeat {noun.toLowerCase()} {repeat.from}
+            </Button>
+          ) : null}
+          {canAddSet ? (
+            <Button variant="quiet" size="sm" onClick={onAddSet}>
+              Add {noun.toLowerCase()}
+            </Button>
+          ) : null}
         </>
-      )}
-    </li>
+      }
+    >
+      {sets.map((setIndex) => {
+        const log = logs[setKey(row.id, setIndex)]
+        const done = Boolean(log?.completed)
+        return (
+          <SetRow
+            key={setIndex}
+            index={setIndex}
+            tick={<TickButton done={done} label={`${row.label}, ${noun.toLowerCase()} ${setIndex}, ${done ? "done" : "mark as done"}`} onClick={() => onToggle(setIndex)} />}
+          >
+            {row.kind === "strength" ? (
+              <>
+                <NumberInput
+                  label={`${row.label}, set ${setIndex}, reps`}
+                  value={log?.reps ?? null}
+                  placeholder={trim(target.reps) ?? "0"}
+                  onChange={(value) => onValue(setIndex, "reps", value)}
+                />
+                <NumberInput
+                  label={`${row.label}, set ${setIndex}, load in kilograms`}
+                  value={log?.loadKg ?? null}
+                  placeholder={trim(target.loadKg) ?? "0"}
+                  onChange={(value) => onValue(setIndex, "loadKg", value)}
+                />
+              </>
+            ) : row.kind === "time" ? (
+              <NumberInput
+                label={`${row.label}, rep ${setIndex}, time in seconds`}
+                unit="sec"
+                mode="time"
+                value={log?.timeSeconds ?? null}
+                placeholder={trim(target.timeSeconds) ?? "0"}
+                onChange={(value) => onValue(setIndex, "timeSeconds", value)}
+              />
+            ) : row.kind === "mark" ? (
+              <NumberInput
+                label={`${row.label}, attempt ${setIndex}, mark in metres`}
+                unit="m"
+                value={log?.mark ?? null}
+                placeholder={trim(target.mark) ?? "0"}
+                onChange={(value) => onValue(setIndex, "mark", value)}
+              />
+            ) : (
+              <span className="flex-1 text-base font-semibold text-sk-ink-2">
+                {noun} {setIndex}
+              </span>
+            )}
+          </SetRow>
+        )
+      })}
+    </SetGroup>
   )
 }
 
-/** Read-only list of what was logged, grouped by block. */
+/** Read-only rows of what was logged: exercise, result, target. */
 export function LoggedSummary({ blocks, logs }: { blocks: LoggableBlock[]; logs: Record<string, SessionRowLog> }) {
   const all = Object.values(logs)
   return (
-    <div className="space-y-5">
-      {blocks.map((block) => (
-        <div key={block.id}>
-          {block.rows.length === 1 && block.rows[0].label === block.name ? null : <h3 className="sk-h3">{block.name}</h3>}
-          <ul className="mt-1">
-            {block.rows.map((row) => {
-              const sets = all
-                .filter((log) => log.rowId === row.id && !isLogEmpty(log))
-                .sort((left, right) => left.setIndex - right.setIndex)
-                .map((log) => formatSetLog(row.kind, log))
-                .filter(Boolean)
-              const onlyDone = sets.length > 0 && sets.every((entry) => entry === "Done")
-              return (
-                <li key={row.id} data-logged={row.label} className="sk-row items-start">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sk-ink">{row.label}</p>
-                    <p className="text-sm text-sk-mute">Target: {row.target}</p>
-                  </div>
-                  <p className={cn("max-w-[55%] shrink-0 text-right text-[0.95rem] font-bold tabular-nums", sets.length > 0 ? "text-sk-ink" : "font-semibold text-sk-mute")}>
-                    {sets.length === 0 ? "Not logged" : onlyDone ? (sets.length > 1 ? `${sets.length} done` : "Done") : sets.join(", ")}
-                  </p>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ))}
-    </div>
+    <List>
+      {blocks.flatMap((block) =>
+        block.rows.map((row) => {
+          const sets = all
+            .filter((log) => log.rowId === row.id && !isLogEmpty(log))
+            .sort((left, right) => left.setIndex - right.setIndex)
+            .map((log) => formatSetLog(row.kind, log))
+            .filter(Boolean)
+          const onlyDone = sets.length > 0 && sets.every((entry) => entry === "Done")
+          const result = sets.length === 0 ? "Not logged" : onlyDone ? (sets.length > 1 ? `${sets.length} done` : "Done") : sets.join(", ")
+          const showBlock = block.name !== row.label && blocks.length > 1
+          return (
+            <ListRow key={row.id} data-logged={row.label}>
+              <span className="sk-list-title">{row.label}</span>
+              <span className={sets.length > 0 ? "block text-[0.9375rem] font-semibold leading-snug text-sk-ink tabular-nums" : "sk-list-sub"}>{result}</span>
+              <span className="sk-list-sub">
+                {showBlock ? `${block.name}. ` : ""}Target: {row.target}
+              </span>
+            </ListRow>
+          )
+        }),
+      )}
+    </List>
+  )
+}
+
+/** "Can't do this one": pick a reason, add a short note when it is something else. */
+export function SkipDialog({
+  open,
+  onOpenChange,
+  sessionTitle,
+  onSkip,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  sessionTitle: string
+  onSkip: (reason: SkipReason, note: string | null) => Promise<Result<null>>
+}) {
+  const [reason, setReason] = useState<SkipReason | null>(null)
+  const [note, setNote] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setReason(null)
+    setNote("")
+    setError(null)
+  }, [open])
+
+  const save = async () => {
+    if (!reason) {
+      setError("Choose a reason.")
+      return
+    }
+    if (reason === "other" && !note.trim()) {
+      setError("Add a few words so your coach knows why.")
+      return
+    }
+    setSaving(true)
+    setError(null)
+    const result = await onSkip(reason, note.trim() || null)
+    setSaving(false)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Can't do this one"
+      description={`${sessionTitle} will be marked as skipped. It will not count as missed, and your coach sees the reason. You can undo this and log it later.`}
+      footer={
+        <>
+          <Button variant="quiet" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? "Saving..." : "Skip this session"}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Choices label="Why are you skipping it" hideLabel columns={2} options={SKIP_REASONS} value={reason} onChange={setReason} />
+        <Field label={reason === "other" ? "What happened" : "Note for your coach"} optional={reason !== "other"}>
+          <Input value={note} maxLength={280} onChange={(event) => setNote(event.target.value)} placeholder="A few words" />
+        </Field>
+        {error ? <Notice tone="error">{error}</Notice> : null}
+      </div>
+    </Dialog>
+  )
+}
+
+const EXERCISE_KINDS: Array<{ value: LogKind; label: string; detail: string }> = [
+  { value: "strength", label: "Reps and load", detail: "Lifts" },
+  { value: "time", label: "Time", detail: "Runs, sprints" },
+  { value: "mark", label: "Distance or height", detail: "Jumps, throws" },
+  { value: "check", label: "Just tick it off", detail: "Warm up, drills" },
+]
+
+/** Add an exercise to a session the athlete added themselves. */
+export function AddExerciseDialog({
+  open,
+  onOpenChange,
+  defaultKind,
+  onAdd,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  defaultKind: LogKind
+  onAdd: (input: ExtraExerciseInput) => Promise<Result<LoggableRow>>
+}) {
+  const [label, setLabel] = useState("")
+  const [kind, setKind] = useState<LogKind>(defaultKind)
+  const [sets, setSets] = useState("3")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setLabel("")
+    setError(null)
+  }, [open])
+
+  const save = async () => {
+    if (!label.trim()) {
+      setError("Give the exercise a name.")
+      return
+    }
+    setSaving(true)
+    setError(null)
+    const result = await onAdd({ label: label.trim(), kind, sets: Number.parseInt(sets, 10) || 1 })
+    setSaving(false)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    onOpenChange(false)
+  }
+
+  const noun = kind === "time" ? "Reps" : kind === "mark" ? "Attempts" : "Sets"
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Add an exercise"
+      footer={
+        <>
+          <Button variant="quiet" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? "Adding..." : "Add exercise"}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label="Exercise" error={error ?? undefined}>
+          <Input value={label} maxLength={120} autoFocus onChange={(event) => setLabel(event.target.value)} placeholder="Back squat, 200m, long jump" />
+        </Field>
+        <Choices label="What you record" columns={2} options={EXERCISE_KINDS} value={kind} onChange={setKind} />
+        {kind !== "check" ? (
+          <Field label={noun} hint="You can add more while you log.">
+            <Select value={sets} onChange={(event) => setSets(event.target.value)}>
+              {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+      </div>
+    </Dialog>
   )
 }

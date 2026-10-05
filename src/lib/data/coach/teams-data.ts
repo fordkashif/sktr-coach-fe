@@ -136,7 +136,8 @@ export async function getCoachTeamsSnapshotForCurrentUser(): Promise<Result<Coac
       eventGroup: toEventGroup(row.event_group),
       primaryEvent: row.primary_event ?? "Unassigned",
       readiness: row.readiness ?? "yellow",
-      adherence: 100,
+      // This list does not load sessions, so there is no figure. It is never assumed to be 100%.
+      adherence: null,
       lastWellness: "-",
       teamId: row.team_id as string,
     }))

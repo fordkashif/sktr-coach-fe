@@ -1,17 +1,45 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { err, mapPostgrestError, ok, type Result } from "@/lib/data/result"
-import { logKindForBlockType, parseSetCount, planBlueprints, type SessionBlueprint } from "@/lib/data/session/session-from-plan"
-import { loadMockSessionDay, saveMockCompletion, saveMockRowLogs, weekStartIso } from "@/lib/data/session/session-mock"
+import { availabilityCovers, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
+import {
+  exerciseKey,
+  logKindForBlockType,
+  parseSetCount,
+  planBlueprints,
+  summariseSets,
+  type SessionBlueprint,
+} from "@/lib/data/session/session-from-plan"
+import {
+  addMockExtraExercise,
+  createMockExtraSession,
+  deleteMockExtraSession,
+  extraExerciseTarget,
+  listMockSessionRefs,
+  loadMockSessionDay,
+  mockLastTime,
+  saveMockCompletion,
+  saveMockRowLogs,
+  skipMockSession,
+  unskipMockSession,
+  weekStartIso,
+} from "@/lib/data/session/session-mock"
 import { insertSessionsFromBlueprints } from "@/lib/data/session/session-plan-sync"
 import type {
   AthleteSession,
   AthleteSessionDay,
+  AthleteSessionRef,
   AthleteWeekDay,
+  ExtraExerciseInput,
+  ExtraSessionInput,
+  LastTimeResult,
   LogKind,
   LoggableBlock,
+  LoggableRow,
   SessionBlockType,
+  SessionOrigin,
   SessionRowLog,
   SessionStatus,
+  SkipReason,
 } from "@/lib/data/session/types"
 import { addDaysIso, planEndDate, planFromBuilderState, todayIso } from "@/lib/data/training-plan/plan-builder-model"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -24,7 +52,7 @@ import { getBackendMode } from "@/lib/supabase/config"
  */
 
 const SESSION_COLUMNS =
-  "id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at, location, plan_id, plan_week_number, plan_day_index"
+  "id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at, location, plan_id, plan_week_number, plan_day_index, origin, skip_reason, skip_note"
 
 type SessionRecord = {
   id: string
@@ -39,6 +67,9 @@ type SessionRecord = {
   plan_id: string | null
   plan_week_number: number | null
   plan_day_index: number | null
+  origin: SessionOrigin | null
+  skip_reason: SkipReason | null
+  skip_note: string | null
 }
 
 type AthleteContext = { userId: string; athleteId: string; teamId: string | null; tenantId: string }
@@ -238,7 +269,13 @@ async function loadSessionBody(
   return ok({
     id: record.id,
     title: record.title,
-    status: completedOn ? "completed" : record.status === "completed" ? "completed" : logs.length > 0 ? "in-progress" : record.status,
+    status: completedOn
+      ? "completed"
+      : record.status === "completed" || record.status === "skipped"
+        ? record.status
+        : logs.length > 0
+          ? "in-progress"
+          : record.status,
     scheduledFor: record.scheduled_for,
     estimatedDurationMinutes: record.estimated_duration_minutes,
     coachNote: record.coach_note,
@@ -246,12 +283,30 @@ async function loadSessionBody(
     completedOn,
     overallRpe: completion?.rpe ?? null,
     athleteComment: completion?.athlete_comment ?? null,
+    origin: record.origin === "athlete" ? "athlete" : "plan",
+    skipReason: completedOn ? null : record.skip_reason,
+    skipNote: completedOn ? null : record.skip_note,
     blocks,
     logs,
   })
 }
 
-async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessionDay>> {
+function recordRef(record: SessionRecord, rpe: number | null = null): AthleteSessionRef {
+  return {
+    id: record.id,
+    date: record.scheduled_for,
+    title: record.title,
+    origin: record.origin === "athlete" ? "athlete" : "plan",
+    status: record.status,
+    skipReason: record.status === "skipped" ? record.skip_reason : null,
+    completedOn: record.completed_at ? record.completed_at.slice(0, 10) : null,
+    rpe,
+  }
+}
+
+const isPlanned = (record: SessionRecord) => record.origin !== "athlete"
+
+async function loadSupabaseSessionDay(date: string, sessionId: string | null): Promise<Result<AthleteSessionDay>> {
   const clientResult = supabaseClient("loadAthleteSessionDay")
   if (!clientResult.ok) return clientResult
   const client = clientResult.data
@@ -262,7 +317,7 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
   const weekStart = weekStartIso(date)
   const weekEnd = addDaysIso(weekStart, 6)
 
-  const [weekResult, nextResult, calendarResult] = await Promise.all([
+  const [weekResult, nextResult, calendarResult, availabilityResult] = await Promise.all([
     client
       .from("sessions")
       .select(SESSION_COLUMNS)
@@ -276,9 +331,11 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
       .select("title, scheduled_for")
       .eq("athlete_id", context.athleteId)
       .gt("scheduled_for", date)
+      .neq("origin", "athlete")
       .order("scheduled_for", { ascending: true })
       .limit(1),
     assignedPlanCalendar(client, context),
+    listAthleteAvailability([context.athleteId], { from: weekStart }),
   ])
   if (weekResult.error) return { ok: false, error: mapPostgrestError(weekResult.error) }
   if (nextResult.error) return { ok: false, error: mapPostgrestError(nextResult.error) }
@@ -286,8 +343,14 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
   const calendar: PlanCalendar = calendarResult.ok ? calendarResult.data : { planned: [], ranges: [] }
   if (!calendarResult.ok) console.warn("[session] could not read assigned plans", calendarResult.error)
 
+  // Excused days are a nicety on top of the session. If they cannot be read, the session still loads.
+  const periods: AthleteAvailability[] = availabilityResult.ok ? availabilityResult.data : []
+  if (!availabilityResult.ok) console.warn("[session] could not read availability", availabilityResult.error)
+  const excused = (day: string) => periods.some((period) => availabilityCovers(period, day))
+
   const weekSessions = (weekResult.data as SessionRecord[] | null) ?? []
-  let record = weekSessions.find((session) => session.scheduled_for === date) ?? null
+  // The day's own session is the planned one. A session the athlete added is opened by its id.
+  let record = weekSessions.find((session) => session.scheduled_for === date && isPlanned(session)) ?? null
 
   // The coach creates sessions on publish. An athlete who joined later creates the missing day here.
   // Only from today on: opening an old day must not create a session that then counts as missed.
@@ -311,11 +374,18 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
       .select(SESSION_COLUMNS)
       .eq("athlete_id", context.athleteId)
       .eq("scheduled_for", date)
+      .neq("origin", "athlete")
       .order("created_at", { ascending: true })
       .limit(1)
     if (rereadError) return { ok: false, error: mapPostgrestError(rereadError) }
     record = ((reread as SessionRecord[] | null) ?? [])[0] ?? null
     if (record) weekSessions.push(record)
+  }
+
+  const plannedRecord = record
+  if (sessionId && record?.id !== sessionId) {
+    record = weekSessions.find((entry) => entry.id === sessionId && entry.scheduled_for === date) ?? null
+    if (!record) return err("NOT_FOUND", "That session no longer exists.")
   }
 
   let session: AthleteSession | null = null
@@ -328,15 +398,17 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
   const inPlan = (day: string) => calendar.ranges.some((range) => day >= range.start && day <= range.end)
   const week: AthleteWeekDay[] = Array.from({ length: 7 }, (_, index) => {
     const day = addDaysIso(weekStart, index)
-    const stored = weekSessions.filter((entry) => entry.scheduled_for === day)
+    const onDay = weekSessions.filter((entry) => entry.scheduled_for === day)
+    const stored = onDay.filter(isPlanned)
+    const added = onDay.filter((entry) => !isPlanned(entry))
     const planned = day >= today && calendar.planned.some((entry) => entry.blueprint.date === day)
+    const statusOf = (entry: SessionRecord) => (session && entry.id === session.id ? session.status : entry.status)
     return {
       date: day,
       kind: stored.length > 0 || planned ? "session" : inPlan(day) ? "rest" : "none",
-      done:
-        day === date && session
-          ? session.status === "completed"
-          : stored.length > 0 && stored.every((entry) => entry.status === "completed"),
+      done: stored.length > 0 ? stored.every((entry) => statusOf(entry) === "completed") : added.some((entry) => statusOf(entry) === "completed"),
+      skipped: stored.length > 0 && stored.some((entry) => statusOf(entry) === "skipped") && !stored.some((entry) => statusOf(entry) === "completed"),
+      excused: excused(day),
     }
   })
 
@@ -351,17 +423,24 @@ async function loadSupabaseSessionDay(date: string): Promise<Result<AthleteSessi
   return ok({
     date,
     session,
-    inPlan: inPlan(date) || weekSessions.length > 0,
+    inPlan: inPlan(date) || weekSessions.some(isPlanned),
     next: candidates[0] ?? null,
     week,
+    others: weekSessions
+      .filter((entry) => entry.scheduled_for === date && entry.id !== session?.id && (entry.id === plannedRecord?.id || !isPlanned(entry)))
+      .map((entry) => recordRef(entry)),
+    excused: excused(date),
   })
 }
 
-/** The session planned for a day (today by default), with what the athlete has logged so far. */
-export async function loadAthleteSessionDay(date: string = todayIso()): Promise<Result<AthleteSessionDay>> {
-  if (getBackendMode() !== "supabase") return loadMockSessionDay(date)
+/**
+ * The session planned for a day (today by default), with what the athlete has logged so far.
+ * With `sessionId` it opens that session of the day instead (one the athlete added themselves).
+ */
+export async function loadAthleteSessionDay(date: string = todayIso(), sessionId: string | null = null): Promise<Result<AthleteSessionDay>> {
+  if (getBackendMode() !== "supabase") return loadMockSessionDay(date, sessionId)
   try {
-    return await loadSupabaseSessionDay(date)
+    return await loadSupabaseSessionDay(date, sessionId)
   } catch (cause) {
     return err("UNKNOWN", "Could not reach the server.", cause)
   }
@@ -451,4 +530,206 @@ export async function saveSessionCompletion(params: {
   } catch (cause) {
     return err("UNKNOWN", "Could not reach the server.", cause)
   }
+}
+
+/* Skip, sessions the athlete adds, history, last time --------------------------------------- */
+
+async function withAthlete<T>(operation: string, run: (client: SupabaseClient, context: AthleteContext) => Promise<Result<T>>): Promise<Result<T>> {
+  try {
+    const clientResult = supabaseClient(operation)
+    if (!clientResult.ok) return clientResult
+    const contextResult = await athleteContext(clientResult.data)
+    if (!contextResult.ok) return contextResult
+    return await run(clientResult.data, contextResult.data)
+  } catch (cause) {
+    return err("UNKNOWN", "Could not reach the server.", cause)
+  }
+}
+
+/** "Can't do this one": marks a planned session skipped with a reason. It no longer counts as missed. */
+export async function skipSession(sessionId: string, reason: SkipReason, note: string | null): Promise<Result<null>> {
+  if (getBackendMode() !== "supabase") return skipMockSession(sessionId, reason, note)
+  return withAthlete("skipSession", async (client) => {
+    const { error } = await client.rpc("skip_my_session", { p_session_id: sessionId, p_reason: reason, p_note: note?.trim() || null })
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    return ok(null)
+  })
+}
+
+/** Undo a skip. The session can be logged again. */
+export async function unskipSession(sessionId: string): Promise<Result<null>> {
+  if (getBackendMode() !== "supabase") return unskipMockSession(sessionId)
+  return withAthlete("unskipSession", async (client) => {
+    const { error } = await client.rpc("unskip_my_session", { p_session_id: sessionId })
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    return ok(null)
+  })
+}
+
+/**
+ * A session the athlete did that was not planned. It is stored with origin "athlete": it shows in
+ * their history and to their coach as "Added by athlete", and never counts towards plan adherence.
+ */
+export async function createExtraSession(input: ExtraSessionInput): Promise<Result<{ sessionId: string }>> {
+  const title = input.title.trim().slice(0, 120)
+  if (!title) return err("VALIDATION", "Give the session a name.")
+  if (getBackendMode() !== "supabase") return createMockExtraSession({ ...input, title })
+  return withAthlete("createExtraSession", async (client, context) => {
+    const { data: created, error } = await client
+      .from("sessions")
+      .insert({
+        tenant_id: context.tenantId,
+        athlete_id: context.athleteId,
+        title,
+        status: "scheduled",
+        scheduled_for: input.date,
+        origin: "athlete",
+        created_by_user_id: context.userId,
+      })
+      .select("id")
+      .single()
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    const sessionId = created.id as string
+    const { error: blockError } = await client
+      .from("session_blocks")
+      .insert({ session_id: sessionId, sort_order: 0, block_type: input.blockType, name: title })
+    if (blockError) {
+      // Do not leave an empty session behind.
+      await client.from("sessions").delete().eq("id", sessionId)
+      return { ok: false, error: mapPostgrestError(blockError) }
+    }
+    return ok({ sessionId })
+  })
+}
+
+/** Adds an exercise to a session the athlete added themselves. */
+export async function addExtraExercise(sessionId: string, blockId: string, sortOrder: number, input: ExtraExerciseInput): Promise<Result<LoggableRow>> {
+  const label = input.label.trim().slice(0, 120)
+  if (!label) return err("VALIDATION", "Give the exercise a name.")
+  const sets = input.kind === "check" ? 1 : Math.max(1, Math.min(20, Math.round(input.sets) || 1))
+  if (getBackendMode() !== "supabase") return addMockExtraExercise(sessionId, { ...input, label, sets })
+  return withAthlete("addExtraExercise", async (client) => {
+    const target = extraExerciseTarget({ ...input, sets })
+    const { data, error } = await client
+      .from("session_block_rows")
+      .insert({ session_block_id: blockId, sort_order: sortOrder, label, target, log_kind: input.kind, target_sets: sets })
+      .select("id")
+      .single()
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    return ok({
+      id: data.id as string,
+      sessionBlockId: blockId,
+      sortOrder,
+      label,
+      target,
+      helper: null,
+      kind: input.kind,
+      targetSets: sets,
+      targetReps: null,
+      targetLoad: null,
+    })
+  })
+}
+
+/** Removes a session the athlete added themselves. Planned sessions cannot be removed by the athlete. */
+export async function deleteExtraSession(sessionId: string): Promise<Result<null>> {
+  if (getBackendMode() !== "supabase") return deleteMockExtraSession(sessionId)
+  return withAthlete("deleteExtraSession", async (client) => {
+    const { data, error } = await client.from("sessions").delete().eq("id", sessionId).eq("origin", "athlete").select("id")
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    if (((data as unknown[] | null) ?? []).length === 0) return err("FORBIDDEN", "Only a session you added yourself can be removed.")
+    return ok(null)
+  })
+}
+
+/**
+ * The athlete's sessions between two days (inclusive), newest first, with the effort of finished ones.
+ * Used by the plan screen (state of each day) and the history list.
+ */
+export async function listAthleteSessions(from: string, to: string, limit = 400): Promise<Result<AthleteSessionRef[]>> {
+  if (getBackendMode() !== "supabase") return ok(listMockSessionRefs(from, to).slice(0, limit))
+  return withAthlete("listAthleteSessions", async (client, context) => {
+    const { data, error } = await client
+      .from("sessions")
+      .select(SESSION_COLUMNS)
+      .eq("athlete_id", context.athleteId)
+      .gte("scheduled_for", from)
+      .lte("scheduled_for", to)
+      .order("scheduled_for", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(limit)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    const records = (data as SessionRecord[] | null) ?? []
+
+    const effort = new Map<string, { rpe: number | null; completionDate: string }>()
+    const ids = records.map((record) => record.id)
+    for (let index = 0; index < ids.length; index += 200) {
+      const { data: completions, error: completionError } = await client
+        .from("session_completions")
+        .select("session_id, rpe, completion_date")
+        .in("session_id", ids.slice(index, index + 200))
+      if (completionError) return { ok: false, error: mapPostgrestError(completionError) }
+      for (const row of (completions as Array<{ session_id: string; rpe: number | null; completion_date: string }> | null) ?? []) {
+        effort.set(row.session_id, { rpe: row.rpe, completionDate: row.completion_date })
+      }
+    }
+    return ok(
+      records.map((record) => {
+        const completion = effort.get(record.id)
+        const ref = recordRef(record, completion?.rpe ?? null)
+        return completion ? { ...ref, status: "completed" as const, skipReason: null, completedOn: completion.completionDate } : ref
+      }),
+    )
+  })
+}
+
+/**
+ * What the athlete did the last time for each of these exercises (matched on the exercise name,
+ * in their most recent finished session before `before`). Keys are exerciseKey(label).
+ */
+export async function loadLastTime(labels: string[], before: string, excludeSessionId: string | null): Promise<Result<Record<string, LastTimeResult>>> {
+  const wanted = [...new Set(labels.map(exerciseKey).filter(Boolean))]
+  if (wanted.length === 0) return ok({})
+  if (getBackendMode() !== "supabase") return ok(mockLastTime(wanted, before, excludeSessionId))
+  return withAthlete("loadLastTime", async (client) => {
+    const { data, error } = await client.rpc("get_my_last_exercise_results", {
+      p_labels: wanted,
+      p_before: before,
+      p_exclude_session_id: /^[0-9a-f-]{36}$/i.test(excludeSessionId ?? "") ? excludeSessionId : null,
+    })
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    type Row = {
+      label_key: string
+      session_date: string
+      log_kind: string | null
+      block_type: SessionBlockType | null
+      set_index: number
+      reps: unknown
+      load_kg: unknown
+      time_seconds: unknown
+      distance_m: unknown
+      mark: unknown
+    }
+    const grouped = new Map<string, Row[]>()
+    for (const row of (data as Row[] | null) ?? []) grouped.set(row.label_key, [...(grouped.get(row.label_key) ?? []), row])
+    const found: Record<string, LastTimeResult> = {}
+    for (const [key, rows] of grouped) {
+      const summary = summariseSets(
+        asLogKind(rows[0].log_kind, rows[0].block_type ?? "Strength"),
+        rows.map((row) => ({
+          rowId: key,
+          setIndex: Number(row.set_index),
+          completed: true,
+          reps: numberOrNull(row.reps),
+          loadKg: numberOrNull(row.load_kg),
+          timeSeconds: numberOrNull(row.time_seconds),
+          distanceM: numberOrNull(row.distance_m),
+          mark: numberOrNull(row.mark),
+        })),
+      )
+      // "Done" on its own says nothing worth repeating.
+      if (summary && summary !== "Done" && !/ done$/.test(summary)) found[key] = { date: rows[0].session_date, summary }
+    }
+    return ok(found)
+  })
 }

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { listAthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
+import { adherenceCounts, adherencePercent, type AdherenceSession } from "@/lib/data/session/adherence"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -1567,10 +1569,10 @@ export type ClubAdminPerformanceReport = {
     eventGroup: string | null
     primaryEvent: string | null
     readiness: "green" | "yellow" | "red" | null
-    /** Sessions scheduled in the window up to today, and how many of those were completed. */
+    /** Sessions that were due in the window up to today (skipped and excused ones left out), and how many of those were completed. */
     sessionsPlanned: number
     sessionsDone: number
-    /** Null when no sessions were scheduled in the window. */
+    /** Null when no sessions were due in the window. */
     adherence: number | null
     /** Date (YYYY-MM-DD) of the latest check-in among the loaded rows. */
     lastCheckIn: string | null
@@ -1655,10 +1657,10 @@ export async function getClubAdminPerformanceReport(): Promise<Result<ClubAdminP
         .order("entry_date", { ascending: false })
         .order("id")
         .limit(CLUB_REPORT_ROW_CAP),
-      fetchAllClubRows<{ id: string; athlete_id: string }>((from, to) =>
+      fetchAllClubRows<{ id: string; athlete_id: string; scheduled_for: string; status: string; origin: string | null }>((from, to) =>
         client
           .from("sessions")
-          .select("id, athlete_id")
+          .select("id, athlete_id, scheduled_for, status, origin")
           .eq("tenant_id", tenantId)
           .gte("scheduled_for", sinceIso)
           .lte("scheduled_for", todayIso)
@@ -1742,17 +1744,15 @@ export async function getClubAdminPerformanceReport(): Promise<Result<ClubAdminP
     }
   }
 
-  const sessionIdsByAthlete = new Map<string, Set<string>>()
-  for (const row of sessionsResult.data.rows) {
-    const current = sessionIdsByAthlete.get(row.athlete_id) ?? new Set<string>()
-    current.add(row.id)
-    sessionIdsByAthlete.set(row.athlete_id, current)
-  }
-  const doneByAthlete = new Map<string, number>()
-  for (const row of completionsResult.data.rows) {
-    if (!sessionIdsByAthlete.get(row.athlete_id)?.has(row.session_id)) continue
-    doneByAthlete.set(row.athlete_id, (doneByAthlete.get(row.athlete_id) ?? 0) + 1)
-  }
+  // Adherence is done over due and not excused (see src/lib/data/session/adherence.ts).
+  const availabilityResult = await listAthleteAvailability([...activeAthleteIds], { from: sinceIso })
+  if (!availabilityResult.ok) console.warn("[club-admin] could not read athlete availability", availabilityResult.error)
+  const adherenceByAthlete = adherenceCounts(
+    sessionsResult.data.rows.map((row): AdherenceSession => ({ id: row.id, athleteId: row.athlete_id, scheduledFor: row.scheduled_for, status: row.status, origin: row.origin })),
+    new Set(completionsResult.data.rows.map((row) => row.session_id)),
+    availabilityResult.ok ? availabilityResult.data : [],
+    { from: sinceIso, to: todayIso },
+  )
 
   return ok({
     windowDays: CLUB_REPORT_WINDOW_DAYS,
@@ -1772,8 +1772,9 @@ export async function getClubAdminPerformanceReport(): Promise<Result<ClubAdminP
       }
     }),
     athletes: athletesResult.data.rows.map((row) => {
-      const sessionsPlanned = sessionIdsByAthlete.get(row.id)?.size ?? 0
-      const sessionsDone = Math.min(doneByAthlete.get(row.id) ?? 0, sessionsPlanned)
+      const counted = adherenceByAthlete.get(row.id)
+      const sessionsPlanned = counted?.due ?? 0
+      const sessionsDone = counted?.done ?? 0
       const latest = latestCheckInByAthlete.get(row.id)
       return {
         id: row.id,
@@ -1784,7 +1785,7 @@ export async function getClubAdminPerformanceReport(): Promise<Result<ClubAdminP
         readiness: latest && latest.date >= sinceIso ? latest.readiness : row.readiness,
         sessionsPlanned,
         sessionsDone,
-        adherence: sessionsPlanned > 0 ? Math.round((sessionsDone / sessionsPlanned) * 100) : null,
+        adherence: adherencePercent(counted),
         lastCheckIn: latest?.date ?? null,
       }
     }),

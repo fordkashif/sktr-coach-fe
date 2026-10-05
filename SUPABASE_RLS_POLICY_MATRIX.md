@@ -514,6 +514,62 @@ Every link in an email is built from the server-side `PUBLIC_APP_URL` and a path
 
 Realtime: `user_notifications` is in the `supabase_realtime` publication. Realtime applies the table's row policies, so a subscriber only receives their own rows.
 
+### Pain reports, private athlete details, coach contact, leaving a team (migration `20261008110000_pain_reports_and_athlete_profile_fields.sql`)
+
+Health and private information, some of it about minors. Both tables are separate from `athletes` on purpose: `athletes.*` is readable by staff through row policies written for the roster, and a row policy cannot hide columns.
+
+| Table | Athlete (own rows) | Coach of the athlete's current team | Coach of another team | Club admin (own club) | Other athlete, other club, platform admin, signed out, paused member |
+|---|---|---|---|---|---|
+| `pain_reports` | select; insert; update of `body_areas`, `severity`, `started_on`, `training_impact`, `note`, `status` (column grants) | select | nothing | select | nothing |
+| `athlete_private_details` | select; write only through `update_current_athlete_private_details()` | select | nothing | select | nothing |
+| `coach_contact_settings` | nothing (athletes get the email through the function below, only when it is on) | own row: select; write only through `set_current_coach_contact_visibility()` | own row only | own row only | nothing |
+
+- Policies: `pain_reports_select_own_or_team_staff`, `pain_reports_insert_own`, `pain_reports_update_own`, `athlete_private_details_select_own_or_team_staff`, `coach_contact_settings_select_own`. They use `current_tenant_id()`, `current_athlete_id()`, `current_coach_athlete_ids()` and `is_club_admin()`, so a deactivated member and a member of a suspended or cancelled club read and write nothing.
+- "Current team" is literal: when an athlete leaves or is moved, the old team's coaches stop reading both tables at once and the new team's coaches start.
+- Nobody can delete a pain report (no policy, no privilege). The athlete resolves it. A trigger keeps `tenant_id`, `athlete_id` and `reported_by_user_id` fixed after insert.
+- Nothing from either table is written to `audit_events`. The `athlete_pain_reported` notification says that a report exists and names the athlete; it never carries body area, severity or note.
+
+| Function | Callable by | Guard | Notes |
+|---|---|---|---|
+| `update_current_athlete_private_details(...)` | authenticated | `assert_caller_active()`, athlete role | upserts the caller's own row; validates lengths, height, weight, phone and email shapes |
+| `set_current_coach_contact_visibility(boolean)` | authenticated | `assert_caller_active()`, coach or club admin role | caller's own row; default is off |
+| `get_current_athlete_team_coaches()` | authenticated | returns no rows unless the caller is an active athlete with a team | name, lead flag, photo path; the coach's confirmed email only when that coach switched it on |
+| `leave_current_athlete_team()` | authenticated | `assert_caller_active()`, athlete role | sets the caller's `team_id` to null, writes audit event `athlete_leave_team` (team id only), queues `athlete_left_team` for the team's coaches |
+| `contact_phone_is_valid(text)`, `contact_email_is_valid(text)` | authenticated, service role | none needed | pure checks, no data |
+| `pain_reports_before_write()`, `enqueue_pain_report_notifications()` | nobody (triggers) | | |
+
+Notifications: `athlete_pain_reported` goes to the coaches of the athlete's current team when an open report says training is modified or not possible (in-app; email off unless the coach switches it on). `athlete_left_team` goes to the coaches of the team that was left (in-app and email). Club admins are not notified of either. `notification_default_enabled` is replaced with the same list plus `athlete_pain_reported`.
+
+Known edge: a plan assigned to the athlete by name (not through the team) stays readable to them after they leave, because `current_athlete_plan_ids()` (20261006150000) is unchanged.
+
+### Skip a session, athlete availability, sessions added by the athlete (migration `20261008090000_session_skip_availability_extra.sql`)
+
+What changed for each role. Everything not listed is unchanged.
+
+| Object | Athlete | Coach | Club admin | Other club, anon |
+|---|---|---|---|---|
+| `sessions` insert, planned (`sessions_insert_own_from_plan`, tightened) | As before (own, published plan assigned to them), and now `origin` must be `plan` | unchanged (`sessions_modify_tenant_staff`) | unchanged | none |
+| `sessions` insert, added by athlete (`sessions_insert_own_extra`, new) | Own row only: `origin = 'athlete'`, status `scheduled`, no plan slot, no coach note, no skip reason, `created_by_user_id = auth.uid()`, dated from 90 days ago to tomorrow | n/a | n/a | none |
+| `sessions` delete (`sessions_delete_own_extra`, new) | Only own `origin = 'athlete'` sessions | unchanged | unchanged | none |
+| `sessions` update | Still none. Skipping goes through `skip_my_session()` / `unskip_my_session()` | unchanged | unchanged | none |
+| `session_blocks`, `session_block_rows` insert (`..._insert_own_extra`, new) | Only inside own `origin = 'athlete'` session (any status, so exercises can be added while logging). A block cannot carry a coach note | unchanged | unchanged | none |
+| `athlete_availability` select (`athlete_availability_select_own_or_staff`) | Own rows | Athletes on own teams (`current_coach_athlete_ids()`) | Whole club | none |
+| `athlete_availability` insert, update, delete | None (no policy, no grant) | None | None | none |
+
+Functions (all `security definer`, `search_path = public`, EXECUTE revoked from `public` and `anon`):
+
+| Function | Who may call it | Guard |
+|---|---|---|
+| `skip_my_session(session, reason, note)` | The athlete who owns the session. Refused for someone else's session, a completed session, a session they added themselves, an unknown reason | `assert_caller_active()` then `current_athlete_id()` |
+| `unskip_my_session(session)` | The athlete who owns the session | same |
+| `set_athlete_availability(kind, starts_on, ends_on, note, athlete_id)` | `athlete_id` null: the signed-in athlete for themselves. Otherwise `can_manage_athlete()`: a coach of the athlete's team or the club admin of the athlete's club | `assert_caller_active()`; closes any open overlapping period; writes `audit_events` (`athlete_availability_set`, never the note); notifies the team's coaches in the app (`athlete_unavailable`) when the athlete set it, or the athlete in the app and by email (`availability_set_by_coach`) when staff set it |
+| `end_athlete_availability(id, last_day)` | The athlete (own period), a coach of their team, the club admin | `assert_caller_active()`; audit `athlete_availability_ended`; notifies the coaches (`athlete_available_again`) or the athlete |
+| `get_my_last_exercise_results(labels, before, exclude_session)` | Any signed-in user; runs as the caller (security invoker), so row policies decide. Only ever returns the caller's own logs | row policies |
+
+Trigger `clear_session_skip_fields` (before insert or update on `sessions`): the skip reason, note and time are cleared whenever a session is not `skipped`, whoever changes it.
+
+Checked on a local Postgres 16 with every migration applied, as each identity: an athlete skips and un-skips only their own sessions and cannot update `sessions` directly; sets and ends only their own availability; adds an extra session only for themselves and cannot forge a planned one (missing `origin`, `origin = 'plan'` without a plan, a plan slot filed as `athlete`, another athlete, another club, a coach note, a completed status, a date months ahead); a coach sets and ends availability for athletes on their own teams and not another team's; a coach with no team for nobody; the club admin for the club and not another club; another club reads and writes nothing; a deactivated member and a member of a suspended club are refused with `access_paused`; `anon` cannot call the functions or read the table.
+
 ## Service-Role Only Operations (Documented)
 
 These are intentionally not available to regular authenticated users:
@@ -542,3 +598,18 @@ These are intentionally not available to regular authenticated users:
 - [x] Write restrictions are explicit
 - [x] Service-role-only operations are identified
 
+
+## Results history and competitions (20261008100000)
+
+Every policy goes through `current_tenant_id()`, `current_athlete_id()`, `is_club_admin()`, `current_coach_team_ids()` and `current_coach_athlete_ids()`, so a deactivated member and anyone in a suspended or cancelled club gets nothing. `anon` has no grant on these tables.
+
+| Table | Athlete | Coach | Club admin | Other club |
+|---|---|---|---|---|
+| `result_events` | read | read | read | read (a fixed list, no club data) |
+| `athlete_results` | read own. Insert own with source `manual`, `training` or `competition` (a competition they can see). Update and delete only rows they entered themselves. Never `test_week` or `imported` rows. | read, insert, update and delete for athletes on their teams; not `test_week` rows (corrected in the test week) | the same for the whole club | nothing |
+| `competitions` | read: their team's, club wide, their own, any they are entered in. Insert, update, delete: only `scope = 'athlete'` rows they own. | read: their teams', club wide, and the own meets of athletes they coach. Write: `scope = 'team'` for a team they are assigned to. | read all in the club; write `team` and `club` scope | nothing |
+| `competition_entries` | read own. Insert own into a competition they can see. Update own (scratch, note). Delete only entries they made. | read and write for athletes on their teams, into competitions they can see | the same for the whole club | nothing |
+| `pr_records` | read own (unchanged). No writes any more: `pr_records_insert_own_test_week` and `pr_records_update_own_test_week` are dropped, the row is written by `refresh_pr_record()` | unchanged (`pr_records_staff_all`) | unchanged | nothing |
+| view `athlete_event_bests` | `security_invoker`: exactly the rows of `athlete_results` the reader may read | | | |
+
+Trigger functions (`*_normalise`, `refresh_pr_record`, `sync_test_result_to_history`, the two notification functions) are `security definer`, not executable by clients, and take the club, the event's unit and direction, the wind legality and "entered by" from the database, never from the request. `get_current_results_season()` returns no rows to anyone who is not an active member.

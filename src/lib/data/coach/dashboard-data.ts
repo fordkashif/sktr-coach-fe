@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { availabilityCovers, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
+import { adherenceCounts, adherencePercent, type AdherenceSession } from "@/lib/data/session/adherence"
 import { formatSetLog, isLogEmpty, logKindForBlockType } from "@/lib/data/session/session-from-plan"
-import type { LogKind, LoggedSessionResults, SessionBlockType } from "@/lib/data/session/types"
+import { skippedLabel, type LogKind, type LoggedSessionResults, type SessionBlockType, type SessionOrigin, type SessionStatus, type SkipReason } from "@/lib/data/session/types"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import type {
   Athlete,
@@ -13,6 +15,14 @@ import type {
   TrendPoint,
   WellnessEntry,
 } from "@/lib/mock-data"
+import {
+  ATHLETE_PRIVATE_DETAILS_COLUMNS,
+  mapAthletePrivateDetailsRow,
+  type AthletePrivateDetails,
+  type AthletePrivateDetailsRow,
+} from "@/lib/data/athlete/profile-data"
+import { getOpenPainReportsForAthlete } from "@/lib/data/wellness/pain-report-data"
+import type { PainReport } from "@/lib/data/wellness/pain-report-types"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -258,6 +268,7 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
   const sinceDate = new Date()
   sinceDate.setDate(sinceDate.getDate() - 28)
   const sinceIsoDate = sinceDate.toISOString().slice(0, 10)
+  const todayIsoDate = new Date().toISOString().slice(0, 10)
 
   const [
     { data: wellnessRows, error: wellnessError },
@@ -265,6 +276,7 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
     { data: testRows, error: testError },
     { data: sessionRows, error: sessionError },
     { data: completionRows, error: completionError },
+    availabilityResult,
   ] = await Promise.all([
     clientResult.client
       .from("wellness_entries")
@@ -284,16 +296,19 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
       .in("athlete_id", athleteIds)
       .order("submitted_at", { ascending: false })
       .limit(600),
+    // Adherence counts sessions that were due: scheduled in the window, up to today.
     clientResult.client
       .from("sessions")
-      .select("id, athlete_id")
+      .select("id, athlete_id, scheduled_for, status, origin")
       .in("athlete_id", athleteIds)
-      .gte("scheduled_for", sinceIsoDate),
+      .gte("scheduled_for", sinceIsoDate)
+      .lte("scheduled_for", todayIsoDate),
     clientResult.client
       .from("session_completions")
       .select("session_id, athlete_id")
       .in("athlete_id", athleteIds)
       .gte("completion_date", sinceIsoDate),
+    listAthleteAvailability(athleteIds, { from: sinceIsoDate }),
   ])
   if (wellnessError) return { ok: false, error: mapPostgrestError(wellnessError) }
   if (prError) return { ok: false, error: mapPostgrestError(prError) }
@@ -323,28 +338,20 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
     Object.entries(wellnessByAthlete).map(([athleteId, series]) => [athleteId, series[series.length - 1]]),
   )
 
-  const sessionsByAthlete = ((sessionRows as Array<{ id: string; athlete_id: string }> | null) ?? []).reduce<
-    Record<string, Set<string>>
-  >((acc, row) => {
-    const current = acc[row.athlete_id] ?? new Set<string>()
-    current.add(row.id)
-    acc[row.athlete_id] = current
-    return acc
-  }, {})
-
-  const completionCountByAthlete = ((completionRows as Array<{ session_id: string; athlete_id: string }> | null) ?? []).reduce<
-    Record<string, number>
-  >((acc, row) => {
-    const hasSession = sessionsByAthlete[row.athlete_id]?.has(row.session_id)
-    if (!hasSession) return acc
-    acc[row.athlete_id] = (acc[row.athlete_id] ?? 0) + 1
-    return acc
-  }, {})
+  // Excused sessions leave the count. If the periods cannot be read the figure is still shown, just less forgiving.
+  if (!availabilityResult.ok) console.warn("[coach] could not read athlete availability", availabilityResult.error)
+  const adherenceByAthlete = adherenceCounts(
+    ((sessionRows as Array<{ id: string; athlete_id: string; scheduled_for: string; status: string; origin: string | null }> | null) ?? []).map(
+      (row): AdherenceSession => ({ id: row.id, athleteId: row.athlete_id, scheduledFor: row.scheduled_for, status: row.status, origin: row.origin }),
+    ),
+    new Set(((completionRows as Array<{ session_id: string; athlete_id: string }> | null) ?? []).map((row) => row.session_id)),
+    availabilityResult.ok ? availabilityResult.data : [],
+    { from: sinceIsoDate, to: todayIsoDate },
+  )
 
   const athletes: Athlete[] = athletesBase.map((row) => {
-    const sessionCount = sessionsByAthlete[row.id]?.size ?? 0
-    const completionCount = completionCountByAthlete[row.id] ?? 0
-    const adherence = sessionCount > 0 ? Math.min(Math.round((completionCount / sessionCount) * 100), 100) : 100
+    // Null when nothing was due (no sessions, or all of them excused). Never 100% by default.
+    const adherence = adherencePercent(adherenceByAthlete.get(row.id))
     const latest = latestWellness[row.id]
     return {
       id: row.id,
@@ -604,7 +611,7 @@ export async function getCoachAthleteSessionLogsForCurrentUser(
 
   const { data: sessionsRows, error: sessionsError } = await clientResult.client
     .from("sessions")
-    .select("id, athlete_id, title, scheduled_for, status")
+    .select("id, athlete_id, title, scheduled_for, status, origin, skip_reason")
     .eq("athlete_id", athleteId)
     .order("scheduled_for", { ascending: false })
     .limit(50)
@@ -616,16 +623,24 @@ export async function getCoachAthleteSessionLogsForCurrentUser(
       athlete_id: string
       title: string
       scheduled_for: string
-      status: "scheduled" | "in-progress" | "completed"
+      status: SessionStatus
+      origin: SessionOrigin | null
+      skip_reason: SkipReason | null
     }> | null) ?? []).map((row) => ({
       id: row.id,
       athleteId: row.athlete_id,
       type: inferLogType(row.title),
       title: row.title,
       date: toLocaleShortDate(row.scheduled_for),
-      details: row.status === "completed" ? "Session completed." : row.status === "in-progress" ? "Session in progress." : "Session scheduled.",
+      details: `${sessionDetails(row.status, row.skip_reason)}${row.origin === "athlete" ? " Added by athlete." : ""}`,
     })),
   )
+}
+
+function sessionDetails(status: SessionStatus, skipReason: SkipReason | null) {
+  if (status === "completed") return "Session completed."
+  if (status === "skipped") return `${skippedLabel(skipReason)}.`
+  return status === "in-progress" ? "Session in progress." : "Session scheduled."
 }
 
 function firstRelation<T>(value: T[] | T | null | undefined): T | null {
@@ -642,7 +657,14 @@ export type CoachAthleteSessionRow = LogEntry & {
   /** What the athlete logged: sets per exercise, effort and comment. Null when nothing was logged. */
   results: LoggedSessionResults | null
   isoDate: string
-  status: "scheduled" | "in-progress" | "completed"
+  /** "skipped" means the athlete said they could not do it, with skipReason. It is excused, not missed. */
+  status: SessionStatus
+  /** "athlete": the athlete added this session themselves. It never counts towards plan adherence. */
+  origin: SessionOrigin
+  skipReason: SkipReason | null
+  skipNote: string | null
+  /** Scheduled inside a period the athlete was marked unavailable. Not done still does not count as missed. */
+  excused: boolean
   coachNote: string | null
   completedOn: string | null
   durationMinutes: number | null
@@ -670,9 +692,24 @@ export type CoachAthleteDetail = {
   /** The readiness flag stored on the athlete row, null when nobody has set one. */
   readinessFlag: "green" | "yellow" | "red" | null
   wellness: CoachAthleteWellnessRow[]
+  /** Periods the athlete is or was unavailable (injured, sick, away), oldest first. */
+  availability: AthleteAvailability[]
   sessions: CoachAthleteSessionRow[]
   prs: CoachAthletePrRow[]
   tests: CoachAthleteTestRow[]
+  /**
+   * Pain or injury reports the athlete has not marked resolved, newest first. Health information:
+   * the database returns them only to coaches of the athlete's own team and club admins.
+   */
+  openPainReports: PainReport[]
+  openPainReportCount: number
+  /** True when an open report says training is modified or not possible. */
+  hasPainAffectingTraining: boolean
+  /**
+   * Preferred name, height, weight, emergency and guardian contact, medical notes, bib number and
+   * affiliation. Null when the athlete has not filled anything in. Same visibility as pain reports.
+   */
+  privateDetails: AthletePrivateDetails | null
 }
 
 type CoachAthleteAccess = {
@@ -755,7 +792,7 @@ export async function getCoachAthleteDetailForCurrentUser(
   if (!access.ok) return access
   const { client, dateOfBirth, readinessFlag, athleteName } = access.data
 
-  const [wellnessResult, sessionsResult, completionsResult, prResult, testResult] = await Promise.all([
+  const [wellnessResult, sessionsResult, completionsResult, prResult, testResult, availabilityResult] = await Promise.all([
     client
       .from("wellness_entries")
       .select("id, athlete_id, entry_date, sleep_hours, soreness, fatigue, mood, stress, training_load, readiness, readiness_score, notes")
@@ -764,7 +801,7 @@ export async function getCoachAthleteDetailForCurrentUser(
       .limit(60),
     client
       .from("sessions")
-      .select("id, athlete_id, title, scheduled_for, status, coach_note, estimated_duration_minutes, completed_at")
+      .select("id, athlete_id, title, scheduled_for, status, coach_note, estimated_duration_minutes, completed_at, origin, skip_reason, skip_note")
       .eq("athlete_id", athleteId)
       .order("scheduled_for", { ascending: false })
       .limit(60),
@@ -786,7 +823,10 @@ export async function getCoachAthleteDetailForCurrentUser(
       .eq("athlete_id", athleteId)
       .order("submitted_at", { ascending: false })
       .limit(200),
+    listAthleteAvailability([athleteId]),
   ])
+  if (!availabilityResult.ok) console.warn("[coach] could not read athlete availability", availabilityResult.error)
+  const availability = availabilityResult.ok ? availabilityResult.data : []
   if (wellnessResult.error) return { ok: false, error: mapPostgrestError(wellnessResult.error) }
   if (sessionsResult.error) return { ok: false, error: mapPostgrestError(sessionsResult.error) }
   if (completionsResult.error) return { ok: false, error: mapPostgrestError(completionsResult.error) }
@@ -831,22 +871,29 @@ export async function getCoachAthleteDetailForCurrentUser(
     athlete_id: string
     title: string
     scheduled_for: string
-    status: "scheduled" | "in-progress" | "completed"
+    status: SessionStatus
     coach_note: string | null
     estimated_duration_minutes: number | null
     completed_at: string | null
+    origin: SessionOrigin | null
+    skip_reason: SkipReason | null
+    skip_note: string | null
   }> | null) ?? []).map((row) => {
     const completedOn = completionBySession.get(row.id) ?? (row.completed_at ? row.completed_at.slice(0, 10) : null)
-    const status = completedOn ? "completed" : row.status
+    const status: SessionStatus = completedOn ? "completed" : row.status
     return {
       id: row.id,
       athleteId: row.athlete_id,
       type: inferLogType(row.title),
       title: row.title,
       date: toLocaleShortDate(row.scheduled_for),
-      details: status === "completed" ? "Session completed." : status === "in-progress" ? "Session in progress." : "Session scheduled.",
+      details: sessionDetails(status, row.skip_reason),
       isoDate: row.scheduled_for,
       status,
+      origin: row.origin === "athlete" ? "athlete" : "plan",
+      skipReason: status === "skipped" ? row.skip_reason : null,
+      skipNote: status === "skipped" ? row.skip_note : null,
+      excused: status !== "completed" && availability.some((period) => availabilityCovers(period, row.scheduled_for)),
       coachNote: row.coach_note,
       completedOn,
       durationMinutes: row.estimated_duration_minutes,
@@ -855,7 +902,7 @@ export async function getCoachAthleteDetailForCurrentUser(
   })
 
   // What the athlete logged. Extra detail only: if it cannot be read the session list still shows.
-  const loggedIds = sessions.filter((session) => session.status !== "scheduled").slice(0, 20).map((session) => session.id)
+  const loggedIds = sessions.filter((session) => session.status !== "scheduled" && session.status !== "skipped").slice(0, 20).map((session) => session.id)
   if (loggedIds.length > 0) {
     const [blocksResult, logsResult, effortResult] = await Promise.all([
       client
@@ -1003,7 +1050,29 @@ export async function getCoachAthleteDetailForCurrentUser(
     testWeekName: row.testWeekName,
   }))
 
-  return ok({ dateOfBirth, readinessFlag, wellness, sessions, prs, tests })
+  // Added with 20261008110000. Read after the rest so a database without that migration (or a
+  // failed read) still shows the athlete: these two come back empty instead of failing the screen.
+  const [painResult, detailsResult] = await Promise.all([
+    getOpenPainReportsForAthlete(athleteId),
+    client.from("athlete_private_details").select(ATHLETE_PRIVATE_DETAILS_COLUMNS).eq("athlete_id", athleteId).maybeSingle(),
+  ])
+  const openPainReports = painResult.ok ? painResult.data : []
+  const privateDetails =
+    !detailsResult.error && detailsResult.data ? mapAthletePrivateDetailsRow(detailsResult.data as AthletePrivateDetailsRow) : null
+
+  return ok({
+    dateOfBirth,
+    readinessFlag,
+    wellness,
+    availability,
+    sessions,
+    prs,
+    tests,
+    openPainReports,
+    openPainReportCount: openPainReports.length,
+    hasPainAffectingTraining: openPainReports.some((report) => report.trainingImpact !== "none"),
+    privateDetails,
+  })
 }
 
 /** Saves the coach note on one of the athlete's sessions. The athlete sees it when they open that session. */

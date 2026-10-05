@@ -1,5 +1,5 @@
 import { List, ListRow, Screen, ScreenHeader, Section } from "@/components/sk"
-import { DevicesSection, HelpSection, NameSection, PhotoSection, SignInSection } from "@/components/account/account-sections"
+import { CoachContactSection, DevicesSection, HelpSection, NameSection, PhotoSection, SignInSection } from "@/components/account/account-sections"
 import { useCurrentAccount } from "@/lib/account-store"
 import { useRole } from "@/lib/role-context"
 
@@ -30,6 +30,8 @@ export default function AccountPage() {
       )}
 
       <SignInSection />
+
+      {role === "coach" ? <CoachContactSection /> : null}
 
       <Section title="Settings">
         <List>

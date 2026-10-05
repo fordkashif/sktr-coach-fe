@@ -1,219 +1,125 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ArrowLeft, TrendUp, Trophy, Wind } from "@phosphor-icons/react"
-import { Link } from "react-router-dom"
-import { EmptyState, PageHeader, Panel, Segmented } from "@/components/sk"
-import { mockPrRecords } from "@/lib/data/pr/mock-pr-records"
-import {
-  applyMockPrOverrides,
-  categoryLabel,
-  compareCategories,
-  compareMarks,
-  formatFullDay,
-  parseMark,
-  prSourceLabel,
-  sortPrsNewestFirst,
-} from "@/lib/data/pr/pr-display"
-import { getCurrentAthletePrRecords } from "@/lib/data/pr/pr-data"
-import type { PrRecord } from "@/lib/data/pr/types"
-import { tenantStorageKey } from "@/lib/tenant-storage"
-import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
+import { useEffect, useState } from "react"
+import { Plus } from "@phosphor-icons/react"
+import { dayText, eventHistoryPath, markText, ProgressTabs, ResultMark } from "@/components/athlete/results-parts"
+import { EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
+import { formatWind, type EventHistory } from "@/lib/data/pr/marks"
+import { getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
 
-const ALL = "All"
-const PR_OVERRIDE_STORAGE_KEY = "pacelab:pr-overrides"
+function seasonLine(event: EventHistory): string {
+  const { personalBest, seasonBest } = event.bests
+  if (!seasonBest) return "No mark this season"
+  if (personalBest && seasonBest.id === personalBest.id) return "Also your season best"
+  return `Season best ${markText(seasonBest)}, ${dayText(seasonBest.date)}`
+}
 
-function MarkValue({ text, className }: { text: string; className?: string }) {
-  const mark = parseMark(text)
+function EventRow({ event }: { event: EventHistory }) {
+  const { personalBest, windAssistedBest } = event.bests
+  const lead = personalBest ?? windAssistedBest ?? event.results[0]
   return (
-    <span className={cn("sk-num whitespace-nowrap", className)}>
-      {mark.numeral}
-      {mark.unit ? <span className="ml-0.5 text-[0.5em] font-bold tracking-normal text-sk-ink-2">{mark.unit}</span> : null}
-    </span>
+    <ListRow
+      to={eventHistoryPath(event.group)}
+      title={event.label}
+      subtitle={
+        <>
+          {personalBest ? (
+            <>
+              Personal best {[dayText(personalBest.date), personalBest.location].filter(Boolean).join(", ")}
+              {personalBest.wind !== null ? `, wind ${formatWind(personalBest.wind)}` : ""}
+            </>
+          ) : (
+            "No wind legal mark yet"
+          )}
+          <span className="block">{seasonLine(event)}</span>
+          {windAssistedBest ? <span className="block">Wind assisted {markText(windAssistedBest)}</span> : null}
+        </>
+      }
+      trailing={
+        <span className="flex flex-col items-end gap-1">
+          <ResultMark result={lead} />
+          <span className="text-sm font-normal text-sk-mute">
+            {event.results.length} {event.results.length === 1 ? "result" : "results"}
+          </span>
+        </span>
+      }
+    />
   )
 }
 
-export default function AthletePrsPage() {
-  const backendMode = getBackendMode()
-  const [category, setCategory] = useState<string>(ALL)
-  const [backendPrs, setBackendPrs] = useState<PrRecord[]>([])
-  const [backendError, setBackendError] = useState<string | null>(null)
-  const [backendLoaded, setBackendLoaded] = useState(false)
-  const [overrides] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined" || backendMode === "supabase") return {}
-    const raw = window.localStorage.getItem(tenantStorageKey(PR_OVERRIDE_STORAGE_KEY))
-    if (!raw) return {}
-    try {
-      return JSON.parse(raw) as Record<string, string>
-    } catch {
-      return {}
-    }
-  })
+export default function AthleteRecordsPage() {
+  const [records, setRecords] = useState<AthleteRecords | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
     let cancelled = false
-
-    const loadPrs = async () => {
-      const result = await getCurrentAthletePrRecords()
+    void getCurrentAthleteRecords().then((result) => {
       if (cancelled) return
-      if (!result.ok) {
-        setBackendError(result.error.message)
-        setBackendPrs([])
-        setBackendLoaded(true)
-        return
-      }
-      setBackendError(null)
-      setBackendPrs(result.data)
-      setBackendLoaded(true)
-    }
-
-    void loadPrs()
+      if (result.ok) setRecords(result.data)
+      else setError(result.error.message)
+    })
     return () => {
       cancelled = true
     }
-  }, [backendMode])
+  }, [])
 
-  const loading = backendMode === "supabase" && !backendLoaded
-
-  const allPrs = useMemo(
-    () => sortPrsNewestFirst(backendMode === "supabase" ? backendPrs : applyMockPrOverrides(mockPrRecords, overrides)),
-    [backendMode, backendPrs, overrides],
-  )
-
-  const categories = useMemo(
-    () => Array.from(new Set(allPrs.map((pr) => pr.category))).sort(compareCategories),
-    [allPrs],
-  )
-  const activeCategory = category === ALL || categories.includes(category) ? category : ALL
-  const groups = useMemo(
-    () =>
-      categories
-        .filter((item) => activeCategory === ALL || item === activeCategory)
-        .map((item) => ({ category: item, prs: allPrs.filter((pr) => pr.category === item) })),
-    [activeCategory, allPrs, categories],
-  )
-
-  const newest = allPrs[0]
-  const newestGain = newest ? compareMarks(newest.bestValue, newest.previousValue, newest.category) : null
+  const events = records?.events ?? []
+  const categories = [...new Set(events.map((event) => event.category))]
+  const seasonYear = records ? `${records.season.start.slice(0, 4)}${records.season.end.slice(0, 4) !== records.season.start.slice(0, 4) ? ` to ${records.season.end.slice(0, 4)}` : ""}` : ""
 
   return (
-    <div className="sk-page">
-      <PageHeader
-        title="Personal records"
+    <Screen>
+      <ScreenHeader
+        title="Records"
         lede={
-          allPrs.length > 0
-            ? `Your best mark in ${allPrs.length} ${allPrs.length === 1 ? "event" : "events"}. Beat one in a test week and it updates here.`
-            : "Your best mark in every event you are tested on."
+          events.length > 0
+            ? `Your personal best and ${seasonYear} season best in ${events.length} ${events.length === 1 ? "event" : "events"}, worked out from every result you have. Wind assisted marks (over +2.0) are listed apart.`
+            : "Your personal best and season best in every event, worked out from your results."
         }
         actions={
-          <Link to="/athlete/trends" className="sk-btn sk-btn-quiet">
-            <ArrowLeft className="size-5" weight="bold" aria-hidden />
-            Back to progress
-          </Link>
+          <LinkButton to="/athlete/prs/add" variant="primary">
+            <Plus className="size-[18px]" weight="bold" aria-hidden />
+            Add a result
+          </LinkButton>
         }
-      >
-        {backendError ? (
-          <p role="alert" className="text-sm font-semibold text-[#b32a0c]">
-            Your records could not be loaded: {backendError}
-          </p>
-        ) : null}
-      </PageHeader>
+      />
+      <ProgressTabs />
 
-      {loading ? (
-        <p className="text-base font-semibold text-sk-mute" role="status">
-          Loading your records
-        </p>
-      ) : allPrs.length === 0 ? (
-        backendError ? null : (
+      {error ? <Notice tone="error">Your records could not be loaded. {error}</Notice> : null}
+
+      {records === null && !error ? (
+        <Section title="Loading your records">
+          <SkeletonRows rows={5} label="Loading your records" />
+        </Section>
+      ) : null}
+
+      {records && events.length === 0 ? (
+        <Section title="No records yet">
           <EmptyState
-            icon={<Trophy className="size-6" weight="fill" />}
-            title="No records yet"
-            body="The first mark you submit for each test becomes your record. Every time you beat it, the new one replaces it here."
+            title="Your first result in an event becomes your record"
+            body="Results come in from test weeks and competitions, and you can add one yourself. Beat a mark and the new one takes its place here."
             action={
-              <Link to="/athlete/test-week" className="sk-btn sk-btn-primary">
-                Go to test week
-              </Link>
+              <LinkButton to="/athlete/test-week" size="sm">
+                Go to tests
+              </LinkButton>
             }
           />
+        </Section>
+      ) : null}
+
+      {categories.map((category) => {
+        const inCategory = events.filter((event) => event.category === category)
+        return (
+          <Section key={category} title={category} meta={`${inCategory.length} ${inCategory.length === 1 ? "event" : "events"}`}>
+            <List>
+              {inCategory.map((event) => (
+                <EventRow key={event.group} event={event} />
+              ))}
+            </List>
+          </Section>
         )
-      ) : (
-        <>
-          {newest ? (
-            <section className="flex flex-col gap-4 rounded-[20px] bg-sk-yellow p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6" aria-label="Newest record">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-sm font-semibold text-sk-ink">
-                  <Trophy className="size-5" weight="fill" aria-hidden />
-                  Your newest record
-                </p>
-                <p className="mt-2 text-2xl font-extrabold tracking-[-0.02em] text-sk-ink sm:text-3xl">{newest.event}</p>
-                <p className="mt-1 text-sm font-medium text-sk-ink">
-                  {formatFullDay(newest.measuredOn)}
-                  {newestGain?.improved ? `, ${newestGain.text} than before` : ""}
-                </p>
-              </div>
-              <MarkValue text={newest.bestValue} className="text-[4rem] sm:text-[5rem] [&>span]:text-sk-ink" />
-            </section>
-          ) : null}
+      })}
 
-          {categories.length > 1 ? (
-            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-              <Segmented
-                value={activeCategory}
-                onChange={setCategory}
-                label="Filter records by category"
-                options={[{ value: ALL, label: "All" }, ...categories.map((item) => ({ value: item, label: categoryLabel(item) }))]}
-                className="whitespace-nowrap"
-              />
-            </div>
-          ) : null}
-
-          <div className="grid gap-5 xl:grid-cols-2">
-            {groups.map((group) => (
-              <Panel
-                key={group.category}
-                title={categoryLabel(group.category)}
-                hint={`${group.prs.length} ${group.prs.length === 1 ? "record" : "records"}`}
-                className="min-w-0"
-              >
-                <ul>
-                  {group.prs.map((pr) => {
-                    const gain = compareMarks(pr.bestValue, pr.previousValue, pr.category)
-                    return (
-                      <li key={pr.id} className="sk-row items-start">
-                        <div className="min-w-0 space-y-1">
-                          <p className="text-lg font-bold leading-tight text-sk-ink">{pr.event}</p>
-                          <p className="text-sm text-sk-mute">{formatFullDay(pr.measuredOn)}</p>
-                          <p className="text-sm text-sk-mute">{prSourceLabel(pr)}</p>
-                          {pr.wind || !pr.isLegal ? (
-                            <p className={cn("flex items-center gap-1 text-sm font-semibold", pr.isLegal ? "text-sk-ink-2" : "text-[#7a5600]")}>
-                              <Wind className="size-4 shrink-0" weight="bold" aria-hidden />
-                              {pr.wind ? `Wind ${pr.wind}` : "Wind assisted"}
-                              {pr.wind && !pr.isLegal ? ", over the legal limit" : ""}
-                            </p>
-                          ) : null}
-                          {pr.note ? <p className="text-sm text-sk-ink-2">{pr.note}</p> : null}
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1.5">
-                          <MarkValue text={pr.bestValue} className="text-[2.25rem] sm:text-[2.5rem]" />
-                          {gain?.improved ? (
-                            <span className="inline-flex items-center gap-1 text-sm font-semibold text-[#07673f]">
-                              <TrendUp className="size-4 shrink-0" weight="bold" aria-hidden />
-                              {gain.text}
-                            </span>
-                          ) : null}
-                          {pr.previousValue ? <span className="text-sm text-sk-mute">Before: {pr.previousValue}</span> : null}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </Panel>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+    </Screen>
   )
 }

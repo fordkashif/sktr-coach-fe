@@ -20,12 +20,24 @@ const AthleteHomePage = lazy(() => import("@/app/(authenticated)/athlete/home/pa
 const AthleteJoinTeamPage = lazy(() => import("@/app/(authenticated)/athlete/join/page"))
 const AthleteJoinTeamCodePage = lazy(() => import("@/app/(authenticated)/athlete/join/[code]/page"))
 const AthleteLogPage = lazy(() => import("@/app/(authenticated)/athlete/log/page"))
+const AthleteLogHistoryPage = lazy(() => import("@/app/(authenticated)/athlete/log/history/page"))
+const AthleteAddSessionPage = lazy(() => import("@/app/(authenticated)/athlete/log/new/page"))
 const AthleteProfilePage = lazy(() => import("@/app/(authenticated)/athlete/profile/page"))
 const AthletePrsPage = lazy(() => import("@/app/(authenticated)/athlete/prs/page"))
+const AthleteAddResultPage = lazy(() => import("@/app/(authenticated)/athlete/prs/add/page"))
+const AthleteEditResultPage = lazy(() => import("@/app/(authenticated)/athlete/prs/edit/[resultId]/page"))
+const AthleteEventHistoryPage = lazy(() => import("@/app/(authenticated)/athlete/prs/event/[eventGroup]/page"))
+const AthleteCompetitionsPage = lazy(() => import("@/app/(authenticated)/athlete/competitions/page"))
+const AthleteNewCompetitionPage = lazy(() => import("@/app/(authenticated)/athlete/competitions/new/page"))
+const AthleteCompetitionDetailPage = lazy(() => import("@/app/(authenticated)/athlete/competitions/[competitionId]/page"))
+const AthleteEditCompetitionPage = lazy(() => import("@/app/(authenticated)/athlete/competitions/[competitionId]/edit/page"))
 const AthleteTestWeekPage = lazy(() => import("@/app/(authenticated)/athlete/test-week/page"))
+const AthleteTestWeekHistoryPage = lazy(() => import("@/app/(authenticated)/athlete/test-week/history/page"))
 const AthleteTrainingPlanPage = lazy(() => import("@/app/(authenticated)/athlete/training-plan/page"))
 const AthleteTrendsPage = lazy(() => import("@/app/(authenticated)/athlete/trends/page"))
 const AthleteWellnessPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/page"))
+const AthleteWellnessHistoryPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/history/page"))
+const AthletePainReportPage = lazy(() => import("@/app/(authenticated)/athlete/wellness/pain/page"))
 const CoachDashboardPage = lazy(() => import("@/app/(authenticated)/coach/dashboard/page"))
 const CoachReportsPage = lazy(() => import("@/app/(authenticated)/coach/reports/page"))
 const CoachTeamsPage = lazy(() => import("@/app/(authenticated)/coach/teams/page"))
@@ -82,12 +94,24 @@ export function AppRouter() {
             <Route path="/athlete/join" element={routeElement(AthleteJoinTeamPage)} />
             <Route path="/athlete/join/:code" element={routeElement(AthleteJoinTeamCodePage)} />
             <Route path="/athlete/log" element={routeElement(AthleteLogPage)} />
+            <Route path="/athlete/log/history" element={routeElement(AthleteLogHistoryPage)} />
+            <Route path="/athlete/log/new" element={routeElement(AthleteAddSessionPage)} />
             <Route path="/athlete/profile" element={routeElement(AthleteProfilePage)} />
             <Route path="/athlete/prs" element={routeElement(AthletePrsPage)} />
+            <Route path="/athlete/prs/add" element={routeElement(AthleteAddResultPage)} />
+            <Route path="/athlete/prs/edit/:resultId" element={routeElement(AthleteEditResultPage)} />
+            <Route path="/athlete/prs/event/:eventGroup" element={routeElement(AthleteEventHistoryPage)} />
+            <Route path="/athlete/competitions" element={routeElement(AthleteCompetitionsPage)} />
+            <Route path="/athlete/competitions/new" element={routeElement(AthleteNewCompetitionPage)} />
+            <Route path="/athlete/competitions/:competitionId" element={routeElement(AthleteCompetitionDetailPage)} />
+            <Route path="/athlete/competitions/:competitionId/edit" element={routeElement(AthleteEditCompetitionPage)} />
             <Route path="/athlete/test-week" element={routeElement(AthleteTestWeekPage)} />
+            <Route path="/athlete/test-week/history" element={routeElement(AthleteTestWeekHistoryPage)} />
             <Route path="/athlete/training-plan" element={routeElement(AthleteTrainingPlanPage)} />
             <Route path="/athlete/trends" element={routeElement(AthleteTrendsPage)} />
             <Route path="/athlete/wellness" element={routeElement(AthleteWellnessPage)} />
+            <Route path="/athlete/wellness/history" element={routeElement(AthleteWellnessHistoryPage)} />
+            <Route path="/athlete/wellness/pain" element={routeElement(AthletePainReportPage)} />
 
             <Route path="/coach/dashboard" element={routeElement(CoachDashboardPage)} />
             <Route path="/coach/reports" element={routeElement(CoachReportsPage)} />

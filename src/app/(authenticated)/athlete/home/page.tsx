@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { Check, Play } from "@phosphor-icons/react"
+import { MyAvailabilityNotice } from "@/components/athlete/availability"
+import { NextCompetitionSection } from "@/components/athlete/next-competition"
 import {
   Button,
   DayStrip,
@@ -419,6 +421,8 @@ export default function AthleteHomePage() {
     <Screen>
       <ScreenHeader fact={dateLine} title={title} />
 
+      <MyAvailabilityNotice />
+
       {backendError ? <Notice tone="error">We could not load your session. {backendError}</Notice> : null}
 
       {athleteNeedsGuide && !setupGuideDismissedAt ? (
@@ -545,6 +549,8 @@ export default function AthleteHomePage() {
           <SkeletonRows rows={2} label="Checking what is left to do" />
         )}
       </Section>
+
+      <NextCompetitionSection />
     </Screen>
   )
 }

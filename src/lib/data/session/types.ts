@@ -1,4 +1,25 @@
-export type SessionStatus = "scheduled" | "in-progress" | "completed"
+export type SessionStatus = "scheduled" | "in-progress" | "completed" | "skipped"
+/** "plan": set by the coach. "athlete": logged by the athlete without being planned (never counts towards adherence). */
+export type SessionOrigin = "plan" | "athlete"
+export type SkipReason = "sick" | "injured" | "travelling" | "competing" | "school_work" | "other"
+
+export const SKIP_REASONS: Array<{ value: SkipReason; label: string }> = [
+  { value: "sick", label: "Sick" },
+  { value: "injured", label: "Injured" },
+  { value: "travelling", label: "Travelling" },
+  { value: "competing", label: "Competing" },
+  { value: "school_work", label: "School or work" },
+  { value: "other", label: "Something else" },
+]
+
+export function skipReasonLabel(reason: SkipReason | null | undefined) {
+  return SKIP_REASONS.find((entry) => entry.value === reason)?.label ?? "No reason given"
+}
+
+/** "Skipped: sick", the one way a skipped session is described to athlete and coach. */
+export function skippedLabel(reason: SkipReason | null | undefined) {
+  return reason ? `Skipped: ${skipReasonLabel(reason).toLowerCase()}` : "Skipped"
+}
 export type SessionBlockType = "Strength" | "Run" | "Sprint" | "Jumps" | "Throws"
 
 export type SessionSummary = {
@@ -79,15 +100,42 @@ export type AthleteSession = {
   completedOn: string | null
   overallRpe: number | null
   athleteComment: string | null
+  origin: SessionOrigin
+  /** Set while status is "skipped". */
+  skipReason: SkipReason | null
+  skipNote: string | null
   blocks: LoggableBlock[]
   logs: SessionRowLog[]
 }
+
+/** A session as a line in a list: the week, the history, "also on this day". */
+export type AthleteSessionRef = {
+  id: string
+  /** ISO day, yyyy-mm-dd. */
+  date: string
+  title: string
+  origin: SessionOrigin
+  status: SessionStatus
+  skipReason: SkipReason | null
+  completedOn: string | null
+  rpe: number | null
+}
+
+/** What the athlete did the last time they logged an exercise with the same name. */
+export type LastTimeResult = { date: string; summary: string }
+
+export type ExtraSessionInput = { title: string; blockType: SessionBlockType; date: string }
+export type ExtraExerciseInput = { label: string; kind: LogKind; sets: number }
 
 export type AthleteWeekDay = {
   date: string
   /** "session" has work planned, "rest" is inside a plan with nothing planned, "none" has no plan at all. */
   kind: "session" | "rest" | "none"
   done: boolean
+  /** The planned session of this day was skipped with a reason. */
+  skipped: boolean
+  /** The day sits inside a period the athlete is unavailable (injured, sick, away). */
+  excused: boolean
 }
 
 export type AthleteSessionDay = {
@@ -99,6 +147,10 @@ export type AthleteSessionDay = {
   next: { date: string; title: string } | null
   /** Monday to Sunday of the week holding `date`. */
   week: AthleteWeekDay[]
+  /** Other sessions on this day (one the athlete added, or the planned one while an added one is open). */
+  others: AthleteSessionRef[]
+  /** The athlete is marked unavailable on this day: a planned session here does not count as missed. */
+  excused: boolean
 }
 
 /** What a coach sees of a logged session. */

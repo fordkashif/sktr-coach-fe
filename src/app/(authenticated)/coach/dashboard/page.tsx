@@ -33,6 +33,7 @@ import {
 } from "@/lib/data/coach/invite-claim-data"
 import { getCurrentPlanWeekForCoachTeam, pickTeamPlanWeek, type TeamPlanWeek } from "@/lib/data/training-plan/training-plan-data"
 import { dateKeyLocal } from "@/lib/athlete-session"
+import { adherenceText, averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 
 const TEST_COLUMNS: Array<{ header: string; pick: (row: TestWeekResult) => TestWeekResult["thirtyM"] }> = [
@@ -51,7 +52,7 @@ function Change({ change }: { change: "up" | "down" | "same" }) {
 
 /** Athletes who need a look come first, then by name. */
 function byAttention(left: Athlete, right: Athlete) {
-  const rank = (athlete: Athlete) => (athlete.readiness === "red" ? 0 : athlete.readiness === "yellow" ? 1 : athlete.adherence < 75 ? 2 : 3)
+  const rank = (athlete: Athlete) => (athlete.readiness === "red" ? 0 : athlete.readiness === "yellow" ? 1 : athlete.adherence !== null && athlete.adherence < 75 ? 2 : 3)
   return rank(left) - rank(right) || left.name.localeCompare(right.name)
 }
 
@@ -155,11 +156,9 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
   const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
   const readyCount = scopedAthletes.filter((athlete) => athlete.readiness === "green").length
-  const needLookCount = scopedAthletes.filter((athlete) => athlete.readiness !== "green" || athlete.adherence < 75).length
-  const adherenceAverage =
-    scopedAthletes.length > 0
-      ? Math.round(scopedAthletes.reduce((sum, athlete) => sum + athlete.adherence, 0) / scopedAthletes.length)
-      : 0
+  const needLookCount = scopedAthletes.filter((athlete) => athlete.readiness !== "green" || (athlete.adherence !== null && athlete.adherence < 75)).length
+  // Athletes with no sessions due have no figure and are left out of the average.
+  const adherenceAverage = averageAdherence(scopedAthletes.map((athlete) => athlete.adherence))
   const athleteTotal = scopedAthletes.length
 
   const rosterHref = role === "coach" && coachTeamId ? `/coach/teams/${coachTeamId}` : "/coach/teams"
@@ -203,7 +202,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
     },
     { key: "readiness", header: "Readiness", phone: "plain", cell: (athlete) => <ReadinessText status={athlete.readiness} /> },
     { key: "checkin", header: "Last check-in", phone: "hide", cell: (athlete) => athlete.lastWellness || "None yet" },
-    { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => `${athlete.adherence}%` },
+    { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
   ]
 
   const testColumns: Array<DataTableColumn<TestWeekResult>> = [
@@ -286,7 +285,11 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       ) : null}
 
       <StatStrip aria-label="Today at a glance">
-        <Stat label="Plan adherence" value={adherenceAverage} unit="%" />
+        {adherenceAverage === null ? (
+          <Stat label="Plan adherence" value="None" hint={NO_SESSIONS_DUE} />
+        ) : (
+          <Stat label="Plan adherence" value={adherenceAverage} unit="%" />
+        )}
         <Stat label="Ready to train" value={readyCount} of={athleteTotal} />
         <Stat label="Need a look" value={needLookCount} />
         <Stat label="Personal records" value={scopedPrs.length} />

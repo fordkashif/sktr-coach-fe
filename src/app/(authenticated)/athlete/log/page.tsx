@@ -1,14 +1,46 @@
 "use client"
 
-import { useEffect, useId, useRef, useState } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowRight, CalendarBlank, ChatText, CheckCircle, Moon, PencilSimple } from "@phosphor-icons/react"
-import { ExerciseRow, formatLongDay, LoggedSummary, SyncStatus, WeekStrip } from "@/components/athlete/log/log-parts"
+import { useEffect, useState } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { ArrowRight, Check, PencilSimple, Plus } from "@phosphor-icons/react"
+import { AvailabilityDialog, AvailabilityNotice, useMyAvailability } from "@/components/athlete/availability"
+import {
+  AddExerciseDialog,
+  DayNav,
+  ExerciseLog,
+  formatLongDay,
+  LoggedSummary,
+  LogProgress,
+  SkipDialog,
+  SyncStatus,
+} from "@/components/athlete/log/log-parts"
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
-import { EmptyState, Meter, PageHeader, Panel, Stat } from "@/components/sk"
-import { MAX_SETS } from "@/lib/data/session/session-from-plan"
+import {
+  ActionBar,
+  Button,
+  EffortScale,
+  EmptyState,
+  Field,
+  InlineConfirm,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  Section,
+  SetList,
+  SkeletonRows,
+  Stat,
+  StatStrip,
+  StatusText,
+  Textarea,
+  notify,
+  notifyError,
+} from "@/components/sk"
+import { MAX_SETS, logKindForBlockType } from "@/lib/data/session/session-from-plan"
+import { skipReasonLabel, skippedLabel } from "@/lib/data/session/types"
 import { todayIso } from "@/lib/data/training-plan/plan-builder-model"
-import { cn } from "@/lib/utils"
 
 const EFFORT_WORDS = ["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Very hard", "Max effort"]
 const HOME_REDIRECT_MS = 1800
@@ -23,31 +55,26 @@ export default function AthleteLogPage() {
   const today = todayIso()
   const dateParam = searchParams.get("date")
   const date = isIsoDay(dateParam) ? dateParam : today
-  const log = useSessionLog(date)
+  const sessionParam = searchParams.get("session")
+  const log = useSessionLog(date, sessionParam)
+  const availability = useMyAvailability()
   const { day, session, sync, totals } = log
   const [editing, setEditing] = useState(false)
   const [justFinished, setJustFinished] = useState(false)
   const [finishing, setFinishing] = useState(false)
-  const commentId = useId()
-  const topRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const flagged = window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }
-    flagged.__PACELAB_MOBILE_DETAIL_MODE = true
-    window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: true } }))
-    const handleBack = () => window.history.back()
-    window.addEventListener("pacelab:mobile-detail-back", handleBack)
-    return () => {
-      flagged.__PACELAB_MOBILE_DETAIL_MODE = false
-      window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: false } }))
-      window.removeEventListener("pacelab:mobile-detail-back", handleBack)
-    }
-  }, [])
+  const [logAnyway, setLogAnyway] = useState(false)
+  const [skipOpen, setSkipOpen] = useState(false)
+  const [exerciseOpen, setExerciseOpen] = useState(false)
+  const [availabilityOpen, setAvailabilityOpen] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     setEditing(false)
     setJustFinished(false)
-  }, [date])
+    setLogAnyway(false)
+    setConfirmRemove(false)
+  }, [date, sessionParam])
 
   // After finishing, the athlete lands back on home once everything is safely saved.
   useEffect(() => {
@@ -59,18 +86,23 @@ export default function AthleteLogPage() {
   const selectDate = (next: string) => {
     setSearchParams(next === today ? {} : { date: next }, { replace: true })
   }
+  const dayPath = (target: string, sessionId?: string) => {
+    const params = new URLSearchParams()
+    if (target !== today) params.set("date", target)
+    if (sessionId) params.set("session", sessionId)
+    const query = params.toString()
+    return query ? `/athlete/log?${query}` : "/athlete/log"
+  }
 
+  const isExtra = session?.origin === "athlete"
   const completed = session?.status === "completed"
-  const showForm = Boolean(session) && (!completed || editing)
+  const skipped = session?.status === "skipped"
+  // Unavailable on this day: the session is excused. The athlete can still choose to log it.
+  const excusedHold = Boolean(session) && !isExtra && Boolean(day?.excused) && !completed && !skipped && session?.status !== "in-progress" && !logAnyway
+  const showForm = Boolean(session) && !skipped && !excusedHold && (!completed || editing)
   const dayLabel = date === today ? "Today" : formatLongDay(date)
   const meta = session
-    ? [
-        date === today ? "Today" : formatLongDay(date),
-        session.estimatedDurationMinutes ? `${session.estimatedDurationMinutes} min` : null,
-        session.location,
-      ]
-        .filter(Boolean)
-        .join(", ")
+    ? [isExtra ? "Added by you" : null, session.estimatedDurationMinutes ? `${session.estimatedDurationMinutes} min` : null, session.location].filter(Boolean).join(", ")
     : null
 
   const handleFinish = async () => {
@@ -80,13 +112,32 @@ export default function AthleteLogPage() {
     setFinishing(false)
     setEditing(false)
     if (!wasEditing) setJustFinished(true)
-    topRef.current?.scrollIntoView({ block: "start" })
+    // The shell scrolls inside main, not the window.
+    document.getElementById("main-content")?.scrollTo({ top: 0 })
+    window.scrollTo({ top: 0 })
+  }
+
+  const handleUnskip = async () => {
+    setBusy(true)
+    const result = await log.unskip()
+    setBusy(false)
+    if (!result.ok) notifyError("Could not undo the skip", result.error.message)
+  }
+
+  const handleRemove = async () => {
+    setBusy(true)
+    const result = await log.removeExtraSession()
+    setBusy(false)
+    if (!result.ok) {
+      notifyError("Could not remove the session", result.error.message)
+      return
+    }
+    notify("Session removed")
+    navigate(dayPath(date), { replace: true })
   }
 
   const title = !day
-    ? log.loadError
-      ? "Session log"
-      : "Loading"
+    ? "Session log"
     : session
       ? session.title
       : day.inPlan
@@ -95,253 +146,330 @@ export default function AthleteLogPage() {
           ? "No session today"
           : "No session"
 
+  const lede = !day
+    ? null
+    : session
+      ? meta || null
+      : day.inPlan
+        ? `${dayLabel} is a rest day in your plan. Recover well.`
+        : date === today
+          ? "Nothing is planned for you today."
+          : `Nothing is planned for ${formatLongDay(date)}.`
+
   return (
-    <div className="sk-page max-w-[860px]" ref={topRef}>
-      <PageHeader
+    <Screen width="narrow">
+      <ScreenHeader
+        fact={date === today ? `Today, ${formatLongDay(date)}` : formatLongDay(date)}
         title={title}
-        lede={
-          !day
-            ? log.loadError
-              ? null
-              : "Getting your session."
-            : session
-              ? meta
-              : day.inPlan
-                ? `${dayLabel} is a rest day in your plan. Recover well.`
-                : date === today
-                  ? "Nothing is planned for you today."
-                  : `Nothing is planned for ${formatLongDay(date)}.`
-        }
+        lede={lede}
+        variant="top"
+        back={isExtra || sessionParam ? { to: dayPath(date), label: date === today ? "Today's log" : "Back to the day" } : undefined}
       />
 
-      {day ? <WeekStrip week={day.week} selected={date} today={today} onSelect={selectDate} /> : null}
+      <AvailabilityNotice current={availability.current} />
+
+      {day && !sessionParam ? <DayNav week={day.week} selected={date} today={today} onSelect={selectDate} /> : null}
+
+      {!day && !log.loadError ? <SkeletonRows rows={5} label="Getting your session" /> : null}
 
       {log.loadError ? (
-        <div role="alert" className="flex flex-col items-start gap-3 rounded-2xl bg-sk-coral-tint px-4 py-4">
-          <p className="text-sm font-semibold text-[#b32a0c]">Could not load this session: {log.loadError}</p>
-          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={log.reload}>
-            Try again
-          </button>
-        </div>
+        <Notice
+          tone="error"
+          action={
+            <Button size="sm" onClick={log.reload}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load this session. {log.loadError}
+        </Notice>
       ) : null}
 
       {log.fromCache ? (
-        <p role="status" className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">
-          You are offline, so this is the copy saved on this phone. Keep logging. It sends when you are back online.
-        </p>
+        <Notice tone="warning">You are offline, so this is the copy saved on this phone. Keep logging. It sends when you are back online.</Notice>
       ) : null}
 
       {day && !session ? (
-        <EmptyState
-          icon={day.inPlan ? <Moon className="size-6" weight="fill" /> : <CalendarBlank className="size-6" weight="fill" />}
-          title={
-            day.next
-              ? `Next up: ${day.next.title}`
-              : day.inPlan
-                ? "No more sessions in your plan"
-                : "No plan yet"
-          }
-          body={
-            day.next
-              ? `Planned for ${formatLongDay(day.next.date)}.`
-              : day.inPlan
-                ? "You have reached the end of the sessions your coach has planned."
-                : "Sessions show up here as soon as your coach publishes a training plan for you."
-          }
-          action={
-            day.next ? (
-              <button type="button" className="sk-btn sk-btn-quiet" onClick={() => selectDate(day.next?.date ?? today)}>
-                See that session
-                <ArrowRight className="size-4" weight="bold" aria-hidden />
-              </button>
-            ) : (
-              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet">
-                Open training plan
-              </Link>
-            )
-          }
-        />
+        <Section aria-label="Next up">
+          <EmptyState
+            title={day.next ? `Next up is ${day.next.title}` : day.inPlan ? "No more sessions in your plan" : "No plan yet"}
+            body={
+              day.next
+                ? `Planned for ${formatLongDay(day.next.date)}.`
+                : day.inPlan
+                  ? "You have reached the end of the sessions your coach has planned."
+                  : "Sessions show up here as soon as your coach publishes a training plan for you."
+            }
+            action={
+              day.next ? (
+                <Button size="sm" onClick={() => selectDate(day.next?.date ?? today)}>
+                  See that session
+                  <ArrowRight className="size-4" weight="bold" aria-hidden />
+                </Button>
+              ) : (
+                <LinkButton size="sm" to="/athlete/training-plan">
+                  Open your plan
+                </LinkButton>
+              )
+            }
+          />
+        </Section>
+      ) : null}
+
+      {session && skipped ? (
+        <Section title="You skipped this one" aria-label="Skipped session">
+          <List>
+            <ListRow title={<StatusText tone="neutral">{skippedLabel(session.skipReason)}</StatusText>} subtitle={session.skipNote ?? "It does not count as missed. Your coach can see the reason."} />
+          </List>
+          <EmptyState
+            title="Did it after all?"
+            body="Undo the skip and log it like any other session."
+            action={
+              <Button size="sm" disabled={busy} onClick={() => void handleUnskip()}>
+                {busy ? "Saving..." : "Undo skip and log it"}
+              </Button>
+            }
+          />
+        </Section>
+      ) : null}
+
+      {session && excusedHold ? (
+        <Section title="This session is excused" aria-label="Excused session">
+          <EmptyState
+            title="You are marked as unavailable on this day."
+            body="You do not need to do anything. If you trained anyway, log it and it counts."
+            action={
+              <Button size="sm" onClick={() => setLogAnyway(true)}>
+                Log anyway
+              </Button>
+            }
+          />
+        </Section>
       ) : null}
 
       {session && completed && !editing ? (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <Stat
-              tone="green"
-              label="Session done"
-              value={totals.done}
-              unit={`/${totals.total}`}
-              hint={totals.total === 1 ? "item ticked" : "sets ticked"}
-            />
-            <Stat
-              tone="plain"
-              label="Effort"
-              value={session.overallRpe ?? "None"}
-              unit={session.overallRpe ? "/10" : undefined}
-              hint={session.overallRpe ? EFFORT_WORDS[session.overallRpe] : "Not rated"}
-            />
-          </div>
-
           {justFinished ? (
-            <div className="flex flex-col gap-3 rounded-[20px] bg-sk-green-tint p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <CheckCircle className="mt-0.5 size-7 shrink-0 text-sk-green" weight="fill" aria-hidden />
-                <div>
-                  <p className="sk-h3">Nice work. That is logged.</p>
-                  <p className="text-sm text-sk-ink-2">
-                    {sync.status === "saved"
-                      ? "Your coach can see it now. Taking you home."
-                      : "It is safe on this phone and will reach your coach when it sends."}
-                  </p>
-                </div>
-              </div>
-              <Link to="/athlete/home" className="sk-btn sk-btn-primary shrink-0">
-                Back to home
-              </Link>
-            </div>
+            <Notice
+              tone="success"
+              action={
+                <LinkButton size="sm" variant="quiet" to="/athlete/home">
+                  Back to home
+                </LinkButton>
+              }
+            >
+              Nice work. That is logged.{" "}
+              {sync.status === "saved" ? "Your coach can see it now. Taking you home." : "It is safe on this phone and will reach your coach when it sends."}
+            </Notice>
           ) : null}
 
-          <Panel
+          <StatStrip aria-label="Session summary">
+            <Stat label="Session done" value={totals.done} of={totals.total} hint={totals.total === 1 ? "item ticked" : "sets ticked"} />
+            <Stat
+              label="Effort"
+              value={session.overallRpe ?? "None"}
+              of={session.overallRpe ? 10 : undefined}
+              hint={session.overallRpe ? EFFORT_WORDS[session.overallRpe] : "Not rated"}
+            />
+          </StatStrip>
+
+          <Section
             title="What you logged"
             hint={session.completedOn ? `Finished ${formatLongDay(session.completedOn)}` : undefined}
             action={
-              <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={() => setEditing(true)}>
+              <Button variant="quiet" size="sm" onClick={() => setEditing(true)}>
                 <PencilSimple className="size-4" weight="bold" aria-hidden />
                 Edit
-              </button>
+              </Button>
             }
           >
-            <LoggedSummary blocks={session.blocks} logs={log.logs} />
-            {session.athleteComment ? (
-              <div className="sk-well mt-5">
-                <p className="sk-label">Your comment</p>
-                <p className="mt-1 text-[0.95rem] leading-relaxed text-sk-ink">{session.athleteComment}</p>
-              </div>
-            ) : null}
-          </Panel>
-          <SyncStatus sync={sync} onRetry={log.retrySync} />
+            {totals.total > 0 ? <LoggedSummary blocks={session.blocks} logs={log.logs} /> : <p className="py-3.5 text-sk-mute">No exercises were logged for this session.</p>}
+          </Section>
+
+          {session.athleteComment ? (
+            <Section title="Your comment">
+              <p className="pt-1 text-base leading-relaxed text-sk-ink">{session.athleteComment}</p>
+            </Section>
+          ) : null}
         </>
       ) : null}
 
       {session && showForm ? (
         <>
-          {date !== today && !completed ? (
-            <p className="rounded-2xl bg-sk-blue-tint px-4 py-3 text-sm font-semibold text-[#1638b8]">
+          {date !== today && !completed && !isExtra ? (
+            <Notice>
               {date < today
                 ? `This was planned for ${formatLongDay(date)}. You can still log it.`
                 : `This is planned for ${formatLongDay(date)}. Log it now if you are doing it early.`}
-            </p>
+            </Notice>
           ) : null}
 
           {session.coachNote ? (
-            <div className="sk-card flex items-start gap-3">
-              <ChatText className="mt-0.5 size-5 shrink-0 text-sk-blue" weight="fill" aria-hidden />
-              <div className="min-w-0">
-                <p className="sk-label">From your coach</p>
-                <p className="mt-0.5 text-base leading-relaxed text-sk-ink">{session.coachNote}</p>
-              </div>
-            </div>
+            <Section title="From your coach">
+              <p className="pt-1 text-base leading-relaxed text-sk-ink">{session.coachNote}</p>
+            </Section>
           ) : null}
 
-          {session.blocks.length === 0 ? (
-            <p className="sk-well text-sm text-sk-ink-2">Your coach has not added any detail to this session. You can still finish it below.</p>
-          ) : null}
+          {session.blocks.length === 0 ? <Notice>Your coach has not added any detail to this session. You can still finish it below.</Notice> : null}
 
           {session.blocks.map((block) => (
-            <Panel key={block.id} title={block.name} hint={[block.focus, block.coachNote].filter(Boolean).join(" ") || undefined}>
-              <ul>
-                {block.rows.map((row) => {
-                  const count = Math.min(setCount(row, log.logs) + (log.extraSets[row.id] ?? 0), MAX_SETS)
-                  return (
-                    <ExerciseRow
-                      key={row.id}
-                      row={row}
-                      logs={log.logs}
-                      count={count}
-                      canAddSet={row.kind !== "check" && count < MAX_SETS}
-                      onToggle={(setIndex) => log.toggleSet(row, setIndex)}
-                      onValue={(setIndex, field, value) => log.setValue(row, setIndex, field, value)}
-                      onFill={() => log.fillRowFromTarget(row)}
-                      onAddSet={() => log.addSet(row)}
-                      hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
-                    />
-                  )
-                })}
-              </ul>
-            </Panel>
+            <Section
+              key={block.id}
+              title={isExtra ? "Exercises" : block.name}
+              hint={[block.focus, block.coachNote].filter(Boolean).join(" ") || undefined}
+              action={
+                isExtra && block.rows.length > 0 ? (
+                  <Button variant="quiet" size="sm" onClick={() => setExerciseOpen(true)}>
+                    <Plus className="size-4" weight="bold" aria-hidden />
+                    Add exercise
+                  </Button>
+                ) : undefined
+              }
+            >
+              {block.rows.length > 0 ? (
+                <SetList>
+                  {block.rows.map((row) => {
+                    const count = Math.min(setCount(row, log.logs) + (log.extraSets[row.id] ?? 0), MAX_SETS)
+                    return (
+                      <ExerciseLog
+                        key={row.id}
+                        row={row}
+                        logs={log.logs}
+                        count={count}
+                        lastTime={log.lastTime(row.label)}
+                        onToggle={(setIndex) => log.toggleSet(row, setIndex)}
+                        onValue={(setIndex, field, value) => log.setValue(row, setIndex, field, value)}
+                        onFill={() => log.fillRowFromTarget(row)}
+                        onRepeat={() => log.repeatLastSet(row, count)}
+                        onAddSet={() => log.addSet(row)}
+                        hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
+                      />
+                    )
+                  })}
+                </SetList>
+              ) : (
+                <EmptyState
+                  title="Add what you did"
+                  body="One exercise at a time: its name, then the sets, reps, times or marks."
+                  action={
+                    <Button size="sm" onClick={() => setExerciseOpen(true)}>
+                      <Plus className="size-4" weight="bold" aria-hidden />
+                      Add exercise
+                    </Button>
+                  }
+                />
+              )}
+            </Section>
           ))}
 
-          <Panel title="How hard was it?" hint="1 is very easy, 10 is everything you had.">
-            <div role="radiogroup" aria-label="Effort from 1 to 10" className="grid grid-cols-5 gap-2">
-              {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => {
-                const active = log.wrapUp.rpe === value
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    aria-label={`${value}, ${EFFORT_WORDS[value]}`}
-                    onClick={() => log.updateWrapUp({ rpe: active ? null : value })}
-                    className={cn(
-                      "h-14 rounded-[14px] border-2 text-xl font-extrabold tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
-                      active ? "border-sk-blue bg-sk-blue text-white" : "border-sk-line bg-white text-sk-ink hover:border-sk-ink",
-                    )}
-                  >
-                    {value}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-3 min-h-5 text-sm font-semibold text-sk-ink-2" aria-live="polite">
-              {log.wrapUp.rpe ? `${log.wrapUp.rpe} out of 10: ${EFFORT_WORDS[log.wrapUp.rpe]}` : ""}
-            </p>
-
-            <label htmlFor={commentId} className="sk-label mb-1.5 mt-3 block">
-              Anything your coach should know? (optional)
-            </label>
-            <textarea
-              id={commentId}
-              rows={3}
-              maxLength={1000}
-              value={log.wrapUp.comment}
-              onChange={(event) => log.updateWrapUp({ comment: event.target.value })}
-              placeholder="How it felt, niggles, what you changed"
-              className="sk-field h-auto min-h-[96px] py-3 text-base"
-            />
-
-            <button type="button" className="sk-btn sk-btn-primary mt-5 h-14 w-full text-base" disabled={finishing} onClick={() => void handleFinish()}>
-              <CheckCircle className="size-5" weight="fill" aria-hidden />
+          <Section title="How hard was it?" hint="1 is very easy, 10 is everything you had.">
+            <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />
+            <Field label="Anything your coach should know?" optional className="mt-2">
+              <Textarea
+                rows={3}
+                maxLength={1000}
+                value={log.wrapUp.comment}
+                onChange={(event) => log.updateWrapUp({ comment: event.target.value })}
+                placeholder="How it felt, niggles, what you changed"
+              />
+            </Field>
+            <Button variant="primary" size="lg" block className="mt-5" disabled={finishing} onClick={() => void handleFinish()}>
+              <Check className="size-5" weight="bold" aria-hidden />
               {completed ? "Save changes" : "Finish session"}
-            </button>
+            </Button>
             {!completed && totals.total > 0 && totals.done < totals.total ? (
               <p className="mt-2 text-center text-sm text-sk-mute">
                 {totals.done} of {totals.total} ticked. You can finish with some left.
               </p>
             ) : null}
             {completed ? (
-              <button type="button" className="sk-btn sk-btn-ghost mt-2 w-full" onClick={() => setEditing(false)}>
+              <Button variant="quiet" block className="mt-2" onClick={() => setEditing(false)}>
                 Back to summary
-              </button>
+              </Button>
             ) : null}
-          </Panel>
-
-          <div className="sticky bottom-0 z-20 -mx-4 -mb-10 border-t border-sk-line bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-sk-ink">
-                  <span className="tabular-nums">
-                    {totals.done} of {totals.total}
-                  </span>{" "}
-                  done
-                </p>
-                <Meter value={totals.total > 0 ? (totals.done / totals.total) * 100 : 0} tone="green" className="mt-1.5" />
-              </div>
-              <SyncStatus sync={sync} onRetry={log.retrySync} className="shrink-0" />
-            </div>
-          </div>
+          </Section>
         </>
       ) : null}
-    </div>
+
+      {day && day.others.length > 0 ? (
+        <Section title="Also on this day">
+          <List>
+            {day.others.map((other) => (
+              <ListRow
+                key={other.id}
+                to={dayPath(date, other.origin === "athlete" ? other.id : undefined)}
+                title={other.title}
+                subtitle={other.origin === "athlete" ? "Added by you" : "From your plan"}
+                trailing={
+                  other.status === "completed" ? (
+                    <StatusText tone="green">Done</StatusText>
+                  ) : other.status === "skipped" ? (
+                    <StatusText tone="neutral">Skipped</StatusText>
+                  ) : other.status === "in-progress" ? (
+                    <StatusText tone="blue">Started</StatusText>
+                  ) : undefined
+                }
+              />
+            ))}
+          </List>
+        </Section>
+      ) : null}
+
+      {day ? (
+        <Section title="More">
+          {confirmRemove ? (
+            <InlineConfirm
+              question="Remove this session and everything logged in it?"
+              confirmLabel="Remove session"
+              busy={busy}
+              onConfirm={() => void handleRemove()}
+              onCancel={() => setConfirmRemove(false)}
+            />
+          ) : null}
+          <List>
+            {session && !isExtra && !completed && !skipped && !excusedHold ? (
+              <ListRow onClick={() => setSkipOpen(true)} chevron title="Can't do this one" subtitle="Skip it with a reason. It will not count as missed." />
+            ) : null}
+            {session && isExtra && !confirmRemove ? (
+              <ListRow onClick={() => setConfirmRemove(true)} chevron title="Remove this session" subtitle="For a session you added by mistake." />
+            ) : null}
+            <ListRow to="/athlete/log/new" title="Add a session" subtitle="Log something that was not in your plan." />
+            <ListRow to="/athlete/log/history" title="Session history" subtitle="What you did, skipped and missed." />
+            {!availability.current ? (
+              <ListRow onClick={() => setAvailabilityOpen(true)} chevron title="I can't train for a while" subtitle="Injured, sick or away. Your coach is told." />
+            ) : null}
+          </List>
+        </Section>
+      ) : null}
+
+      {session && (showForm || (completed && !editing && sync.status !== "saved")) ? (
+        <ActionBar aria-label="Progress">
+          {showForm ? <LogProgress done={totals.done} total={totals.total} /> : <p className="min-w-0 flex-1 text-sm font-bold text-sk-ink">Session done</p>}
+          <SyncStatus sync={sync} onRetry={log.retrySync} className="shrink-0" />
+        </ActionBar>
+      ) : null}
+
+      {session ? (
+        <>
+          <SkipDialog
+            open={skipOpen}
+            onOpenChange={setSkipOpen}
+            sessionTitle={session.title}
+            onSkip={async (reason, note) => {
+              const result = await log.skip(reason, note)
+              if (result.ok) notify("Session skipped", `Reason: ${skipReasonLabel(reason).toLowerCase()}.`)
+              return result
+            }}
+          />
+          <AddExerciseDialog
+            open={exerciseOpen}
+            onOpenChange={setExerciseOpen}
+            defaultKind={session.blocks[0] ? logKindForBlockType(session.blocks[0].blockType) : "strength"}
+            onAdd={log.addExercise}
+          />
+        </>
+      ) : null}
+      <AvailabilityDialog open={availabilityOpen} onOpenChange={setAvailabilityOpen} />
+    </Screen>
   )
 }

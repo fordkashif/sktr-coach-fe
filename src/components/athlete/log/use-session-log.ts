@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { dateKeyLocal, parseSessionCompletions, SESSION_COMPLETIONS_STORAGE_KEY } from "@/lib/athlete-session"
-import { loadAthleteSessionDay } from "@/lib/data/session/session-log-data"
+import {
+  addExtraExercise,
+  deleteExtraSession,
+  loadAthleteSessionDay,
+  loadLastTime,
+  skipSession,
+  unskipSession,
+} from "@/lib/data/session/session-log-data"
 import {
   flushSessionOutbox,
   getSyncState,
@@ -10,12 +17,21 @@ import {
   resumeSessionOutbox,
   subscribeSyncState,
 } from "@/lib/data/session/session-log-sync"
-import { MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
-import type { AthleteSession, AthleteSessionDay, LoggableRow, SessionRowLog } from "@/lib/data/session/types"
+import type { Result } from "@/lib/data/result"
+import { exerciseKey, MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
+import type {
+  AthleteSession,
+  AthleteSessionDay,
+  ExtraExerciseInput,
+  LastTimeResult,
+  LoggableRow,
+  SessionRowLog,
+  SkipReason,
+} from "@/lib/data/session/types"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
-const DAY_CACHE_KEY = "pacelab:session-day-cache:v1"
+const DAY_CACHE_KEY = "pacelab:session-day-cache:v2"
 const WRAP_UP_KEY = "pacelab:session-wrap-up:v1"
 
 type LogMap = Record<string, SessionRowLog>
@@ -40,9 +56,13 @@ function writeJson(key: string, value: unknown) {
 }
 
 /** Last few loaded days, so the session still opens with no signal. */
-function cacheDay(day: AthleteSessionDay) {
+function cacheKey(date: string, sessionId: string | null) {
+  return sessionId ? `${date}|${sessionId}` : date
+}
+
+function cacheDay(day: AthleteSessionDay, sessionId: string | null) {
   const cache = readJson<Record<string, AthleteSessionDay>>(DAY_CACHE_KEY, {})
-  cache[day.date] = day
+  cache[cacheKey(day.date, sessionId)] = day
   const keep = Object.keys(cache).sort().slice(-10)
   writeJson(DAY_CACHE_KEY, Object.fromEntries(keep.map((key) => [key, cache[key]])))
 }
@@ -70,6 +90,8 @@ function withPending(day: AthleteSessionDay): AthleteSessionDay {
     logs: Object.values(merged),
     ...(pending.completion
       ? {
+          skipReason: null,
+          skipNote: null,
           status: "completed" as const,
           completedOn: day.session.completedOn ?? pending.completion.completionDate,
           overallRpe: pending.completion.rpe,
@@ -86,7 +108,36 @@ export function setCount(row: LoggableRow, logs: LogMap) {
   return Math.min(highest, MAX_SETS)
 }
 
-export function useSessionLog(date: string) {
+function hasValues(log: SessionRowLog | undefined) {
+  return Boolean(log && (log.reps !== null || log.loadKg !== null || log.timeSeconds !== null || log.mark !== null))
+}
+
+/**
+ * "Repeat set 2": the last set that was ticked with numbers in it, and the next open set it would be
+ * copied into. Null when there is nothing to copy or nowhere to put it.
+ */
+export function repeatTarget(row: LoggableRow, logs: LogMap, count: number): { from: number; to: number } | null {
+  if (row.kind === "check") return null
+  let from = 0
+  for (let setIndex = 1; setIndex <= count; setIndex += 1) {
+    const log = logs[setKey(row.id, setIndex)]
+    if (log?.completed && hasValues(log)) from = setIndex
+  }
+  if (from === 0) return null
+  for (let setIndex = from + 1; setIndex <= count; setIndex += 1) {
+    if (!logs[setKey(row.id, setIndex)]?.completed) return { from, to: setIndex }
+  }
+  for (let setIndex = 1; setIndex < from; setIndex += 1) {
+    if (!logs[setKey(row.id, setIndex)]?.completed) return { from, to: setIndex }
+  }
+  return count < MAX_SETS ? { from, to: count + 1 } : null
+}
+
+/**
+ * Everything the log screen needs for one day. `sessionId` opens a specific session of that day
+ * (one the athlete added themselves); without it the day's planned session is used.
+ */
+export function useSessionLog(date: string, sessionId: string | null = null) {
   const [day, setDay] = useState<AthleteSessionDay | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fromCache, setFromCache] = useState(false)
@@ -94,6 +145,7 @@ export function useSessionLog(date: string) {
   const [wrapUp, setWrapUp] = useState<WrapUp>({ rpe: null, comment: "" })
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [reloadToken, setReloadToken] = useState(0)
+  const [lastTime, setLastTime] = useState<Record<string, LastTimeResult>>({})
   const sync = useSyncExternalStore(subscribeSyncState, getSyncState, getSyncState)
   const sessionRef = useRef<AthleteSession | null>(null)
   // Mirrors `logs` so handlers fired back to back always read the latest entry.
@@ -108,15 +160,15 @@ export function useSessionLog(date: string) {
     setDay(null)
     setLoadError(null)
 
-    void loadAthleteSessionDay(date).then((result) => {
+    void loadAthleteSessionDay(date, sessionId).then((result) => {
       if (cancelled) return
       let loaded: AthleteSessionDay | null = null
       if (result.ok) {
         loaded = result.data
-        cacheDay(loaded)
+        cacheDay(loaded, sessionId)
         setFromCache(false)
       } else {
-        loaded = readJson<Record<string, AthleteSessionDay>>(DAY_CACHE_KEY, {})[date] ?? null
+        loaded = readJson<Record<string, AthleteSessionDay>>(DAY_CACHE_KEY, {})[cacheKey(date, sessionId)] ?? null
         setFromCache(Boolean(loaded))
         if (!loaded) {
           setLoadError(result.error.message)
@@ -139,7 +191,22 @@ export function useSessionLog(date: string) {
     return () => {
       cancelled = true
     }
-  }, [date, reloadToken])
+  }, [date, sessionId, reloadToken])
+
+  // What they did last time for the same exercises. A hint only: if it cannot be read, nothing shows.
+  const loadedSessionId = day?.session?.id ?? null
+  const loadedLabels = (day?.session?.blocks ?? []).flatMap((block) => block.rows.filter((row) => row.kind !== "check").map((row) => row.label)).join("|")
+  useEffect(() => {
+    setLastTime({})
+    if (!loadedSessionId || !loadedLabels) return
+    let cancelled = false
+    void loadLastTime(loadedLabels.split("|"), date, loadedSessionId).then((result) => {
+      if (!cancelled && result.ok) setLastTime(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [date, loadedLabels, loadedSessionId])
 
   const commit = useCallback((next: SessionRowLog) => {
     const session = sessionRef.current
@@ -211,6 +278,18 @@ export function useSessionLog(date: string) {
     [commit, currentLog, filled],
   )
 
+  /** Copies the last ticked set into the next open one and ticks it. */
+  const repeatLastSet = useCallback(
+    (row: LoggableRow, shownCount: number) => {
+      const target = repeatTarget(row, logsRef.current, shownCount)
+      if (!target) return
+      const source = currentLog(row.id, target.from)
+      if (target.to > shownCount) setExtraSets((current) => ({ ...current, [row.id]: (current[row.id] ?? 0) + 1 }))
+      commit({ ...source, setIndex: target.to, completed: true })
+    },
+    [commit, currentLog],
+  )
+
   const addSet = useCallback((row: LoggableRow) => {
     setExtraSets((current) => ({ ...current, [row.id]: (current[row.id] ?? 0) + 1 }))
   }, [])
@@ -249,12 +328,15 @@ export function useSessionLog(date: string) {
         ? {
             ...current,
             session: finished,
-            week: current.week.map((entry) => (entry.date === current.date ? { ...entry, done: true } : entry)),
+            // A session the athlete added does not tick off the planned session of that day.
+            week: current.week.map((entry) =>
+              entry.date === current.date && (finished.origin !== "athlete" || entry.kind !== "session") ? { ...entry, done: true, skipped: false } : entry,
+            ),
           }
         : current,
     )
 
-    if (getBackendMode() !== "supabase") {
+    if (getBackendMode() !== "supabase" && session.origin !== "athlete") {
       // The mock home screen reads its week streak from this key.
       const key = tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)
       const dates = parseSessionCompletions(window.localStorage.getItem(key))
@@ -262,6 +344,54 @@ export function useSessionLog(date: string) {
     }
     return flushSessionOutbox()
   }, [wrapUp.comment, wrapUp.rpe])
+
+  const reload = useCallback(() => setReloadToken((value) => value + 1), [])
+
+  /** "Can't do this one". Needs a connection: it is a decision, not a result typed at the track. */
+  const skip = useCallback(
+    async (reason: SkipReason, note: string | null): Promise<Result<null>> => {
+      const session = sessionRef.current
+      if (!session) return { ok: false, error: { code: "NOT_FOUND", message: "There is no session to skip." } }
+      const result = await skipSession(session.id, reason, note)
+      if (result.ok) reload()
+      return result
+    },
+    [reload],
+  )
+
+  const unskip = useCallback(async (): Promise<Result<null>> => {
+    const session = sessionRef.current
+    if (!session) return { ok: false, error: { code: "NOT_FOUND", message: "There is no session to change." } }
+    const result = await unskipSession(session.id)
+    if (result.ok) reload()
+    return result
+  }, [reload])
+
+  /** Adds an exercise to a session the athlete added themselves. */
+  const addExercise = useCallback(async (input: ExtraExerciseInput): Promise<Result<LoggableRow>> => {
+    const session = sessionRef.current
+    const block = session?.blocks[0]
+    if (!session || !block || session.origin !== "athlete") {
+      return { ok: false, error: { code: "FORBIDDEN", message: "Exercises can only be added to a session you added yourself." } }
+    }
+    const result = await addExtraExercise(session.id, block.id, block.rows.length, input)
+    if (!result.ok) return result
+    const next: AthleteSession = { ...session, blocks: [{ ...block, rows: [...block.rows, result.data] }, ...session.blocks.slice(1)] }
+    sessionRef.current = next
+    setDay((current) => {
+      if (!current) return current
+      const updated = { ...current, session: next }
+      cacheDay(updated, next.id)
+      return updated
+    })
+    return result
+  }, [])
+
+  const removeExtraSession = useCallback(async (): Promise<Result<null>> => {
+    const session = sessionRef.current
+    if (!session) return { ok: false, error: { code: "NOT_FOUND", message: "There is no session to remove." } }
+    return deleteExtraSession(session.id)
+  }, [])
 
   const totals = useMemo(() => {
     let total = 0
@@ -281,7 +411,13 @@ export function useSessionLog(date: string) {
     session: day?.session ?? null,
     loadError,
     fromCache,
-    reload: () => setReloadToken((value) => value + 1),
+    reload,
+    lastTime: (label: string) => lastTime[exerciseKey(label)] ?? null,
+    repeatLastSet,
+    skip,
+    unskip,
+    addExercise,
+    removeExtraSession,
     logs,
     extraSets,
     wrapUp,
