@@ -1,6 +1,7 @@
 import {
   approveAndProvisionMockTenantRequest,
   dispatchMockPendingNotificationEmails,
+  loadMockFailedNotificationEmails,
   loadMockPlatformAdminRequests,
   loadMockPackageUpgradeRequests,
   loadMockPlatformAuditEvents,
@@ -9,6 +10,8 @@ import {
   resendMockInitialAccessInvite,
   reviewMockPackageUpgradeRequest,
   reviewMockTenantProvisionRequest,
+  retryMockFailedNotificationEmail,
+  setMockTenantPackage,
   setMockTenantRequestLifecycleState,
 } from "@/lib/mock-platform-admin"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
@@ -829,4 +832,116 @@ export async function getPlatformAuditLog(): Promise<Result<{ entries: PlatformA
     })),
     total: count ?? rows.length,
   })
+}
+
+/**
+ * The platform admin moves a club to another package, with a reason. Same effect as approving a
+ * package request: the club's limits change at once. Written to the platform audit and to the
+ * club's own activity, and the club's admins are told (migration 20261010100000).
+ * Returns the package the club was on before.
+ */
+export async function setTenantPackage(params: { requestId: string; tenantId: string; packageId: PackageId; reason: string }): Promise<Result<{ previousPackage: string }>> {
+  const reason = params.reason.trim()
+  if (reason.length < 3) return err("VALIDATION", "Add a reason first. It is saved with the change and sent to the club.")
+
+  if (isMockMode()) {
+    const previous = setMockTenantPackage({ requestId: params.requestId, packageId: params.packageId, reason })
+    return previous ? ok({ previousPackage: previous }) : err("CONFLICT", "The package could not be changed. The club may already be on that package.")
+  }
+
+  const clientResult = requireSupabaseClient("setTenantPackage")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client.rpc("platform_admin_set_tenant_package", {
+    p_tenant_id: params.tenantId,
+    p_package: params.packageId,
+    p_reason: reason,
+  })
+
+  if (error) {
+    if (error.code === "PGRST202") {
+      return err("NOT_FOUND", "Changing a package from here is not switched on for this database yet. Apply the latest migration, or ask the club to send a package request.", error)
+    }
+    return { ok: false, error: mapPostgrestError(error) }
+  }
+  // The club's admins are told by email.
+  kickNotificationEmails()
+  return ok({ previousPackage: typeof data === "string" ? data : "" })
+}
+
+export type PlatformFailedNotificationEmail = {
+  id: string
+  tenantId: string | null
+  tenantName: string | null
+  recipientEmail: string | null
+  /** The kind of update ("training_plan_published"). */
+  eventType: string
+  subject: string
+  /** What the email provider or the queue said. */
+  lastError: string | null
+  attempts: number
+  createdAt: string
+  /** The queue will try it again by itself. */
+  willRetry: boolean
+  /** Not too old to be sent (72 hours), so "Try again" can put it back in the queue. */
+  canRetry: boolean
+}
+
+/**
+ * The latest notification emails that failed, newest first, from the
+ * `get_platform_failed_notification_emails` database function (platform admins only; it never
+ * returns the message body). Null means the list is not available: the function is not deployed
+ * yet, or the call failed.
+ */
+export async function getPlatformFailedNotificationEmails(limit = 50): Promise<PlatformFailedNotificationEmail[] | null> {
+  if (isMockMode()) return loadMockFailedNotificationEmails()
+
+  const clientResult = requireSupabaseClient("getPlatformFailedNotificationEmails")
+  if (!clientResult.ok) return null
+
+  try {
+    const { data, error } = await clientResult.client.rpc("get_platform_failed_notification_emails", { p_limit: limit })
+    if (error || !Array.isArray(data)) return null
+    return (data as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id),
+      tenantId: typeof row.tenant_id === "string" ? row.tenant_id : null,
+      tenantName: typeof row.tenant_name === "string" ? row.tenant_name : null,
+      recipientEmail: typeof row.recipient_email === "string" ? row.recipient_email : null,
+      eventType: String(row.event_type ?? ""),
+      subject: String(row.subject ?? ""),
+      lastError: typeof row.last_error === "string" ? row.last_error : null,
+      attempts: Number(row.delivery_attempt_count ?? 0),
+      createdAt: String(row.created_at ?? ""),
+      willRetry: row.will_retry === true,
+      canRetry: row.can_retry === true,
+    }))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Puts one failed email back in the queue and asks for it to be sent now.
+ * `sent` is false when it was queued but this attempt failed again (the error says why).
+ */
+export async function retryPlatformNotificationEmail(eventId: string): Promise<Result<{ sent: boolean; error: string | null }>> {
+  if (isMockMode()) {
+    return retryMockFailedNotificationEmail(eventId) ? ok({ sent: true, error: null }) : err("CONFLICT", "This email can no longer be sent again.")
+  }
+
+  const clientResult = requireSupabaseClient("retryPlatformNotificationEmail")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client.rpc("retry_platform_notification_email", { p_event_id: eventId })
+  if (error) {
+    if (error.code === "PGRST202") return err("NOT_FOUND", "Sending a failed email again is not switched on for this database yet. Apply the latest migration.", error)
+    return { ok: false, error: mapPostgrestError(error) }
+  }
+  if (data !== true) return err("CONFLICT", "This email is no longer marked as failed. Reload the list.")
+
+  const dispatch = await dispatchPendingNotificationEmails({ limit: 1, eventIds: [eventId] })
+  if (!dispatch.ok) return ok({ sent: false, error: dispatch.error.message })
+  const outcome = dispatch.data.results.find((item) => item.id === eventId)
+  if (!outcome) return ok({ sent: false, error: null })
+  return ok({ sent: outcome.status === "sent", error: outcome.status === "sent" ? null : (outcome.error ?? null) })
 }

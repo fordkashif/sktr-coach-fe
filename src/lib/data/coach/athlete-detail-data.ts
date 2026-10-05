@@ -7,7 +7,7 @@ import {
   type CoachAthleteSessionRow,
   type CoachAthleteWellnessRow,
 } from "@/lib/data/coach/dashboard-data"
-import { loadMockRoster, mergeMockAthletes } from "@/lib/data/coach/roster-mock"
+import { loadMockRoster, mergeMockAthletes, mockSessionIdentity } from "@/lib/data/coach/roster-mock"
 import { err, ok, type Result } from "@/lib/data/result"
 import { listMockLoggedSessions } from "@/lib/data/session/session-mock"
 import { getOpenPainReportsForAthlete } from "@/lib/data/wellness/pain-report-data"
@@ -40,9 +40,22 @@ function isoDay(value: string): string | null {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`
 }
 
+/** Demo only: stands in for "no team" so an unassigned athlete still resolves. No demo team has this id. */
+const NO_TEAM = "no-team"
+
 async function mockDetail(athleteId: string): Promise<Result<CoachAthleteDetail>> {
   const module = await import("@/lib/mock-data")
-  const state = loadMockRoster()
+  const stored = loadMockRoster()
+  // An athlete who is on no team is still an athlete of the club: a club admin can open them, as on
+  // the real backend. Coaches only reach athletes on a team.
+  const state =
+    mockSessionIdentity().role === "club-admin"
+      ? {
+          ...stored,
+          teamOverride: Object.fromEntries(Object.entries(stored.teamOverride).map(([id, teamId]) => [id, teamId ?? NO_TEAM])),
+          added: stored.added.map((item) => (item.active && !item.teamId ? { ...item, teamId: NO_TEAM } : item)),
+        }
+      : stored
   const athlete = mergeMockAthletes(module.mockAthletes, state).find((item) => item.id === athleteId)
   if (!athlete) return err("NOT_FOUND", "Athlete not found.")
   const team = module.mockTeams.find((item) => item.id === athlete.teamId)

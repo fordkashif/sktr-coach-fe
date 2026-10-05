@@ -1,22 +1,34 @@
-"use client"
-
-import {
-  ArrowCounterClockwise,
-  ArrowLeft,
-  ArrowSquareOut,
-  CaretRight,
-  Check,
-  Copy,
-  DownloadSimple,
-  EnvelopeSimple,
-  MagnifyingGlass,
-  PaperPlaneTilt,
-  Tray,
-  X,
-} from "@phosphor-icons/react"
+import { ArrowCounterClockwise, ArrowSquareOut, Check, Copy, DownloadSimple, EnvelopeSimple, PaperPlaneTilt } from "@phosphor-icons/react"
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { EmptyState, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
+import {
+  Button,
+  DataTable,
+  EmptyState,
+  Fact,
+  FactList,
+  Field,
+  Input,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  SearchInput,
+  Section,
+  Sheet,
+  SkeletonRows,
+  StatusDot,
+  StatusText,
+  SubSection,
+  SubSections,
+  TableSub,
+  Tabs,
+  Tag,
+  Textarea,
+  type DataTableColumn,
+  type StateTone,
+  type TagTone,
+} from "@/components/sk"
 import { doesPackageFitRollout, getPackageById, getRecommendedPackage } from "@/lib/billing/package-catalog"
 import {
   approveAndProvisionTenantRequest,
@@ -31,9 +43,9 @@ import {
   type PlatformAdminRequestRecord,
   type PlatformAuditEventRecord,
 } from "@/lib/data/platform-admin/ops-data"
+import { downloadCsv, plural } from "@/lib/format/ops-format"
 import { getBackendMode } from "@/lib/supabase/config"
 import type { TenantBillingStatus, TenantLifecycleStatus } from "@/lib/tenant/lifecycle"
-import { cn } from "@/lib/utils"
 
 type Request = PlatformAdminRequestRecord
 
@@ -104,6 +116,9 @@ function isStuckWithoutWorkspace(request: Request) {
   return request.status === "approved" && !request.provisionedTenantId && request.lifecycleStatus !== "cancelled"
 }
 
+const STATE_OF_TAG: Record<TagTone, StateTone> = { yellow: "amber", plain: "neutral", coral: "coral", green: "green", blue: "blue" }
+
+/** `tone` is for the Tag in the table's status column. In the detail the status is a dot and text (STATE_OF_TAG). */
 function statusOf(request: Request): { label: string; tone: TagTone } {
   if (request.status === "pending") return { label: "New", tone: "yellow" }
   if (request.status === "rejected") return { label: "Declined", tone: "plain" }
@@ -133,10 +148,6 @@ function formatDateTime(value: string | null | undefined) {
   return (
     parseDate(value)?.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) ?? null
   )
-}
-
-function plural(count: number, one: string, many: string) {
-  return `${count} ${count === 1 ? one : many}`
 }
 
 function sizeOf(request: Request) {
@@ -197,23 +208,6 @@ function friendlyError(message: string) {
   return message
 }
 
-function csvCell(value: string) {
-  // Values come from a public form. A leading =, +, - or @ would run as a formula in a spreadsheet.
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
-  return `"${safe.replaceAll('"', '""')}"`
-}
-
-function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n")
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -223,11 +217,11 @@ async function copyText(text: string) {
   }
 }
 
-type HistoryEntry = { id: string; at: string; title: string; detail?: string | null; tone: "plain" | "green" | "coral" | "blue" }
+type HistoryEntry = { id: string; at: string; title: string; detail?: string | null; tone: StateTone }
 
 function buildHistory(request: Request, events: PlatformAuditEventRecord[] | undefined, inviteError: string | null): HistoryEntry[] {
   const entries: HistoryEntry[] = [
-    { id: "received", at: request.createdAt, title: "Request received", detail: `Sent by ${request.requestorName}`, tone: "plain" },
+    { id: "received", at: request.createdAt, title: "Request received", detail: `Sent by ${request.requestorName}`, tone: "neutral" },
   ]
   const by = (event: PlatformAuditEventRecord) => (event.actorEmail ? `By ${event.actorEmail}` : null)
   let sawReview = false
@@ -263,7 +257,7 @@ function buildHistory(request: Request, events: PlatformAuditEventRecord[] | und
         break
       }
       case "club_admin_initial_access_invite_previewed":
-        entries.push({ id: event.id, at: event.occurredAt, title: "Access link copied", detail: by(event), tone: "plain" })
+        entries.push({ id: event.id, at: event.occurredAt, title: "Access link copied", detail: by(event), tone: "neutral" })
         break
       case "tenant_request_lifecycle_updated": {
         const next = String(meta.lifecycleStatus ?? meta.lifecycle_status ?? "") as TenantLifecycleStatus
@@ -272,12 +266,12 @@ function buildHistory(request: Request, events: PlatformAuditEventRecord[] | und
           at: event.occurredAt,
           title: LIFECYCLE_SENTENCE[next] ?? "Lifecycle changed",
           detail: by(event),
-          tone: next === "suspended" || next === "cancelled" || next === "billing_failed" ? "coral" : next === "active" ? "green" : "plain",
+          tone: next === "suspended" || next === "cancelled" || next === "billing_failed" ? "coral" : next === "active" ? "green" : "neutral",
         })
         break
       }
       default:
-        entries.push({ id: event.id, at: event.occurredAt, title: event.detail ?? event.action.replaceAll("_", " "), detail: by(event), tone: "plain" })
+        entries.push({ id: event.id, at: event.occurredAt, title: event.detail ?? event.action.replaceAll("_", " "), detail: by(event), tone: "neutral" })
     }
   }
 
@@ -309,47 +303,6 @@ function buildHistory(request: Request, events: PlatformAuditEventRecord[] | und
   }
   return entries
 }
-
-function Message({ feedback, onDismiss, className }: { feedback: Feedback; onDismiss: () => void; className?: string }) {
-  return (
-    <div
-      role={feedback.tone === "ok" ? "status" : "alert"}
-      className={cn(
-        "flex items-start justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold",
-        feedback.tone === "ok" && "bg-sk-green-tint text-[#07673f]",
-        feedback.tone === "warn" && "bg-sk-yellow-tint text-[#5c4100]",
-        feedback.tone === "error" && "bg-sk-coral-tint text-[#b32a0c]",
-        className,
-      )}
-    >
-      <p className="min-w-0 break-words">{feedback.text}</p>
-      <button type="button" className="-my-1 shrink-0 rounded-lg p-1 hover:bg-white/60" aria-label="Dismiss message" onClick={onDismiss}>
-        <X className="size-4" weight="bold" />
-      </button>
-    </div>
-  )
-}
-
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-1">
-      <h3 className="sk-h3">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-sk-line py-2.5 last:border-b-0">
-      <dt className="shrink-0 text-sm font-semibold text-sk-mute">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[0.95rem] font-semibold text-sk-ink">{children}</dd>
-    </div>
-  )
-}
-
-const notGiven = <span className="font-normal text-sk-mute">Not given</span>
-const th = "px-3 py-3 font-semibold"
 
 export default function PlatformAdminRequestsPage() {
   const isSupabaseMode = getBackendMode() === "supabase"
@@ -723,9 +676,24 @@ export default function PlatformAdminRequestsPage() {
           .filter(Boolean)
           .join(" ")
 
-  const count = (value: number) => (value > 0 ? <span className="ml-1.5 font-semibold text-sk-mute">{value}</span> : null)
+  const NOTICE_TONE = { ok: "success", warn: "warning", error: "error" } as const
+  const feedbackNotice = (feedback: Feedback, onDismiss: () => void) => (
+    <Notice
+      tone={NOTICE_TONE[feedback.tone]}
+      action={
+        <Button variant="quiet" size="sm" onClick={onDismiss}>
+          Dismiss
+        </Button>
+      }
+    >
+      <span className="break-words">{feedback.text}</span>
+    </Notice>
+  )
 
-  const renderDetail = (request: Request) => {
+  const notGiven = "Not given"
+
+  /** Everything the sheet shows for one request, and the one main action its state calls for. */
+  const detailOf = (request: Request) => {
     const status = statusOf(request)
     const requestStage = stageOf(request)
     const pkg = getPackageById(request.requestedPlan)
@@ -768,25 +736,22 @@ export default function PlatformAdminRequestsPage() {
                         ? "Billing is done and the club admin is working through setup."
                         : "This club is up and running."
 
-    const smallButton = "sk-btn sk-btn-sm max-sm:h-11"
     const controls: Array<{ key: string; title: string; body: string; actions: ReactNode }> = []
     if (canInvite && !inviteIsPrimary) {
       controls.push({
         key: "invite",
         title: "First access invite",
-        body: request.accessInviteSentAt
-          ? `Sent to ${request.requestorEmail} on ${formatDateTime(request.accessInviteSentAt)}.`
-          : `Not sent to ${request.requestorEmail} yet.`,
+        body: request.accessInviteSentAt ? `Sent to ${request.requestorEmail} on ${formatDateTime(request.accessInviteSentAt)}.` : `Not sent to ${request.requestorEmail} yet.`,
         actions: (
           <>
-            {isLocalPreviewEnabled ? (
-              <button type="button" className={`${smallButton} sk-btn-quiet`} disabled={working} onClick={() => void handleCopyLink(request)}>
-                {busy === "copy" ? "Copying..." : "Copy access link"}
-              </button>
-            ) : null}
-            <button type="button" className={`${smallButton} sk-btn-quiet`} disabled={working} onClick={() => void handleSendInvite(request)}>
+            <Button size="sm" disabled={working} onClick={() => void handleSendInvite(request)}>
               {busy === "invite" ? "Sending..." : request.accessInviteSentAt ? "Resend access invite" : "Send access invite"}
-            </button>
+            </Button>
+            {isLocalPreviewEnabled ? (
+              <Button size="sm" variant="quiet" disabled={working} onClick={() => void handleCopyLink(request)}>
+                {busy === "copy" ? "Copying..." : "Copy access link"}
+              </Button>
+            ) : null}
           </>
         ),
       })
@@ -797,14 +762,13 @@ export default function PlatformAdminRequestsPage() {
         title: "Billing did not go through?",
         body: "Flag it so the club shows as needing attention.",
         actions: (
-          <button
-            type="button"
-            className={`${smallButton} sk-btn-quiet`}
+          <Button
+            size="sm"
             disabled={working}
             onClick={() => void handleLifecycle(request, "billing-failed", "billing_failed", "failed", `Billing marked as failed for ${request.organizationName}.`)}
           >
             {busy === "billing-failed" ? "Saving..." : "Mark billing failed"}
-          </button>
+          </Button>
         ),
       })
     }
@@ -812,11 +776,11 @@ export default function PlatformAdminRequestsPage() {
       controls.push({
         key: "suspend",
         title: "Suspend",
-        body: "Mark the club as paused. You can reactivate it at any time.",
+        body: "Pause the club. You can reactivate it at any time.",
         actions: (
-          <button type="button" className={`${smallButton} sk-btn-danger`} disabled={working} aria-expanded={confirm === "suspend"} onClick={() => setConfirm("suspend")}>
+          <Button size="sm" variant="danger" disabled={working} aria-expanded={confirm === "suspend"} onClick={() => setConfirm("suspend")}>
             Suspend club
-          </button>
+          </Button>
         ),
       })
     }
@@ -824,523 +788,496 @@ export default function PlatformAdminRequestsPage() {
       controls.push({
         key: "cancel",
         title: "Cancel",
-        body: "Mark the club as closed. Its data is kept.",
+        body: "Close the club. Its data is kept.",
         actions: (
-          <button type="button" className={`${smallButton} sk-btn-danger`} disabled={working} aria-expanded={confirm === "cancel"} onClick={() => setConfirm("cancel")}>
+          <Button size="sm" variant="danger" disabled={working} aria-expanded={confirm === "cancel"} onClick={() => setConfirm("cancel")}>
             Cancel club
-          </button>
+          </Button>
         ),
       })
     }
 
-    return (
-      <>
-        <div className="flex items-start justify-between gap-3 border-b border-sk-line px-5 py-4 sm:px-6">
-          <SheetClose className="sk-btn sk-btn-ghost -ml-2 size-11 shrink-0 px-0 sm:hidden" aria-label="Back to requests" disabled={working}>
-            <ArrowLeft className="size-5" weight="bold" />
-          </SheetClose>
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <SheetTitle className="sk-h2 break-words">{request.organizationName}</SheetTitle>
-            <SheetDescription className="text-sm text-sk-mute">
-              {request.requestorName} asked for access on {formatDateTime(request.createdAt) ?? "an unknown date"}
-            </SheetDescription>
-            <Tag tone={status.tone}>{status.label}</Tag>
-          </div>
-          <SheetClose className="sk-btn sk-btn-ghost hidden size-11 shrink-0 px-0 sm:inline-flex" aria-label="Close" disabled={working}>
-            <X className="size-5" weight="bold" />
-          </SheetClose>
-        </div>
+    const body = (
+      <SubSections>
+        <StatusText tone={STATE_OF_TAG[status.tone]}>{status.label}</StatusText>
 
-        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-5 py-5 sm:px-6">
-          {inviteError && canInvite ? (
-            <p className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-              The last access invite failed: {friendlyError(inviteError)}. Use Send access invite to try again.
-            </p>
-          ) : null}
+        {inviteError && canInvite ? <Notice tone="error">The last access invite failed: {friendlyError(inviteError)}. Use Send access invite to try again.</Notice> : null}
 
-          {link && canInvite ? (
-            <div className="sk-well space-y-2">
-              <label htmlFor="request-access-link" className="block text-sm font-semibold text-sk-ink-2">
-                Access link for {request.requestorEmail}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="request-access-link"
-                  readOnly
-                  value={link}
-                  className="sk-field min-w-0 flex-1 text-sm"
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-                <button
-                  type="button"
-                  className="sk-btn sk-btn-quiet shrink-0 px-3.5"
-                  onClick={async () => {
-                    if (await copyText(link)) {
-                      setCopiedLink(request.id)
-                      window.setTimeout(() => setCopiedLink((current) => (current === request.id ? null : current)), 2000)
-                    }
-                  }}
-                >
-                  {copiedLink === request.id ? <Check className="size-5" weight="bold" /> : <Copy className="size-5" weight="bold" />}
-                  {copiedLink === request.id ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <p className="text-sm text-sk-mute">Anyone with this link can claim the club admin account. Only share it with the requester.</p>
+        {link && canInvite ? (
+          <SubSection title="Access link" hint="Anyone with this link can claim the club admin account. Only share it with the requester.">
+            <div className="flex items-end gap-2">
+              <Field label={`Access link for ${request.requestorEmail}`} className="min-w-0 flex-1">
+                <Input readOnly value={link} onFocus={(event) => event.currentTarget.select()} />
+              </Field>
+              <Button
+                onClick={async () => {
+                  if (await copyText(link)) {
+                    setCopiedLink(request.id)
+                    window.setTimeout(() => setCopiedLink((current) => (current === request.id ? null : current)), 2000)
+                  }
+                }}
+              >
+                {copiedLink === request.id ? <Check className="size-5" weight="bold" aria-hidden /> : <Copy className="size-5" weight="bold" aria-hidden />}
+                {copiedLink === request.id ? "Copied" : "Copy"}
+              </Button>
             </div>
-          ) : null}
+          </SubSection>
+        ) : null}
 
-          <Group title="About the requester">
-            <dl>
-              <Fact label="Name">{request.requestorName}</Fact>
-              <Fact label="Email">
-                <a className="underline decoration-sk-line underline-offset-4 hover:decoration-sk-ink" href={`mailto:${request.requestorEmail}`}>
-                  {request.requestorEmail}
+        <SubSection title="About the requester">
+          <FactList>
+            <Fact label="Name">{request.requestorName}</Fact>
+            <Fact label="Email">
+              <a className="sk-link break-all" href={`mailto:${request.requestorEmail}`}>
+                {request.requestorEmail}
+              </a>
+            </Fact>
+            <Fact label="Job title" empty={notGiven}>
+              {request.jobTitle}
+            </Fact>
+          </FactList>
+        </SubSection>
+
+        <SubSection title="The club">
+          <FactList>
+            <Fact label="Name">{request.organizationName}</Fact>
+            <Fact label="Type" empty={notGiven}>
+              {organizationTypeOf(request)}
+            </Fact>
+            <Fact label="Country or region" empty={notGiven}>
+              {request.region}
+            </Fact>
+            <Fact label="Website" empty={notGiven}>
+              {website ? (
+                <a className="sk-link inline-flex items-center gap-1" href={website} target="_blank" rel="noreferrer noopener">
+                  <span className="break-all">{request.organizationWebsite}</span>
+                  <ArrowSquareOut className="size-4 shrink-0" weight="bold" aria-hidden />
                 </a>
+              ) : (
+                request.organizationWebsite
+              )}
+            </Fact>
+          </FactList>
+        </SubSection>
+
+        <SubSection title="Size and timing">
+          <FactList>
+            <Fact label="Coaches" empty={notGiven}>
+              {request.expectedCoachCount}
+            </Fact>
+            <Fact label="Athletes" empty={notGiven}>
+              {request.expectedAthleteCount}
+            </Fact>
+            <Fact label="Seats in total">{request.expectedSeats}</Fact>
+            <Fact label="Wants to start" empty="Flexible">
+              {formatDay(request.desiredStartDate)}
+            </Fact>
+          </FactList>
+        </SubSection>
+
+        <SubSection title="Package">
+          <FactList>
+            <Fact label="Asked for">{packageLabelOf(request)}</Fact>
+            {pkg ? (
+              <Fact label="Covers">
+                {limitLabel(pkg.limits.teams, "team", "teams")}, {limitLabel(pkg.limits.coaches, "coach", "coaches")}, {limitLabel(pkg.limits.athletes, "athlete", "athletes")}
               </Fact>
-              <Fact label="Job title">{request.jobTitle ?? notGiven}</Fact>
-            </dl>
-          </Group>
-
-          <Group title="The club">
-            <dl>
-              <Fact label="Name">{request.organizationName}</Fact>
-              <Fact label="Type">{organizationTypeOf(request) ?? notGiven}</Fact>
-              <Fact label="Country or region">{request.region ?? notGiven}</Fact>
-              <Fact label="Website">
-                {website ? (
-                  <a
-                    className="inline-flex items-center gap-1 underline decoration-sk-line underline-offset-4 hover:decoration-sk-ink"
-                    href={website}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    <span className="break-all">{request.organizationWebsite}</span>
-                    <ArrowSquareOut className="size-4 shrink-0" weight="bold" />
-                  </a>
-                ) : (
-                  (request.organizationWebsite ?? notGiven)
-                )}
-              </Fact>
-            </dl>
-          </Group>
-
-          <Group title="Size and timing">
-            <dl>
-              <Fact label="Coaches">{request.expectedCoachCount ?? notGiven}</Fact>
-              <Fact label="Athletes">{request.expectedAthleteCount ?? notGiven}</Fact>
-              <Fact label="Seats in total">{request.expectedSeats}</Fact>
-              <Fact label="Wants to start">{formatDay(request.desiredStartDate) ?? <span className="font-normal text-sk-mute">Flexible</span>}</Fact>
-            </dl>
-          </Group>
-
-          <Group title="Package">
-            <dl>
-              <Fact label="Asked for">{packageLabelOf(request)}</Fact>
-              {pkg ? (
-                <Fact label="Covers">
-                  {limitLabel(pkg.limits.teams, "team", "teams")}, {limitLabel(pkg.limits.coaches, "coach", "coaches")},{" "}
-                  {limitLabel(pkg.limits.athletes, "athlete", "athletes")}
-                </Fact>
-              ) : null}
-            </dl>
-            {fit && !fit.fits ? (
-              <p className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm text-sk-ink">
-                <span className="font-bold">Their numbers are over this package.</span>{" "}
-                {recommended && recommended.id !== pkg?.id ? `${recommended.label} would fit ${sizeOf(request)}.` : "Check the size with them first."}
-              </p>
             ) : null}
-          </Group>
+          </FactList>
+          {fit && !fit.fits ? (
+            <Notice tone="warning" className="mt-2">
+              Their numbers are over this package. {recommended && recommended.id !== pkg?.id ? `${recommended.label} would fit ${sizeOf(request)}.` : "Check the size with them first."}
+            </Notice>
+          ) : null}
+        </SubSection>
 
-          <Group title="Notes">
-            {request.notes ? (
-              <p className="whitespace-pre-wrap break-words pt-1.5 text-[0.95rem] leading-relaxed text-sk-ink">{request.notes}</p>
-            ) : (
-              <p className="pt-1.5 text-sm text-sk-mute">The requester left no notes.</p>
-            )}
+        <SubSection title="Notes">
+          <FactList>
+            <Fact label="From the requester" empty="They left no notes" stack>
+              {request.notes}
+            </Fact>
             {request.reviewNotes ? (
-              <div className="pt-3">
-                <p className="text-sm font-semibold text-sk-mute">{request.status === "rejected" ? "Reason for declining" : "Your review note"}</p>
-                <p className="whitespace-pre-wrap break-words pt-1 text-[0.95rem] leading-relaxed text-sk-ink">{request.reviewNotes}</p>
-              </div>
+              <Fact label={request.status === "rejected" ? "Reason for declining" : "Your review note"} stack>
+                {request.reviewNotes}
+              </Fact>
             ) : null}
-          </Group>
+          </FactList>
+        </SubSection>
 
-          {request.status === "approved" ? (
-            <Group title="Workspace and billing">
-              <dl>
-                <Fact label="Workspace ID">
-                  {request.provisionedTenantId ? <span className="break-all text-sm">{request.provisionedTenantId}</span> : <span className="font-normal text-sk-mute">Not created</span>}
-                </Fact>
-                <Fact label="Access invite">
-                  {request.accessInviteSentAt ? `Sent ${formatDateTime(request.accessInviteSentAt)}` : <span className="font-normal text-sk-mute">Not sent yet</span>}
-                </Fact>
-                <Fact label="Billing">{request.billingStatus ? BILLING_LABEL[request.billingStatus] : notGiven}</Fact>
-                <Fact label="Billing contact">
-                  {request.billingContactName || request.billingContactEmail
-                    ? [request.billingContactName, request.billingContactEmail].filter(Boolean).join(", ")
-                    : notGiven}
-                </Fact>
-                <Fact label="Billing cycle">{request.billingCycle === "annual" ? "Annual" : request.billingCycle === "monthly" ? "Monthly" : notGiven}</Fact>
-              </dl>
-            </Group>
-          ) : null}
+        {request.status === "approved" ? (
+          <SubSection title="Workspace and billing">
+            <FactList>
+              <Fact label="Workspace ID" empty="Not created">
+                {request.provisionedTenantId ? <span className="break-all text-sm">{request.provisionedTenantId}</span> : null}
+              </Fact>
+              <Fact label="Access invite" empty="Not sent yet">
+                {request.accessInviteSentAt ? `Sent ${formatDateTime(request.accessInviteSentAt)}` : null}
+              </Fact>
+              <Fact label="Billing" empty={notGiven}>
+                {request.billingStatus ? BILLING_LABEL[request.billingStatus] : null}
+              </Fact>
+              <Fact label="Billing contact" empty={notGiven}>
+                {request.billingContactName || request.billingContactEmail ? [request.billingContactName, request.billingContactEmail].filter(Boolean).join(", ") : null}
+              </Fact>
+              <Fact label="Billing cycle" empty={notGiven}>
+                {request.billingCycle === "annual" ? "Annual" : request.billingCycle === "monthly" ? "Monthly" : null}
+              </Fact>
+            </FactList>
+          </SubSection>
+        ) : null}
 
-          {controls.length > 0 ? (
-            <Group title="Club controls">
-              <ul>
-                {controls.map((control) => (
-                  <li key={control.key} className="flex flex-col gap-2 border-b border-sk-line py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <div className="min-w-0">
-                      <p className="text-[0.95rem] font-semibold text-sk-ink">{control.title}</p>
-                      <p className="text-sm text-sk-mute">{control.body}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">{control.actions}</div>
-                  </li>
-                ))}
-              </ul>
-            </Group>
-          ) : null}
-
-          <Group title="History">
-            <ol className="pt-1.5">
-              {entries.map((entry, index) => (
-                <li key={entry.id} className="relative flex gap-3 pb-4 last:pb-0">
-                  {index < entries.length - 1 ? <span aria-hidden className="absolute left-[5px] top-4 h-full w-0.5 bg-sk-line" /> : null}
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "relative mt-1.5 size-3 shrink-0 rounded-full",
-                      entry.tone === "green" && "bg-sk-green",
-                      entry.tone === "coral" && "bg-sk-coral",
-                      entry.tone === "blue" && "bg-sk-blue",
-                      entry.tone === "plain" && "bg-[#b9c0cf]",
-                    )}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-[0.95rem] font-bold text-sk-ink">{entry.title}</p>
-                    <p className="break-words text-sm text-sk-mute">
-                      {[formatDateTime(entry.at), entry.detail].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                </li>
+        {controls.length > 0 ? (
+          <SubSection title="Club controls">
+            <List>
+              {controls.map((control) => (
+                <ListRow key={control.key} className="items-start">
+                  <span className="sk-list-title">{control.title}</span>
+                  <span className="sk-list-sub">{control.body}</span>
+                  <span className="mt-2 flex flex-wrap gap-2">{control.actions}</span>
+                </ListRow>
               ))}
-            </ol>
-          </Group>
-        </div>
+            </List>
+          </SubSection>
+        ) : null}
 
-        <div className="space-y-3 border-t border-sk-line bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-6">
-          {detailFeedback ? <Message feedback={detailFeedback} onDismiss={() => setDetailFeedback(null)} /> : null}
-          {confirm === "approve" && request.status === "pending" ? (
-            <div className="space-y-3">
-              <p className="text-sm text-sk-ink">
-                <span className="font-bold">Approve {request.organizationName}?</span> This creates the club workspace on {packageLabelOf(request)} and
-                {isLocalPreviewEnabled ? " prepares the first access link for " : " emails the first access link to "}
-                {request.requestorEmail}.
-              </p>
-              <div>
-                <label htmlFor="request-approve-note" className="mb-1.5 block text-sm font-semibold text-sk-ink-2">
-                  Note for the record <span className="font-normal text-sk-mute">(optional)</span>
-                </label>
-                <input
-                  id="request-approve-note"
-                  className="sk-field"
-                  maxLength={500}
-                  value={approveNote}
-                  disabled={working}
-                  onChange={(event) => setApproveNote(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className="sk-btn sk-btn-quiet" disabled={working} onClick={resetConfirm}>
-                  Not yet
-                </button>
-                <button type="button" className="sk-btn sk-btn-primary" disabled={working} onClick={() => void handleApprove(request)}>
-                  {busy === "approve" ? "Approving..." : "Yes, approve and provision"}
-                </button>
-              </div>
+        <SubSection title="History">
+          <List ordered aria-label="History of this request">
+            {entries.map((entry) => (
+              <ListRow
+                key={entry.id}
+                className="items-start"
+                leading={<StatusDot tone={entry.tone} className="mt-[7px]" />}
+                title={entry.title}
+                subtitle={[formatDateTime(entry.at), entry.detail].filter(Boolean).join(" · ") || undefined}
+              />
+            ))}
+          </List>
+        </SubSection>
+      </SubSections>
+    )
+
+    const footer = (
+      <div className="flex w-full min-w-0 flex-col gap-3">
+        {detailFeedback ? feedbackNotice(detailFeedback, () => setDetailFeedback(null)) : null}
+        {confirm === "approve" && request.status === "pending" ? (
+          <>
+            <p className="text-[0.9375rem] text-sk-ink">
+              <span className="font-bold">Approve {request.organizationName}?</span> This creates the club workspace on {packageLabelOf(request)} and
+              {isLocalPreviewEnabled ? " prepares the first access link for " : " emails the first access link to "}
+              {request.requestorEmail}.
+            </p>
+            <Field label="Note for the record" optional>
+              <Input maxLength={500} value={approveNote} disabled={working} onChange={(event) => setApproveNote(event.target.value)} />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="quiet" disabled={working} onClick={resetConfirm}>
+                Not yet
+              </Button>
+              <Button variant="primary" disabled={working} onClick={() => void handleApprove(request)}>
+                {busy === "approve" ? "Approving..." : "Yes, approve and provision"}
+              </Button>
             </div>
-          ) : confirm === "decline" && request.status === "pending" ? (
-            <form
-              className="space-y-3"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleDecline(request)
-              }}
-            >
-              <div>
-                <label htmlFor="request-decline-reason" className="mb-1.5 block text-sm font-semibold text-sk-ink-2">
-                  Why are you declining {request.organizationName}?
-                </label>
-                <textarea
-                  id="request-decline-reason"
-                  rows={3}
-                  maxLength={1000}
-                  className="sk-field h-auto py-2.5"
-                  value={declineReason}
-                  disabled={working}
-                  aria-invalid={declineError ? "true" : undefined}
-                  aria-describedby="request-decline-help"
-                  onChange={(event) => {
-                    setDeclineReason(event.target.value)
-                    setDeclineError(null)
-                  }}
-                />
-                <p id="request-decline-help" className={cn("mt-1.5 text-sm", declineError ? "font-semibold text-[#b32a0c]" : "text-sk-mute")}>
-                  {declineError ?? `${request.requestorName} is told this reason. Declining cannot be undone.`}
-                </p>
+          </>
+        ) : confirm === "decline" && request.status === "pending" ? (
+          <form
+            className="flex flex-col gap-3"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleDecline(request)
+            }}
+          >
+            <Field label={`Why are you declining ${request.organizationName}?`} error={declineError} hint={`${request.requestorName} is told this reason. Declining cannot be undone.`}>
+              <Textarea
+                rows={3}
+                maxLength={1000}
+                value={declineReason}
+                disabled={working}
+                onChange={(event) => {
+                  setDeclineReason(event.target.value)
+                  setDeclineError(null)
+                }}
+              />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="quiet" disabled={working} onClick={resetConfirm}>
+                Keep request
+              </Button>
+              <Button type="submit" variant="danger" disabled={working}>
+                {busy === "decline" ? "Declining..." : "Decline request"}
+              </Button>
+            </div>
+          </form>
+        ) : confirm === "suspend" || confirm === "cancel" ? (
+          <>
+            <p className="text-[0.9375rem] text-sk-ink">
+              <span className="font-bold">{confirm === "suspend" ? `Suspend ${request.organizationName}?` : `Cancel ${request.organizationName}?`}</span>{" "}
+              {confirm === "suspend"
+                ? "The whole club is blocked straight away and it leaves your active list until you reactivate it. The club admin, coaches and athletes can still sign in, but they see a notice that the club's access is paused and cannot read or change anything. Its data is kept."
+                : "The whole club is blocked straight away and it moves to closed. Its people can still sign in, but they see a notice that the club's access has ended and cannot read or change anything. Its data is kept and you can restore it later."}
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="quiet" disabled={working} onClick={resetConfirm}>
+                {confirm === "suspend" ? "Keep it running" : "Keep club"}
+              </Button>
+              <Button
+                variant="danger"
+                disabled={working}
+                onClick={() =>
+                  confirm === "suspend"
+                    ? void handleLifecycle(request, "suspend", "suspended", request.billingStatus, `${request.organizationName} is suspended.`)
+                    : void handleLifecycle(request, "cancel", "cancelled", undefined, `${request.organizationName} is cancelled.`)
+                }
+              >
+                {confirm === "suspend" ? (busy === "suspend" ? "Suspending..." : "Yes, suspend club") : busy === "cancel" ? "Cancelling..." : "Yes, cancel club"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-sk-mute">{guidance}</p>
+            {request.status === "pending" ? (
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                <Button variant="danger" disabled={working} onClick={() => setConfirm("decline")}>
+                  Decline
+                </Button>
+                <Button variant="primary" disabled={working} onClick={() => setConfirm("approve")}>
+                  <Check className="size-5" weight="bold" aria-hidden />
+                  Approve and provision
+                </Button>
               </div>
+            ) : inviteIsPrimary ? (
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className="sk-btn sk-btn-quiet" disabled={working} onClick={resetConfirm}>
-                  Keep request
-                </button>
-                <button type="submit" className="sk-btn sk-btn-danger" disabled={working}>
-                  {busy === "decline" ? "Declining..." : "Decline request"}
-                </button>
+                {isLocalPreviewEnabled ? (
+                  <Button disabled={working} onClick={() => void handleCopyLink(request)}>
+                    <Copy className="size-5" weight="bold" aria-hidden />
+                    {busy === "copy" ? "Copying..." : "Copy access link"}
+                  </Button>
+                ) : null}
+                <Button variant="primary" disabled={working} onClick={() => void handleSendInvite(request)}>
+                  <PaperPlaneTilt className="size-5" weight="bold" aria-hidden />
+                  {busy === "invite" ? "Sending..." : "Send access invite"}
+                </Button>
               </div>
-            </form>
-          ) : confirm === "suspend" || confirm === "cancel" ? (
-            <div className="space-y-3">
-              <p className="text-sm text-sk-ink">
-                <span className="font-bold">
-                  {confirm === "suspend" ? `Suspend ${request.organizationName}?` : `Cancel ${request.organizationName}?`}
-                </span>{" "}
-                {confirm === "suspend"
-                  ? "The whole club is blocked straight away and it leaves your active list until you reactivate it. The club admin, coaches and athletes can still sign in, but they see a notice that the club's access is paused and cannot read or change anything. Its data is kept."
-                  : "The whole club is blocked straight away and it moves to closed. Its people can still sign in, but they see a notice that the club's access has ended and cannot read or change anything. Its data is kept and you can restore it later."}
-              </p>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className="sk-btn sk-btn-quiet" disabled={working} onClick={resetConfirm}>
-                  {confirm === "suspend" ? "Keep it running" : "Keep club"}
-                </button>
-                <button
-                  type="button"
-                  className="sk-btn sk-btn-danger"
+            ) : lifecycle === "billing_failed" && provisioned && !cancelled ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  variant="primary"
                   disabled={working}
                   onClick={() =>
-                    confirm === "suspend"
-                      ? void handleLifecycle(request, "suspend", "suspended", request.billingStatus, `${request.organizationName} is suspended.`)
-                      : void handleLifecycle(request, "cancel", "cancelled", undefined, `${request.organizationName} is cancelled.`)
+                    void handleLifecycle(request, "retry-billing", "approved_pending_billing", "pending", `${request.organizationName} is back to waiting on billing. The club admin can try again.`)
                   }
                 >
-                  {confirm === "suspend" ? (busy === "suspend" ? "Suspending..." : "Yes, suspend club") : busy === "cancel" ? "Cancelling..." : "Yes, cancel club"}
-                </button>
+                  <ArrowCounterClockwise className="size-5" weight="bold" aria-hidden />
+                  {busy === "retry-billing" ? "Saving..." : "Retry billing"}
+                </Button>
               </div>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-sk-mute">{guidance}</p>
-              {request.status === "pending" ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-                  <button type="button" className="sk-btn sk-btn-primary sm:order-last" disabled={working} onClick={() => setConfirm("approve")}>
-                    <Check className="size-5" weight="bold" />
-                    Approve and provision
-                  </button>
-                  <button type="button" className="sk-btn sk-btn-danger" disabled={working} onClick={() => setConfirm("decline")}>
-                    Decline
-                  </button>
-                </div>
-              ) : inviteIsPrimary ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <button type="button" className="sk-btn sk-btn-primary sm:order-last" disabled={working} onClick={() => void handleSendInvite(request)}>
-                    <PaperPlaneTilt className="size-5" weight="bold" />
-                    {busy === "invite" ? "Sending..." : "Send access invite"}
-                  </button>
-                  {isLocalPreviewEnabled ? (
-                    <button type="button" className="sk-btn sk-btn-quiet" disabled={working} onClick={() => void handleCopyLink(request)}>
-                      <Copy className="size-5" weight="bold" />
-                      {busy === "copy" ? "Copying..." : "Copy access link"}
-                    </button>
-                  ) : null}
-                </div>
-              ) : lifecycle === "billing_failed" && provisioned && !cancelled ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-primary"
-                    disabled={working}
-                    onClick={() =>
-                      void handleLifecycle(
-                        request,
-                        "retry-billing",
-                        "approved_pending_billing",
-                        "pending",
-                        `${request.organizationName} is back to waiting on billing. The club admin can try again.`,
-                      )
-                    }
-                  >
-                    <ArrowCounterClockwise className="size-5" weight="bold" />
-                    {busy === "retry-billing" ? "Saving..." : "Retry billing"}
-                  </button>
-                </div>
-              ) : lifecycle === "suspended" && request.status === "approved" ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-primary"
-                    disabled={working}
-                    onClick={() =>
-                      void handleLifecycle(
-                        request,
-                        "reactivate",
-                        request.previousLifecycleStatus ?? "active",
-                        request.billingStatus === "pending" ? "active" : request.billingStatus,
-                        `${request.organizationName} is reactivated.`,
-                      )
-                    }
-                  >
-                    <ArrowCounterClockwise className="size-5" weight="bold" />
-                    {busy === "reactivate" ? "Reactivating..." : "Reactivate club"}
-                  </button>
-                </div>
-              ) : lifecycle === "cancelled" && request.status === "approved" && provisioned ? (
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-quiet"
-                    disabled={working}
-                    onClick={() => {
-                      const billingDone = request.billingStatus === "active" || request.billingStatus === "mocked_complete"
-                      void handleLifecycle(
-                        request,
-                        "restore",
-                        billingDone ? "active" : "approved_pending_billing",
-                        billingDone ? request.billingStatus : "pending",
-                        `${request.organizationName} is restored.`,
-                      )
-                    }}
-                  >
-                    <ArrowCounterClockwise className="size-5" weight="bold" />
-                    {busy === "restore" ? "Restoring..." : "Restore club"}
-                  </button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </>
+            ) : lifecycle === "suspended" && request.status === "approved" ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  variant="primary"
+                  disabled={working}
+                  onClick={() =>
+                    void handleLifecycle(
+                      request,
+                      "reactivate",
+                      request.previousLifecycleStatus ?? "active",
+                      request.billingStatus === "pending" ? "active" : request.billingStatus,
+                      `${request.organizationName} is reactivated.`,
+                    )
+                  }
+                >
+                  <ArrowCounterClockwise className="size-5" weight="bold" aria-hidden />
+                  {busy === "reactivate" ? "Reactivating..." : "Reactivate club"}
+                </Button>
+              </div>
+            ) : lifecycle === "cancelled" && request.status === "approved" && provisioned ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  disabled={working}
+                  onClick={() => {
+                    const billingDone = request.billingStatus === "active" || request.billingStatus === "mocked_complete"
+                    void handleLifecycle(request, "restore", billingDone ? "active" : "approved_pending_billing", billingDone ? request.billingStatus : "pending", `${request.organizationName} is restored.`)
+                  }}
+                >
+                  <ArrowCounterClockwise className="size-5" weight="bold" aria-hidden />
+                  {busy === "restore" ? "Restoring..." : "Restore club"}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
     )
+
+    return { body, footer }
   }
 
+  const columns: Array<DataTableColumn<Request>> = [
+    {
+      key: "club",
+      header: "Club",
+      cell: (request) => (
+        <>
+          <button
+            type="button"
+            className="cursor-pointer rounded-[6px] text-left font-bold text-sk-ink hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+            aria-label={`Open request from ${request.organizationName}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              openRequest(request.id)
+            }}
+          >
+            <span className="break-words">{request.organizationName}</span>
+          </button>
+          {request.region ? <TableSub>{request.region}</TableSub> : null}
+        </>
+      ),
+    },
+    {
+      key: "requester",
+      header: "Requester",
+      phone: "plain",
+      cell: (request) => (
+        <span className="min-w-0">
+          <span className="block text-sk-ink">{request.requestorName}</span>
+          <span className="block break-all text-sm text-sk-mute">{request.requestorEmail}</span>
+        </span>
+      ),
+    },
+    { key: "type", header: "Type", phone: "hide", cell: (request) => organizationTypeOf(request) ?? <span className="text-sk-mute">Not given</span> },
+    { key: "size", header: "Size", cell: (request) => sizeOf(request) },
+    { key: "package", header: "Package", cell: (request) => packageLabelOf(request) },
+    { key: "received", header: "Received", cell: (request) => formatDateTime(request.createdAt) ?? "Unknown" },
+    {
+      key: "status",
+      header: "Status",
+      phone: "trailing",
+      cell: (request) => {
+        const status = statusOf(request)
+        const inviteNote =
+          request.status !== "approved" || !request.provisionedTenantId || stageOf(request) === "closed"
+            ? null
+            : request.accessInviteSentAt
+              ? `Invite sent ${formatDay(request.accessInviteSentAt)}`
+              : "Invite not sent"
+        return (
+          <span className="inline-flex flex-col items-start gap-1 max-sm:items-end">
+            <Tag tone={status.tone} className="whitespace-nowrap">
+              {status.label}
+            </Tag>
+            {inviteNote && status.label !== "Invite not sent" ? <span className="whitespace-nowrap text-sm text-sk-mute">{inviteNote}</span> : null}
+          </span>
+        )
+      },
+    },
+  ]
+
+  const activeDetail = active ? detailOf(active) : null
+
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="Club requests"
         lede={lede}
         actions={
           requests.length > 0 ? (
             <>
-              <button type="button" className="sk-btn sk-btn-quiet" disabled={busy !== null} onClick={() => void handleSendQueuedEmails()}>
-                <EnvelopeSimple className="size-5" weight="bold" />
+              <Button disabled={busy !== null} onClick={() => void handleSendQueuedEmails()}>
+                <EnvelopeSimple className="size-5" weight="bold" aria-hidden />
                 {busy === "emails" ? "Sending..." : "Send queued emails"}
-              </button>
-              <button type="button" className="sk-btn sk-btn-quiet" disabled={busy !== null || visible.length === 0} onClick={() => void handleExport()}>
-                <DownloadSimple className="size-5" weight="bold" />
+              </Button>
+              <Button disabled={busy !== null || visible.length === 0} onClick={() => void handleExport()}>
+                <DownloadSimple className="size-5" weight="bold" aria-hidden />
                 Export CSV
-              </button>
+              </Button>
             </>
           ) : null
         }
       />
 
       {loadError ? (
-        <div role="alert" className="flex flex-col gap-3 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c] sm:flex-row sm:items-center sm:justify-between">
-          <p className="min-w-0 break-words">Requests could not be loaded: {loadError}</p>
-          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm shrink-0" onClick={() => void reload()}>
-            Try again
-          </button>
-        </div>
+        <Notice
+          tone="error"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void reload()}>
+              Try again
+            </Button>
+          }
+        >
+          Requests could not be loaded: {loadError}
+        </Notice>
       ) : null}
 
-      {pageFeedback ? <Message feedback={pageFeedback} onDismiss={() => setPageFeedback(null)} /> : null}
+      {pageFeedback ? feedbackNotice(pageFeedback, () => setPageFeedback(null)) : null}
 
       {isLocalPreviewEnabled && emailPreviews.length > 0 ? (
-        <Panel
+        <Section
           title="Email previews"
           hint="Local builds do not send email. These are the messages that would have gone out."
           action={
-            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm" onClick={() => setEmailPreviews([])}>
+            <Button variant="quiet" size="sm" onClick={() => setEmailPreviews([])}>
               Hide
-            </button>
+            </Button>
           }
         >
-          <ul>
+          <List aria-label="Email previews">
             {emailPreviews.map((preview) => (
-              <li key={preview.id} className="flex flex-col gap-2 border-b border-sk-line py-3.5 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="font-bold text-sk-ink">{preview.subject ?? "Notification"}</p>
-                  <p className="break-all text-sm text-sk-mute">{[preview.recipientEmail, preview.actionLink].filter(Boolean).join(" · ") || "No link in this email"}</p>
-                </div>
+              <ListRow key={preview.id} className="items-start">
+                <span className="sk-list-title">{preview.subject ?? "Notification"}</span>
+                <span className="sk-list-sub break-all">{[preview.recipientEmail, preview.actionLink].filter(Boolean).join(" · ") || "No link in this email"}</span>
                 {preview.actionLink ? (
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11"
+                  <span className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
                       onClick={async () => {
                         const copied = await copyText(preview.actionLink!)
                         setPageFeedback(copied ? { tone: "ok", text: "Link copied." } : { tone: "warn", text: "Your browser blocked the copy. Select the link and copy it by hand." })
                       }}
                     >
                       Copy link
-                    </button>
-                    <a className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11" href={preview.actionLink} target="_blank" rel="noreferrer noopener">
+                    </Button>
+                    <a className="sk-link px-2" href={preview.actionLink} target="_blank" rel="noreferrer noopener">
                       Open
                     </a>
-                  </div>
+                  </span>
                 ) : null}
-              </li>
+              </ListRow>
             ))}
-          </ul>
-        </Panel>
+          </List>
+        </Section>
       ) : null}
 
       {loading ? (
-        <p className="sk-card text-sm text-sk-mute">Loading...</p>
+        <Section title="Requests">
+          <SkeletonRows rows={5} label="Loading requests" />
+        </Section>
       ) : requests.length === 0 && !loadError ? (
-        <EmptyState
-          icon={<Tray className="size-6" weight="fill" />}
-          title="No club requests yet"
-          body="When a club fills in the request form on the sign-in page, it shows up here. You review it, approve or decline, and the first club admin gets their access link."
-        />
+        <Section>
+          <EmptyState
+            title="No club requests yet"
+            body="When a club fills in the request form on the sign-in page, it shows up here. You review it, approve or decline, and the first club admin gets their access link."
+          />
+        </Section>
       ) : requests.length > 0 ? (
         <>
-          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <Segmented
-              label="Request stage"
-              value={stage}
-              onChange={setStage}
-              className="whitespace-nowrap"
-              options={(["new", "setup", "active", "closed", "all"] as const).map((value) => ({
-                value,
-                label: (
-                  <>
-                    {STAGE_LABEL[value]}
-                    {count(counts[value])}
-                  </>
-                ),
-              }))}
-            />
-          </div>
+          <Tabs<StageFilter>
+            label="Request stage"
+            value={stage}
+            onChange={setStage}
+            options={(["new", "setup", "active", "closed", "all"] as const).map((value) => ({ value, label: STAGE_LABEL[value], count: counts[value] > 0 ? counts[value] : undefined }))}
+          />
 
-          <Panel flush>
-            <div className="border-b border-sk-line p-5 sm:p-6">
-              <div className="relative">
-                <MagnifyingGlass className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-sk-mute" weight="bold" />
-                <input
-                  type="search"
-                  aria-label="Search requests"
-                  placeholder="Search by club, person, email or country"
-                  className="sk-field pl-11"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </div>
-            </div>
+          <Field label="Search requests" className="sm:max-w-sm">
+            <SearchInput placeholder="Club, person, email or country" value={search} onChange={(event) => setSearch(event.target.value)} />
+          </Field>
 
+          <Section title={stage === "all" ? "All requests" : STAGE_LABEL[stage]} meta={`${visible.length} of ${requests.length}`} aria-label="Requests">
             {visible.length === 0 ? (
-              <div className="flex flex-col items-start gap-3 p-5 sm:p-6">
-                <p className="text-sm text-sk-mute">
-                  {search.trim()
+              <EmptyState
+                title={search.trim() ? "Nothing matches that search" : "Nothing in this stage"}
+                body={
+                  search.trim()
                     ? `Nothing in ${stage === "all" ? "any stage" : `"${STAGE_LABEL[stage]}"`} matches that search.`
                     : stage === "new"
                       ? "No new requests. Nothing is waiting for a decision."
@@ -1348,121 +1285,45 @@ export default function PlatformAdminRequestsPage() {
                         ? "No approved clubs are waiting on an invite or billing."
                         : stage === "active"
                           ? "No clubs are active yet."
-                          : "No clubs are suspended, declined or cancelled."}
-                </p>
-                {search.trim() || stage !== "all" ? (
-                  <button
-                    type="button"
-                    className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11"
-                    onClick={() => {
-                      setSearch("")
-                      setStage("all")
-                    }}
-                  >
-                    Show all requests
-                  </button>
-                ) : null}
-              </div>
+                          : "No clubs are suspended, declined or cancelled."
+                }
+                action={
+                  search.trim() || stage !== "all" ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSearch("")
+                        setStage("all")
+                      }}
+                    >
+                      Show all requests
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : (
-              <table className="block w-full text-left md:table">
-                <caption className="sr-only">
-                  Club requests, {STAGE_LABEL[stage]}
-                  {search.trim() ? ", filtered by search" : ""}
-                </caption>
-                <thead className="hidden md:table-header-group">
-                  <tr className="border-b border-sk-line text-sm text-sk-mute">
-                    <th scope="col" className={`${th} pl-6`}>Club</th>
-                    <th scope="col" className={th}>Requester</th>
-                    <th scope="col" className={`${th} max-lg:hidden`}>Type</th>
-                    <th scope="col" className={th}>Size</th>
-                    <th scope="col" className={th}>Package</th>
-                    <th scope="col" className={th}>Received</th>
-                    <th scope="col" className={th}>Status</th>
-                    <th scope="col" className="py-3 pl-1 pr-6">
-                      <span className="sr-only">Open</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="block md:table-row-group">
-                  {visible.map((request) => {
-                    const status = statusOf(request)
-                    const type = organizationTypeOf(request)
-                    const inviteNote =
-                      request.status !== "approved" || !request.provisionedTenantId || stageOf(request) === "closed"
-                        ? null
-                        : request.accessInviteSentAt
-                          ? `Invite sent ${formatDay(request.accessInviteSentAt)}`
-                          : "Invite not sent"
-                    return (
-                      <tr
-                        key={request.id}
-                        data-request-row={request.organizationName}
-                        data-selected={request.id === activeId}
-                        className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-sk-line px-5 py-4 transition-colors first:border-t-0 hover:bg-sk-canvas data-[selected=true]:bg-sk-blue-tint md:table-row md:px-0 md:py-0"
-                        onClick={() => openRequest(request.id)}
-                      >
-                        <th scope="row" className="min-w-0 font-normal md:py-3.5 md:pl-6 md:pr-3 md:align-top">
-                          <button
-                            type="button"
-                            className="block max-w-full rounded-md text-left font-bold text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-                            aria-label={`Open request from ${request.organizationName}`}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openRequest(request.id)
-                            }}
-                          >
-                            <span className="break-words">{request.organizationName}</span>
-                          </button>
-                          {request.region ? <span className="block text-sm text-sk-mute">{request.region}</span> : null}
-                        </th>
-                        <td className="max-md:col-span-2 max-md:row-start-2 min-w-0 text-sm text-sk-ink-2 md:px-3 md:py-3.5 md:align-top">
-                          <span className="block font-semibold text-sk-ink max-md:inline max-md:font-normal max-md:text-sk-ink-2">{request.requestorName}</span>
-                          <span className="max-md:inline md:hidden">, </span>
-                          <span className="break-all text-sk-mute">{request.requestorEmail}</span>
-                        </td>
-                        <td className="max-md:hidden text-sm text-sk-ink-2 max-lg:hidden md:px-3 md:py-3.5 md:align-top">
-                          {type ?? <span className="text-sk-mute">Not given</span>}
-                        </td>
-                        <td className="max-md:col-span-2 max-md:row-start-3 text-sm text-sk-ink-2 md:px-3 md:py-3.5 md:align-top">
-                          <span className="md:hidden">{type ? `${type} · ` : ""}</span>
-                          {sizeOf(request)}
-                          <span className="md:hidden"> · {packageLabelOf(request)}</span>
-                        </td>
-                        <td className="max-md:hidden text-sm font-semibold text-sk-ink md:px-3 md:py-3.5 md:align-top">{packageLabelOf(request)}</td>
-                        <td className="max-md:col-span-2 max-md:row-start-4 text-sm text-sk-mute md:whitespace-nowrap md:px-3 md:py-3.5 md:align-top md:text-sk-ink-2">
-                          <span className="md:hidden">Received </span>
-                          {formatDateTime(request.createdAt) ?? "Unknown"}
-                          {inviteNote ? <span className="md:hidden"> · {inviteNote}</span> : null}
-                        </td>
-                        <td className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-end md:px-3 md:py-3.5 md:align-top">
-                          <Tag tone={status.tone} className="whitespace-nowrap">{status.label}</Tag>
-                          {inviteNote && status.label !== "Invite not sent" ? (
-                            <span className="mt-1 hidden whitespace-nowrap text-xs text-sk-mute md:block">{inviteNote}</span>
-                          ) : null}
-                        </td>
-                        <td className="max-md:hidden md:py-3.5 md:pl-1 md:pr-6 md:align-top">
-                          <CaretRight aria-hidden className="mt-1 size-4 text-sk-mute" weight="bold" />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <DataTable
+                caption={`Club requests, ${STAGE_LABEL[stage]}${search.trim() ? ", filtered by search" : ""}`}
+                columns={columns}
+                rows={visible}
+                rowKey={(request) => request.id}
+                rowProps={(request) => ({ "data-request-row": request.organizationName, "data-selected": request.id === activeId, onClick: () => openRequest(request.id) })}
+              />
             )}
-          </Panel>
+          </Section>
         </>
       ) : null}
 
-      <Sheet open={Boolean(active)} onOpenChange={(open) => (open ? null : closeRequest())}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          aria-label="Request detail"
-          className="w-full gap-0 border-sk-line bg-white p-0 shadow-none sm:max-w-[560px]"
-        >
-          {active ? renderDetail(active) : null}
-        </SheetContent>
+      <Sheet
+        open={Boolean(active)}
+        onOpenChange={(open) => (open ? null : closeRequest())}
+        title={active?.organizationName ?? "Request"}
+        description={active ? `${active.requestorName} asked for access on ${formatDateTime(active.createdAt) ?? "an unknown date"}` : undefined}
+        className="sm:max-w-[560px]"
+        footer={activeDetail?.footer}
+      >
+        {activeDetail?.body}
       </Sheet>
-    </div>
+    </Screen>
   )
 }

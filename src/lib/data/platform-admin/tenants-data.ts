@@ -1,4 +1,4 @@
-import type { TagTone } from "@/components/sk"
+import type { StateTone, TagTone } from "@/components/sk"
 import { getPackageById } from "@/lib/billing/package-catalog"
 import {
   getPlatformAdminRequestQueue,
@@ -6,7 +6,7 @@ import {
   type PlatformAuditEventRecord,
 } from "@/lib/data/platform-admin/ops-data"
 import { ok, type Result } from "@/lib/data/result"
-import type { TenantLifecycleStatus } from "@/lib/tenant/lifecycle"
+import type { TenantBillingStatus, TenantLifecycleStatus } from "@/lib/tenant/lifecycle"
 
 /**
  * Read helpers for the platform admin "Platform" and "Clubs" screens.
@@ -39,14 +39,25 @@ export const LIFECYCLE_ORDER: TenantLifecycleStatus[] = [
   "pending_review",
 ]
 
-export const LIFECYCLE_META: Record<TenantLifecycleStatus, { label: string; tone: TagTone }> = {
-  pending_review: { label: "Waiting for review", tone: "yellow" },
-  approved_pending_billing: { label: "Waiting on billing", tone: "yellow" },
-  billing_failed: { label: "Billing failed", tone: "coral" },
-  active_onboarding: { label: "Onboarding", tone: "yellow" },
-  active: { label: "Active", tone: "green" },
-  suspended: { label: "Suspended", tone: "coral" },
-  cancelled: { label: "Cancelled", tone: "plain" },
+/** `tone` is for a Tag in a table's status column, `state` for the dot and text everywhere else. */
+export const LIFECYCLE_META: Record<TenantLifecycleStatus, { label: string; tone: TagTone; state: StateTone }> = {
+  pending_review: { label: "Waiting for review", tone: "yellow", state: "amber" },
+  approved_pending_billing: { label: "Waiting on billing", tone: "yellow", state: "amber" },
+  billing_failed: { label: "Billing failed", tone: "coral", state: "coral" },
+  active_onboarding: { label: "Onboarding", tone: "yellow", state: "amber" },
+  active: { label: "Active", tone: "green", state: "green" },
+  suspended: { label: "Suspended", tone: "coral", state: "coral" },
+  cancelled: { label: "Cancelled", tone: "plain", state: "neutral" },
+}
+
+/** The stored billing status in plain words. No payment provider is connected, so none of these is a payment result. */
+export const BILLING_STATUS_LABEL: Record<TenantBillingStatus, string> = {
+  pending: "Not set up",
+  mocked_complete: "Set up (test billing)",
+  failed: "Failed",
+  active: "Active",
+  past_due: "Past due",
+  cancelled: "Cancelled",
 }
 
 /** Approved rows written before lifecycle existed have no status: they are waiting on billing. */
@@ -141,6 +152,12 @@ export function auditSentence(event: PlatformAuditEventRecord, clubNames?: Map<s
       const to = meta(event, "requestedPackage", "requested_package")
       return to ? `${name} asked to move to the ${packageLabel(to)} package.` : `${name} asked for a package change.`
     }
+    case "tenant_package_changed": {
+      const to = meta(event, "requestedPackage", "requested_package")
+      return to ? `${name} was moved to the ${packageLabel(to)} package by the SKTR team.` : `The package of ${name} was changed by the SKTR team.`
+    }
+    case "notification_email_retry_requested":
+      return name === "platform" ? "A failed notification email was sent again." : `A failed notification email for ${name} was sent again.`
     case "tenant_package_upgrade_reviewed": {
       const to = meta(event, "requestedPackage", "requested_package")
       const what = to ? `The move to ${packageLabel(to)} for ${name}` : `The package change for ${name}`

@@ -1,15 +1,9 @@
-import { useEffect, useId, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, ArrowRight, CheckCircle, WarningCircle } from "@phosphor-icons/react"
+import { ArrowRight } from "@phosphor-icons/react"
 import { describeInviteEmailError, sendInviteEmail } from "@/lib/data/invites/invite-email-data"
-import {
-  Field,
-  FirstAccessFrame,
-  FormError,
-  PasswordFields,
-  validateNewPassword,
-  type FirstAccessStepId,
-} from "@/components/club-admin/first-access-setup-panel"
+import { FirstAccessFrame, PasswordFields, validateNewPassword, type FirstAccessStepId } from "@/components/club-admin/first-access-setup-panel"
+import { Button, Fact, FactList, Field, FormActions, FormGrid, Input, Notice, Section, Select, SkeletonRows } from "@/components/sk"
 import { completeClubAdminOnboarding, setClubAdminFirstAccessPassword } from "@/lib/data/club-admin/first-access-data"
 import {
   createClubAdminTeam,
@@ -68,7 +62,6 @@ function formatDate(value: string) {
 
 export default function ClubAdminGetStartedPage() {
   const navigate = useNavigate()
-  const formId = useId()
   const isSupabaseMode = getBackendMode() === "supabase"
   const [profile, setProfile] = useState<ClubAdminProfileRecord>(() =>
     isSupabaseMode ? defaultProfile : { ...defaultProfile, ...loadProfileSafe(), passwordSetAt: "mock" },
@@ -309,9 +302,7 @@ export default function ClubAdminGetStartedPage() {
   if (loading) {
     return (
       <FirstAccessFrame title="Setting up your club">
-        <p className="text-sm font-semibold text-sk-mute" role="status">
-          Loading...
-        </p>
+        <SkeletonRows rows={4} label="Loading your setup" />
       </FirstAccessFrame>
     )
   }
@@ -319,14 +310,12 @@ export default function ClubAdminGetStartedPage() {
   if (loadFailed) {
     return (
       <FirstAccessFrame title="We could not load your setup" lede="Nothing has been lost. Everything you already saved is still there.">
-        <section className="sk-card space-y-5">
-          <FormError>{error}</FormError>
-          <div>
-            <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
-              Try again
-            </button>
-          </div>
-        </section>
+        <Notice tone="error">{error}</Notice>
+        <div>
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
       </FirstAccessFrame>
     )
   }
@@ -377,227 +366,159 @@ export default function ClubAdminGetStartedPage() {
 
   return (
     <FirstAccessFrame step={step} title={heading[step].title} lede={heading[step].lede}>
-      <form className="sk-card grid gap-4" onSubmit={handleSubmit} noValidate>
+      <form className="flex flex-col gap-7" onSubmit={handleSubmit} noValidate>
         {step === "password" ? (
-          <PasswordFields
-            email={accountEmail}
-            password={password}
-            confirmPassword={confirmPassword}
-            onPasswordChange={setPassword}
-            onConfirmPasswordChange={setConfirmPassword}
-          />
+          <Section aria-label="Password">
+            <div className="flex flex-col gap-4">
+              <PasswordFields email={accountEmail} password={password} confirmPassword={confirmPassword} onPasswordChange={setPassword} onConfirmPasswordChange={setConfirmPassword} />
+            </div>
+          </Section>
         ) : null}
 
         {step === "club" ? (
           <>
-            <Field label="Club name" htmlFor={`${formId}-club-name`}>
-              <input
-                id={`${formId}-club-name`}
-                name="organization"
-                className="sk-field"
-                autoComplete="organization"
-                required
-                value={profile.clubName}
-                onChange={(event) => setProfile({ ...profile, clubName: event.target.value })}
-              />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <Field label="Short name" htmlFor={`${formId}-short-name`} hint="A few letters, used where space is tight.">
-                <input
-                  id={`${formId}-short-name`}
-                  name="short-name"
-                  className="sk-field"
-                  autoComplete="off"
-                  autoCapitalize="characters"
-                  maxLength={12}
-                  aria-describedby={`${formId}-short-name-hint`}
-                  required
-                  value={profile.shortName}
-                  onChange={(event) => setProfile({ ...profile, shortName: event.target.value })}
-                />
-              </Field>
-              <Field label="Club colour" htmlFor={`${formId}-color`}>
-                <input
-                  id={`${formId}-color`}
-                  name="club-colour"
-                  type="color"
-                  className="sk-field w-24 cursor-pointer p-1.5"
-                  value={profile.primaryColor}
-                  onChange={(event) => setProfile({ ...profile, primaryColor: event.target.value })}
-                />
-              </Field>
-            </div>
-            <fieldset className="grid gap-4 border-t border-sk-line pt-4">
-              <legend className="sr-only">Season</legend>
-              <p className="sk-h3" aria-hidden>
-                Your season
-              </p>
-              <Field label="Season year" htmlFor={`${formId}-season-year`}>
-                <input
-                  id={`${formId}-season-year`}
-                  name="season-year"
-                  className="sk-field sm:max-w-[10rem]"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  required
-                  value={profile.seasonYear}
-                  onChange={(event) => setProfile({ ...profile, seasonYear: event.target.value })}
-                />
-              </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Season starts" htmlFor={`${formId}-season-start`}>
-                  <input
-                    id={`${formId}-season-start`}
-                    name="season-start"
-                    type="date"
-                    className="sk-field"
-                    autoComplete="off"
-                    required
-                    value={profile.seasonStart}
-                    onChange={(event) => setProfile({ ...profile, seasonStart: event.target.value })}
-                  />
+            <Section title="Your club">
+              <div className="flex flex-col gap-4 pt-3">
+                <Field label="Club name">
+                  <Input name="organization" autoComplete="organization" required value={profile.clubName} onChange={(event) => setProfile({ ...profile, clubName: event.target.value })} />
                 </Field>
-                <Field label="Season ends" htmlFor={`${formId}-season-end`}>
-                  <input
-                    id={`${formId}-season-end`}
-                    name="season-end"
-                    type="date"
-                    className="sk-field"
-                    autoComplete="off"
-                    required
-                    min={profile.seasonStart || undefined}
-                    value={profile.seasonEnd}
-                    onChange={(event) => setProfile({ ...profile, seasonEnd: event.target.value })}
-                  />
-                </Field>
+                <FormGrid>
+                  <Field label="Short name" hint="A few letters, used where space is tight.">
+                    <Input
+                      name="short-name"
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      maxLength={12}
+                      required
+                      value={profile.shortName}
+                      onChange={(event) => setProfile({ ...profile, shortName: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="Club colour">
+                    <Input name="club-colour" type="color" className="w-24 cursor-pointer p-1.5" value={profile.primaryColor} onChange={(event) => setProfile({ ...profile, primaryColor: event.target.value })} />
+                  </Field>
+                </FormGrid>
               </div>
-            </fieldset>
+            </Section>
+            <Section title="Your season" hint="Plans, records and season bests follow these dates.">
+              <div className="flex flex-col gap-4 pt-3">
+                <Field label="Season year" className="sm:max-w-40">
+                  <Input name="season-year" inputMode="numeric" autoComplete="off" required value={profile.seasonYear} onChange={(event) => setProfile({ ...profile, seasonYear: event.target.value })} />
+                </Field>
+                <FormGrid>
+                  <Field label="Season starts">
+                    <Input name="season-start" type="date" autoComplete="off" required value={profile.seasonStart} onChange={(event) => setProfile({ ...profile, seasonStart: event.target.value })} />
+                  </Field>
+                  <Field label="Season ends">
+                    <Input
+                      name="season-end"
+                      type="date"
+                      autoComplete="off"
+                      required
+                      min={profile.seasonStart || undefined}
+                      value={profile.seasonEnd}
+                      onChange={(event) => setProfile({ ...profile, seasonEnd: event.target.value })}
+                    />
+                  </Field>
+                </FormGrid>
+              </div>
+            </Section>
           </>
         ) : null}
 
         {step === "team" ? (
-          createdTeamId ? (
-            <div className="flex items-start gap-3 rounded-2xl bg-sk-green-tint p-4">
-              <CheckCircle className="mt-0.5 size-6 shrink-0 text-sk-green" weight="fill" aria-hidden />
-              <div>
-                <p className="font-bold text-sk-ink">{firstTeamName} is created</p>
-                <p className="mt-0.5 text-sm leading-relaxed text-sk-ink-2">
-                  You can rename it or add more teams from Teams once setup is done.
-                </p>
+          <Section aria-label="First team">
+            {createdTeamId ? (
+              <Notice tone="success">
+                {firstTeamName} is created
+                <span className="mt-0.5 block font-normal">You can rename it or add more teams from Teams once setup is done.</span>
+              </Notice>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <Field label="Team name">
+                  <Input name="team-name" autoComplete="off" placeholder="Senior sprints" required value={firstTeamName} onChange={(event) => setFirstTeamName(event.target.value)} />
+                </Field>
+                <Field label="Event group" className="sm:max-w-56">
+                  <Select name="event-group" value={firstTeamEventGroup} onChange={(event) => setFirstTeamEventGroup(event.target.value as EventGroupOption)}>
+                    {EVENT_GROUP_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option === "Mid" ? "Middle distance" : option}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
               </div>
-            </div>
-          ) : (
-            <>
-              <Field label="Team name" htmlFor={`${formId}-team-name`}>
-                <input
-                  id={`${formId}-team-name`}
-                  name="team-name"
-                  className="sk-field"
-                  autoComplete="off"
-                  placeholder="Senior sprints"
-                  required
-                  value={firstTeamName}
-                  onChange={(event) => setFirstTeamName(event.target.value)}
-                />
-              </Field>
-              <Field label="Event group" htmlFor={`${formId}-event-group`}>
-                <select
-                  id={`${formId}-event-group`}
-                  name="event-group"
-                  className="sk-field sm:max-w-[14rem]"
-                  value={firstTeamEventGroup}
-                  onChange={(event) => setFirstTeamEventGroup(event.target.value as EventGroupOption)}
-                >
-                  {EVENT_GROUP_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option === "Mid" ? "Middle distance" : option}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </>
-          )
+            )}
+          </Section>
         ) : null}
 
         {step === "coach" ? (
-          <>
-            {sentInviteEmail && inviteEmailProblem ? (
-              <div role="alert" className="flex items-start gap-3 rounded-2xl bg-sk-yellow-tint p-4">
-                <WarningCircle className="mt-0.5 size-6 shrink-0 text-[#7a5600]" weight="fill" aria-hidden />
-                <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
-                  <span className="block break-all font-bold text-sk-ink">Invite created, but the email to {sentInviteEmail} was not sent</span>
-                  {inviteEmailProblem} You can continue: after setup, open People, then Invites, to resend the email or copy the link.
-                </p>
-              </div>
-            ) : sentInviteEmail ? (
-              <div role="status" className="flex items-start gap-3 rounded-2xl bg-sk-green-tint p-4">
-                <CheckCircle className="mt-0.5 size-6 shrink-0 text-sk-green" weight="fill" aria-hidden />
-                <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
-                  <span className="block break-all font-bold text-sk-ink">Invite emailed to {sentInviteEmail}</span>
-                  Continue, or enter a different email to invite another coach.
-                </p>
-              </div>
-            ) : null}
-            <Field
-              label="Coach email"
-              htmlFor={`${formId}-coach-email`}
-              hint={`We email them an invite to join ${teamLabel} as a coach.`}
-            >
-              <input
-                id={`${formId}-coach-email`}
-                name="coach-email"
-                type="email"
-                inputMode="email"
-                className="sk-field"
-                autoComplete="off"
-                placeholder="coach@yourclub.com"
-                aria-describedby={`${formId}-coach-email-hint`}
-                value={coachInviteEmail}
-                onChange={(event) => setCoachInviteEmail(event.target.value)}
-              />
-            </Field>
-          </>
+          <Section aria-label="First coach">
+            <div className="flex flex-col gap-4">
+              {sentInviteEmail && inviteEmailProblem ? (
+                <Notice tone="warning">
+                  Invite created, but the email to <span className="break-all">{sentInviteEmail}</span> was not sent
+                  <span className="mt-0.5 block font-normal">{inviteEmailProblem} You can continue: after setup, open People, then Invites, to resend the email or copy the link.</span>
+                </Notice>
+              ) : sentInviteEmail ? (
+                <Notice tone="success">
+                  Invite emailed to <span className="break-all">{sentInviteEmail}</span>
+                  <span className="mt-0.5 block font-normal">Continue, or enter a different email to invite another coach.</span>
+                </Notice>
+              ) : null}
+              <Field label="Coach email" hint={`We email them an invite to join ${teamLabel} as a coach.`}>
+                <Input
+                  name="coach-email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="off"
+                  placeholder="coach@yourclub.com"
+                  value={coachInviteEmail}
+                  onChange={(event) => setCoachInviteEmail(event.target.value)}
+                />
+              </Field>
+            </div>
+          </Section>
         ) : null}
 
         {step === "finish" ? (
-          <dl>
-            {[
-              { label: "Club", value: profile.clubName || "Not set" },
-              { label: "Short name", value: profile.shortName || "Not set" },
-              { label: "Season", value: `${profile.seasonYear}, ${formatDate(profile.seasonStart)} to ${formatDate(profile.seasonEnd)}` },
-              { label: "First team", value: createdTeamId ? firstTeamName : "Not created yet" },
-              { label: "First coach", value: sentInviteEmail ?? "Not invited yet" },
-            ].map((row, index, rows) => (
-              <div
-                key={row.label}
-                className={`flex flex-col gap-0.5 border-b border-sk-line py-3 sm:flex-row sm:justify-between sm:gap-4 ${index === 0 ? "pt-0" : ""} ${index === rows.length - 1 ? "border-b-0 pb-0" : ""}`}
-              >
-                <dt className="sk-label shrink-0">{row.label}</dt>
-                <dd className="min-w-0 break-words font-bold text-sk-ink sm:text-right">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
+          <Section aria-label="What you have set up">
+            <FactList>
+              <Fact label="Club" empty="Not set">
+                {profile.clubName}
+              </Fact>
+              <Fact label="Short name" empty="Not set">
+                {profile.shortName}
+              </Fact>
+              <Fact label="Season">{`${profile.seasonYear}, ${formatDate(profile.seasonStart)} to ${formatDate(profile.seasonEnd)}`}</Fact>
+              <Fact label="First team" empty="Not created yet">
+                {createdTeamId ? firstTeamName : null}
+              </Fact>
+              <Fact label="First coach" empty="Not invited yet">
+                {sentInviteEmail ? <span className="break-all">{sentInviteEmail}</span> : null}
+              </Fact>
+            </FactList>
+          </Section>
         ) : null}
 
-        <FormError>{error}</FormError>
+        {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <button type="submit" disabled={saving} className="sk-btn sk-btn-primary">
-            {primaryLabel}
-            {saving ? null : <ArrowRight className="size-5" weight="bold" />}
-          </button>
-          {step === "coach" && !inviteAlreadySent ? (
-            <button type="button" disabled={saving} className="sk-btn sk-btn-ghost" onClick={() => void submitCoach(true)}>
-              Skip for now
-            </button>
-          ) : null}
+        <FormActions>
           {previousStep ? (
-            <button type="button" disabled={saving} className="sk-btn sk-btn-ghost sm:ml-auto" onClick={() => goTo(previousStep)}>
-              <ArrowLeft className="size-5" weight="bold" />
+            <Button variant="quiet" size="lg" disabled={saving} className="sm:mr-auto" onClick={() => goTo(previousStep)}>
               Back
-            </button>
+            </Button>
           ) : null}
-        </div>
+          {step === "coach" && !inviteAlreadySent ? (
+            <Button variant="quiet" size="lg" disabled={saving} onClick={() => void submitCoach(true)}>
+              Skip for now
+            </Button>
+          ) : null}
+          <Button type="submit" variant="primary" size="lg" disabled={saving}>
+            {primaryLabel}
+            {saving ? null : <ArrowRight className="size-5" weight="bold" aria-hidden />}
+          </Button>
+        </FormActions>
       </form>
     </FirstAccessFrame>
   )

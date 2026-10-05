@@ -331,6 +331,9 @@ body {
   .sk-table [data-align="right"] { @apply text-right tabular-nums; }
   .sk-table td[data-strong="true"] { @apply font-bold text-sk-ink; }
   .sk-table-sub { @apply block text-sm font-normal text-sk-mute; }
+  /* A row that opens under another one (DataTable rowBelow): full width, no line between the two. */
+  .sk-table tbody tr:has(+ tr[data-below]) > * { @apply border-b-0; }
+  .sk-table tbody tr[data-below] > td { @apply px-0 pb-3 pt-0; }
   @media (max-width: 639px) {
     /* Phone: every row restacks into a list row. No sideways scrolling. */
     .sk-table, .sk-table tbody { @apply block; }
@@ -346,6 +349,10 @@ body {
     .sk-table tbody td[data-phone="plain"] { @apply justify-start; }
     .sk-table tbody td[data-phone="plain"]::before { content: none; }
     .sk-table tbody td[data-phone="hide"] { @apply hidden; }
+    .sk-table tbody tr:has(+ tr[data-below]) { @apply border-b-0; }
+    .sk-table tbody tr[data-below] { @apply block pb-3 pt-0; }
+    .sk-table tbody tr[data-below] > td { @apply block p-0; }
+    .sk-table tbody tr[data-below] > td::before { content: none; }
     .sk-table [data-align="right"] { @apply text-left; }
   }
 

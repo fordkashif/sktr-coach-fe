@@ -32,6 +32,7 @@ import { MessagesButton, MessagesCount, MessageUnreadKeeper, useMessagesLabel } 
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useCurrentAccount } from "@/lib/account-store"
+import { MenuClubBrand, ShellClubBrand } from "@/components/club/club-brand"
 import { clearSessionCookies } from "@/lib/auth-session"
 import {
   MOCK_COACH_TEAM_STORAGE_KEY,
@@ -301,6 +302,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="w-64 rounded-2xl border-sk-line-strong bg-white p-1.5">
+        {/* Phone: the app bar has no room for the club, so it leads the menu. */}
+        {size === "lg" ? <MenuClubBrand /> : null}
         <div className="px-3 pb-2 pt-2">
           <p className="truncate text-base font-bold text-sk-ink">{displayName}</p>
           <p className="truncate text-sm text-sk-mute">{userEmail ?? getRoleLabel(role)}</p>
@@ -354,6 +357,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="hidden h-[69px] shrink-0 items-center gap-5 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
         >
           {brand}
+          <ShellClubBrand compact={showTeamSwitcher} />
           {showTeamSwitcher ? <CoachTeamSwitcher variant="topbar" onSwitched={handleTeamSwitched} /> : null}
           <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
             {desktopTabs.map((link) => {

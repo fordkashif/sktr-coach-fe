@@ -1,8 +1,8 @@
 "use client"
 
-import { Check, CheckCircle, Copy, WarningCircle } from "@phosphor-icons/react"
+import { Check, Copy } from "@phosphor-icons/react"
 import { useState } from "react"
-import { DialogClose } from "@/components/ui/dialog"
+import { Button, Field, Input, Notice } from "@/components/sk"
 import {
   describeInviteEmailError,
   INVITE_EMAIL_MAX_SENDS,
@@ -74,80 +74,62 @@ async function copyText(text: string) {
 /**
  * What an invite dialog shows once the invite exists. Emailed: the link is a quiet extra. Not emailed:
  * says why in plain words and makes "Copy link" the main action, so the inviter is never stuck.
+ * `onDone` closes the dialog it sits in.
  */
 export function InviteCreatedResult({
   email,
   link,
   outcome,
   onInviteAnother,
+  onDone,
 }: {
   email: string
   link: string
   outcome: InviteEmailOutcome
   onInviteAnother: () => void
+  onDone?: () => void
 }) {
   const [copied, setCopied] = useState(false)
-  const copy = async () => setCopied(await copyText(link))
-  const copyLabel = copied ? "Link copied" : "Copy link"
-  const copyIcon = copied ? <Check className="size-5" weight="bold" /> : <Copy className="size-5" weight="bold" />
+  const copy = async () => {
+    setCopied(await copyText(link))
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+  const copyButton = (variant: "secondary" | "primary") => (
+    <Button variant={variant} size="sm" onClick={() => void copy()}>
+      {copied ? <Check className="size-4" weight="bold" aria-hidden /> : <Copy className="size-4" weight="bold" aria-hidden />}
+      {copied ? "Copied" : "Copy link"}
+    </Button>
+  )
 
   return (
-    <div className="space-y-4" data-invite-email={outcome.sent ? "sent" : "failed"}>
+    <div className="flex flex-col gap-4" data-invite-email={outcome.sent ? "sent" : "failed"}>
       {outcome.sent ? (
-        <div role="status" className="flex items-start gap-3 rounded-2xl bg-sk-green-tint p-4">
-          <CheckCircle className="mt-0.5 size-6 shrink-0 text-sk-green" weight="fill" aria-hidden />
-          <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
-            <span className="block break-all text-base font-bold text-sk-ink">Invite emailed to {email}</span>
-            {outcome.preview
-              ? "Local preview: the send was recorded but no real email goes out from this setup. Use the link below."
-              : "They can join from the button in the email. Nothing else for you to do."}
-          </p>
-        </div>
+        <Notice tone="success">
+          Invite emailed to <span className="break-all">{email}</span>
+          <span className="mt-0.5 block font-normal">
+            {outcome.preview ? "Local preview: the send was recorded but no real email goes out from this setup. Use the link below." : "They join from the button in the email. Nothing else for you to do."}
+          </span>
+        </Notice>
       ) : (
-        <div role="alert" className="flex items-start gap-3 rounded-2xl bg-sk-yellow-tint p-4">
-          <WarningCircle className="mt-0.5 size-6 shrink-0 text-[#7a5600]" weight="fill" aria-hidden />
-          <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
-            <span className="block break-all text-base font-bold text-sk-ink">Invite created, but the email to {email} was not sent</span>
-            {outcome.reason} The invite still works: copy the link and send it to them yourself, or resend the email later from Invites.
-          </p>
-        </div>
+        <Notice tone="warning">
+          Invite created, but the email to <span className="break-all">{email}</span> was not sent
+          <span className="mt-0.5 block font-normal">{outcome.reason} The invite still works: copy the link and send it yourself, or resend the email from Invites.</span>
+        </Notice>
       )}
-
-      <div className="space-y-1.5">
-        <p className="text-sm text-sk-mute">
-          {outcome.sent ? "Their personal link, in case you want to share it another way:" : "Their personal link:"}
-        </p>
-        <input
-          readOnly
-          aria-label="Invite link"
-          value={link}
-          className="sk-field text-sm"
-          onFocus={(event) => event.currentTarget.select()}
-        />
+      <Field label="Invite link" hint="Their personal link. It works once, for the email you entered.">
+        <Input readOnly value={link} onFocus={(event) => event.currentTarget.select()} />
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        {copyButton(outcome.sent ? "secondary" : "primary")}
+        <Button variant="quiet" size="sm" onClick={onInviteAnother}>
+          Invite another
+        </Button>
+        {onDone ? (
+          <Button variant="quiet" size="sm" onClick={onDone}>
+            Done
+          </Button>
+        ) : null}
       </div>
-
-      {outcome.sent ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="sk-btn sk-btn-quiet" onClick={() => void copy()}>
-            {copyIcon}
-            {copyLabel}
-          </button>
-          <button type="button" className="sk-btn sk-btn-quiet" onClick={onInviteAnother}>
-            Invite another
-          </button>
-          <DialogClose className="sk-btn sk-btn-primary">Done</DialogClose>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="sk-btn sk-btn-quiet" onClick={onInviteAnother}>
-            Invite another
-          </button>
-          <button type="button" className="sk-btn sk-btn-primary" onClick={() => void copy()}>
-            {copyIcon}
-            {copyLabel}
-          </button>
-        </div>
-      )}
     </div>
   )
 }

@@ -1,30 +1,15 @@
-import { Link } from "react-router-dom"
-import { ArrowLeft, MagnifyingGlass } from "@phosphor-icons/react"
+import { LinkButton, Screen, ScreenHeader } from "@/components/sk"
 
-export function InvalidEntityPage({
-  title,
-  description,
-  backTo,
-}: {
-  title: string
-  description: string
-  backTo: string
-}) {
+/** Shown inside the app when a link points at something that does not exist (or is not yours to see). */
+export function InvalidEntityPage({ title, description, backTo }: { title: string; description: string; backTo: string }) {
   return (
-    <div className="sk-page">
-      <div className="flex max-w-[640px] flex-col items-start gap-4 rounded-[20px] border border-dashed border-[#cdd2de] bg-white p-6 sm:p-8">
-        <span className="flex size-11 items-center justify-center rounded-2xl bg-sk-yellow text-sk-ink">
-          <MagnifyingGlass className="size-5" weight="bold" aria-hidden />
-        </span>
-        <div className="space-y-2">
-          <h1 className="sk-h2">{title}</h1>
-          <p className="max-w-[52ch] leading-relaxed text-sk-mute">{description}</p>
-        </div>
-        <Link to={backTo} className="sk-btn sk-btn-primary">
-          <ArrowLeft className="size-5" weight="bold" aria-hidden />
-          Go back
-        </Link>
+    <Screen width="narrow">
+      <ScreenHeader back={{ to: backTo, label: "Go back" }} title={title} lede={description} />
+      <div>
+        <LinkButton to="/" variant="primary">
+          Go to home
+        </LinkButton>
       </div>
-    </div>
+    </Screen>
   )
 }

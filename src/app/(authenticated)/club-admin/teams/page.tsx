@@ -1,23 +1,44 @@
 "use client"
 
-import {
-  Archive,
-  ArrowCounterClockwise,
-  ArrowRight,
-  CaretDown,
-  PencilSimple,
-  Plus,
-  Trash,
-  UserPlus,
-  UsersThree,
-  X,
-} from "@phosphor-icons/react"
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Link } from "react-router-dom"
-import { InviteAthleteDialog } from "@/components/coach/team-detail-content"
-import { EmptyState, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
+import { Plus, UserPlus } from "@phosphor-icons/react"
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { AssignTeamDialog } from "@/components/club-admin/athletes-view"
+import { UpgradeRequestDialog } from "@/components/club-admin/upgrade-request-dialog"
+import { AddAthletesDialog } from "@/components/coach/add-athletes-dialog"
+import {
+  ActionRow,
+  Button,
+  CheckRow,
+  DataTable,
+  Dialog,
+  EmptyState,
+  Field,
+  FormActions,
+  FormGrid,
+  InlineConfirm,
+  Input,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  RowMenu,
+  Screen,
+  ScreenHeader,
+  Section,
+  Select,
+  SkeletonRows,
+  Split,
+  StatusText,
+  TableSub,
+  Tabs,
+  notify,
+  type DataTableColumn,
+  type RowMenuItem,
+  type StateTone,
+} from "@/components/sk"
+import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
 import {
   createClubAdminTeam,
   getClubAdminAssignableCoachOptions,
@@ -30,22 +51,22 @@ import {
   setClubAdminTeamArchived,
   setClubAdminTeamCoaches,
   setClubAdminTeamLeadCoach,
-  submitClubAdminPackageUpgradeRequest,
   updateClubAdminTeam,
   type ClubAdminAssignableCoachOption,
 } from "@/lib/data/club-admin/ops-data"
+import type { ClubAthlete } from "@/lib/data/club-admin/people-data"
+import { removeAthleteFromRoster } from "@/lib/data/coach/roster-data"
+import { mergeMockAthletes, ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { removeAthleteFromTeamForCurrentCoach } from "@/lib/data/coach/teams-data"
-import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
-import { type EventGroup } from "@/lib/mock-data"
 import { type ClubTeam } from "@/lib/mock-club-admin"
+import { type EventGroup } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
 import { loadTeamsSafe, loadUsersSafe, persistTeams } from "../state"
 
 const EVENT_GROUP_OPTIONS: EventGroup[] = ["Sprint", "Mid", "Distance", "Jumps", "Throws"]
 
 type TeamCoach = { userId: string; name: string; isPrimary: boolean; isSelf: boolean }
-type TeamAthlete = { id: string; name: string; primaryEvent: string | null }
+type TeamAthlete = { id: string; name: string; primaryEvent: string | null; hasLogin: boolean }
 
 type TeamRow = {
   id: string
@@ -72,58 +93,49 @@ type Confirm =
   | { kind: "remove-coach"; teamId: string; userId: string }
   | { kind: "remove-athlete"; teamId: string; athleteId: string }
 
-const STATUS_TAG: Record<TeamRow["status"], { label: string; tone: TagTone }> = {
-  draft: { label: "Draft", tone: "yellow" },
+const STATUS: Record<TeamRow["status"], { label: string; tone: StateTone }> = {
+  draft: { label: "Draft", tone: "amber" },
   active: { label: "Active", tone: "green" },
-  archived: { label: "Archived", tone: "plain" },
+  archived: { label: "Archived", tone: "neutral" },
 }
-
-const alertClass = "rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]"
-const dialogClass = "max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto rounded-[20px] border-sk-line bg-white p-5 shadow-none sm:max-w-lg sm:p-6"
-
-/**
- * Athletes taken off a roster in mock mode. Mock athletes are static, so this keeps a removed
- * athlete off the roster for the rest of the browser session.
- */
-const removedMockAthleteIds = new Set<string>()
 
 function toEventGroup(value: string | null | undefined): EventGroup {
   if (value === "Sprint" || value === "Mid" || value === "Distance" || value === "Jumps" || value === "Throws") return value
   return "Sprint"
 }
 
-function plural(count: number, word: string) {
-  return `${count} ${word}${count === 1 ? "" : "s"}`
+function plural(count: number, word: string, pluralWord = `${word}s`) {
+  return `${count} ${count === 1 ? word : pluralWord}`
+}
+
+function coachLabel(coach: { name: string; isSelf: boolean }) {
+  return coach.isSelf ? `${coach.name} (you)` : coach.name
 }
 
 export default function ClubAdminTeamsPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const openTeamId = searchParams.get("team")
+
   const [teams, setTeams] = useState<TeamRow[]>([])
   const [coachOptions, setCoachOptions] = useState<ClubAdminAssignableCoachOption[]>([])
   const [mockTeamPageIds, setMockTeamPageIds] = useState<Set<string>>(new Set())
   const [requestedPlan, setRequestedPlan] = useState<PackageId | null>(null)
   const [backendLoading, setBackendLoading] = useState(true)
-  const [error, setError] = useState<{ message: string; teamId?: string } | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<"active" | "archived">("active")
-  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [form, setForm] = useState<TeamForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [addAthletesTeam, setAddAthletesTeam] = useState<{ id: string; name: string } | null>(null)
+  const [movingAthlete, setMovingAthlete] = useState<ClubAthlete | null>(null)
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
-  const [upgradeReason, setUpgradeReason] = useState("")
-  const [upgradeSaving, setUpgradeSaving] = useState(false)
-  const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const [pendingUpgradeRequest, setPendingUpgradeRequest] = useState<{ requestedPackage: PackageId; createdAt: string } | null>(null)
-  const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
-    actor: string
-    action: string
-    target: string
-    detail?: string
-  }) => void) | null>(null)
+  const [mockAuditLogger, setMockAuditLogger] = useState<((event: { actor: string; action: string; target: string; detail?: string }) => void) | null>(null)
 
   const activeTeams = useMemo(() => teams.filter((team) => team.status !== "archived"), [teams])
   const archivedTeams = useMemo(() => teams.filter((team) => team.status === "archived"), [teams])
@@ -139,9 +151,7 @@ export default function ClubAdminTeamsPage() {
   const emitAudit = async (action: string, target: string, detail?: string) => {
     if (isSupabaseMode) {
       const result = await insertAuditEvent({ action, target, detail })
-      if (!result.ok) {
-        setError((current) => current ?? { message: `The change was saved, but the audit log entry failed: ${result.error.message}` })
-      }
+      if (!result.ok) setError((current) => current ?? `The change was saved, but the audit log entry failed: ${result.error.message}`)
       return
     }
     mockAuditLogger?.({ actor: "club-admin", action, target, detail })
@@ -155,19 +165,20 @@ export default function ClubAdminTeamsPage() {
       const user = userById.get(userId)
       return user ? { userId, name: user.name, isPrimary, isSelf: user.role === "club-admin" } : null
     }
+    // The demo roster with everything the demo coach and admin changed (moves, athletes without a login).
+    const roster = mergeMockAthletes(mockData.mockAthletes)
 
     const rows: TeamRow[] = loadTeamsSafe().map((team) => ({
       id: team.id,
       name: team.name,
       eventGroup: team.eventGroup,
       status: team.status,
-      coaches: [
-        team.coachUserId ? toCoach(team.coachUserId, true) : null,
-        ...(team.coachUserIds ?? []).filter((id) => id !== team.coachUserId).map((id) => toCoach(id, false)),
-      ].filter((coach): coach is TeamCoach => coach !== null),
-      athletes: mockData.mockAthletes
-        .filter((athlete) => athlete.teamId === team.id && !removedMockAthleteIds.has(athlete.id))
-        .map((athlete) => ({ id: athlete.id, name: athlete.name, primaryEvent: athlete.primaryEvent })),
+      coaches: [team.coachUserId ? toCoach(team.coachUserId, true) : null, ...(team.coachUserIds ?? []).filter((id) => id !== team.coachUserId).map((id) => toCoach(id, false))].filter(
+        (coach): coach is TeamCoach => coach !== null,
+      ),
+      athletes: roster
+        .filter((athlete) => athlete.teamId === team.id)
+        .map((athlete) => ({ id: athlete.id, name: athlete.name, primaryEvent: athlete.primaryEvent, hasLogin: athlete.hasLogin })),
       leadCoachLabel: team.coachEmail,
     }))
 
@@ -196,15 +207,11 @@ export default function ClubAdminTeamsPage() {
       return true
     }
 
-    const [teamResult, membersResult, coachResult] = await Promise.all([
-      getClubAdminTeamsSnapshot(),
-      getClubAdminTeamMembers(),
-      getClubAdminAssignableCoachOptions(),
-    ])
+    const [teamResult, membersResult, coachResult] = await Promise.all([getClubAdminTeamsSnapshot(), getClubAdminTeamMembers(), getClubAdminAssignableCoachOptions()])
 
     const failure = !teamResult.ok ? teamResult.error : !membersResult.ok ? membersResult.error : !coachResult.ok ? coachResult.error : null
     if (failure || !teamResult.ok || !membersResult.ok || !coachResult.ok) {
-      setError({ message: `Could not load teams: ${failure?.message ?? "unknown error"}` })
+      setError(`Could not load teams: ${failure?.message ?? "unknown error"}`)
       return false
     }
 
@@ -233,26 +240,19 @@ export default function ClubAdminTeamsPage() {
       setBackendLoading(false)
       if (!loaded || !isSupabaseMode) return
 
-      const [activationResult, upgradeResult] = await Promise.all([
-        getCurrentClubAdminActivationState(),
-        getClubAdminPackageUpgradeRequests(),
-      ])
+      const [activationResult, upgradeResult] = await Promise.all([getCurrentClubAdminActivationState(), getClubAdminPackageUpgradeRequests()])
       if (cancelled) return
       if (!activationResult.ok) {
-        setError({ message: `Could not load your package limits: ${activationResult.error.message}` })
+        setError(`Could not load your package limits: ${activationResult.error.message}`)
         return
       }
       setRequestedPlan(activationResult.data.requestedPlan)
       if (!upgradeResult.ok) {
-        setError({ message: `Could not load upgrade requests: ${upgradeResult.error.message}` })
+        setError(`Could not load upgrade requests: ${upgradeResult.error.message}`)
         return
       }
       const firstPendingUpgrade = upgradeResult.data.find((item) => item.status === "pending") ?? null
-      setPendingUpgradeRequest(
-        firstPendingUpgrade
-          ? { requestedPackage: firstPendingUpgrade.requestedPackage, createdAt: firstPendingUpgrade.createdAt }
-          : null,
-      )
+      setPendingUpgradeRequest(firstPendingUpgrade ? { requestedPackage: firstPendingUpgrade.requestedPackage, createdAt: firstPendingUpgrade.createdAt } : null)
     }
 
     void load()
@@ -264,46 +264,24 @@ export default function ClubAdminTeamsPage() {
   useEffect(() => {
     if (isSupabaseMode) return
     let cancelled = false
-
     void import("@/lib/mock-audit").then((module) => {
       if (!cancelled) setMockAuditLogger(() => module.logAuditEvent)
     })
-
+    // The demo roster lives in this browser: the Add athletes dialog and the move dialog change it.
+    const refresh = () => void reload()
+    window.addEventListener(ROSTER_CHANGED_EVENT, refresh)
     return () => {
       cancelled = true
+      window.removeEventListener(ROSTER_CHANGED_EVENT, refresh)
     }
-  }, [isSupabaseMode])
-
-  const handleSubmitUpgradeRequest = async () => {
-    if (!isSupabaseMode || !suggestedUpgradePackage || pendingUpgradeRequest) return
-    setUpgradeSaving(true)
-    setUpgradeError(null)
-    const result = await submitClubAdminPackageUpgradeRequest({
-      requestedPackage: suggestedUpgradePackage,
-      reason: upgradeReason,
-    })
-    setUpgradeSaving(false)
-
-    if (!result.ok) {
-      setUpgradeError(result.error.message)
-      return
-    }
-
-    setPendingUpgradeRequest({
-      requestedPackage: suggestedUpgradePackage,
-      createdAt: new Date().toISOString(),
-    })
-    setUpgradeReason("")
-    setUpgradeDialogOpen(false)
-    setError(null)
-  }
+  }, [isSupabaseMode, reload])
 
   const coachName = (userId: string) => {
     const option = coachOptions.find((coach) => coach.userId === userId)
-    if (option) return option.isSelf ? `${option.name} (you)` : option.name
+    if (option) return coachLabel(option)
     for (const team of teams) {
       const coach = team.coaches.find((item) => item.userId === userId)
-      if (coach) return coach.isSelf ? `${coach.name} (you)` : coach.name
+      if (coach) return coachLabel(coach)
     }
     return "Coach"
   }
@@ -340,7 +318,13 @@ export default function ClubAdminTeamsPage() {
     await reload()
   }
 
-  const handleSaveForm = async () => {
+  const openTeam = (teamId: string | null) => {
+    setConfirm(null)
+    setSearchParams(teamId ? { team: teamId } : {})
+  }
+
+  const handleSaveForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!form) return
     const name = form.name.trim()
     if (!name) {
@@ -378,40 +362,25 @@ export default function ClubAdminTeamsPage() {
         }
         if (extraIds.length > 0) {
           const coachResult = await setClubAdminTeamCoaches({ teamId: result.data.id, leadCoachUserId: leadId, coachUserIds: extraIds })
-          if (!coachResult.ok) {
-            setError({ message: `${name} was created, but the additional coaches were not saved: ${coachResult.error.message}` })
-          }
+          if (!coachResult.ok) setError(`${name} was created, but the additional coaches were not saved: ${coachResult.error.message}`)
         }
         await reload()
       } else {
         const users = loadUsersSafe()
         const lead = users.find((user) => user.id === leadId)
         await saveMockTeams((current) => [
-          {
-            id: `team-${Date.now()}`,
-            name,
-            eventGroup: form.eventGroup,
-            status: "active",
-            coachUserId: lead?.id,
-            coachEmail: lead?.email,
-            coachUserIds: extraIds,
-          },
+          { id: `team-${Date.now()}`, name, eventGroup: form.eventGroup, status: "active", coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds },
           ...current,
         ])
       }
       await emitAudit("team_create", name, leadId ? `lead ${coachName(leadId)}` : "no lead coach")
-      setNotice(`${name} created.`)
+      notify(`${name} created`)
       setView("active")
     } else if (form.teamId) {
       const teamId = form.teamId
       const existing = teams.find((team) => team.id === teamId)
       if (isSupabaseMode) {
-        const updateResult = await updateClubAdminTeam({
-          teamId,
-          name,
-          eventGroup: form.eventGroup,
-          status: existing?.status ?? "active",
-        })
+        const updateResult = await updateClubAdminTeam({ teamId, name, eventGroup: form.eventGroup, status: existing?.status ?? "active" })
         if (!updateResult.ok) {
           setSaving(false)
           setFormError(updateResult.error.message)
@@ -429,15 +398,11 @@ export default function ClubAdminTeamsPage() {
         const users = loadUsersSafe()
         const lead = users.find((user) => user.id === leadId)
         await saveMockTeams((current) =>
-          current.map((team) =>
-            team.id === teamId
-              ? { ...team, name, eventGroup: form.eventGroup, coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds }
-              : team,
-          ),
+          current.map((team) => (team.id === teamId ? { ...team, name, eventGroup: form.eventGroup, coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds } : team)),
         )
       }
       await emitAudit("team_update", name, leadId ? `lead ${coachName(leadId)}` : "no lead coach")
-      setNotice(`${name} saved.`)
+      notify(`${name} saved`)
     }
 
     setSaving(false)
@@ -447,9 +412,8 @@ export default function ClubAdminTeamsPage() {
 
   const handleArchiveToggle = async (team: TeamRow, archived: boolean) => {
     setError(null)
-    setNotice(null)
     if (!archived && team.status === "archived" && teamLimitReached) {
-      setError({ message: teamLimitMessage, teamId: team.id })
+      setError(teamLimitMessage)
       return
     }
     setBusyKey(`team:${team.id}`)
@@ -458,38 +422,31 @@ export default function ClubAdminTeamsPage() {
       const result = await setClubAdminTeamArchived({ teamId: team.id, archived })
       if (!result.ok) {
         setBusyKey(null)
-        setError({ message: `Could not ${archived ? "archive" : "update"} ${team.name}: ${result.error.message}`, teamId: team.id })
+        setConfirm(null)
+        setError(`Could not ${archived ? "archive" : "update"} ${team.name}: ${result.error.message}`)
         return
       }
       await reload()
     } else {
-      await saveMockTeams((current) =>
-        current.map((item) => (item.id === team.id ? { ...item, status: archived ? "archived" : "active" } : item)),
-      )
+      await saveMockTeams((current) => current.map((item) => (item.id === team.id ? { ...item, status: archived ? "archived" : "active" } : item)))
     }
 
     setBusyKey(null)
     setConfirm(null)
-    setExpandedTeamId(null)
+    if (openTeamId === team.id && archived) openTeam(null)
     await emitAudit(archived ? "team_archive" : "team_restore", team.name)
-    setNotice(
-      archived
-        ? `${team.name} archived. Find it under Archived to bring it back.`
-        : team.status === "draft"
-          ? `${team.name} is now active.`
-          : `${team.name} restored.`,
-    )
+    if (archived) notify(`${team.name} archived`, "Find it under Archived to bring it back.")
+    else notify(team.status === "draft" ? `${team.name} is now active` : `${team.name} restored`)
   }
 
   const handleMakeLead = async (team: TeamRow, coach: TeamCoach) => {
     setError(null)
-    setNotice(null)
     setBusyKey(`coach:${team.id}:${coach.userId}`)
     if (isSupabaseMode) {
       const result = await setClubAdminTeamLeadCoach({ teamId: team.id, leadCoachUserId: coach.userId })
       if (!result.ok) {
         setBusyKey(null)
-        setError({ message: `Could not make ${coach.name} the lead coach: ${result.error.message}`, teamId: team.id })
+        setError(`Could not make ${coach.name} the lead coach: ${result.error.message}`)
         void reload()
         return
       }
@@ -504,9 +461,7 @@ export default function ClubAdminTeamsPage() {
                 ...item,
                 coachUserId: coach.userId,
                 coachEmail: lead?.email,
-                coachUserIds: [...(item.coachUserId ? [item.coachUserId] : []), ...(item.coachUserIds ?? [])].filter(
-                  (id, index, all) => id !== coach.userId && all.indexOf(id) === index,
-                ),
+                coachUserIds: [...(item.coachUserId ? [item.coachUserId] : []), ...(item.coachUserIds ?? [])].filter((id, index, all) => id !== coach.userId && all.indexOf(id) === index),
               }
             : item,
         ),
@@ -514,18 +469,18 @@ export default function ClubAdminTeamsPage() {
     }
     setBusyKey(null)
     await emitAudit("team_lead_coach_set", team.name, coach.name)
-    setNotice(`${coach.name} is now lead coach of ${team.name}.`)
+    notify(`${coach.name} is now lead coach of ${team.name}`)
   }
 
   const handleRemoveCoach = async (team: TeamRow, coach: TeamCoach) => {
     setError(null)
-    setNotice(null)
     setBusyKey(`coach:${team.id}:${coach.userId}`)
     if (isSupabaseMode) {
       const result = await removeClubAdminTeamCoach({ teamId: team.id, userId: coach.userId })
       if (!result.ok) {
         setBusyKey(null)
-        setError({ message: `Could not remove ${coach.name}: ${result.error.message}`, teamId: team.id })
+        setConfirm(null)
+        setError(`Could not remove ${coach.name}: ${result.error.message}`)
         void reload()
         return
       }
@@ -547,36 +502,388 @@ export default function ClubAdminTeamsPage() {
     setBusyKey(null)
     setConfirm(null)
     await emitAudit("team_coach_remove", team.name, coach.name)
-    setNotice(`${coach.name} removed from ${team.name}.`)
+    notify(`${coach.name} removed from ${team.name}`)
   }
 
   const handleRemoveAthlete = async (team: TeamRow, athlete: TeamAthlete) => {
     setError(null)
-    setNotice(null)
     setBusyKey(`athlete:${athlete.id}`)
-    if (isSupabaseMode) {
-      const result = await removeAthleteFromTeamForCurrentCoach({ athleteId: athlete.id, teamId: team.id })
-      if (!result.ok) {
-        setBusyKey(null)
-        setError({ message: `Could not remove ${athlete.name}: ${result.error.message}`, teamId: team.id })
-        void reload()
-        return
-      }
-    } else {
-      removedMockAthleteIds.add(athlete.id)
+    const result = isSupabaseMode ? await removeAthleteFromTeamForCurrentCoach({ athleteId: athlete.id, teamId: team.id }) : await removeAthleteFromRoster(athlete.id, team.id)
+    if (!result.ok) {
+      setBusyKey(null)
+      setConfirm(null)
+      setError(`Could not take ${athlete.name} off the team: ${result.error.message}`)
+      void reload()
+      return
     }
     await reload()
     setBusyKey(null)
     setConfirm(null)
     await emitAudit("team_athlete_remove", team.name, athlete.name)
-    setNotice(`${athlete.name} removed from ${team.name}. They keep their account and history.`)
+    notify(`${athlete.name} is off ${team.name}`, "They keep their account and history. Find them under People, Athletes, Unassigned.")
   }
 
-  const visibleTeams = view === "active" ? activeTeams : archivedTeams
   const hasTeamPage = (team: TeamRow) => team.status === "active" && (isSupabaseMode || mockTeamPageIds.has(team.id))
+  const assignableTeams = useMemo(() => teams.filter((team) => team.status === "active").map((team) => ({ id: team.id, name: team.name })), [teams])
+  const teamNameOf = useCallback((teamId: string | null) => teams.find((team) => team.id === teamId)?.name ?? null, [teams])
+
+  const teamMenu = (team: TeamRow, inDetail: boolean): RowMenuItem[] => {
+    const busy = busyKey === `team:${team.id}`
+    return [
+      ...(inDetail ? [] : [{ label: "Open team", onSelect: () => openTeam(team.id) }]),
+      ...(team.status === "active" && !inDetail ? [{ label: "Add athletes", onSelect: () => setAddAthletesTeam({ id: team.id, name: team.name }), disabled: athleteLimitReached }] : []),
+      ...(inDetail ? [] : [{ label: "Edit team", onSelect: () => openEdit(team) }]),
+      ...(team.status === "draft" ? [{ label: busy ? "Saving..." : "Make active", onSelect: () => void handleArchiveToggle(team, false), disabled: busy }] : []),
+      team.status === "archived"
+        ? { label: busy ? "Saving..." : "Restore team", onSelect: () => void handleArchiveToggle(team, false), disabled: busy }
+        : { label: "Archive team", onSelect: () => setConfirm({ kind: "archive", teamId: team.id }), danger: true },
+    ]
+  }
+
+  const archiveConfirm = (team: TeamRow) =>
+    confirm?.kind === "archive" && confirm.teamId === team.id ? (
+      <InlineConfirm
+        question={`Archive ${team.name}? Coaches and athletes stop seeing it. The roster and history are kept, and you can restore it any time.`}
+        confirmLabel="Archive team"
+        cancelLabel="Keep team"
+        busy={busyKey === `team:${team.id}`}
+        onConfirm={() => void handleArchiveToggle(team, true)}
+        onCancel={() => setConfirm(null)}
+      />
+    ) : null
+
+  const formDialog = (
+    <Dialog
+      open={Boolean(form)}
+      onOpenChange={(next) => {
+        if (!next) {
+          setForm(null)
+          setFormError(null)
+        }
+      }}
+      title={form?.mode === "edit" ? "Edit team" : "New team"}
+      description={form?.mode === "edit" ? "Change the name, event group and who coaches this team." : "Name the team and pick who coaches it. You can add athletes straight after."}
+      className="sm:max-w-lg"
+    >
+      {form ? (
+        <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void handleSaveForm(event)}>
+          <Field label="Team name">
+            <Input placeholder="Sprint Group B" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </Field>
+          <FormGrid>
+            <Field label="Event group">
+              <Select value={form.eventGroup} onChange={(event) => setForm({ ...form, eventGroup: event.target.value as EventGroup })}>
+                {EVENT_GROUP_OPTIONS.map((group) => (
+                  <option key={group} value={group}>
+                    {group === "Mid" ? "Middle distance" : group}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Lead coach">
+              <Select value={form.leadId} onChange={(event) => setForm({ ...form, leadId: event.target.value, extraIds: form.extraIds.filter((id) => id !== event.target.value) })}>
+                <option value="none">Not assigned</option>
+                {formCoachIds.map((id) => (
+                  <option key={id} value={id}>
+                    {coachName(id)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </FormGrid>
+          <fieldset className="flex min-w-0 flex-col gap-1">
+            <legend className="sk-field-label">Additional coaches</legend>
+            {formCoachIds.filter((id) => id !== form.leadId).length === 0 ? (
+              <p className="text-sm text-sk-mute">Nobody else to add yet. Invite more coaches from People and they show up here.</p>
+            ) : (
+              <div className="max-h-56 overflow-y-auto">
+                <List aria-label="Additional coaches">
+                  {formCoachIds
+                    .filter((id) => id !== form.leadId)
+                    .map((id) => (
+                      <CheckRow
+                        key={id}
+                        title={coachName(id)}
+                        checked={form.extraIds.includes(id)}
+                        onChange={(checked) => setForm({ ...form, extraIds: checked ? [...form.extraIds, id] : form.extraIds.filter((item) => item !== id) })}
+                      />
+                    ))}
+                </List>
+              </div>
+            )}
+          </fieldset>
+          {form.mode === "create" && teamLimitReached ? <Notice tone="warning">{teamLimitMessage}</Notice> : null}
+          {formError ? <Notice tone="error">{formError}</Notice> : null}
+          <FormActions>
+            <Button variant="quiet" onClick={() => setForm(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving || !form.name.trim() || (form.mode === "create" && teamLimitReached)}>
+              {saving ? "Saving..." : form.mode === "edit" ? "Save changes" : "Create team"}
+            </Button>
+          </FormActions>
+        </form>
+      ) : null}
+    </Dialog>
+  )
+
+  const sharedDialogs = (
+    <>
+      {formDialog}
+      {addAthletesTeam ? (
+        <AddAthletesDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              setAddAthletesTeam(null)
+              void reload()
+            }
+          }}
+          teamId={addAthletesTeam.id}
+          teamName={addAthletesTeam.name}
+          onInvitesCreated={(invites) => invites.forEach((invite) => void emitAudit("athlete_invite_send", invite.email, `team ${addAthletesTeam.name}`))}
+          onAthleteAdded={(_, name) => {
+            void emitAudit("managed_athlete_added", name, `team ${addAthletesTeam.name}`)
+            void reload()
+          }}
+        />
+      ) : null}
+      <AssignTeamDialog
+        athlete={movingAthlete}
+        teams={assignableTeams}
+        teamName={teamNameOf}
+        onClose={() => setMovingAthlete(null)}
+        onMoved={(athlete, target) => {
+          // The database writes its own audit entry for a move.
+          if (!isSupabaseMode) void emitAudit("athlete_moved_team", athlete.name, `team ${target.name}`)
+          void reload()
+        }}
+      />
+      <UpgradeRequestDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        currentPackage={requestedPlan}
+        targetPackage={suggestedUpgradePackage}
+        placeholder="Tell us why your club needs more room."
+        onSent={(requestedPackage) => {
+          setPendingUpgradeRequest({ requestedPackage, createdAt: new Date().toISOString() })
+          setError(null)
+        }}
+      />
+    </>
+  )
+
+  const errorNotice = error ? (
+    <Notice
+      tone="error"
+      action={
+        <Button variant="quiet" size="sm" onClick={() => setError(null)}>
+          Dismiss
+        </Button>
+      }
+    >
+      <span className="break-words">{error}</span>
+    </Notice>
+  ) : null
+
+  /* ---------- One team ------------------------------------------------------------------------------ */
+
+  const openedTeam = openTeamId ? teams.find((team) => team.id === openTeamId) : undefined
+
+  if (openTeamId) {
+    if (!openedTeam) {
+      return (
+        <Screen>
+          <ScreenHeader
+            back={{ onClick: () => openTeam(null), label: "Teams" }}
+            title={backendLoading ? "Team" : "Team not found"}
+            lede={backendLoading ? undefined : "This team is not in your club any more. Go back to the list to see the teams you have."}
+          />
+          {backendLoading ? <SkeletonRows rows={5} leading label="Loading the team" /> : errorNotice}
+        </Screen>
+      )
+    }
+
+    const team = openedTeam
+    const lead = team.coaches.find((coach) => coach.isPrimary)
+
+    const rosterColumns: Array<DataTableColumn<TeamAthlete>> = [
+      {
+        key: "athlete",
+        header: "Athlete",
+        cell: (athlete) => (
+          <Link to={`/coach/athletes/${athlete.id}`} className="flex items-center gap-3 hover:text-sk-blue-link">
+            <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
+            <span className="min-w-0">
+              {athlete.name}
+              <TableSub>
+                <span className="sm:hidden">{athlete.primaryEvent || "No event yet"}</span>
+              </TableSub>
+            </span>
+          </Link>
+        ),
+      },
+      { key: "event", header: "Main event", phone: "hide", cell: (athlete) => athlete.primaryEvent || <span className="text-sk-mute">Not set</span> },
+      {
+        key: "login",
+        header: "Login",
+        phone: "trailing",
+        cell: (athlete) => (
+          <span className="flex items-center justify-between gap-2">
+            {athlete.hasLogin ? <span className="max-sm:hidden">Has a login</span> : <span className="text-sk-mute">No login</span>}
+            <RowMenu
+              label={`More for ${athlete.name}`}
+              items={[
+                { label: "Open profile", onSelect: () => navigate(`/coach/athletes/${athlete.id}`) },
+                {
+                  label: "Move to another team",
+                  onSelect: () =>
+                    setMovingAthlete({ id: athlete.id, name: athlete.name, userId: null, hasLogin: athlete.hasLogin, email: null, teamId: team.id, eventGroup: null, primaryEvent: athlete.primaryEvent, status: "active" }),
+                },
+                { label: "Take off this team", onSelect: () => setConfirm({ kind: "remove-athlete", teamId: team.id, athleteId: athlete.id }), danger: true },
+              ]}
+            />
+          </span>
+        ),
+      },
+    ]
+
+    return (
+      <Screen>
+        <ScreenHeader
+          back={{ onClick: () => openTeam(null), label: "Teams" }}
+          title={team.name}
+          lede={`${team.eventGroup === "Mid" ? "Middle distance" : team.eventGroup}. ${plural(team.coaches.length, "coach", "coaches")}, ${plural(team.athletes.length, "athlete")}.${team.status === "active" ? "" : ` ${STATUS[team.status].label}.`}`}
+          actions={
+            <>
+              {hasTeamPage(team) ? <LinkButton to={`/coach/teams/${team.id}`}>Open coach view</LinkButton> : null}
+              <Button onClick={() => openEdit(team)}>Edit team</Button>
+              {team.status === "active" ? (
+                <Button variant="primary" disabled={athleteLimitReached} onClick={() => setAddAthletesTeam({ id: team.id, name: team.name })}>
+                  <UserPlus className="size-5" weight="bold" aria-hidden />
+                  Add athletes
+                </Button>
+              ) : null}
+              <RowMenu label={`More for ${team.name}`} items={teamMenu(team, true)} />
+            </>
+          }
+        />
+
+        {errorNotice}
+        {archiveConfirm(team)}
+        {team.status === "active" && athleteLimitReached ? <Notice tone="warning">Your club has used every athlete place in its package, so athletes cannot be added.</Notice> : null}
+
+        <Split
+          main={
+            <Section title="Roster" meta={team.athletes.length > 0 ? plural(team.athletes.length, "athlete") : undefined}>
+              {team.athletes.length === 0 ? (
+                <EmptyState
+                  title="No athletes on this team yet"
+                  body={
+                    team.status === "active"
+                      ? "Invite athletes by email or from a list, show the squad a QR code, or add an athlete who has no login. They appear here as they join."
+                      : "Athletes can be added once the team is active."
+                  }
+                  action={
+                    team.status === "active" ? (
+                      <Button size="sm" disabled={athleteLimitReached} onClick={() => setAddAthletesTeam({ id: team.id, name: team.name })}>
+                        Add athletes
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : (
+                <DataTable
+                  caption={`Athletes on ${team.name}`}
+                  columns={rosterColumns}
+                  rows={team.athletes}
+                  rowKey={(athlete) => athlete.id}
+                  rowProps={(athlete) => ({ "data-roster-athlete": athlete.name })}
+                  rowBelow={(athlete) =>
+                    confirm?.kind === "remove-athlete" && confirm.athleteId === athlete.id ? (
+                      <InlineConfirm
+                        question={`Take ${athlete.name} off ${team.name}? They keep their account and history, and wait under Unassigned until you put them on a team.`}
+                        confirmLabel="Take off team"
+                        cancelLabel="Keep on team"
+                        busy={busyKey === `athlete:${athlete.id}`}
+                        onConfirm={() => void handleRemoveAthlete(team, athlete)}
+                        onCancel={() => setConfirm(null)}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+            </Section>
+          }
+          side={
+            <Section
+              title="Coaches"
+              action={
+                <button type="button" className="sk-link inline-flex cursor-pointer items-center max-lg:min-h-11" onClick={() => openEdit(team)}>
+                  {team.coaches.length > 0 ? "Change coaches" : "Assign coaches"}
+                </button>
+              }
+            >
+              {team.coaches.length === 0 ? (
+                <EmptyState
+                  title="No coaches on this team"
+                  body={team.leadCoachLabel ? `The record lists ${team.leadCoachLabel} as lead. Assign them again so they can see the roster.` : "Assign a lead coach so someone owns the roster and the plan."}
+                />
+              ) : (
+                <List aria-label={`Coaches on ${team.name}`}>
+                  {team.coaches.map((coach) => {
+                    const key = `coach:${team.id}:${coach.userId}`
+                    const confirming = confirm?.kind === "remove-coach" && confirm.teamId === team.id && confirm.userId === coach.userId
+                    return (
+                      <ActionRow
+                        key={coach.userId}
+                        data-team-coach={coach.name}
+                        leading={<PersonAvatar name={coach.name} userId={coach.userId} size="sm" />}
+                        title={coachLabel(coach)}
+                        subtitle={coach.isPrimary ? "Lead coach" : "Coach"}
+                        actions={
+                          <RowMenu
+                            label={`More for ${coach.name}`}
+                            items={[
+                              ...(coach.isPrimary || team.status === "archived"
+                                ? []
+                                : [{ label: busyKey === key ? "Saving..." : "Make lead coach", onSelect: () => void handleMakeLead(team, coach), disabled: busyKey === key }]),
+                              { label: "Remove from team", onSelect: () => setConfirm({ kind: "remove-coach", teamId: team.id, userId: coach.userId }), danger: true },
+                            ]}
+                          />
+                        }
+                        below={
+                          confirming ? (
+                            <InlineConfirm
+                              question={`Remove ${coach.name} from ${team.name}? They lose access to this team only.`}
+                              confirmLabel="Remove coach"
+                              cancelLabel="Keep"
+                              busy={busyKey === key}
+                              onConfirm={() => void handleRemoveCoach(team, coach)}
+                              onCancel={() => setConfirm(null)}
+                            />
+                          ) : undefined
+                        }
+                      />
+                    )
+                  })}
+                </List>
+              )}
+              {team.coaches.length > 0 && !lead ? <Notice tone="warning">Nobody is lead coach. Make one of the coaches the lead.</Notice> : null}
+            </Section>
+          }
+        />
+        {sharedDialogs}
+      </Screen>
+    )
+  }
+
+  /* ---------- All teams ----------------------------------------------------------------------------- */
+
+  const visibleTeams = view === "active" ? activeTeams : archivedTeams
 
   const lede = backendLoading
-    ? "Loading teams..."
+    ? "Getting your teams..."
     : [
         `${plural(activeTeams.length, "active team")} with ${plural(totalAthletes, "athlete")} on the rosters.`,
         packageDefinition && Number.isFinite(packageDefinition.limits.teams)
@@ -586,585 +893,136 @@ export default function ClubAdminTeamsPage() {
         .filter(Boolean)
         .join(" ")
 
-  const count = (value: number) => <span className="ml-1.5 tabular-nums text-sk-mute">{value}</span>
-  const iconAction = "sk-btn sk-btn-ghost sk-btn-sm w-9 shrink-0 px-0 max-md:size-11"
-
-  const confirmBox = (message: ReactNode, keepLabel: string, actionLabel: string, busy: boolean, onConfirm: () => void) => (
-    <div role="group" aria-label="Confirm" className="flex flex-col gap-3 rounded-2xl bg-sk-coral-tint p-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-sk-ink">{message}</p>
-      <div className="flex shrink-0 gap-2">
-        <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => setConfirm(null)}>
-          {keepLabel}
-        </button>
-        <button type="button" className="sk-btn sk-btn-danger sk-btn-sm max-sm:h-11 max-sm:flex-1" disabled={busy} onClick={onConfirm}>
-          {busy ? "Saving..." : actionLabel}
-        </button>
-      </div>
-    </div>
-  )
+  const columns: Array<DataTableColumn<TeamRow>> = [
+    {
+      key: "team",
+      header: "Team",
+      cell: (team) => (
+        <Link to={`?team=${encodeURIComponent(team.id)}`} className="hover:text-sk-blue-link">
+          {team.name}
+          <TableSub>{team.eventGroup === "Mid" ? "Middle distance" : team.eventGroup}</TableSub>
+        </Link>
+      ),
+    },
+    {
+      key: "lead",
+      header: "Lead coach",
+      cell: (team) => {
+        const lead = team.coaches.find((coach) => coach.isPrimary)
+        const extra = team.coaches.length - (lead ? 1 : 0)
+        if (lead) {
+          return (
+            <>
+              {coachLabel(lead)}
+              {extra > 0 ? <span className="text-sk-mute"> and {extra} more</span> : null}
+            </>
+          )
+        }
+        return team.status === "archived" ? (
+          <span className="text-sk-mute">None</span>
+        ) : (
+          <StatusText tone="coral">{team.coaches.length > 0 ? `No lead, ${plural(team.coaches.length, "coach", "coaches")}` : "No lead coach"}</StatusText>
+        )
+      },
+    },
+    { key: "athletes", header: "Athletes", align: "right", strong: true, cell: (team) => team.athletes.length },
+    {
+      key: "status",
+      header: "Status",
+      phone: "trailing",
+      cell: (team) => (
+        <span className="flex items-center justify-between gap-2">
+          <StatusText tone={STATUS[team.status].tone}>{STATUS[team.status].label}</StatusText>
+          <RowMenu label={`More for ${team.name}`} items={teamMenu(team, false)} />
+        </span>
+      ),
+    },
+  ]
 
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="Teams"
         lede={lede}
         actions={
-          <button type="button" className="sk-btn sk-btn-primary w-full sm:w-auto" onClick={openCreate}>
-            <Plus className="size-5" weight="bold" />
+          <Button variant="primary" onClick={openCreate}>
+            <Plus className="size-5" weight="bold" aria-hidden />
             New team
-          </button>
+          </Button>
         }
       />
 
-      {error && !error.teamId ? (
-        <div role="alert" className={`${alertClass} flex items-start justify-between gap-3`}>
-          <p className="min-w-0 break-words">{error.message}</p>
-          <button type="button" className="-my-1 shrink-0 rounded-lg p-1 hover:bg-white/60" aria-label="Dismiss message" onClick={() => setError(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
-      ) : null}
-
-      {notice ? (
-        <div role="status" className="flex items-start justify-between gap-3 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-[#07673f]">
-          <p className="min-w-0 break-words">{notice}</p>
-          <button type="button" className="-my-1 shrink-0 rounded-lg p-1 hover:bg-white/60" aria-label="Dismiss message" onClick={() => setNotice(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
-      ) : null}
+      {errorNotice}
 
       {packageDefinition && (teamLimitReached || athleteLimitReached) ? (
-        <div className="flex flex-col gap-3 rounded-2xl bg-sk-yellow-tint px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-sk-ink">
-            <span className="font-bold">
-              Your club is at its {teamLimitReached && athleteLimitReached ? "team and athlete" : teamLimitReached ? "team" : "athlete"} limit.
-            </span>{" "}
+        <Notice
+          tone="warning"
+          action={
+            !pendingUpgradeRequest && suggestedUpgradePackage ? (
+              <Button size="sm" onClick={() => setUpgradeDialogOpen(true)}>
+                Request upgrade to {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage}
+              </Button>
+            ) : undefined
+          }
+        >
+          Your club is at its {teamLimitReached && athleteLimitReached ? "team and athlete" : teamLimitReached ? "team" : "athlete"} limit
+          <span className="mt-0.5 block font-normal">
             {packageDefinition.label} covers {plural(packageDefinition.limits.teams, "team")} and {plural(packageDefinition.limits.athletes, "athlete")}.
-            {pendingUpgradeRequest
-              ? ` Your upgrade request to ${getPackageById(pendingUpgradeRequest.requestedPackage)?.label ?? pendingUpgradeRequest.requestedPackage} is being reviewed.`
-              : ""}
-          </p>
-          {!pendingUpgradeRequest && suggestedUpgradePackage ? (
-            <button type="button" className="sk-btn sk-btn-ink sk-btn-sm shrink-0 max-sm:h-11" onClick={() => setUpgradeDialogOpen(true)}>
-              Request upgrade to {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage}
-            </button>
-          ) : null}
-        </div>
+            {pendingUpgradeRequest ? ` Your upgrade request to ${getPackageById(pendingUpgradeRequest.requestedPackage)?.label ?? pendingUpgradeRequest.requestedPackage} is being reviewed.` : ""}
+          </span>
+        </Notice>
       ) : null}
 
-      <Segmented
+      <Tabs
         label="Team status"
         value={view}
         onChange={(next) => {
           setView(next)
           setConfirm(null)
-          setExpandedTeamId(null)
         }}
         options={[
-          { value: "active", label: <>Active{count(activeTeams.length)}</> },
-          { value: "archived", label: <>Archived{count(archivedTeams.length)}</> },
+          { value: "active", label: "Active", count: backendLoading ? undefined : activeTeams.length },
+          { value: "archived", label: "Archived", count: backendLoading ? undefined : archivedTeams.length },
         ]}
       />
 
-      <Panel flush>
+      <Section aria-label={view === "active" ? "Active teams" : "Archived teams"}>
         {backendLoading ? (
-          <p className="p-6 text-sm text-sk-mute">Loading teams...</p>
+          <SkeletonRows rows={4} label="Loading teams" />
         ) : visibleTeams.length === 0 ? (
-          <div className="p-5 sm:p-6">
-            {view === "active" ? (
-              <EmptyState
-                icon={<UsersThree className="size-6" weight="fill" />}
-                title="No teams yet"
-                body="Teams hold your coaches, rosters, plans and testing. Create the first one, give it a lead coach, then invite athletes into it."
-                action={
-                  <button type="button" className="sk-btn sk-btn-ink sk-btn-sm" onClick={openCreate}>
-                    <Plus className="size-4" weight="bold" />
-                    New team
-                  </button>
-                }
-                className="border-0 bg-sk-canvas"
-              />
-            ) : (
-              <EmptyState
-                icon={<Archive className="size-6" weight="fill" />}
-                title="Nothing archived"
-                body="Teams you archive are kept here with their roster and history, ready to restore."
-                className="border-0 bg-sk-canvas"
-              />
-            )}
-          </div>
+          view === "active" ? (
+            <EmptyState
+              title="No teams yet"
+              body="Teams hold your coaches, rosters, plans and testing. Create the first one, give it a lead coach, then add athletes to it."
+              action={
+                <Button size="sm" onClick={openCreate}>
+                  New team
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState title="Nothing archived" body="Teams you archive are kept here with their roster and history, ready to restore." />
+          )
         ) : (
-          <>
-            <div className="relative hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_100px_96px_250px] gap-3 border-b border-sk-line px-6 py-3 text-sm font-semibold text-sk-mute lg:grid">
-              <span>Team</span>
-              <span>Lead coach</span>
-              <span>Athletes</span>
-              <span>Status</span>
-              <span className="sr-only">Actions</span>
-            </div>
-            <ul>
-              {visibleTeams.map((team) => {
-                const expanded = expandedTeamId === team.id
-                const lead = team.coaches.find((coach) => coach.isPrimary)
-                const leadName = lead ? (lead.isSelf ? `${lead.name} (you)` : lead.name) : null
-                const extraCoachCount = team.coaches.length - (lead ? 1 : 0)
-                const status = STATUS_TAG[team.status]
-                const teamBusy = busyKey === `team:${team.id}`
-                const archiveConfirm = confirm?.kind === "archive" && confirm.teamId === team.id
-                return (
-                  <li key={team.id} data-team={team.name} className="relative border-b border-sk-line last:border-b-0">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_100px_96px_250px]">
-                      <button
-                        type="button"
-                        className="group flex min-w-0 items-center gap-3 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-                        aria-expanded={expanded}
-                        aria-controls={`team-detail-${team.id}`}
-                        onClick={() => {
-                          setExpandedTeamId(expanded ? null : team.id)
-                          setConfirm(null)
-                        }}
-                      >
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sk-canvas text-sk-ink-2 group-hover:bg-sk-blue-tint group-hover:text-sk-blue">
-                          <CaretDown className={cn("size-4 transition-transform", expanded && "rotate-180")} weight="bold" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-bold text-sk-ink group-hover:text-sk-blue">{team.name}</span>
-                          <span className="block truncate text-sm text-sk-mute">
-                            {team.eventGroup}
-                            <span className="sr-only">. {expanded ? "Hide" : "Show"} coaches and roster</span>
-                          </span>
-                        </span>
-                      </button>
-
-                      <div className="max-lg:col-span-2 max-lg:row-start-2 flex min-w-0 items-center gap-2 text-sm">
-                        <span className="text-sk-mute lg:hidden">Lead coach</span>
-                        {leadName ? (
-                          <span className="min-w-0 truncate font-semibold text-sk-ink">
-                            {leadName}
-                            {extraCoachCount > 0 ? <span className="font-normal text-sk-mute"> +{extraCoachCount} more</span> : null}
-                          </span>
-                        ) : (
-                          <span className="text-sk-mute">
-                            {team.coaches.length > 0 ? `No lead, ${team.coaches.length} ${team.coaches.length === 1 ? "coach" : "coaches"}` : "Not assigned"}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="max-lg:col-span-2 max-lg:row-start-3 text-sm text-sk-ink-2">
-                        <span className="font-bold tabular-nums text-sk-ink">{team.athletes.length}</span>
-                        <span className="lg:hidden"> {team.athletes.length === 1 ? "athlete" : "athletes"}</span>
-                      </div>
-
-                      <div className="max-lg:col-start-2 max-lg:row-start-1">
-                        <Tag tone={status.tone}>{status.label}</Tag>
-                      </div>
-
-                      <div className="max-lg:col-span-2 flex flex-wrap items-center gap-2 lg:justify-end">
-                        {team.status === "active" ? (
-                          <InviteAthleteDialog
-                            teamId={team.id}
-                            teamName={team.name}
-                            onCreated={(invite) => void emitAudit("athlete_invite_send", invite.email, `team ${team.name}`)}
-                            trigger={
-                              <button
-                                type="button"
-                                className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
-                                disabled={athleteLimitReached}
-                                title={athleteLimitReached ? "Your club is at its athlete limit" : undefined}
-                              >
-                                <UserPlus className="size-4" weight="bold" />
-                                Invite athlete
-                              </button>
-                            }
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
-                            disabled={teamBusy}
-                            onClick={() => void handleArchiveToggle(team, false)}
-                          >
-                            {team.status === "archived" ? <ArrowCounterClockwise className="size-4" weight="bold" /> : null}
-                            {teamBusy ? "Saving..." : team.status === "archived" ? "Restore team" : "Make active"}
-                          </button>
-                        )}
-                        <button type="button" className={iconAction} aria-label={`Edit ${team.name}`} title="Edit team" onClick={() => openEdit(team)}>
-                          <PencilSimple className="size-4" weight="bold" />
-                        </button>
-                        {team.status !== "archived" ? (
-                          <button
-                            type="button"
-                            className={`${iconAction} hover:bg-sk-coral-tint hover:text-[#c7300f]`}
-                            aria-label={`Archive ${team.name}`}
-                            aria-expanded={archiveConfirm}
-                            title="Archive team"
-                            onClick={() => setConfirm(archiveConfirm ? null : { kind: "archive", teamId: team.id })}
-                          >
-                            <Archive className="size-4" weight="bold" />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {error?.teamId === team.id ? (
-                      <p role="alert" className={`${alertClass} mx-5 mb-4 sm:mx-6`}>
-                        {error.message}
-                      </p>
-                    ) : null}
-
-                    {archiveConfirm ? (
-                      <div className="px-5 pb-4 sm:px-6">
-                        {confirmBox(
-                          <>
-                            <span className="font-bold">Archive {team.name}?</span> Coaches and athletes stop seeing it. The roster and history are kept, and you can restore it any time.
-                          </>,
-                          "Keep team",
-                          "Archive team",
-                          teamBusy,
-                          () => void handleArchiveToggle(team, true),
-                        )}
-                      </div>
-                    ) : null}
-
-                    {expanded ? (
-                      <div id={`team-detail-${team.id}`} className="grid gap-x-10 gap-y-6 border-t border-sk-line bg-sk-canvas px-5 py-5 sm:px-6 lg:grid-cols-2">
-                        <section aria-label={`Coaches on ${team.name}`}>
-                          <div className="flex items-center justify-between gap-3">
-                            <h3 className="sk-h3">Coaches</h3>
-                            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -mr-2" onClick={() => openEdit(team)}>
-                              {team.coaches.length > 0 ? "Change coaches" : "Assign coaches"}
-                            </button>
-                          </div>
-                          {team.coaches.length === 0 ? (
-                            <p className="mt-2 text-sm text-sk-mute">
-                              No coaches on this team yet. {team.leadCoachLabel ? `The record lists ${team.leadCoachLabel} as lead.` : "Assign a lead coach so someone owns the roster."}
-                            </p>
-                          ) : (
-                            <ul className="mt-1">
-                              {team.coaches.map((coach) => {
-                                const key = `coach:${team.id}:${coach.userId}`
-                                const confirming = confirm?.kind === "remove-coach" && confirm.teamId === team.id && confirm.userId === coach.userId
-                                return (
-                                  <li key={coach.userId} className="border-b border-sk-line py-2.5 last:border-b-0">
-                                    <div className="flex items-center gap-3">
-                                      <PersonAvatar name={coach.name} userId={coach.userId} size="sm" />
-                                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-sk-ink">
-                                        {coach.name}
-                                        {coach.isSelf ? <span className="font-normal text-sk-mute"> (you)</span> : null}
-                                      </span>
-                                      {coach.isPrimary ? (
-                                        <Tag tone="blue">Lead</Tag>
-                                      ) : team.status !== "archived" ? (
-                                        <button
-                                          type="button"
-                                          className="sk-btn sk-btn-ghost sk-btn-sm max-md:h-11"
-                                          disabled={busyKey === key}
-                                          onClick={() => void handleMakeLead(team, coach)}
-                                        >
-                                          {busyKey === key && !confirming ? "Saving..." : "Make lead"}
-                                        </button>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        className="sk-btn sk-btn-ghost size-11 shrink-0 px-0 hover:bg-sk-coral-tint hover:text-[#c7300f] md:size-9"
-                                        aria-label={`Remove ${coach.name} from ${team.name}`}
-                                        aria-expanded={confirming}
-                                        onClick={() => setConfirm(confirming ? null : { kind: "remove-coach", teamId: team.id, userId: coach.userId })}
-                                      >
-                                        <Trash className="size-4" weight="bold" />
-                                      </button>
-                                    </div>
-                                    {confirming ? (
-                                      <div className="mt-2">
-                                        {confirmBox(
-                                          <>
-                                            <span className="font-bold">Remove {coach.name} from {team.name}?</span> They lose access to this team only.
-                                          </>,
-                                          "Keep",
-                                          "Remove coach",
-                                          busyKey === key,
-                                          () => void handleRemoveCoach(team, coach),
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </section>
-
-                        <section aria-label={`Roster of ${team.name}`}>
-                          <div className="flex min-h-9 items-center justify-between gap-3">
-                            <h3 className="sk-h3">Roster</h3>
-                            {hasTeamPage(team) ? (
-                              <Link to={`/coach/teams/${team.id}`} className="sk-btn sk-btn-ghost sk-btn-sm -mr-2">
-                                Open team page
-                                <ArrowRight className="size-4" weight="bold" />
-                              </Link>
-                            ) : null}
-                          </div>
-                          {team.athletes.length === 0 ? (
-                            <p className="mt-2 text-sm text-sk-mute">
-                              No athletes yet. {team.status === "active" ? "Invite an athlete and they appear here once they accept." : "Athletes can be invited once the team is active."}
-                            </p>
-                          ) : (
-                            <ul className="mt-1">
-                              {team.athletes.map((athlete) => {
-                                const key = `athlete:${athlete.id}`
-                                const confirming = confirm?.kind === "remove-athlete" && confirm.teamId === team.id && confirm.athleteId === athlete.id
-                                return (
-                                  <li key={athlete.id} className="border-b border-sk-line py-2.5 last:border-b-0">
-                                    <div className="flex items-center gap-3">
-                                      <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
-                                      <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-sm font-semibold text-sk-ink">{athlete.name}</span>
-                                        {athlete.primaryEvent ? <span className="block truncate text-sm text-sk-mute">{athlete.primaryEvent}</span> : null}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="sk-btn sk-btn-ghost size-11 shrink-0 px-0 hover:bg-sk-coral-tint hover:text-[#c7300f] md:size-9"
-                                        aria-label={`Remove ${athlete.name} from ${team.name}`}
-                                        aria-expanded={confirming}
-                                        onClick={() => setConfirm(confirming ? null : { kind: "remove-athlete", teamId: team.id, athleteId: athlete.id })}
-                                      >
-                                        <Trash className="size-4" weight="bold" />
-                                      </button>
-                                    </div>
-                                    {confirming ? (
-                                      <div className="mt-2">
-                                        {confirmBox(
-                                          <>
-                                            <span className="font-bold">Remove {athlete.name} from {team.name}?</span> They keep their account and training history.
-                                          </>,
-                                          "Keep",
-                                          "Remove from roster",
-                                          busyKey === key,
-                                          () => void handleRemoveAthlete(team, athlete),
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </section>
-                      </div>
-                    ) : null}
-                  </li>
-                )
-              })}
-            </ul>
-          </>
+          <DataTable
+            caption={view === "active" ? "Active teams" : "Archived teams"}
+            columns={columns}
+            rows={visibleTeams}
+            rowKey={(team) => team.id}
+            rowProps={(team) => ({ "data-team": team.name })}
+            rowBelow={archiveConfirm}
+          />
         )}
-      </Panel>
+      </Section>
 
-      <p className="text-sm text-sk-mute">
-        Need to step in on a coach's work? Open{" "}
-        <Link to="/coach/training-plan" className="font-semibold text-sk-blue hover:underline">
-          training plans
-        </Link>{" "}
-        or{" "}
-        <Link to="/coach/test-week" className="font-semibold text-sk-blue hover:underline">
-          test weeks
-        </Link>
-        .
-      </p>
+      <Section title="Stepping in for a coach" hint="As a club admin you can open any team's training and testing.">
+        <List>
+          <ListRow to="/coach/training-plan" title="Training plans" subtitle="Build, edit or publish a plan for any team." />
+          <ListRow to="/coach/test-week" title="Test weeks" subtitle="Set up a test week or enter results." />
+        </List>
+      </Section>
 
-      <Dialog
-        open={Boolean(form)}
-        onOpenChange={(next) => {
-          if (!next) {
-            setForm(null)
-            setFormError(null)
-          }
-        }}
-      >
-        <DialogContent showCloseButton={false} className={dialogClass}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <DialogTitle className="sk-h2">{form?.mode === "edit" ? "Edit team" : "New team"}</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-                {form?.mode === "edit"
-                  ? "Change the name, event group and who coaches this team."
-                  : "Name the team and pick who coaches it. You can invite athletes straight after."}
-              </DialogDescription>
-            </div>
-            <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
-              <X className="size-5" weight="bold" />
-            </DialogClose>
-          </div>
-
-          {form ? (
-            <form
-              className="space-y-4"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleSaveForm()
-              }}
-            >
-              <div className="space-y-1.5">
-                <label htmlFor="team-form-name" className="sk-label">
-                  Team name
-                </label>
-                <input
-                  id="team-form-name"
-                  className="sk-field"
-                  placeholder="Sprint Group B"
-                  value={form.name}
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label htmlFor="team-form-group" className="sk-label">
-                    Event group
-                  </label>
-                  <select
-                    id="team-form-group"
-                    className="sk-field"
-                    value={form.eventGroup}
-                    onChange={(event) => setForm({ ...form, eventGroup: event.target.value as EventGroup })}
-                  >
-                    {EVENT_GROUP_OPTIONS.map((group) => (
-                      <option key={group} value={group}>
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label htmlFor="team-form-lead" className="sk-label">
-                    Lead coach
-                  </label>
-                  <select
-                    id="team-form-lead"
-                    className="sk-field"
-                    value={form.leadId}
-                    onChange={(event) =>
-                      setForm({ ...form, leadId: event.target.value, extraIds: form.extraIds.filter((id) => id !== event.target.value) })
-                    }
-                  >
-                    <option value="none">Not assigned</option>
-                    {formCoachIds.map((id) => (
-                      <option key={id} value={id}>
-                        {coachName(id)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <fieldset className="space-y-1.5">
-                <legend className="sk-label">Additional coaches</legend>
-                {formCoachIds.filter((id) => id !== form.leadId).length === 0 ? (
-                  <p className="text-sm text-sk-mute">Nobody else to add yet. Invite more coaches from People and they show up here.</p>
-                ) : (
-                  <div className="max-h-44 overflow-y-auto rounded-[14px] border border-[#d5d9e3]">
-                    {formCoachIds
-                      .filter((id) => id !== form.leadId)
-                      .map((id) => (
-                        <label key={id} className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-sk-line px-3.5 py-2 text-[0.95rem] text-sk-ink last:border-b-0 hover:bg-sk-canvas">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-[#2152ff]"
-                            checked={form.extraIds.includes(id)}
-                            onChange={(event) =>
-                              setForm({
-                                ...form,
-                                extraIds: event.target.checked ? [...form.extraIds, id] : form.extraIds.filter((item) => item !== id),
-                              })
-                            }
-                          />
-                          <span className="min-w-0 truncate">{coachName(id)}</span>
-                        </label>
-                      ))}
-                  </div>
-                )}
-              </fieldset>
-              {form.mode === "create" && teamLimitReached ? (
-                <p className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">{teamLimitMessage}</p>
-              ) : null}
-              {formError ? (
-                <p role="alert" className={alertClass}>
-                  {formError}
-                </p>
-              ) : null}
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className="sk-btn sk-btn-quiet" onClick={() => setForm(null)}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="sk-btn sk-btn-primary"
-                  disabled={saving || !form.name.trim() || (form.mode === "create" && teamLimitReached)}
-                >
-                  {saving ? "Saving..." : form.mode === "edit" ? "Save changes" : "Create team"}
-                </button>
-              </div>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={upgradeDialogOpen}
-        onOpenChange={(next) => {
-          setUpgradeDialogOpen(next)
-          if (!next) setUpgradeError(null)
-        }}
-      >
-        <DialogContent showCloseButton={false} className={dialogClass}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <DialogTitle className="sk-h2">Request a package upgrade</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-                Ask to move your club from {packageDefinition?.label ?? "your current package"} to{" "}
-                {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage ?? "the next package"}. We review every request.
-              </DialogDescription>
-            </div>
-            <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
-              <X className="size-5" weight="bold" />
-            </DialogClose>
-          </div>
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void handleSubmitUpgradeRequest()
-            }}
-          >
-            <div className="space-y-1.5">
-              <label htmlFor="team-upgrade-reason" className="sk-label">
-                Reason
-              </label>
-              <textarea
-                id="team-upgrade-reason"
-                rows={4}
-                className="sk-field h-auto py-3"
-                value={upgradeReason}
-                onChange={(event) => setUpgradeReason(event.target.value)}
-                placeholder="Tell us why your club needs more room."
-              />
-            </div>
-            {upgradeError ? (
-              <p role="alert" className={alertClass}>
-                {upgradeError}
-              </p>
-            ) : null}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button type="button" className="sk-btn sk-btn-quiet" onClick={() => setUpgradeDialogOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="sk-btn sk-btn-ink" disabled={upgradeSaving}>
-                {upgradeSaving ? "Sending..." : "Send upgrade request"}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+      {sharedDialogs}
+    </Screen>
   )
 }

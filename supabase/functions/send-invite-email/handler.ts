@@ -51,6 +51,8 @@ type InviteRow = {
   expires_at: string | null
   email_send_count: number | null
   last_email_attempt_at: string | null
+  /** coach_invites only: what the person becomes when they accept. */
+  role?: string | null
 }
 
 export const corsHeaders = {
@@ -141,7 +143,8 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const sendOne = async (payload: { kind: InviteKind; inviteId: string }): Promise<Response> => {
   const { data: inviteData, error: inviteError } = await serviceClient
     .from(table)
-    .select(INVITE_COLUMNS)
+    // Only coach_invites has a role column (coach or club-admin).
+    .select(payload.kind === "coach" ? `${INVITE_COLUMNS}, role` : INVITE_COLUMNS)
     .eq("id", payload.inviteId)
     .maybeSingle()
   const invite = (inviteData as InviteRow | null) ?? null
@@ -276,6 +279,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const claimLink = buildClaimLink(appBaseUrl, payload.kind, invite.id)
   const email = renderInviteEmail({
     kind: payload.kind,
+    role: payload.kind === "coach" && invite.role === "club-admin" ? "club-admin" : "coach",
     recipientEmail,
     inviterName,
     clubName,

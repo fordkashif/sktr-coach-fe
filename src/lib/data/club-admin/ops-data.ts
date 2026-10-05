@@ -20,6 +20,8 @@ export type ClubAdminUser = {
 export type ClubAdminInvite = {
   id: string
   email: string
+  /** What the person becomes when they accept. Missing on rows read before the role was selected: treat as coach. */
+  role?: "coach" | "club-admin"
   teamId?: string
   status: "pending" | "accepted" | "expired" | "revoked"
   createdAt: string
@@ -210,7 +212,7 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
       .select(columns)
       .eq("tenant_id", contextResult.data.tenantId)
       .order("created_at", { ascending: false })
-  const inviteColumns = "id, email, team_id, status, created_at, expires_at"
+  const inviteColumns = "id, email, role, team_id, status, created_at, expires_at"
 
   const [profilesResult, teamsResult, invitesWithEmailResult, requestsResult] = await Promise.all([
     clientResult.client
@@ -262,6 +264,7 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
   const invites: ClubAdminInvite[] = ((invitesResult.data as unknown as Array<{
     id: string
     email: string
+    role?: string | null
     team_id: string | null
     status: ClubAdminInvite["status"]
     created_at: string
@@ -272,6 +275,7 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
   }> | null) ?? []).map((row) => ({
     id: row.id,
     email: row.email,
+    role: row.role === "club-admin" ? "club-admin" : "coach",
     teamId: row.team_id ?? undefined,
     // A pending invite past its expiry can no longer be accepted, so report it as expired.
     status:
@@ -314,9 +318,16 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
 /** Coach invite links stop working after this many days. */
 export const COACH_INVITE_VALID_DAYS = 14
 
+/**
+ * Invites someone onto the staff of the club. `role` is what they become when they accept: a coach
+ * (the default) or a club admin. Only a club admin can create either (row policy on coach_invites),
+ * and a club admin invite is also checked and audited by the database
+ * (20261010090000_club_admin_invite_role_and_member_removal.sql).
+ */
 export async function createCoachInvite(params: {
   email: string
   teamId?: string
+  role?: "coach" | "club-admin"
 }): Promise<Result<ClubAdminInvite>> {
   const clientResult = requireSupabaseClient("createCoachInvite")
   if (!clientResult.ok) return clientResult
@@ -324,16 +335,21 @@ export async function createCoachInvite(params: {
   const contextResult = await getCurrentClubAdminContext(clientResult.client)
   if (!contextResult.ok) return contextResult
 
-  const packageUsageResult = await getTenantPackageUsage(clientResult.client, contextResult.data.tenantId)
-  if (!packageUsageResult.ok) return packageUsageResult
-  if (
-    packageUsageResult.data.packageDefinition &&
-    packageUsageResult.data.usage.coaches >= packageUsageResult.data.packageDefinition.limits.coaches
-  ) {
-    return buildPackageLimitError({
-      packageDefinition: packageUsageResult.data.packageDefinition,
-      resourceLabel: "coaches",
-    })
+  const role = params.role === "club-admin" ? "club-admin" : "coach"
+
+  // The package counts coaches. A club admin does not take a coach place.
+  if (role === "coach") {
+    const packageUsageResult = await getTenantPackageUsage(clientResult.client, contextResult.data.tenantId)
+    if (!packageUsageResult.ok) return packageUsageResult
+    if (
+      packageUsageResult.data.packageDefinition &&
+      packageUsageResult.data.usage.coaches >= packageUsageResult.data.packageDefinition.limits.coaches
+    ) {
+      return buildPackageLimitError({
+        packageDefinition: packageUsageResult.data.packageDefinition,
+        resourceLabel: "coaches",
+      })
+    }
   }
 
   const { data, error } = await clientResult.client
@@ -342,7 +358,7 @@ export async function createCoachInvite(params: {
       tenant_id: contextResult.data.tenantId,
       email: params.email.trim().toLowerCase(),
       team_id: params.teamId ?? null,
-      role: "coach",
+      role,
       status: "pending",
       invited_by_user_id: contextResult.data.userId,
       expires_at: new Date(Date.now() + COACH_INVITE_VALID_DAYS * 24 * 60 * 60 * 1000).toISOString(),
@@ -354,6 +370,7 @@ export async function createCoachInvite(params: {
   return ok({
     id: data.id,
     email: data.email,
+    role,
     teamId: data.team_id ?? undefined,
     status: data.status,
     createdAt: data.created_at.slice(0, 10),
@@ -1356,7 +1373,7 @@ export async function getClubAdminPeopleDirectory(): Promise<Result<ClubAdminPeo
 
 export type ClubAdminTeamMembers = {
   coaches: Array<{ userId: string; name: string; isPrimary: boolean; isSelf: boolean }>
-  athletes: Array<{ id: string; name: string; primaryEvent: string | null }>
+  athletes: Array<{ id: string; name: string; primaryEvent: string | null; hasLogin: boolean }>
 }
 
 /** Coaches and active athletes on every team in the club (any status), keyed by team id. */
@@ -1377,7 +1394,7 @@ export async function getClubAdminTeamMembers(): Promise<Result<Record<string, C
     clientResult.client.from("profiles").select("user_id, display_name").eq("tenant_id", tenantId),
     clientResult.client
       .from("athletes")
-      .select("id, team_id, first_name, last_name, primary_event")
+      .select("id, team_id, user_id, first_name, last_name, primary_event")
       .eq("tenant_id", tenantId)
       .eq("is_active", true)
       .not("team_id", "is", null)
@@ -1411,6 +1428,7 @@ export async function getClubAdminTeamMembers(): Promise<Result<Record<string, C
   for (const row of (athletesResult.data as Array<{
     id: string
     team_id: string
+    user_id: string | null
     first_name: string
     last_name: string
     primary_event: string | null
@@ -1419,6 +1437,7 @@ export async function getClubAdminTeamMembers(): Promise<Result<Record<string, C
       id: row.id,
       name: `${row.first_name} ${row.last_name}`.trim(),
       primaryEvent: row.primary_event,
+      hasLogin: row.user_id !== null,
     })
   }
 

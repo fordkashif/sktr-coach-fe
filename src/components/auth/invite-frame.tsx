@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { List, ListRow, Screen, Section } from "@/components/sk"
+import { PublicFooter } from "@/layouts/auth-layout"
 
 /**
  * The frame of the public invite pages (athlete claim, coach invite): no app chrome, the brand, then
@@ -11,6 +12,7 @@ export function InviteFrame({ children }: { children: ReactNode }) {
       <Screen width="narrow">
         <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-blue">SKTR Coach</p>
         {children}
+        <PublicFooter />
       </Screen>
     </main>
   )

@@ -64,8 +64,11 @@ export function Field({
   optional,
   children,
   className,
+  id: fixedId,
 }: {
   label: string
+  /** Only when something outside needs a fixed id (a test, focusing the first field with an error). Otherwise leave it out. */
+  id?: string
   hint?: ReactNode
   error?: ReactNode
   /** Adds "(optional)" after the label. */
@@ -73,7 +76,8 @@ export function Field({
   children: ReactNode
   className?: string
 }) {
-  const id = useId()
+  const generatedId = useId()
+  const id = fixedId ?? generatedId
   const messageId = `${id}-message`
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>

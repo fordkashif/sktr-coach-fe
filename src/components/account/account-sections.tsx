@@ -574,6 +574,8 @@ export function HelpSection() {
     <Section title="Help">
       <List>
         <ListRow href={SUPPORT_MAILTO} title="Email support" subtitle={SUPPORT_EMAIL} />
+        <ListRow to="/privacy" title="Privacy" subtitle="What we store and who can see it" />
+        <ListRow to="/terms" title="Terms" subtitle="The rules for using SKTR Coach" />
       </List>
     </Section>
   )

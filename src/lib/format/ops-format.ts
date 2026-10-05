@@ -1,4 +1,5 @@
 /** Small formatting and export helpers shared by the club admin and platform admin ops screens. */
+export { csvFileName, downloadCsv } from "@/lib/csv"
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -33,15 +34,31 @@ export function formatDateTime(value: string | null | undefined) {
   return parsed.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
 }
 
-export function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+/** The viewer's own calendar day (YYYY-MM-DD) an ISO timestamp falls on. Empty when it cannot be read. */
+export function localDayOf(timestamp: string) {
+  const parsed = new Date(timestamp)
+  return Number.isNaN(parsed.getTime()) ? "" : localIsoDay(parsed)
+}
+
+/** "Today", "Yesterday" or "Monday, October 5, 2026" for a YYYY-MM-DD day. */
+export function dayHeading(day: string) {
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (day === localIsoDay()) return "Today"
+  if (day === localIsoDay(yesterday)) return "Yesterday"
+  const parsed = parseLocalDay(day)
+  return parsed ? parsed.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : day || "Date not recorded"
+}
+
+/** "3:42 PM" in the viewer's time zone. */
+export function timeOfDay(timestamp: string) {
+  const parsed = new Date(timestamp)
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+}
+
+/** "1 club", "3 clubs". */
+export function plural(count: number, one: string, many = `${one}s`) {
+  return `${count.toLocaleString()} ${count === 1 ? one : many}`
 }
 
 export type MockAuditLogger = (event: { actor: string; action: string; target: string; detail?: string }) => void

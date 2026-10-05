@@ -84,6 +84,8 @@ const PlatformAdminDashboardPage = lazy(() => import("@/app/(authenticated)/plat
 const AccountPage = lazy(() => import("@/app/(authenticated)/account/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
 const NotificationsPage = lazy(() => import("@/app/(authenticated)/notifications/page"))
+const PrivacyPage = lazy(() => import("@/app/(public)/privacy/page"))
+const TermsPage = lazy(() => import("@/app/(public)/terms/page"))
 
 function routeElement(Component: ComponentType) {
   return (
@@ -106,6 +108,8 @@ export function AppRouter() {
           <Route path="/athlete/claim/:inviteId" element={<AthleteClaimPage />} />
           <Route path="/club-admin/claim" element={<ClubAdminClaimPage />} />
           <Route path="/create-club-account" element={<CreateClubAccountPage />} />
+          <Route path="/privacy" element={routeElement(PrivacyPage)} />
+          <Route path="/terms" element={routeElement(TermsPage)} />
           <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
           <Route path="/join/:code" element={<TeamJoinCodePage />} />
         </Route>

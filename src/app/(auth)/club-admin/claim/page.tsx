@@ -1,12 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowClockwise, ArrowLeft, ArrowRight } from "@phosphor-icons/react"
-import {
-  FirstAccessFrame,
-  FormError,
-  PasswordFields,
-  validateNewPassword,
-} from "@/components/club-admin/first-access-setup-panel"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { ArrowClockwise, ArrowRight } from "@phosphor-icons/react"
+import { FirstAccessFrame, PasswordFields, validateNewPassword } from "@/components/club-admin/first-access-setup-panel"
+import { Button, LinkButton, Notice, Section, SkeletonRows } from "@/components/sk"
 import { setClubAdminFirstAccessPassword } from "@/lib/data/club-admin/first-access-data"
 import { getClubAdminProfileRecord } from "@/lib/data/club-admin/ops-data"
 import { resolveSessionActor } from "@/lib/supabase/actor"
@@ -216,72 +212,60 @@ export default function ClubAdminClaimPage() {
 
   if (loading) {
     return (
-      <FirstAccessFrame brand title="Opening your claim link" lede="Checking your link and finding your club.">
-        <p className="text-sm font-semibold text-sk-mute" role="status">
-          Loading...
-        </p>
+      <FirstAccessFrame outside title="Opening your claim link" lede="Checking your link and finding your club.">
+        <SkeletonRows rows={2} label="Checking your claim link" />
       </FirstAccessFrame>
     )
   }
 
   if (error) {
     return (
-      <FirstAccessFrame
-        brand
-        title="This claim link could not be opened"
-        lede="Nothing has been changed on your account."
-      >
-        <section className="sk-card space-y-5">
-          <FormError>
-            <p>{error}</p>
-            <p className="font-normal text-sk-ink-2">
-              Claim links are sent once your club request is approved, and each link works one time.
-            </p>
-          </FormError>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
-              <ArrowClockwise className="size-5" weight="bold" />
-              Try again
-            </button>
-            <Link to="/login" className="sk-btn sk-btn-quiet">
-              <ArrowLeft className="size-5" weight="bold" />
-              Back to login
-            </Link>
-          </div>
-        </section>
+      <FirstAccessFrame outside title="This claim link could not be opened" lede="Nothing has been changed on your account.">
+        <Notice tone="error">
+          {error}
+          <span className="mt-0.5 block font-normal">Claim links are sent once your club request is approved, and each link works one time.</span>
+        </Notice>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            <ArrowClockwise className="size-5" weight="bold" aria-hidden />
+            Try again
+          </Button>
+          <LinkButton to="/login" variant="quiet">
+            Back to login
+          </LinkButton>
+        </div>
       </FirstAccessFrame>
     )
   }
 
   return (
     <FirstAccessFrame
-      brand
+      outside
       step="password"
       title={clubName ? `Welcome to ${clubName}` : "Claim your club"}
       lede="Your club request was approved. Set a password first, so you can always get back in. Then we will walk you through the rest."
     >
-      <form className="sk-card grid gap-4" onSubmit={(event) => void handleSubmit(event)} noValidate>
-        <h2 className="sk-h2">Set your password</h2>
-        {email ? (
-          <p className="-mt-2 text-sm leading-relaxed text-sk-mute">
-            You will sign in as <span className="break-all font-bold text-sk-ink">{email}</span>.
-          </p>
-        ) : null}
-        <PasswordFields
-          email={email}
-          password={password}
-          confirmPassword={confirmPassword}
-          onPasswordChange={setPassword}
-          onConfirmPasswordChange={setConfirmPassword}
-        />
-        <FormError>{formError}</FormError>
-        <div>
-          <button type="submit" disabled={saving} className="sk-btn sk-btn-primary w-full sm:w-auto">
-            {saving ? "Saving password..." : "Save password and continue"}
-            {saving ? null : <ArrowRight className="size-5" weight="bold" />}
-          </button>
-        </div>
-      </form>
+      <Section
+        title="Set your password"
+        hint={
+          email ? (
+            <>
+              You will sign in as <span className="break-all font-bold text-sk-ink">{email}</span>.
+            </>
+          ) : undefined
+        }
+      >
+        <form className="flex flex-col gap-4 pt-3" onSubmit={(event) => void handleSubmit(event)} noValidate>
+          <PasswordFields email={email} password={password} confirmPassword={confirmPassword} onPasswordChange={setPassword} onConfirmPasswordChange={setConfirmPassword} />
+          {formError ? <Notice tone="error">{formError}</Notice> : null}
+          <div>
+            <Button type="submit" variant="primary" size="lg" disabled={saving}>
+              {saving ? "Saving password..." : "Save password and continue"}
+              {saving ? null : <ArrowRight className="size-5" weight="bold" aria-hidden />}
+            </Button>
+          </div>
+        </form>
+      </Section>
     </FirstAccessFrame>
   )
 }

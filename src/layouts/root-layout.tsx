@@ -7,7 +7,7 @@ import { SupabaseAuthSync } from "@/lib/supabase/auth-sync"
 
 export function RootLayout() {
   useEffect(() => {
-    document.title = "SKTR Coach | Elite Track & Field Performance"
+    document.title = "SKTR Coach | Track and field coaching"
   }, [])
 
   return (

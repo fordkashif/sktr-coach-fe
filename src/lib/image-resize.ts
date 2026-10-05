@@ -40,6 +40,8 @@ async function decode(file: Blob): Promise<{ source: CanvasImageSource; width: n
 export async function prepareAvatarImage(
   file: File | Blob,
   size = 512,
+  /** "cover" crops to the centre (a face). "contain" keeps the whole picture on white (a logo). */
+  fit: "cover" | "contain" = "cover",
 ): Promise<{ ok: true; data: PreparedAvatar } | { ok: false; error: AvatarImageError }> {
   const type = file.type.toLowerCase()
   if (type && !type.startsWith("image/")) return { ok: false, error: "wrong-type" }
@@ -65,7 +67,15 @@ export async function prepareAvatarImage(
     context.fillStyle = "#ffffff"
     context.fillRect(0, 0, size, size)
     context.imageSmoothingQuality = "high"
-    context.drawImage(decoded.source, (decoded.width - side) / 2, (decoded.height - side) / 2, side, side, 0, 0, size, size)
+    if (fit === "contain") {
+      // The whole picture, centred, with a small margin so a wide logo does not touch the edge.
+      const scale = Math.min((size * 0.92) / decoded.width, (size * 0.92) / decoded.height)
+      const width = decoded.width * scale
+      const height = decoded.height * scale
+      context.drawImage(decoded.source, 0, 0, decoded.width, decoded.height, (size - width) / 2, (size - height) / 2, width, height)
+    } else {
+      context.drawImage(decoded.source, (decoded.width - side) / 2, (decoded.height - side) / 2, side, side, 0, 0, size, size)
+    }
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86))
     if (!blob) return { ok: false, error: "unreadable" }

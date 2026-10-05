@@ -88,7 +88,7 @@ export default function CoachInviteAcceptPage() {
           } else {
             setRequiresPassword(true)
             setStage("setup")
-            setMessage("Complete your coach setup to claim this invite and enter the workspace.")
+            setMessage(invitePreview.role === "club-admin" ? "Create your account to claim this invite and open your club." : "Complete your coach setup to claim this invite and enter the workspace.")
           }
         }
         return
@@ -124,13 +124,13 @@ export default function CoachInviteAcceptPage() {
         setFullName(onboardingResult.data.displayName || invitePreview.email.split("@")[0] || "")
         setRequiresPassword(false)
         setStage("setup")
-        setMessage("Complete your coach setup before entering the workspace.")
+        setMessage(invitePreview.role === "club-admin" ? "Confirm your name before opening your club." : "Complete your coach setup before entering the workspace.")
         return
       }
 
       if (!cancelled) {
         setStage("accepted")
-        setMessage("Invite accepted. Your coach workspace is ready.")
+        setMessage(invitePreview.role === "club-admin" ? "Invite accepted. You are a club admin now." : "Invite accepted. Your coach workspace is ready.")
       }
     }
 
@@ -146,6 +146,10 @@ export default function CoachInviteAcceptPage() {
     if (preview.teamName) parts.push(preview.teamName)
     return parts.join(", ")
   }, [preview])
+
+  // A club admin lands on the club dashboard, a coach on theirs.
+  const isAdminInvite = preview?.role === "club-admin"
+  const homeAfterJoining = isAdminInvite ? "/club-admin/dashboard" : "/coach/dashboard"
 
   const handleClaimWithPassword = async () => {
     if (!preview) return
@@ -212,7 +216,7 @@ export default function CoachInviteAcceptPage() {
       return
     }
 
-    navigate("/coach/dashboard", { replace: true })
+    navigate(homeAfterJoining, { replace: true })
   }
 
   const handleExistingCoachSetup = async () => {
@@ -230,7 +234,7 @@ export default function CoachInviteAcceptPage() {
       return
     }
 
-    navigate("/coach/dashboard", { replace: true })
+    navigate(homeAfterJoining, { replace: true })
   }
 
   const handleSetupSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -245,7 +249,7 @@ export default function CoachInviteAcceptPage() {
         ? "This invite needs a second look"
         : preview
           ? `Join ${preview.organizationName}`
-          : "Your coach invite"
+          : "Your invite"
 
   const steps = [
     {
@@ -254,11 +258,11 @@ export default function CoachInviteAcceptPage() {
     },
     {
       title: "You accept with that same email",
-      body: "Your team access is tied to the exact email this invite was sent to.",
+      body: isAdminInvite ? "Your access to the club is tied to the exact email this invite was sent to." : "Your team access is tied to the exact email this invite was sent to.",
     },
     {
       title: "You land on your dashboard",
-      body: "It walks you through your roster, your first plan and your first test week.",
+      body: isAdminInvite ? "From there you manage the club's people, teams and billing." : "It walks you through your roster, your first plan and your first test week.",
     },
   ]
 
@@ -280,7 +284,8 @@ export default function CoachInviteAcceptPage() {
               <span className="break-all">{preview.email}</span>
             </Fact>
             <Fact label="Club">{preview.organizationName}</Fact>
-            <Fact label="Team access">{preview.teamName ?? "General coach access"}</Fact>
+            <Fact label="Joining as">{isAdminInvite ? "Club admin" : "Coach"}</Fact>
+            <Fact label="Team access">{preview.teamName ?? (isAdminInvite ? "Every team, as club admin" : "General coach access")}</Fact>
           </FactList>
         </Section>
       ) : null}
@@ -316,13 +321,15 @@ export default function CoachInviteAcceptPage() {
 
       {stage === "accepted" ? (
         <>
-          <Notice tone="success">{inviteSummary ? `You now coach at ${inviteSummary}.` : "Your invite is accepted."}</Notice>
+          <Notice tone="success">
+            {isAdminInvite && preview ? `You are now a club admin of ${preview.organizationName}.` : inviteSummary ? `You now coach at ${inviteSummary}.` : "Your invite is accepted."}
+          </Notice>
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={() => navigate("/coach/dashboard")}>
-              Open coach dashboard
+            <Button variant="primary" onClick={() => navigate(homeAfterJoining)}>
+              {isAdminInvite ? "Open club dashboard" : "Open coach dashboard"}
               <ArrowRight className="size-5" weight="bold" aria-hidden />
             </Button>
-            <LinkButton to="/coach/teams">Open teams</LinkButton>
+            <LinkButton to={isAdminInvite ? "/club-admin/teams" : "/coach/teams"}>Open teams</LinkButton>
           </div>
         </>
       ) : null}
