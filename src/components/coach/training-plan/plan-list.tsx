@@ -22,6 +22,7 @@ export function PlanList({
   onArchive,
   onDelete,
   onPrint,
+  onSaveAsTemplate,
   onResumeUnsaved,
   onDiscardUnsaved,
 }: {
@@ -39,6 +40,7 @@ export function PlanList({
   onArchive: (plan: PlanListItem) => void
   onDelete: (plan: PlanListItem) => void
   onPrint: (plan: PlanListItem) => void
+  onSaveAsTemplate: (plan: PlanListItem) => void
   onResumeUnsaved: () => void
   onDiscardUnsaved: () => void
 }) {
@@ -152,6 +154,7 @@ export function PlanList({
                       items={[
                         ...(editable ? [{ label: plan.status === "draft" ? "Continue building" : "Edit plan", onSelect: () => onOpen(plan), disabled: busy }] : []),
                         { label: "Duplicate", onSelect: () => onDuplicate(plan), disabled: busy },
+                        { label: "Save as template", onSelect: () => onSaveAsTemplate(plan), disabled: busy },
                         { label: "Print or save as PDF", onSelect: () => onPrint(plan), disabled: busy },
                         ...(plan.status === "published" ? [{ label: "Archive", onSelect: () => onArchive(plan), disabled: busy }] : []),
                         { label: "Delete", danger: true, onSelect: () => setConfirmDeleteId(plan.id), disabled: busy },

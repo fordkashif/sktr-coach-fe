@@ -14,6 +14,7 @@ import {
   FilterBar,
   FilterChips,
   InlineConfirm,
+  LinkButton,
   List,
   Notice,
   ReadinessText,
@@ -40,6 +41,8 @@ import {
   type AthleteInviteStatus,
   type TeamAthleteInvite,
 } from "@/lib/data/athlete/invite-data"
+import { attendanceRateText, type AttendanceRate } from "@/lib/data/coach/attendance"
+import { ATTENDANCE_CHANGED_EVENT, getTeamAttendanceRates } from "@/lib/data/coach/attendance-data"
 import { getTeamRoster, type RosterAthlete, type TeamRoster } from "@/lib/data/coach/roster-data"
 import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { sendInviteEmail } from "@/lib/data/invites/invite-email-data"
@@ -114,6 +117,22 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
   const [inviteFilter, setInviteFilter] = useState<InviteFilter>("all")
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null)
+  // Attendance over the last four weeks, by athlete. Extra: the roster shows without it.
+  const [attendance, setAttendance] = useState<Record<string, AttendanceRate>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () =>
+      void getTeamAttendanceRates(teamId).then((result) => {
+        if (!cancelled && result.ok) setAttendance(result.data)
+      })
+    load()
+    window.addEventListener(ATTENDANCE_CHANGED_EVENT, load)
+    return () => {
+      cancelled = true
+      window.removeEventListener(ATTENDANCE_CHANGED_EVENT, load)
+    }
+  }, [teamId])
 
   const loadRoster = useCallback(async () => {
     const result = await getTeamRoster(teamId)
@@ -238,6 +257,17 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         ),
     },
     { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
+    {
+      key: "attendance",
+      header: "Attendance",
+      align: "right",
+      phone: "hide",
+      // Present or late out of the sessions attendance was taken for, last 4 weeks. Excused days are left out.
+      cell: (athlete) => {
+        const rate = attendance[athlete.id]
+        return rate && rate.counted > 0 ? <span data-attendance-count>{attendanceRateText(rate)}</span> : <span className="text-sk-mute">None taken</span>
+      },
+    },
     { key: "last", header: "Last session", align: "right", phone: "hide", cell: (athlete) => shortDate(athlete.lastSessionOn) ?? "None in 4 weeks" },
   ]
 
@@ -291,10 +321,13 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         title={name}
         lede={lede}
         actions={
-          <Button variant="primary" onClick={() => openAdd("email")}>
-            <UserPlus className="size-5" weight="bold" aria-hidden />
-            Add athletes
-          </Button>
+          <>
+            {athletes.length > 0 ? <LinkButton to={`/coach/teams/${teamId}/attendance`}>Take attendance</LinkButton> : null}
+            <Button variant="primary" onClick={() => openAdd("email")}>
+              <UserPlus className="size-5" weight="bold" aria-hidden />
+              Add athletes
+            </Button>
+          </>
         }
       />
 

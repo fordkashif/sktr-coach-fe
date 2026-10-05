@@ -7,6 +7,10 @@ import {
   validateBasics,
   type PlanDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { useSearchParams } from "react-router-dom"
+import { notify } from "@/components/sk"
+import { getPlanTemplate, listPlanTemplates, markPlanTemplateUsed, savePlanAsTemplate } from "@/lib/data/training-plan/plan-template-data"
+import { countAthleteAdjustments, type PlanTemplateSummary } from "@/lib/data/training-plan/plan-templates"
 import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { PlanBuilder } from "./plan-builder"
@@ -15,6 +19,7 @@ import { PlanPrintDialog } from "./plan-print"
 import { PlanPublish, PlanPublished } from "./plan-publish"
 import { PlanSetup } from "./plan-setup"
 import type { PlanDirectory, PlanListItem, PlanStorageAdapter } from "./storage"
+import { TemplateDetailsDialog } from "./template-details-dialog"
 
 type View = "list" | "setup" | "build" | "publish" | "done"
 type Busy = null | "opening" | "saving" | "publishing"
@@ -92,6 +97,12 @@ export function PlanWorkspace({
   // The plan the print dialog is open for, and the week it starts on.
   const [printing, setPrinting] = useState<{ plan: PlanDraft; week: number } | null>(null)
   const opening = useRef(false)
+  // Templates offered when starting a plan (null while they load), and the plan being saved as one.
+  const [templates, setTemplates] = useState<PlanTemplateSummary[] | null>(null)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [setupTemplateId, setSetupTemplateId] = useState<string | null>(null)
+  const [templateSource, setTemplateSource] = useState<PlanDraft | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Only the newest load may land, so a slow answer for the last team never overwrites the new one.
   const refreshRun = useRef(0)
@@ -190,13 +201,66 @@ export function PlanWorkspace({
     setView("build")
   }
 
-  const startNew = () => {
-    setPlan(createEmptyPlan(selectedTeamId ?? directory.teams[0]?.id ?? ""))
-    setIsNewSetup(true)
-    setDirty(false)
-    setActionError(null)
-    setView("setup")
+  const startNew = useCallback(
+    (fromTemplateId: string | null = null) => {
+      setPlan(createEmptyPlan(selectedTeamId ?? directory.teams[0]?.id ?? ""))
+      setIsNewSetup(true)
+      setDirty(false)
+      setActionError(null)
+      setSetupTemplateId(fromTemplateId)
+      setTemplates(null)
+      setTemplatesError(null)
+      setView("setup")
+      void listPlanTemplates().then((result) => {
+        if (!result.ok) return setTemplatesError(`Could not load the templates: ${result.error.message}`)
+        setTemplates(result.data.filter((template) => !template.archived))
+      })
+    },
+    [directory.teams, selectedTeamId],
+  )
+
+  // "Start a plan from it" on the Templates screen lands here with the template in the address.
+  const linkedTemplateId = searchParams.get("template")
+  useEffect(() => {
+    if (!linkedTemplateId || loading) return
+    setSearchParams({}, { replace: true })
+    if (view === "list") startNew(linkedTemplateId)
+  }, [linkedTemplateId, loading, setSearchParams, startNew, view])
+
+  const loadForTemplate = async (item: PlanListItem) => {
+    setBusyPlanId(item.id)
+    const result = await adapter.loadPlan(item.id)
+    setBusyPlanId(null)
+    if (!result.ok) return setListError(`Could not open "${item.name}": ${result.error.message}`)
+    setListError(null)
+    setTemplateSource(result.data)
   }
+
+  const templateDialog = templateSource ? (
+    <TemplateDetailsDialog
+      mode="save"
+      initial={{
+        name: templateSource.name,
+        description: "",
+        phase: null,
+        eventGroup: directory.teams.find((candidate) => candidate.id === templateSource.teamId)?.eventGroup ?? null,
+      }}
+      onClose={() => setTemplateSource(null)}
+      onSave={async (details) => {
+        const result = await savePlanAsTemplate(templateSource, details)
+        if (!result.ok) return result.error.message
+        const adjustments = countAthleteAdjustments(templateSource)
+        setTemplateSource(null)
+        notify(
+          `Saved "${result.data.name}" as a template`,
+          adjustments > 0
+            ? `Team, dates and ${adjustments === 1 ? "1 change for a single athlete" : `${adjustments} changes for single athletes`} were left out.`
+            : "Find it under Templates. Team and dates were left out.",
+        )
+        return null
+      }}
+    />
+  ) : null
 
   const loadForEdit = async (item: PlanListItem, asCopy: boolean) => {
     if (opening.current) return
@@ -317,11 +381,14 @@ export function PlanWorkspace({
         teams={directory.teams}
         isNew={isNewSetup}
         teamLocked={teamLocked}
+        templates={isNewSetup ? { list: templates, error: templatesError, initialId: setupTemplateId, load: getPlanTemplate } : undefined}
         onCancel={goBack}
-        onDone={(next) => {
+        onDone={(next, usedTemplateId) => {
           if (isNewSetup) {
             setIsNewSetup(false)
             enterBuilder(next, { dirty: true })
+            // "Last used" on the template. The plan itself keeps no tie to it.
+            if (usedTemplateId) void markPlanTemplateUsed(usedTemplateId)
           } else {
             setPlan(next)
             setDirty(true)
@@ -336,6 +403,7 @@ export function PlanWorkspace({
     return (
       <>
       {printDialog}
+      {templateDialog}
       <PlanBuilder
         key={builderKey}
         plan={plan}
@@ -360,6 +428,7 @@ export function PlanWorkspace({
           setView("publish")
         }}
         onPrint={(week) => setPrinting({ plan, week })}
+        onSaveAsTemplate={() => setTemplateSource(plan)}
       />
       </>
     )
@@ -399,6 +468,7 @@ export function PlanWorkspace({
   return (
     <>
     {printDialog}
+    {templateDialog}
     <PlanList
       plans={plans}
       teams={directory.teams}
@@ -408,7 +478,8 @@ export function PlanWorkspace({
       error={listError}
       busyPlanId={busyPlanId}
       unsaved={unsaved ? { name: unsaved.name } : null}
-      onNew={startNew}
+      onNew={() => startNew()}
+      onSaveAsTemplate={(item) => void loadForTemplate(item)}
       onOpen={(item) => void loadForEdit(item, false)}
       onDuplicate={(item) => void loadForEdit(item, true)}
       onArchive={(item) => void runListAction(item, "archive")}

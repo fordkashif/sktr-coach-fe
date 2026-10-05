@@ -339,7 +339,7 @@ test("coach can complete the training plan setup-build-review-publish flow", asy
 
   await page.getByLabel("Plan name").fill("Throws Preseason Block")
   await page.getByPlaceholder("Optional plan notes").fill("High emphasis on power and technical rhythm.")
-  await page.getByRole("tab", { name: "Template" }).click()
+  await page.getByRole("tab", { name: "Starter outline" }).click()
   await page.getByRole("button", { name: "Continue to build" }).click()
 
   await expect(page.getByRole("heading", { name: "Throws Preseason Block" })).toBeVisible()

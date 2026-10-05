@@ -1,6 +1,6 @@
 import { ArrowRight } from "@phosphor-icons/react"
 import { useState } from "react"
-import { Button, Field, FormActions, FormGrid, Input, Notice, Screen, ScreenHeader, Section, Segmented, Select, Textarea } from "@/components/sk"
+import { Button, Field, FormActions, FormGrid, Input, List, Notice, RadioRow, Screen, ScreenHeader, SearchInput, Section, Segmented, Select, SkeletonRows, Textarea } from "@/components/sk"
 import {
   EVENT_GROUPS,
   MAX_WEEKS,
@@ -9,11 +9,24 @@ import {
   setPlanWeeks,
   type PlanDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { planFromTemplate, weekdayName, weekdayOfIso, type PlanTemplate, type PlanTemplateSummary } from "@/lib/data/training-plan/plan-templates"
+import type { Result } from "@/lib/data/result"
 import type { EventGroup } from "@/lib/mock-data"
 import type { TeamOption } from "./storage"
-import { plural } from "./ui"
+import { plural, templateFacts } from "./ui"
 
-type StartFrom = "blank" | "template"
+/** Blank weeks, a generated outline for an event group, or one of the club's saved templates. */
+type StartFrom = "blank" | "outline" | "template"
+
+/** What a new plan can be started from. Left out when editing the details of an existing plan. */
+export type SetupTemplates = {
+  /** The club's templates that are in use. Null while they load. */
+  list: PlanTemplateSummary[] | null
+  error: string | null
+  /** A template to start on, picked on the Templates screen. */
+  initialId: string | null
+  load: (templateId: string) => Promise<Result<PlanTemplate>>
+}
 
 /** Plan basics. For a new plan this is step one; for an existing plan it edits the details. */
 export function PlanSetup({
@@ -21,6 +34,7 @@ export function PlanSetup({
   teams,
   isNew,
   teamLocked,
+  templates,
   onCancel,
   onDone,
 }: {
@@ -28,15 +42,20 @@ export function PlanSetup({
   teams: TeamOption[]
   isNew: boolean
   teamLocked: boolean
+  templates?: SetupTemplates
   onCancel: () => void
-  onDone: (next: PlanDraft) => void
+  /** `usedTemplateId` is set when the plan was filled in from a saved template. */
+  onDone: (next: PlanDraft, usedTemplateId?: string) => void
 }) {
   const [name, setName] = useState(plan.name)
   const [teamId, setTeamId] = useState(plan.teamId)
   const [startDate, setStartDate] = useState(plan.startDate)
   const [weeks, setWeeks] = useState(String(plan.weeks))
   const [notes, setNotes] = useState(plan.notes)
-  const [startFrom, setStartFrom] = useState<StartFrom>("blank")
+  const [startFrom, setStartFrom] = useState<StartFrom>(templates?.initialId ? "template" : "blank")
+  const [templateId, setTemplateId] = useState<string | null>(templates?.initialId ?? null)
+  const [templateSearch, setTemplateSearch] = useState("")
+  const [busy, setBusy] = useState(false)
   const team = teams.find((candidate) => candidate.id === teamId) ?? null
   const [eventGroup, setEventGroup] = useState<EventGroup>(team?.eventGroup ?? "Sprint")
   const [daysPerWeek, setDaysPerWeek] = useState("5")
@@ -46,15 +65,61 @@ export function PlanSetup({
   const weeksValid = Number.isInteger(weekCount) && weekCount >= 1 && weekCount <= MAX_WEEKS
   const dropped = weeksValid ? sessionsBeyondWeek(plan, weekCount) : 0
 
-  const submit = () => {
+  const templateList = templates?.list ?? null
+  const chosenTemplate = templateList?.find((candidate) => candidate.id === templateId) ?? null
+  const templateQuery = templateSearch.trim().toLowerCase()
+  const shownTemplates = (templateList ?? []).filter((candidate) => !templateQuery || candidate.name.toLowerCase().includes(templateQuery) || candidate.id === templateId)
+
+  // The template picked on the Templates screen sets the length and a name once the list is in.
+  const [appliedInitial, setAppliedInitial] = useState(false)
+  if (!appliedInitial && templates?.initialId && templateList) {
+    setAppliedInitial(true)
+    const initial = templateList.find((candidate) => candidate.id === templates.initialId)
+    if (initial) {
+      setWeeks(String(initial.weeks))
+      if (!name.trim()) setName(initial.name)
+    } else {
+      setTemplateId(null)
+    }
+  }
+
+  const chooseTemplate = (id: string) => {
+    const picked = templateList?.find((candidate) => candidate.id === id)
+    if (!picked) return
+    // The name follows the template until the coach types their own.
+    if (!name.trim() || name === chosenTemplate?.name) setName(picked.name)
+    setTemplateId(id)
+    setWeeks(String(picked.weeks))
+    setError(null)
+  }
+
+  const startWeekday = weekdayOfIso(startDate)
+  const builtFor = startFrom === "template" && chosenTemplate ? chosenTemplate.startWeekday : null
+  const weekdayHint =
+    builtFor !== null && startWeekday !== null && builtFor !== startWeekday
+      ? `This template was built to start on a ${weekdayName(builtFor)}. Starting on a ${weekdayName(startWeekday)} moves its sessions to other weekdays.`
+      : undefined
+
+  const submit = async () => {
+    if (busy) return
     if (!name.trim()) return setError("Give the plan a name.")
     if (!teamId) return setError("Choose a team for this plan.")
     if (!startDate) return setError("Pick a start date.")
     if (!weeksValid) return setError(`Weeks must be a number from 1 to ${MAX_WEEKS}.`)
     setError(null)
     let next: PlanDraft = setPlanWeeks({ ...plan, name: name.trim(), teamId, startDate, notes }, weekCount)
-    if (isNew && startFrom === "template") {
+    if (isNew && startFrom === "outline") {
       next = { ...next, sessions: createSkeletonSessions(weekCount, eventGroup, Number.parseInt(daysPerWeek, 10)) }
+    }
+    if (isNew && startFrom === "template") {
+      if (!templates || !templateId || !chosenTemplate) return setError("Choose a template, or start from blank weeks.")
+      setBusy(true)
+      const loaded = await templates.load(templateId)
+      setBusy(false)
+      if (!loaded.ok) return setError(`Could not open the template: ${loaded.error.message}`)
+      // A copy with its own ids, dated from the start date. The template itself is never touched.
+      next = setPlanWeeks(planFromTemplate(loaded.data, { teamId, startDate, name: name.trim(), notes }), weekCount)
+      return onDone(next, templateId)
     }
     onDone(next)
   }
@@ -73,7 +138,7 @@ export function PlanSetup({
         className="contents"
         onSubmit={(event) => {
           event.preventDefault()
-          submit()
+          void submit()
         }}
       >
         <Section title="Basics">
@@ -91,7 +156,7 @@ export function PlanSetup({
                 ))}
               </Select>
             </Field>
-            <Field label="Start date">
+            <Field label="Start date" hint={weekdayHint}>
               <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </Field>
             <Field label="Weeks" hint={dropped > 0 ? `Shortening the plan removes ${plural(dropped, "session")} after week ${weekCount}.` : `1 to ${MAX_WEEKS}`}>
@@ -104,7 +169,7 @@ export function PlanSetup({
         </Section>
 
         {isNew ? (
-          <Section title="Start from" hint="A template fills every week with sessions you can then edit.">
+          <Section title="Start from" hint="A starter outline or one of your club's templates fills every week with sessions you can then edit.">
             <Segmented<StartFrom>
               label="Start from"
               className="mt-2 self-start"
@@ -112,10 +177,44 @@ export function PlanSetup({
               onChange={setStartFrom}
               options={[
                 { value: "blank", label: "Blank weeks" },
+                { value: "outline", label: "Starter outline" },
                 { value: "template", label: "Template" },
               ]}
             />
             {startFrom === "template" ? (
+              templates?.error ? (
+                <Notice tone="error" className="mt-4">
+                  {templates.error}
+                </Notice>
+              ) : templateList === null ? (
+                <SkeletonRows rows={2} label="Loading templates" />
+              ) : templateList.length === 0 ? (
+                <p className="mt-4 text-[0.9375rem] text-sk-mute">Your club has no templates yet. Open a plan and choose Save as template, and it is offered here.</p>
+              ) : (
+                <div className="mt-3 flex flex-col gap-2">
+                  {templateList.length > 6 ? (
+                    <SearchInput aria-label="Search templates" placeholder="Search templates" value={templateSearch} onChange={(event) => setTemplateSearch(event.target.value)} />
+                  ) : null}
+                  <div role="radiogroup" aria-label="Template">
+                    <List>
+                      {shownTemplates.map((candidate) => (
+                        <RadioRow
+                          key={candidate.id}
+                          name="plan-template"
+                          value={candidate.id}
+                          checked={candidate.id === templateId}
+                          onChange={chooseTemplate}
+                          title={candidate.name}
+                          subtitle={templateFacts(candidate)}
+                        />
+                      ))}
+                    </List>
+                  </div>
+                  <p className="text-sm text-sk-mute">You get your own copy, dated from the start date. Changing your plan never changes the template.</p>
+                </div>
+              )
+            ) : null}
+            {startFrom === "outline" ? (
               <FormGrid className="mt-4">
                 <Field label="Event group">
                   <Select value={eventGroup} onChange={(event) => setEventGroup(event.target.value as EventGroup)}>
@@ -144,8 +243,8 @@ export function PlanSetup({
           <Button variant="quiet" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
-            {isNew ? "Continue to build" : "Save details"}
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Opening the template..." : isNew ? "Continue to build" : "Save details"}
             <ArrowRight className="size-5" weight="bold" aria-hidden />
           </Button>
         </FormActions>

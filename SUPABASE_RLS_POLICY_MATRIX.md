@@ -776,3 +776,33 @@ Verified on a throwaway Postgres 16 with every earlier migration applied and thi
 Athletes never read `exercise_library`: the cue and the link are copied onto their session rows when the session is written.
 
 Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 82 assertions as each identity (the athlete, a team mate, the team's coach, a coach of another team, a deactivated coach, the club admin, coach and admin of another club, coach and athlete of a suspended club, signed out).
+
+## Plan templates (20261012090000_plan_templates.sql)
+
+| Object | Athlete | Coach | Club admin | Other club, deactivated, signed out | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `plan_templates` select (`plan_templates_select_staff`) | none | every template of their club (shared by all coaches of a club, not per team) | every template of their club | none | `tenant_id = current_tenant_id() and is_coach_or_admin()`. |
+| `plan_templates` insert (`plan_templates_insert_staff`) | none | own club, as themselves | own club, as themselves | none | A trigger sets the creator and the creator's name from the caller, whatever the browser sends. |
+| `plan_templates` update and delete (`plan_templates_update_owner_or_admin`, `plan_templates_delete_owner_or_admin`) | none | only templates they made | any template of their club | none | `created_by_user_id = auth.uid() or is_club_admin()`. The trigger keeps club and creator fixed on update. |
+| `mark_plan_template_used(uuid)` | refused | allowed (own club, any template) | allowed (own club) | refused, or false for another club's template | Security definer, `search_path = public`, starts with `assert_caller_active()`. Writes `last_used_at` and nothing else. No execute for `anon`. |
+| `plan_templates_before_write()` | n/a | n/a | n/a | n/a | Trigger function, no execute for clients. |
+
+Two check constraints guard the content: `plan_templates_structure_shape` (an object with a `sessions` list, at most 1.5 MB) and `plan_templates_no_squad_data` (no `assign` key and no `overrides` on any exercise row), so a template can never carry athlete ids. Nothing is seeded.
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 72 assertions as each identity (the creator, a coach of another team, a coach of both teams, a deactivated coach, two club admins, an athlete, the coach, admin and athlete of another club, a coach of a suspended club, signed out).
+
+## Coach notes, attendance and logging for an athlete (20261012100000)
+
+| Object | Athlete | Coach | Club admin | Other club, deactivated, signed out | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `coach_athlete_notes` select (`coach_athlete_notes_select_staff`) | none, including notes about themselves | notes about athletes currently on a team they coach | every note of their club | none | There is no athlete policy at all. `is_club_admin() or athlete_id = any(current_coach_athlete_ids())`. After a move the old team's coaches lose the notes and the new team's coaches gain them. |
+| `coach_athlete_notes` insert (`coach_athlete_notes_insert_staff`) | none | athletes on their teams, as themselves | any athlete of their club, as themselves | none | A trigger sets club and author from the caller, whatever the browser sends. |
+| `coach_athlete_notes` update (`coach_athlete_notes_update_author`) | none | only notes they wrote | only notes they wrote | none | Text, day and pin. Athlete, club, author and created time are fixed by trigger. |
+| `coach_athlete_notes` delete (`coach_athlete_notes_delete_author_or_admin`) | none | only notes they wrote | any note of their club | none | |
+| `athlete_attendance` select (`athlete_attendance_select_own_or_staff`) | own rows only | marks taken for a team they coach, and marks of athletes now on their teams | every mark of their club | none | |
+| `athlete_attendance` insert, update, delete (`athlete_attendance_insert_staff`, `_update_staff`, `_delete_staff`) | none | teams they coach | any team of their club | none | Trigger: the athlete must be on that team, the day cannot be more than a day ahead, `marked_by_user_id` is the caller, team, athlete and day never change. |
+| `session_row_logs` insert and update (`session_row_logs_staff_insert_team`, `session_row_logs_staff_update_team`) | unchanged (own rows) | any athlete on a team they coach (before: only athletes without a login) | any athlete of their club | none | The row must belong to a session of that same athlete. |
+| `session_row_logs.logged_by_user_id`, `session_completions.completed_by_user_id` | always the caller | always the caller | always the caller | n/a | Triggers `stamp_session_row_log_author` and `stamp_session_completion_author`. Who finished a session never changes on a later edit. |
+| `get_session_logged_by(uuid)` | own sessions | sessions of athletes on their teams | sessions of their club | no row | Security definer, `search_path = public`, starts with `assert_caller_active()`. Returns the staff member who entered a session, or nothing when the athlete logged it. No execute for `anon`. |
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 95 assertions as each identity (two coaches of the team, a coach of another team, a deactivated coach, a club admin, the athlete, a team mate, the coach and admin of another club, a coach of a suspended club, signed out).
