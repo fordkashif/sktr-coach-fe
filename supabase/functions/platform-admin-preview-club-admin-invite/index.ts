@@ -99,12 +99,13 @@ Deno.serve(async (request) => {
   })
 
   const [{ data: authData, error: authError }, payloadResult] = await Promise.all([
-    userClient.auth.getUser(),
+    userClient.auth.getUser(authorization.replace(/^Bearer\s+/i, "")),
     request.json() as Promise<PreviewPayload>,
   ])
 
   if (authError || !authData.user) {
-    return new Response(JSON.stringify({ error: "Invalid authenticated user." }), {
+    console.error("caller check failed:", authError?.message ?? "no user")
+    return new Response(JSON.stringify({ error: "Your sign-in could not be confirmed. Sign out, sign in again, then retry." }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     })

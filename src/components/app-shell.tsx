@@ -262,7 +262,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (backendMode === "supabase") {
       const supabase = getBrowserSupabaseClient()
       if (supabase) {
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: "local" })
       }
     }
     if (backendMode === "mock") {
