@@ -70,17 +70,17 @@ const clubAdminLinks: ShellLink[] = [
   { href: "/club-admin/users", label: "People", icon: UsersThree },
   { href: "/club-admin/teams", label: "Teams", icon: ClipboardText },
   { href: "/club-admin/reports", label: "Reports", icon: ChartBar },
-  { href: "/club-admin/audit", label: "Audit", icon: ListChecks },
+  { href: "/club-admin/audit", label: "Activity", icon: ListChecks },
   { href: "/club-admin/billing", label: "Billing", icon: Receipt },
 ]
 
 const platformAdminLinks: ShellLink[] = [
   { href: "/platform-admin/dashboard", label: "Dashboard", icon: SquaresFour },
   { href: "/platform-admin/requests", label: "Requests", icon: Tray },
-  { href: "/platform-admin/tenants", label: "Tenants", icon: Buildings },
+  { href: "/platform-admin/tenants", label: "Clubs", icon: Buildings },
   { href: "/platform-admin/billing", label: "Billing", icon: Receipt },
-  { href: "/platform-admin/commercial", label: "Commercial", icon: Briefcase },
-  { href: "/platform-admin/audit", label: "Audit", icon: ListChecks },
+  { href: "/platform-admin/commercial", label: "Packages", icon: Briefcase },
+  { href: "/platform-admin/audit", label: "Activity", icon: ListChecks },
 ]
 
 function getRoleLabel(role: string) {
@@ -652,7 +652,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     {...prefetchHandlers(link.label)}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "flex flex-col items-center justify-center gap-1 rounded-[14px] px-1 py-2 text-xs font-bold transition-colors",
+                      "flex flex-col items-center justify-center gap-1 rounded-[14px] py-2 font-bold transition-colors",
+                      links.length > 5 ? "px-0 text-[11px] tracking-tight" : "px-1 text-xs",
                       isActive ? "bg-sk-blue text-white" : "text-sk-mute hover:text-sk-ink",
                     )}
                   >

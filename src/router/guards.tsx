@@ -2,11 +2,13 @@ import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { evaluateAccess, type AccessResult } from "@/lib/access-control"
 import { SESSION_UPDATED_EVENT } from "@/lib/auth-session"
+import { AccessPausedPage } from "@/pages/access-paused"
 import { getCurrentGuardAuthContext } from "@/router/guard-auth-context"
 
 export function GuardedAuthenticatedLayout() {
   const location = useLocation()
   const [access, setAccess] = useState<AccessResult | null>(null)
+  const [role, setRole] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -18,7 +20,10 @@ export function GuardedAuthenticatedLayout() {
         ...authContext,
       })
 
-      if (!cancelled) setAccess(nextAccess)
+      if (!cancelled) {
+        setAccess(nextAccess)
+        setRole(authContext.role)
+      }
     }
 
     void resolveAccess()
@@ -51,6 +56,10 @@ export function GuardedAuthenticatedLayout() {
 
   if (!access) {
     return null
+  }
+
+  if (!access.allowed && access.blocked) {
+    return <AccessPausedPage block={access.blocked} isClubAdmin={role === "club-admin"} />
   }
 
   if (!access.allowed) {

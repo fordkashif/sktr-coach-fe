@@ -32,3 +32,12 @@ export const tenantLifecycleLabels: Record<TenantLifecycleStatus, string> = {
   suspended: "Suspended",
   cancelled: "Cancelled",
 }
+
+/**
+ * A suspended or cancelled club is blocked in the database: current_tenant_id() answers null for
+ * its members, so every tenant-scoped read and write returns nothing. The app shows a notice
+ * instead of empty screens. Any other status, and a club with no provisioning record, is open.
+ */
+export function isTenantAccessBlocked(status: string | null | undefined): status is "suspended" | "cancelled" {
+  return status === "suspended" || status === "cancelled"
+}

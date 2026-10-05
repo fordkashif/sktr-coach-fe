@@ -219,7 +219,8 @@ export function reviewMockTenantProvisionRequest(params: {
 }) {
   const requests = loadMockPlatformAdminRequests()
   const target = requests.find((item) => item.id === params.requestId)
-  if (!target) return null
+  // Same rule as the Supabase RPCs: only a pending request can be reviewed or provisioned.
+  if (!target || target.status !== "pending") return null
 
   const reviewedAt = new Date().toISOString()
   const next = requests.map((item) =>
@@ -228,6 +229,7 @@ export function reviewMockTenantProvisionRequest(params: {
               ...item,
               status: params.status,
               lifecycleStatus: (params.status === "approved" ? "approved_pending_billing" : "cancelled") as TenantLifecycleStatus,
+              billingStatus: (params.status === "approved" ? item.billingStatus : "cancelled") as TenantBillingStatus,
               reviewNotes: params.reviewNotes?.trim() || null,
               reviewedAt,
             }
@@ -260,7 +262,8 @@ export function approveAndProvisionMockTenantRequest(params: {
 }) {
   const requests = loadMockPlatformAdminRequests()
   const target = requests.find((item) => item.id === params.requestId)
-  if (!target) return null
+  // Same rule as the Supabase RPCs: only a pending request can be reviewed or provisioned.
+  if (!target || target.status !== "pending") return null
 
   const reviewedAt = new Date().toISOString()
   const sentAt = new Date().toISOString()
@@ -595,4 +598,13 @@ export function reviewMockPackageUpgradeRequest(params: {
   })
 
   return nextUpgrades.find((item) => item.id === params.upgradeRequestId) ?? null
+}
+
+/**
+ * Lifecycle status of a mock tenant, from the newest mock provisioning record that created it.
+ * Null when no record matches (the built-in demo club has none), which callers treat as open.
+ */
+export function getMockTenantLifecycleStatus(tenantId: string | null): TenantLifecycleStatus | null {
+  if (!tenantId) return null
+  return loadMockPlatformAdminRequests().find((item) => item.provisionedTenantId === tenantId)?.lifecycleStatus ?? null
 }

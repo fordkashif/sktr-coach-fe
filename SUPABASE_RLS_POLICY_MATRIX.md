@@ -28,6 +28,12 @@ Defined in SQL migration:
 
 These helpers are used across policies to avoid duplicated logic.
 
+Since migration `20261005180000_tenant_lifecycle_enforcement.sql` all four helpers answer `null` / `false` when either of these is true, which closes every tenant-scoped policy at once:
+- the caller's profile has `is_active = false` (a club admin turned their access off), or
+- the latest `tenant_provision_requests` row of the caller's tenant (by `provisioned_tenant_id`, newest `created_at`) has `lifecycle_status` `suspended` or `cancelled`.
+
+A tenant with no provisioning row (legacy tenants) and every other lifecycle status count as open. `is_coach_or_admin()` and `is_club_admin()` read `profiles` directly instead of calling `current_app_role()`, because the nested call was re-planned on every row.
+
 ## Access Matrix (Table-by-Table)
 
 Legend:
@@ -175,6 +181,41 @@ All are security definer functions with `set search_path = public`, executable b
 - used by package limit enforcement, because the direct `R` on `tenant_provision_requests` is limited to the original requestor and platform admins.
 
 `complete_current_club_admin_mock_billing_setup(...)`: unchanged except that it now accepts lifecycle status `billing_failed` as well as `approved_pending_billing`, so a club sent back to billing setup after a failed attempt can retry.
+
+### Tenant lifecycle enforcement (migration `20261005180000_tenant_lifecycle_enforcement.sql`)
+
+Who is blocked, and what they can still reach:
+
+| Caller | Tenant-scoped tables (teams, athletes, sessions, plans, test weeks, wellness, club profile, invites, audit...) | Still allowed |
+|---|---|---|
+| member with `profiles.is_active = false` | no `R`, no `C/U/D` | `R` own `profiles` row, own notifications and notification preferences, `get_current_tenant_package()` |
+| any member of a `suspended` or `cancelled` club | no `R`, no `C/U/D` | the same, plus `get_current_club_admin_activation_state()` for the club admin. `get_current_tenant_package()` returns the `suspended` / `cancelled` status, which the app uses to show its "access is paused" notice |
+| member of a club with any other status, or with no provisioning row | unchanged | unchanged |
+
+Not changed by this migration (they do not use the helpers): `profiles_select_own`, `profiles_insert_self_bootstrap`, the public invite previews, `accept_coach_invite`, `accept_athlete_invite` and the other `security definer` functions that look the caller up in `profiles` themselves. Those functions do not check suspension, and apart from the club admin functions of `20261005140000` they do not check `is_active` either. Accepting a new invite sets the profile active again, which is how a club admin lets a deactivated person back in.
+
+`tenant_package_upgrade_requests`: the two club admin policies now also require the caller's profile to be active.
+
+Platform admin functions:
+
+- `get_platform_tenant_sizes()` returns `(tenant_id, team_count, coach_count, athlete_count)` for every tenant. Platform admins only (`is_platform_admin()`); anyone else gets zero rows, `anon` cannot execute it. Counts only: teams that are not archived, active coach profiles, all athletes rows.
+- `set_tenant_request_lifecycle_state(...)`: the caller must pass `is_platform_admin()` (same rule as every other platform function). Only approved requests, and only these moves:
+
+  | From | To |
+  |---|---|
+  | `approved_pending_billing` | `billing_failed`, `cancelled` |
+  | `billing_failed` | `approved_pending_billing`, `cancelled` |
+  | `active_onboarding` | `active`, `suspended`, `billing_failed`, `cancelled` |
+  | `active` | `suspended`, `billing_failed`, `cancelled` |
+  | `suspended` | `active`, `active_onboarding`, `cancelled`, or back to `previous_lifecycle_status` |
+  | `cancelled` | `approved_pending_billing`, `active` |
+
+  A move to the current status, and a move to `active_onboarding`, `active` or `suspended` for a request with no tenant, are refused. `pending_review` is left through `review_tenant_provision_request` only.
+- `review_tenant_provision_request(...)` writes a `tenant_provision_request_reviewed` platform audit event again (target = club name; metadata `status`, `to_status`, `from_status`, `lifecycle_status`, `review_notes`, `requestor_email`, `tenant_provision_request_id`).
+- `update_current_club_admin_onboarding_step('complete')` moves the tenant's latest provisioning row from `active_onboarding` to `active` and writes a `tenant_request_lifecycle_updated` audit event with actor role `club-admin`. Any other current status is left alone, so repeating the call changes nothing.
+- `insert_platform_audit_event(...)`: `EXECUTE` revoked from `public`, `anon` and `authenticated`. It is reached only through other `security definer` functions (and `service_role`). `platform_audit_events` has no insert policy, so there is no direct way for an API user to write an audit row.
+
+Still open: `tenant_provision_requests_platform_admin_update` lets a platform admin update provisioning rows directly through the API, which bypasses the allowed-moves table above. The app only uses it for invite tracking columns.
 
 ## Service-Role Only Operations (Documented)
 

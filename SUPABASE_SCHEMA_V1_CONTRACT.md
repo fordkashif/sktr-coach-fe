@@ -173,6 +173,19 @@ Functions only. No tables, columns, constraints or data were changed.
 - `get_current_tenant_package()` returns `table (requested_plan text, lifecycle_status text)`. `requested_plan` is the plan in force: approving a package upgrade request rewrites it.
 - `complete_current_club_admin_mock_billing_setup(text, text, text)`: lifecycle transition is now `approved_pending_billing | billing_failed -> active_onboarding`.
 
+## Tenant Lifecycle Enforcement (migration `20261005180000_tenant_lifecycle_enforcement.sql`)
+
+No table or column changes. One new index, one new function, redefined functions, two altered policies and one guarded data change.
+
+- Index `tenant_provision_requests_tenant_created_idx` on `tenant_provision_requests (provisioned_tenant_id, created_at desc)`: "latest provisioning row of a tenant" is now read inside the RLS helpers.
+- `current_tenant_id()`, `current_app_role()`, `is_coach_or_admin()`, `is_club_admin()`: return `null` / `false` for an inactive profile and for a tenant whose latest provisioning row is `suspended` or `cancelled`. Signatures unchanged.
+- Lifecycle meaning from this migration on: `suspended` and `cancelled` block every member of the club in the database. `approved_pending_billing`, `billing_failed`, `active_onboarding` and `active` do not. A tenant without a provisioning row is treated as active.
+- `active_onboarding -> active` happens when the club admin finishes setup (`update_current_club_admin_onboarding_step('complete')`). One-off data change in the migration: clubs with `club_profiles.onboarding_completed_at` set whose latest provisioning row was still `active_onboarding` were moved to `active`, each with a `tenant_request_lifecycle_updated` audit event (actor role `system`, metadata `source = migration_20261005180000`).
+- `get_platform_tenant_sizes()` returns `table (tenant_id uuid, team_count bigint, coach_count bigint, athlete_count bigint)`, platform admins only.
+- `set_tenant_request_lifecycle_state(uuid, text, text, text)`: admin check through `is_platform_admin()`, allowed moves listed in `SUPABASE_RLS_POLICY_MATRIX.md`. The audit metadata gains `previous_lifecycle_status`.
+- `review_tenant_provision_request(uuid, text, text)`: writes platform audit event `tenant_provision_request_reviewed` again.
+- `insert_platform_audit_event(...)`: internal. Not executable by `anon` or `authenticated`.
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

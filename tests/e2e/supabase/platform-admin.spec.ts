@@ -17,7 +17,7 @@ test("platform admin session can access dashboard landing page", async ({ browse
 
   await page.goto("/platform-admin")
   await expect(page).toHaveURL(/\/platform-admin\/dashboard$/)
-  await expect(page.locator("body")).toContainText("System control, without tenant leakage.")
+  await expect(page.getByRole("heading", { level: 1, name: "Platform" })).toBeVisible()
 
   await context.close()
 })
@@ -33,7 +33,7 @@ test("platform admin session can access request queue", async ({ browser }) => {
 
   await page.goto("/platform-admin/requests")
   await expect(page).toHaveURL(/\/platform-admin\/requests$/)
-  await expect(page.locator("body")).toContainText("Request intake with real review control.")
+  await expect(page.getByRole("heading", { level: 1, name: "Club requests" })).toBeVisible()
 
   await context.close()
 })
@@ -49,7 +49,7 @@ test("platform admin session can access platform audit", async ({ browser }) => 
 
   await page.goto("/platform-admin/audit")
   await expect(page).toHaveURL(/\/platform-admin\/audit$/)
-  await expect(page.locator("body")).toContainText("Platform audit, not tenant guesswork.")
+  await expect(page.locator("body")).toContainText("Platform activity")
 
   await context.close()
 })
@@ -90,18 +90,23 @@ test("platform admin can review a newly submitted tenant request and see it in p
   const requestsPage = await adminContext.newPage()
 
   await requestsPage.goto("/platform-admin/requests")
-  const requestCard = requestsPage.locator("article").filter({ hasText: organizationName }).first()
-  await expect(requestCard).toContainText(requestorEmail)
+  await requestsPage.getByLabel("Search requests").fill(organizationName)
+  const requestRow = requestsPage.locator("[data-request-row]").filter({ hasText: organizationName }).first()
+  await expect(requestRow).toContainText(requestorEmail)
+  await requestRow.click()
 
-  await requestCard.getByRole("button", { name: "Reject" }).click()
-  await expect(requestCard).toContainText("rejected")
-  await expect(requestsPage.locator("body")).toContainText(`Request rejected for ${requestorEmail}.`)
+  const detail = requestsPage.getByRole("dialog").filter({ hasText: organizationName })
+  await detail.getByRole("button", { name: "Decline", exact: true }).click()
+  await detail.getByLabel(/Why are you declining/).fill("Declined by Playwright to verify the review flow.")
+  await detail.getByRole("button", { name: "Decline request" }).click()
+  await expect(detail.getByRole("status")).toContainText(`${organizationName} was declined.`)
+  await expect(requestRow).toContainText("Declined")
 
   const auditPage = await adminContext.newPage()
   await auditPage.goto("/platform-admin/audit")
-  await auditPage.getByPlaceholder("Search audit trail").fill(organizationName)
-  await expect(auditPage.locator("body")).toContainText("tenant provision request submitted")
-  await expect(auditPage.locator("body")).toContainText("tenant provision request reviewed")
+  await auditPage.getByLabel("Search activity").fill(organizationName)
+  await expect(auditPage.locator("body")).toContainText("Asked for a club workspace")
+  await expect(auditPage.locator("body")).toContainText("Declined a club request")
   await expect(auditPage.locator("body")).toContainText(requestorEmail)
 
   await adminContext.close()
@@ -124,9 +129,9 @@ test("platform admin request queue export is logged in platform audit", async ({
 
   const auditPage = await adminContext.newPage()
   await auditPage.goto("/platform-admin/audit")
-  await auditPage.getByPlaceholder("Search audit trail").fill("platform_audit_export_csv")
-  await expect(auditPage.locator("body")).toContainText("platform audit export csv")
-  await expect(auditPage.locator("body")).toContainText("request-queue")
+  await auditPage.getByLabel("Search activity").fill("platform_audit_export_csv")
+  await expect(auditPage.locator("body")).toContainText("Downloaded a CSV")
+  await expect(auditPage.locator("body")).toContainText("Club requests")
 
   await adminContext.close()
 })
