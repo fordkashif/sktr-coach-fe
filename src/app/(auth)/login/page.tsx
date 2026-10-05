@@ -28,6 +28,7 @@ import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionAccess, resolveSessionActor } from "@/lib/supabase/actor"
 import { cn } from "@/lib/utils"
+import { REQUEST_REVIEW_TIME } from "@/lib/support"
 
 type DemoCredential = {
   email: string
@@ -857,7 +858,7 @@ export default function LoginPage() {
               {[
                 {
                   title: "We review your request",
-                  body: "Usually within two working days. If we need anything else we will email you.",
+                  body: "We reply within 48 hours. If we need anything else we will email you.",
                 },
                 {
                   title: "You get a setup link by email",
@@ -899,7 +900,7 @@ export default function LoginPage() {
             </button>
             <h1 className="sk-title">Request access for your club</h1>
             <p className="sk-lede">
-              Tell us who you are and how big your club is. We review each request and email you a setup link, usually within two working days.
+              Tell us who you are and how big your club is. We review each request and email you a setup link, {REQUEST_REVIEW_TIME}.
             </p>
           </header>
 

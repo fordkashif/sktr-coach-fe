@@ -12,6 +12,7 @@ import {
 import { getBackendMode } from "@/lib/supabase/config"
 import { cn } from "@/lib/utils"
 import { loadProfileSafe } from "../../state"
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 
 function limit(value: number, singular: string, plural: string) {
   if (!Number.isFinite(value)) return `Unlimited ${plural}`
@@ -181,7 +182,9 @@ export default function ClubAdminBillingSetupPage() {
 
       {activationState.lifecycleStatus === "billing_failed" ? (
         <FormError tone="notice">
-          <p>Your plan was not confirmed last time. Check the details below and confirm again. If it keeps failing, contact support and we will sort it out for you.</p>
+          <p>Your plan was not confirmed last time. Check the details below and confirm again. If it keeps failing, email{" "}
+            <a href={SUPPORT_MAILTO} className="font-bold underline underline-offset-2">{SUPPORT_EMAIL}</a>{" "}
+            and we will sort it out for you.</p>
         </FormError>
       ) : null}
 
