@@ -1,4 +1,5 @@
 import { err, ok, type DataErrorCode, type Result } from "@/lib/data/result"
+import { invokeSignedIn } from "@/lib/supabase/invoke"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -111,7 +112,7 @@ export async function sendInviteEmail(params: { kind: InviteEmailKind; inviteId:
   if (!client) return failure("unreachable")
 
   // Only the invite id is sent. The recipient and the link are worked out on the server.
-  const { data, error } = await client.functions.invoke("send-invite-email", {
+  const { data, error } = await invokeSignedIn(client, "send-invite-email", {
     body: { kind: params.kind, inviteId: params.inviteId },
   })
 
@@ -185,7 +186,7 @@ export async function sendInviteEmails(
     type BatchBody = { ok?: boolean; batch?: boolean; results?: Array<FunctionBody & { inviteId?: string }> }
     let body: BatchBody | null = null
     try {
-      const { data, error } = await client.functions.invoke("send-invite-email", { body: { kind: params.kind, inviteIds: chunk } })
+      const { data, error } = await invokeSignedIn(client, "send-invite-email", { body: { kind: params.kind, inviteIds: chunk } })
       body = error ? null : ((data ?? null) as BatchBody | null)
     } catch {
       body = null
