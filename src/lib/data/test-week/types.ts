@@ -33,8 +33,14 @@ export type CurrentAthleteTestWeekContext = {
   testWeekName: string
   startDate: string
   endDate: string
+  /** Athletes only ever get published (open) or closed (read only) weeks. Drafts and archived weeks are never returned. */
+  status: "published" | "closed"
   tests: ActiveTestDefinition[]
   lastSubmittedAt: string | null
+  /** This athlete's saved results for this week, keyed by test definition id. */
+  results: Record<string, { valueText: string; valueNumeric: number | null; submittedAt: string }>
+  /** Most recent result from an earlier test week for a test with the same name, keyed by this week's test definition id. */
+  previous: Record<string, { valueText: string; submittedAt: string }>
 }
 
 export type TestWeekSubmissionResult = {
@@ -42,4 +48,8 @@ export type TestWeekSubmissionResult = {
   testWeekId: string
   submittedAt: string
   submittedCount: number
+  /** Tests where this submission became the athlete's personal best. */
+  newPersonalBests: string[]
+  /** Set when results saved but a personal best record could not be updated. */
+  prWarning: string | null
 }

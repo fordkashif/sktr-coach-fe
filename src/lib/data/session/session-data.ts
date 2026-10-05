@@ -60,9 +60,26 @@ export async function getLatestSessionForAthlete(athleteId: string): Promise<Res
   const clientResult = requireSupabaseClient("getLatestSessionForAthlete")
   if (!clientResult.ok) return clientResult
 
+  // Plans create sessions for every planned day, so "latest" means the one that matters now:
+  // today's session, else the next one coming up, else the most recent past one.
+  const columns = "id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at"
+  const now = new Date()
+  const today = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`
+
+  const { data: upcoming, error: upcomingError } = await clientResult.client
+    .from("sessions")
+    .select(columns)
+    .eq("athlete_id", athleteId)
+    .gte("scheduled_for", today)
+    .order("scheduled_for", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (upcomingError) return { ok: false, error: mapPostgrestError(upcomingError) }
+  if (upcoming) return ok(mapSessionSummaryRow(upcoming))
+
   const { data, error } = await clientResult.client
     .from("sessions")
-    .select("id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at")
+    .select(columns)
     .eq("athlete_id", athleteId)
     .order("scheduled_for", { ascending: false })
     .limit(1)

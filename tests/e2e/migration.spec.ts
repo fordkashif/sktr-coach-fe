@@ -78,7 +78,7 @@ test("root and invite redirects behave correctly", async ({ page }) => {
   await seedSession(page, "athlete")
   await page.goto("/invite/t1")
   await expect(page).toHaveURL(/\/athlete\/claim\/t1$/)
-  await expect(page.locator("body")).toContainText("Claim athlete access")
+  await expect(page.locator("body")).toContainText("Join Sprint Group")
 })
 
 test("protected routes redirect to login when unauthenticated", async ({ page }) => {
@@ -103,7 +103,7 @@ test("athlete route inventory resolves for an athlete session", async ({ page })
   for (const route of athleteRoutes) {
     await page.goto(route)
     await expect(page).toHaveURL(new RegExp(`${route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
-    await expect(page.locator("body")).toContainText(/PaceLab|Join Team|Profile|Training Plan|Test Week|Wellness|Trends/)
+    await expect(page.locator("body")).toContainText(/PaceLab|Join a team|Profile|Training Plan|Test Week|Wellness|Trends/)
   }
 })
 

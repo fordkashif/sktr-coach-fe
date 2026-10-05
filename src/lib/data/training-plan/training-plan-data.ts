@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
+import { inferBlockType, planBlueprints, type SessionBlueprint } from "@/lib/data/session/session-from-plan"
+import { removeUnstartedPlanSessions, syncPlanSessions } from "@/lib/data/session/session-plan-sync"
+import { planFromBuilderState, todayIso } from "@/lib/data/training-plan/plan-builder-model"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -376,13 +379,74 @@ async function syncTrainingPlanAssignments(
 }
 
 /**
+ * The sessions athletes will log against. Built from the builder model when the plan has one
+ * (blocks with exercises, sets, reps and load), otherwise from the day structure alone.
+ */
+function blueprintsForPublish(input: PublishTrainingPlanInput): SessionBlueprint[] {
+  if (input.builderState) {
+    const draft = planFromBuilderState(
+      {
+        id: input.planId ?? null,
+        status: "published",
+        name: input.name,
+        teamId: input.teamId ?? "",
+        startDate: input.startDate,
+        weeks: input.weeks,
+        notes: input.notes ?? "",
+      },
+      input.builderState,
+    )
+    if (draft.sessions.length > 0) return planBlueprints(draft)
+  }
+  return input.structure.flatMap((week) =>
+    week.days
+      .filter((day) => day.isTrainingDay)
+      .map((day) => ({
+        week: week.weekNumber,
+        dayIndex: day.dayIndex,
+        date: day.date,
+        title: day.title,
+        sessionType: day.sessionType,
+        durationMinutes: day.durationMinutes,
+        location: day.location,
+        coachNote: day.coachNote,
+        blocks: day.blockPreview.map((preview, index) => {
+          const split = preview.indexOf(": ")
+          const name = (split > 0 ? preview.slice(0, split) : preview).trim() || `Block ${index + 1}`
+          return {
+            sortOrder: index,
+            blockType: inferBlockType(name, day.sessionType),
+            name,
+            focus: null,
+            coachNote: null,
+            rows: [
+              {
+                sortOrder: 0,
+                label: name,
+                target: split > 0 ? preview.slice(split + 2) : "As coached",
+                helper: null,
+                kind: "check" as const,
+                targetSets: 1,
+                targetReps: null,
+                targetLoad: null,
+              },
+            ],
+          }
+        }),
+      })),
+  )
+}
+
+/**
  * Publishes a new plan, publishes an existing draft, or updates a plan that is already published.
  *
  * There is no client-side transaction, so the writes are ordered to fail safe:
  * 1. the plan row is written while it is still a draft (or left published on an update),
  * 2. the week/day/block structure is replaced,
  * 3. the status flips to published,
- * 4. assignments are synced last, which is the step that makes the plan reach athletes and notifies them.
+ * 4. assignments are synced, which is the step that makes the plan reach athletes and notifies them,
+ * 5. the sessions athletes log against are created for every assigned athlete, from today on.
+ *    Sessions an athlete already started or finished, and past sessions, are never touched.
  * A failure before step 3 leaves a draft that can be published again. Every step is safe to retry.
  */
 export async function publishTrainingPlanForCurrentCoach(
@@ -470,6 +534,24 @@ export async function publishTrainingPlanForCurrentCoach(
 
   const assignmentResult = await syncTrainingPlanAssignments(client, context, planId, input, athleteAssignmentIds)
   if (!assignmentResult.ok) return assignmentResult
+
+  const today = todayIso()
+  const visibleFrom = input.visibilityStart === "scheduled" && input.visibilityDate ? input.visibilityDate : today
+  const sessionsResult = await syncPlanSessions(client, {
+    tenantId: context.tenantId,
+    userId: context.userId,
+    planId,
+    athleteIds: athleteAssignmentIds,
+    blueprints: blueprintsForPublish(input),
+    fromDate: visibleFrom > today ? visibleFrom : today,
+  })
+  if (!sessionsResult.ok) {
+    return err(
+      sessionsResult.error.code,
+      `The plan is published, but the sessions athletes log against could not be created (${sessionsResult.error.message}). Publish again to retry.`,
+      sessionsResult.error.cause,
+    )
+  }
 
   return ok({ planId, assignedCount: athleteAssignmentIds.length })
 }
@@ -709,6 +791,9 @@ export async function archiveTrainingPlanForCurrentCoach(planId: string): Promis
   if (((data as Array<{ id: string }> | null) ?? []).length === 0) {
     return err("NOT_FOUND", "This plan could not be archived. It may have been removed, or you may not have access.")
   }
+  // Upcoming sessions nobody has started go with the plan. Anything logged stays as history.
+  const cleanup = await removeUnstartedPlanSessions(clientResult.client, planId, todayIso())
+  if (!cleanup.ok) console.warn("[training-plan] archived, but upcoming sessions could not be removed", cleanup.error)
   return ok({ planId })
 }
 
@@ -718,6 +803,12 @@ export async function deleteTrainingPlanForCurrentCoach(planId: string): Promise
 
   const contextResult = await getCurrentCoachContext(clientResult.client)
   if (!contextResult.ok) return contextResult
+
+  // Must run before the delete: afterwards the sessions no longer point at the plan.
+  if (isUuid(planId)) {
+    const cleanup = await removeUnstartedPlanSessions(clientResult.client, planId, todayIso())
+    if (!cleanup.ok) return cleanup
+  }
 
   const { data, error } = await clientResult.client
     .from("training_plans")

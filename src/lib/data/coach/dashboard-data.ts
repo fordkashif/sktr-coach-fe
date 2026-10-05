@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { formatSetLog, isLogEmpty, logKindForBlockType } from "@/lib/data/session/session-from-plan"
+import type { LogKind, LoggedSessionResults, SessionBlockType } from "@/lib/data/session/types"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import type {
   Athlete,
@@ -636,6 +638,8 @@ export type CoachAthleteWellnessRow = WellnessEntry & {
 }
 
 export type CoachAthleteSessionRow = LogEntry & {
+  /** What the athlete logged: sets per exercise, effort and comment. Null when nothing was logged. */
+  results: LoggedSessionResults | null
   isoDate: string
   status: "scheduled" | "in-progress" | "completed"
   coachNote: string | null
@@ -845,8 +849,84 @@ export async function getCoachAthleteDetailForCurrentUser(
       coachNote: row.coach_note,
       completedOn,
       durationMinutes: row.estimated_duration_minutes,
+      results: null,
     }
   })
+
+  // What the athlete logged. Extra detail only: if it cannot be read the session list still shows.
+  const loggedIds = sessions.filter((session) => session.status !== "scheduled").slice(0, 20).map((session) => session.id)
+  if (loggedIds.length > 0) {
+    const [blocksResult, logsResult, effortResult] = await Promise.all([
+      client
+        .from("session_blocks")
+        .select("id, session_id, sort_order, block_type, name, session_block_rows(id, sort_order, label, target, log_kind)")
+        .in("session_id", loggedIds)
+        .order("sort_order", { ascending: true }),
+      client
+        .from("session_row_logs")
+        .select("session_id, session_block_row_id, set_index, completed, reps, load_kg, time_seconds, distance_m, mark")
+        .in("session_id", loggedIds)
+        .limit(2000),
+      client.from("session_completions").select("session_id, rpe, athlete_comment").in("session_id", loggedIds),
+    ])
+    if (blocksResult.error || logsResult.error || effortResult.error) {
+      console.warn("[coach] could not read logged session results", blocksResult.error ?? logsResult.error ?? effortResult.error)
+    } else {
+      const num = (value: unknown) => (value === null || value === undefined ? null : Number(value))
+      const logRows = (logsResult.data as Array<Record<string, unknown>> | null) ?? []
+      const effortBySession = new Map(
+        ((effortResult.data as Array<{ session_id: string; rpe: number | null; athlete_comment: string | null }> | null) ?? []).map((row) => [
+          row.session_id,
+          row,
+        ]),
+      )
+      type BlockRow = {
+        id: string
+        session_id: string
+        sort_order: number
+        block_type: SessionBlockType
+        name: string
+        session_block_rows: Array<{ id: string; sort_order: number; label: string; target: string; log_kind: string | null }> | null
+      }
+      const blockRows = (blocksResult.data as BlockRow[] | null) ?? []
+      for (const session of sessions) {
+        if (!loggedIds.includes(session.id)) continue
+        const exercises = blockRows
+          .filter((block) => block.session_id === session.id)
+          .flatMap((block) =>
+            [...(block.session_block_rows ?? [])]
+              .sort((left, right) => left.sort_order - right.sort_order)
+              .flatMap((row) => {
+                const kind: LogKind =
+                  row.log_kind === "strength" || row.log_kind === "time" || row.log_kind === "mark" || row.log_kind === "check"
+                    ? row.log_kind
+                    : logKindForBlockType(block.block_type)
+                const sets = logRows
+                  .filter((log) => log.session_block_row_id === row.id)
+                  .map((log) => ({
+                    rowId: row.id,
+                    setIndex: Number(log.set_index),
+                    completed: log.completed !== false,
+                    reps: num(log.reps),
+                    loadKg: num(log.load_kg),
+                    timeSeconds: num(log.time_seconds),
+                    distanceM: num(log.distance_m),
+                    mark: num(log.mark),
+                  }))
+                  .filter((log) => !isLogEmpty(log))
+                  .sort((left, right) => left.setIndex - right.setIndex)
+                  .map((log) => formatSetLog(kind, log))
+                  .filter(Boolean)
+                return sets.length > 0 ? [{ id: row.id, blockName: block.name, label: row.label, target: row.target, sets }] : []
+              }),
+          )
+        const effort = effortBySession.get(session.id)
+        if (exercises.length > 0 || effort?.rpe || effort?.athlete_comment) {
+          session.results = { rpe: effort?.rpe ?? null, comment: effort?.athlete_comment ?? null, exercises }
+        }
+      }
+    }
+  }
 
   const prs: CoachAthletePrRow[] = ((prResult.data as Array<{
     id: string

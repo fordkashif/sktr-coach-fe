@@ -49,6 +49,8 @@ Legend:
 - coach: `R` own profile + tenant profiles
 - club-admin: `R` own profile + tenant profiles
 - writes (`C/U/D`): service-role only
+- athlete self-service: no direct `U`. `update_current_athlete_profile(...)` (security definer, migration `20261005093000`) keeps `display_name` in sync with the athlete's own first and last name. No other profile column is touched.
+- coach names for athletes: athletes cannot read other profiles. `get_current_athlete_team_context()` returns the display names of the coaches on the athlete's own team. Coach names are not exposed through invite links.
 
 ### `teams`
 
@@ -59,6 +61,7 @@ Legend:
 ### `athletes`
 
 - athlete: `R` own athlete row only (`athletes.user_id = auth.uid()`)
+- athlete self-service `U`: no update policy. `update_current_athlete_profile(first_name, last_name, date_of_birth, event_group, primary_event)` (security definer, authenticated, athlete role only) updates exactly those five columns on the caller's own row in the caller's tenant. `team_id`, `tenant_id`, `user_id`, `readiness` and `is_active` cannot be changed by an athlete; team changes still go through `accept_athlete_invite`.
 - coach: `R/C/U/D` tenant athletes
 - club-admin: `R/C/U/D` tenant athletes
 
@@ -128,6 +131,21 @@ Legend:
 - coach: `R/C/U/D` tenant assignments
 - club-admin: `R/C/U/D` tenant assignments
 - Draft plans have no assignment rows. Inserting an assignment with `visibility_start = 'immediate'` queues the `training_plan_published` notification, so assignments are only written at publish time.
+
+### Session logging (migration `20261005090000_session_logging.sql`)
+
+`session_row_logs` (what the athlete did, one row per set):
+- athlete: `R/C/U` own rows only, and only against a row of one of their own sessions in the current tenant. No delete (a set is unticked with `completed = false`).
+- coach: `R` tenant rows (same scope as `sessions_select_tenant_staff`). No write.
+- club-admin: `R` tenant rows. No write.
+
+`session_completions` additions:
+- athlete: `U` own completion (`session_completions_update_own`), so effort (`rpe`) and `athlete_comment` can be saved and changed.
+
+`sessions`, `session_blocks`, `session_block_rows` additions:
+- athlete: `C` only for their own athlete row, only with `status = 'scheduled'` and a plan slot (`plan_id`, `plan_week_number`, `plan_day_index`) pointing at a published plan in the tenant; blocks and rows only under such a session while it is still `scheduled`. This covers athletes who joined after the plan was published. Athletes still cannot update or delete sessions.
+- `sessions.status` is moved by security definer triggers, not by the athlete: first logged set sets `in-progress`, a completion sets `completed`.
+- coach / club-admin: unchanged (`R/C/U/D` tenant). Sessions are created for every assigned athlete when a plan is published.
 
 ## Service-Role Only Operations (Documented)
 

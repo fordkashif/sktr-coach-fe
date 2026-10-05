@@ -182,20 +182,42 @@ async function getBenchmarkSnapshotForAthlete(client: SupabaseClient, athleteId:
   })
 }
 
-async function getLatestPublishedTestWeekForTeam(client: SupabaseClient, teamId: string): Promise<Result<WeekMetaRow | null>> {
+type AthleteWeekRow = WeekMetaRow & { status: "published" | "closed" }
+
+function localIsoDate(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * The one test week an athlete should see. Drafts and archived weeks are never returned.
+ * Order of preference: a published week running today, the next published week,
+ * the most recent published week, then the most recent closed week (read only).
+ */
+async function getAthleteFacingTestWeekForTeam(client: SupabaseClient, teamId: string): Promise<Result<AthleteWeekRow | null>> {
   const { data, error } = await client
     .from("test_weeks")
-    .select("id, name, start_date, end_date")
+    .select("id, name, start_date, end_date, status")
     .eq("team_id", teamId)
-    .eq("status", "published")
+    .in("status", ["published", "closed"])
     .eq("is_archived", false)
     .order("start_date", { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .limit(25)
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
-  if (!data) return ok(null)
-  return ok(data as WeekMetaRow)
+  const rows = ((data as AthleteWeekRow[] | null) ?? []).filter((row) => row.status === "published" || row.status === "closed")
+  if (rows.length === 0) return ok(null)
+
+  const today = localIsoDate()
+  const published = rows.filter((row) => row.status === "published")
+  const running = published.find((row) => row.start_date <= today && row.end_date >= today)
+  if (running) return ok(running)
+  const upcoming = published.filter((row) => row.start_date > today).sort((x, y) => x.start_date.localeCompare(y.start_date))[0]
+  if (upcoming) return ok(upcoming)
+  if (published[0]) return ok(published[0])
+  return ok(rows[0])
 }
 
 async function getTestDefinitionsForWeek(client: SupabaseClient, testWeekId: string): Promise<Result<ActiveTestDefinition[]>> {
@@ -226,25 +248,6 @@ async function getTestDefinitionsForWeek(client: SupabaseClient, testWeekId: str
       dayIndex: row.day_index,
     })),
   )
-}
-
-async function getLatestSubmissionStamp(
-  client: SupabaseClient,
-  athleteId: string,
-  testWeekId: string,
-): Promise<Result<string | null>> {
-  const { data, error } = await client
-    .from("test_results")
-    .select("submitted_at")
-    .eq("athlete_id", athleteId)
-    .eq("test_week_id", testWeekId)
-    .order("submitted_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) return { ok: false, error: mapPostgrestError(error) }
-  if (!data) return ok(null)
-  return ok(data.submitted_at as string)
 }
 
 function parseNumericValue(valueText: string) {
@@ -299,19 +302,58 @@ export async function getCurrentAthleteActiveTestWeekContext(): Promise<Result<C
   if (!athleteContext.ok) return athleteContext
   if (!athleteContext.data.teamId) return ok(null)
 
-  const latestWeek = await getLatestPublishedTestWeekForTeam(clientResult.client, athleteContext.data.teamId)
+  const latestWeek = await getAthleteFacingTestWeekForTeam(clientResult.client, athleteContext.data.teamId)
   if (!latestWeek.ok) return latestWeek
   if (!latestWeek.data) return ok(null)
 
   const testsResult = await getTestDefinitionsForWeek(clientResult.client, latestWeek.data.id)
   if (!testsResult.ok) return testsResult
 
-  const submissionStampResult = await getLatestSubmissionStamp(
-    clientResult.client,
-    athleteContext.data.athleteId,
-    latestWeek.data.id,
-  )
-  if (!submissionStampResult.ok) return submissionStampResult
+  type OwnResultRow = {
+    test_week_id: string
+    test_definition_id: string
+    value_text: string
+    value_numeric: number | string | null
+    submitted_at: string
+    test_definitions: { name: string } | Array<{ name: string }> | null
+  }
+
+  // One read covers this week's saved answers and the most recent earlier result per test name.
+  const { data: ownRows, error: ownRowsError } = await clientResult.client
+    .from("test_results")
+    .select("test_week_id, test_definition_id, value_text, value_numeric, submitted_at, test_definitions(name)")
+    .eq("athlete_id", athleteContext.data.athleteId)
+    .order("submitted_at", { ascending: false })
+    .limit(500)
+
+  if (ownRowsError) return { ok: false, error: mapPostgrestError(ownRowsError) }
+
+  const results: CurrentAthleteTestWeekContext["results"] = {}
+  const previousByName = new Map<string, { valueText: string; submittedAt: string }>()
+  let lastSubmittedAt: string | null = null
+
+  for (const row of (ownRows as OwnResultRow[] | null) ?? []) {
+    if (row.test_week_id === latestWeek.data.id) {
+      const numeric = row.value_numeric === null ? null : Number(row.value_numeric)
+      results[row.test_definition_id] = {
+        valueText: row.value_text,
+        valueNumeric: numeric !== null && Number.isFinite(numeric) ? numeric : null,
+        submittedAt: row.submitted_at,
+      }
+      if (!lastSubmittedAt || row.submitted_at > lastSubmittedAt) lastSubmittedAt = row.submitted_at
+      continue
+    }
+    const name = firstEmbedded(row.test_definitions)?.name?.trim().toLowerCase()
+    if (name && !previousByName.has(name)) {
+      previousByName.set(name, { valueText: row.value_text, submittedAt: row.submitted_at })
+    }
+  }
+
+  const previous: CurrentAthleteTestWeekContext["previous"] = {}
+  for (const test of testsResult.data) {
+    const match = previousByName.get(test.name.trim().toLowerCase())
+    if (match) previous[test.id] = match
+  }
 
   return ok({
     athleteId: athleteContext.data.athleteId,
@@ -319,10 +361,16 @@ export async function getCurrentAthleteActiveTestWeekContext(): Promise<Result<C
     testWeekName: latestWeek.data.name,
     startDate: latestWeek.data.start_date,
     endDate: latestWeek.data.end_date,
+    status: latestWeek.data.status,
     tests: testsResult.data,
-    lastSubmittedAt: submissionStampResult.data,
+    lastSubmittedAt,
+    results,
+    previous,
   })
 }
+
+/** value_numeric is numeric(10, 3): keep entries inside what the column can hold. */
+const MAX_TEST_RESULT_VALUE = 100000
 
 export async function submitCurrentAthleteTestWeekResults(
   valuesByDefinitionId: Record<string, string>,
@@ -332,31 +380,34 @@ export async function submitCurrentAthleteTestWeekResults(
 
   const contextResult = await getCurrentAthleteActiveTestWeekContext()
   if (!contextResult.ok) return contextResult
-  if (!contextResult.data) return err("NOT_FOUND", "No active published test week found for current athlete.")
+  if (!contextResult.data) return err("NOT_FOUND", "There is no open test week for your team right now.")
 
   const context = contextResult.data
+  if (context.status !== "published") {
+    return err("VALIDATION", "This test week is closed, so results can no longer be changed. Ask your coach to reopen it.")
+  }
+  if (context.startDate > localIsoDate()) {
+    return err("VALIDATION", "This test week has not started yet.")
+  }
+
   const trimmedEntries = Object.entries(valuesByDefinitionId).map(([definitionId, value]) => [definitionId.trim(), value.trim()] as const)
   const nonEmptyEntries = trimmedEntries.filter(([, value]) => value.length > 0)
   if (nonEmptyEntries.length === 0) {
     return err("VALIDATION", "Enter at least one test result before submitting.")
   }
 
-  const requiredMissing = context.tests
-    .filter((test) => test.isRequired)
-    .filter((test) => {
-      const input = valuesByDefinitionId[test.id] ?? ""
-      return !input.trim()
-    })
-    .map((test) => `${test.name} (${test.scheduledDate})`)
-
-  if (requiredMissing.length > 0) {
-    return err("VALIDATION", `Missing required tests: ${requiredMissing.join(", ")}`)
-  }
-
+  // Test weeks run over several days, so a submission may cover only the tests done so far.
+  // Required tests are tracked on screen (and by the coach) rather than blocking a partial save.
+  const invalid: string[] = []
   const toPersist = nonEmptyEntries
     .map(([definitionId, value]) => {
       const definition = context.tests.find((test) => test.id === definitionId)
       if (!definition) return null
+      const numeric = parseNumericValue(value)
+      if (numeric === null || numeric <= 0 || numeric >= MAX_TEST_RESULT_VALUE) {
+        invalid.push(definition.name)
+        return null
+      }
       return {
         test_week_id: context.testWeekId,
         test_definition_id: definition.id,
@@ -364,7 +415,7 @@ export async function submitCurrentAthleteTestWeekResults(
         test_name: definition.name,
         test_unit: definition.unit,
         value_text: value,
-        value_numeric: parseNumericValue(value),
+        value_numeric: Math.round(numeric * 1000) / 1000,
       }
     })
     .filter((item): item is {
@@ -374,8 +425,12 @@ export async function submitCurrentAthleteTestWeekResults(
       test_name: string
       test_unit: ActiveTestDefinition["unit"]
       value_text: string
-      value_numeric: number | null
+      value_numeric: number
     } => Boolean(item))
+
+  if (invalid.length > 0) {
+    return err("VALIDATION", `Enter a number greater than 0 for: ${invalid.join(", ")}`)
+  }
 
   if (toPersist.length === 0) {
     return err("VALIDATION", "No submitted tests matched the active test-week definitions.")
@@ -389,6 +444,9 @@ export async function submitCurrentAthleteTestWeekResults(
 
   if (athleteRowError) return { ok: false, error: mapPostgrestError(athleteRowError) }
 
+  const { data: authSession } = await clientResult.client.auth.getSession()
+  const submittedByUserId = authSession.session?.user.id ?? null
+
   const submittedAt = new Date().toISOString()
   const payload = toPersist.map((row) => ({
     tenant_id: athleteRow.tenant_id as string,
@@ -397,6 +455,7 @@ export async function submitCurrentAthleteTestWeekResults(
     athlete_id: row.athlete_id,
     value_text: row.value_text,
     value_numeric: row.value_numeric,
+    submitted_by_user_id: submittedByUserId,
     submitted_at: submittedAt,
   }))
 
@@ -406,6 +465,11 @@ export async function submitCurrentAthleteTestWeekResults(
 
   if (upsertError) return { ok: false, error: mapPostgrestError(upsertError) }
 
+  // Results are saved at this point. A personal best that fails to update must not
+  // make the athlete think the submission was lost, so it is reported as a warning.
+  let prWarning: string | null = null
+  const newBests: string[] = []
+
   for (const row of toPersist) {
     const { data: existingPr, error: existingPrError } = await clientResult.client
       .from("pr_records")
@@ -414,7 +478,10 @@ export async function submitCurrentAthleteTestWeekResults(
       .eq("event", row.test_name)
       .maybeSingle()
 
-    if (existingPrError) return { ok: false, error: mapPostgrestError(existingPrError) }
+    if (existingPrError) {
+      prWarning = mapPostgrestError(existingPrError).message
+      continue
+    }
 
     const existingNumeric = existingPr ? parseComparableNumericFromText(existingPr.best_value as string) : null
     if (!isBetterPerformance(row.test_unit, row.value_numeric, existingNumeric)) continue
@@ -429,7 +496,7 @@ export async function submitCurrentAthleteTestWeekResults(
           category: categoryForTestUnit(row.test_unit),
           best_value: row.value_text,
           previous_value: existingPr?.best_value ?? null,
-          measured_on: submittedAt.slice(0, 10),
+          measured_on: localIsoDate(),
           source_type: "test-week",
           source_ref: `${context.testWeekId}:${row.test_definition_id}`,
           is_legal: true,
@@ -438,7 +505,11 @@ export async function submitCurrentAthleteTestWeekResults(
         { onConflict: "athlete_id,event" },
       )
 
-    if (prUpsertError) return { ok: false, error: mapPostgrestError(prUpsertError) }
+    if (prUpsertError) {
+      prWarning = mapPostgrestError(prUpsertError).message
+      continue
+    }
+    newBests.push(row.test_name)
   }
 
   return ok({
@@ -446,6 +517,8 @@ export async function submitCurrentAthleteTestWeekResults(
     testWeekId: context.testWeekId,
     submittedAt,
     submittedCount: payload.length,
+    newPersonalBests: newBests,
+    prWarning,
   })
 }
 
