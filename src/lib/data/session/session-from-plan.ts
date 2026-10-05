@@ -1,3 +1,4 @@
+import { cleanReferenceUrl, isEmptyOverride, mergeOverride, parsePercent, resolvePercentTarget } from "@/lib/data/exercises/loads"
 import type { LogKind, LoggableRow, SessionBlockType, SessionRowLog } from "@/lib/data/session/types"
 import {
   sessionDisplayTitle,
@@ -13,15 +14,32 @@ import {
  * Pure, so the publish step, the athlete's on-demand creation and mock mode all build the same thing.
  */
 
-export type RowBlueprint = {
-  sortOrder: number
-  label: string
+/** The part of a row that can differ per athlete. */
+export type RowPrescriptionBlueprint = {
   target: string
+  /** Coaching cue (and, for one athlete, the coach's note for them). Shown under the target. */
   helper: string | null
   kind: LogKind
   targetSets: number
   targetReps: string | null
   targetLoad: string | null
+  /** Load as a percentage of the athlete's best lift. The weight is worked out per athlete. */
+  percent?: number | null
+  /** The lift the percentage refers to. */
+  liftName?: string | null
+  /** The "4 x 4" part of the target, kept apart so the weight can be added after it. */
+  volume?: string | null
+}
+
+export type RowBlueprint = RowPrescriptionBlueprint & {
+  sortOrder: number
+  label: string
+  /** Club library exercise the row was picked from. */
+  exerciseId?: string | null
+  /** http or https link to a video or reference page. */
+  referenceUrl?: string | null
+  /** What the row becomes for an athlete the coach adjusted it for, by athlete id. */
+  athleteVariants?: Record<string, RowPrescriptionBlueprint>
 }
 
 export type BlockBlueprint = {
@@ -145,12 +163,72 @@ export function targetValues(row: Pick<LoggableRow, "kind" | "targetReps" | "tar
   return {}
 }
 
-function exerciseTarget(exercise: ExerciseDraft) {
+function exerciseVolume(exercise: Pick<ExerciseDraft, "sets" | "reps">) {
   const sets = exercise.sets.trim()
   const reps = exercise.reps.trim()
-  const volume = sets && reps ? `${sets} x ${reps}` : reps || (sets ? `${sets} sets` : "")
+  return sets && reps ? `${sets} x ${reps}` : reps || (sets ? `${sets} sets` : "")
+}
+
+function exerciseTarget(exercise: ExerciseDraft) {
   const load = exercise.load.trim()
-  return [volume, load ? `at ${load}` : ""].filter(Boolean).join(" ") || "As coached"
+  return [exerciseVolume(exercise), load ? `at ${load}` : ""].filter(Boolean).join(" ") || "As coached"
+}
+
+function sentence(text: string | null | undefined) {
+  const trimmed = (text ?? "").trim()
+  return trimmed ? (/[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`) : ""
+}
+
+/** Target, inputs and cue of one exercise row. `note` is the coach's word for one athlete. */
+function exercisePrescription(blockTitle: string, exercise: ExerciseDraft, note: string | null): RowPrescriptionBlueprint {
+  const percent = parsePercent(exercise.load)
+  const volume = exerciseVolume(exercise)
+  return {
+    target: exerciseTarget(exercise),
+    helper: [sentence(note), sentence(exercise.cue)].filter(Boolean).join(" ") || null,
+    // A percentage of a best lift is always logged as reps and load.
+    kind: percent !== null ? "strength" : inferLogKind(blockTitle, exercise),
+    targetSets: parseSetCount(exercise.sets),
+    targetReps: exercise.reps.trim() || null,
+    targetLoad: exercise.load.trim() || null,
+    percent,
+    liftName: percent !== null ? exercise.percentOf?.trim() || exercise.name.trim() || null : null,
+    volume: volume || null,
+  }
+}
+
+function exerciseVariants(blockTitle: string, exercise: ExerciseDraft): Record<string, RowPrescriptionBlueprint> | undefined {
+  const variants: Record<string, RowPrescriptionBlueprint> = {}
+  for (const override of exercise.overrides ?? []) {
+    if (!override.athleteId || isEmptyOverride(override)) continue
+    variants[override.athleteId] = exercisePrescription(blockTitle, mergeOverride(exercise, override), override.note)
+  }
+  return Object.keys(variants).length > 0 ? variants : undefined
+}
+
+/**
+ * The row as one athlete gets it: the coach's change for that athlete applied and, when `maxKg` is
+ * given, a percentage load turned into kilograms ("4 x 4 at 80%, 120 kg", nearest 2.5 kg).
+ * Without `maxKg` the percentage is left for the database to work out (resolve_session_row_load).
+ */
+export function rowForAthlete(row: RowBlueprint, athleteId: string, maxKg?: (liftName: string) => number | null): RowBlueprint {
+  const { athleteVariants, ...base } = row
+  const own: RowBlueprint = athleteVariants?.[athleteId] ? { ...base, ...athleteVariants[athleteId] } : base
+  if (!maxKg || own.percent === null || own.percent === undefined) return own
+  const resolved = resolvePercentTarget({ volume: own.volume, percent: own.percent, maxKg: own.liftName ? maxKg(own.liftName) : null, liftName: own.liftName })
+  return {
+    ...own,
+    target: resolved.target,
+    targetLoad: resolved.targetLoad,
+    helper: [own.helper, resolved.hint].filter(Boolean).join(" ") || null,
+  }
+}
+
+export function blueprintForAthlete(blueprint: SessionBlueprint, athleteId: string, maxKg?: (liftName: string) => number | null): SessionBlueprint {
+  return {
+    ...blueprint,
+    blocks: blueprint.blocks.map((block) => ({ ...block, rows: block.rows.map((row) => rowForAthlete(row, athleteId, maxKg)) })),
+  }
 }
 
 function blockRows(block: BlockDraft, title: string): RowBlueprint[] {
@@ -172,12 +250,10 @@ function blockRows(block: BlockDraft, title: string): RowBlueprint[] {
   return named.map((exercise, index) => ({
     sortOrder: index,
     label: exercise.name.trim() || `${title} ${index + 1}`,
-    target: exerciseTarget(exercise),
-    helper: null,
-    kind: inferLogKind(title, exercise),
-    targetSets: parseSetCount(exercise.sets),
-    targetReps: exercise.reps.trim() || null,
-    targetLoad: exercise.load.trim() || null,
+    ...exercisePrescription(title, exercise, null),
+    exerciseId: exercise.libraryId ?? null,
+    referenceUrl: cleanReferenceUrl(exercise.link),
+    athleteVariants: exerciseVariants(title, exercise),
   }))
 }
 

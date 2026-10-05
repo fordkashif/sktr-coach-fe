@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { mapPostgrestError, ok, type Result } from "@/lib/data/result"
-import type { SessionBlueprint } from "@/lib/data/session/session-from-plan"
+import { rowForAthlete, type SessionBlueprint } from "@/lib/data/session/session-from-plan"
 
 /**
  * Writes sessions an athlete can log against, built from a published plan.
@@ -23,6 +23,7 @@ export type SessionSeed = {
   blueprint: SessionBlueprint
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const CHUNK = 200
 const PAGE = 1000
 
@@ -80,7 +81,8 @@ export async function insertSessionsFromBlueprints(client: SupabaseClient, seeds
           focus: block.focus,
           coach_note: block.coachNote,
         },
-        block,
+        // Each athlete gets the coach's changes for them ("except David: 70%").
+        block: { ...block, rows: block.rows.map((row) => rowForAthlete(row, seed.athleteId)) },
       }))
     })
 
@@ -110,6 +112,14 @@ export async function insertSessionsFromBlueprints(client: SupabaseClient, seeds
           target_sets: row.targetSets,
           target_reps: row.targetReps,
           target_load: row.targetLoad,
+          // A percentage of a best lift: the database turns it into kilograms for this athlete
+          // (resolve_session_row_load, migration 20261011090000) and keeps it up to date.
+          percent_1rm: row.percent ?? null,
+          lift_name: row.percent != null ? (row.liftName ?? null) : null,
+          target_volume: row.volume ?? null,
+          cue: row.helper,
+          reference_url: row.referenceUrl ?? null,
+          exercise_id: UUID.test(row.exerciseId ?? "") ? row.exerciseId : null,
         }))
       })
       for (const rowBatch of chunks(rowInserts, 500)) {

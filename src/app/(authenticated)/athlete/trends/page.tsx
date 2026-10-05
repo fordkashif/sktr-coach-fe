@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Plus } from "@phosphor-icons/react"
+import { ClockCounterClockwise, Plus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { BestStatus, eventHistoryPath, meetDatesText, ProgressTabs, ResultMark, whenAndWhere } from "@/components/athlete/results-parts"
 import {
@@ -294,10 +294,16 @@ export default function AthleteTrendsPage() {
         title="Progress"
         lede="Your results and records first, then how training has been going."
         actions={
-          <LinkButton to="/athlete/prs/add" variant="primary">
-            <Plus className="size-[18px]" weight="bold" aria-hidden />
-            Add a result
-          </LinkButton>
+          <>
+            <LinkButton to="/athlete/prs/add" variant="primary">
+              <Plus className="size-[18px]" weight="bold" aria-hidden />
+              Add a result
+            </LinkButton>
+            <LinkButton to="/athlete/history">
+              <ClockCounterClockwise className="size-[18px]" weight="bold" aria-hidden />
+              Session history
+            </LinkButton>
+          </>
         }
       />
       <ProgressTabs />

@@ -478,7 +478,7 @@ export default function AthleteTrainingPlanPage() {
   const moreSection = (
     <Section title="More">
       <List>
-        <ListRow to="/athlete/log/history" title="Session history" subtitle="What you did, skipped and missed." />
+        <ListRow to="/athlete/history" title="Session history" subtitle="What you did, skipped and missed." />
         <ListRow to="/athlete/log/new" title="Add a session" subtitle="Log something that was not in your plan." />
         {!availability.current ? (
           <ListRow onClick={() => setAvailabilityOpen(true)} chevron title="I can't train for a while" subtitle="Injured, sick or away. Your coach is told." />

@@ -20,23 +20,23 @@ test.describe("notification centre", () => {
 
   test("athlete sees the bell, opens it, taps a plan notification, lands on the plan, count drops", async ({ page }) => {
     await openApp(page, "athlete", "/athlete/home")
-    await expect(bell(page)).toHaveAccessibleName("Notifications, 2 unread")
-    await expect(bell(page).getByTestId("notification-count")).toHaveText("2")
+    await expect(bell(page)).toHaveAccessibleName("Notifications, 4 unread")
+    await expect(bell(page).getByTestId("notification-count")).toHaveText("4")
 
     await bell(page).click()
     const sheet = page.getByRole("dialog", { name: "Notifications" })
     await expect(sheet).toBeVisible()
-    await expect(sheet.getByRole("listitem")).toHaveCount(4)
+    await expect(sheet.getByRole("listitem")).toHaveCount(7)
     await expect(sheet.getByRole("link", { name: /Coach Rivera left a note on your session \(unread\)/ })).toBeVisible()
 
     await sheet.getByRole("link", { name: /New training plan: Speed block/ }).click()
     await expect(page).toHaveURL(/\/athlete\/training-plan$/)
     await expect(sheet).toBeHidden()
-    await expect(bell(page)).toHaveAccessibleName("Notifications, 1 unread")
+    await expect(bell(page)).toHaveAccessibleName("Notifications, 3 unread")
 
     // Still read after a reload.
     await page.reload()
-    await expect(bell(page)).toHaveAccessibleName("Notifications, 1 unread")
+    await expect(bell(page)).toHaveAccessibleName("Notifications, 3 unread")
   })
 
   test("mark all read clears the count, and see all opens the full history", async ({ page }) => {
@@ -48,7 +48,7 @@ test.describe("notification centre", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Notifications" })).toBeVisible()
     await expect(page.getByRole("heading", { level: 2, name: "Today" })).toBeVisible()
     await expect(page.getByRole("heading", { level: 2, name: "Yesterday" })).toBeVisible()
-    await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(4)
+    await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(7)
 
     await page.getByRole("button", { name: "Mark all read" }).click()
     await expect(bell(page)).toHaveAccessibleName("Notifications")
@@ -62,7 +62,7 @@ test.describe("notification centre", () => {
     await page.goto("/notifications")
     await page.getByRole("link", { name: /Coach Rivera left a note on your session/ }).click()
     await expect(page).toHaveURL(/\/athlete\/log/)
-    await expect(bell(page)).toHaveAccessibleName("Notifications, 1 unread")
+    await expect(bell(page)).toHaveAccessibleName("Notifications, 3 unread")
   })
 
   for (const { role, home, subject, target } of [

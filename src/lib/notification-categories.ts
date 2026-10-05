@@ -15,6 +15,11 @@ export type NotificationPreferenceCategory = {
   defaults: { "in-app": boolean; email: boolean }
   /** False when this kind of update is never emailed (it would be an email per athlete per session). */
   emailAvailable: boolean
+  /**
+   * "reminders": made on a schedule by the hourly job (20261011120000_reminders.sql), not by
+   * something a person did. The settings screen lists these under their own heading.
+   */
+  group?: "reminders"
 }
 
 export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[] = [
@@ -225,6 +230,60 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     roles: ["club-admin"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,
+  },
+
+  // Reminders (20261011120000_reminders.sql). Timed in the club's own time zone. The job only
+  // emails a "default off" reminder to someone who switched its email on; keep these defaults in
+  // step with the p_email_by_default argument each reminder passes to send_reminder().
+  {
+    key: "reminder-session-today",
+    title: "Session today",
+    description: "At 7 in the morning on a day you have a session planned and not logged yet.",
+    eventTypes: ["reminder_session_today"],
+    roles: ["athlete"],
+    defaults: { "in-app": true, email: false },
+    emailAvailable: true,
+    group: "reminders",
+  },
+  {
+    key: "reminder-checkin",
+    title: "Check-in not done",
+    description: "At 9 in the morning if you have not done today's check-in.",
+    eventTypes: ["reminder_checkin"],
+    roles: ["athlete"],
+    defaults: { "in-app": true, email: false },
+    emailAvailable: true,
+    group: "reminders",
+  },
+  {
+    key: "reminder-test-week-closing",
+    title: "Test week closing",
+    description: "On the last day of a test week, if you still have a required test without a result.",
+    eventTypes: ["reminder_test_week_closing"],
+    roles: ["athlete"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+    group: "reminders",
+  },
+  {
+    key: "reminder-test-week-closing-coach",
+    title: "Test week closing",
+    description: "On the last day of a test week on one of your teams, with how many athletes still have results missing.",
+    eventTypes: ["reminder_test_week_closing_coach"],
+    roles: ["coach", "club-admin"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+    group: "reminders",
+  },
+  {
+    key: "reminder-athletes-not-logged",
+    title: "Sessions not logged",
+    description: "At 8 in the morning, one summary of how many athletes on your teams did not log yesterday's session.",
+    eventTypes: ["reminder_athletes_not_logged"],
+    roles: ["coach", "club-admin"],
+    defaults: { "in-app": true, email: false },
+    emailAvailable: true,
+    group: "reminders",
   },
 
   // Platform admin, and the person who asked for a club

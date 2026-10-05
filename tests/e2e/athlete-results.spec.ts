@@ -115,7 +115,7 @@ test.describe("athlete results, records and competitions (mock mode)", () => {
 
     await page.goto("/athlete/test-week/history")
     await expect(page.getByRole("heading", { level: 2, name: "Speed and power testing" })).toBeVisible()
-    await expect(page.getByText("0.07s faster")).toBeVisible()
+    await expect(page.getByText("0.07s faster").first()).toBeVisible()
 
     await page.goto("/athlete/prs")
     await expect(page.getByRole("link", { name: /^30m/ })).toContainText("3.98")

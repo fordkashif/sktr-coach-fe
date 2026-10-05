@@ -71,6 +71,21 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     case "availability_set_by_coach":
       // The plan shows the notice with "I'm back" and which sessions are excused.
       return "/athlete/training-plan"
+    // Reminders (20261011120000). Written by the hourly job, not by something a person did.
+    case "reminder_session_today": {
+      // Today's session in the log. The date is the club's local day the reminder was made for.
+      const sessionDate = date(metadata, "session_date")
+      return sessionDate ? `/athlete/log?date=${sessionDate}` : "/athlete/log"
+    }
+    case "reminder_checkin":
+      return "/athlete/wellness"
+    case "reminder_test_week_closing":
+      return "/athlete/test-week"
+    case "reminder_test_week_closing_coach":
+      return "/coach/test-week"
+    case "reminder_athletes_not_logged":
+      // One team: that team. Several: the dashboard, which lists who has not logged.
+      return id(metadata, "team_id") ? teamPath(metadata, "coach") : "/coach/dashboard"
     case "athlete_invite_created":
       // The invited athlete sees this one; the person who sent the invite is told below when it is accepted.
       return role === "athlete" ? "/athlete/join" : teamPath(metadata, role)
@@ -169,6 +184,15 @@ export function notificationActionLabel(eventType: string): string {
       return "Open your plan"
     case "test_week_published":
       return "Open the test week"
+    case "reminder_session_today":
+      return "Open today's session"
+    case "reminder_checkin":
+      return "Do your check-in"
+    case "reminder_test_week_closing":
+    case "reminder_test_week_closing_coach":
+      return "Open the test week"
+    case "reminder_athletes_not_logged":
+      return "See who has not logged"
     case "competition_entry_added":
       return "Open the competition"
     case "athlete_new_best":

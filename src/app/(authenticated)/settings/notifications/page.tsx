@@ -10,6 +10,7 @@ import {
   NOTIFICATION_PREFERENCE_CATEGORIES,
   notificationCategoriesForRole,
   type NotificationCategoryRole,
+  type NotificationPreferenceCategory,
 } from "@/lib/notification-categories"
 import {
   getCurrentNotificationPreferenceMatrix,
@@ -188,6 +189,53 @@ export default function NotificationSettingsPage() {
   }
 
   const categories = notificationCategoriesForRole(role as NotificationCategoryRole)
+  // Reminders are made on a schedule, not by something a person did: they get their own heading.
+  const everyday = categories.filter((category) => category.group !== "reminders")
+  const reminders = categories.filter((category) => category.group === "reminders")
+
+  const categoryRows = (list: NotificationPreferenceCategory[]) => (
+    <List>
+      {list.map((category) => (
+        <ListRow key={category.key}>
+          <span role="group" aria-label={category.title} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+            <span className="min-w-0">
+              <span className="sk-list-title">{category.title}</span>
+              <span className="sk-list-sub">{category.description}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-6">
+              {CHANNELS.map(({ channel, label }) => {
+                if (channel === "email" && !category.emailAvailable) {
+                  return (
+                    <span key={channel} className="w-[104px] text-sm font-semibold text-sk-mute">
+                      In app only
+                    </span>
+                  )
+                }
+                const channelOn = preferences.global[channel]
+                const chosen = preferences.categories[category.key]?.[channel] ?? category.defaults[channel]
+                return (
+                  <span key={channel} className="flex w-[104px] items-center gap-2.5">
+                    <Toggle
+                      label={`${category.title}, ${label.toLowerCase()}${channelOn ? "" : " (the whole channel is off)"}`}
+                      // With the whole channel off nothing is sent, whatever was chosen here.
+                      checked={channelOn && chosen}
+                      disabled={!channelOn || savingKey === `${category.key}:${channel}`}
+                      onChange={(checked) => {
+                        void handleCategoryToggle(category.key, category.title, channel, checked)
+                      }}
+                    />
+                    <span aria-hidden className="text-sm font-semibold text-sk-ink-2">
+                      {label}
+                    </span>
+                  </span>
+                )
+              })}
+            </span>
+          </span>
+        </ListRow>
+      ))}
+    </List>
+  )
 
   return (
     <Screen width="narrow">
@@ -227,51 +275,17 @@ export default function NotificationSettingsPage() {
 
       <Section title="What you hear about" hint="Fine tune each kind of update.">
         {loading ? (
-          <SkeletonRows rows={Math.max(2, categories.length)} label="Loading your settings" />
+          <SkeletonRows rows={Math.max(2, everyday.length)} label="Loading your settings" />
         ) : (
-          <List>
-            {categories.map((category) => (
-              <ListRow key={category.key}>
-                <span role="group" aria-label={category.title} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                  <span className="min-w-0">
-                    <span className="sk-list-title">{category.title}</span>
-                    <span className="sk-list-sub">{category.description}</span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-6">
-                    {CHANNELS.map(({ channel, label }) => {
-                      if (channel === "email" && !category.emailAvailable) {
-                        return (
-                          <span key={channel} className="w-[104px] text-sm font-semibold text-sk-mute">
-                            In app only
-                          </span>
-                        )
-                      }
-                      const channelOn = preferences.global[channel]
-                      const chosen = preferences.categories[category.key]?.[channel] ?? category.defaults[channel]
-                      return (
-                        <span key={channel} className="flex w-[104px] items-center gap-2.5">
-                          <Toggle
-                            label={`${category.title}, ${label.toLowerCase()}${channelOn ? "" : " (the whole channel is off)"}`}
-                            // With the whole channel off nothing is sent, whatever was chosen here.
-                            checked={channelOn && chosen}
-                            disabled={!channelOn || savingKey === `${category.key}:${channel}`}
-                            onChange={(checked) => {
-                              void handleCategoryToggle(category.key, category.title, channel, checked)
-                            }}
-                          />
-                          <span aria-hidden className="text-sm font-semibold text-sk-ink-2">
-                            {label}
-                          </span>
-                        </span>
-                      )
-                    })}
-                  </span>
-                </span>
-              </ListRow>
-            ))}
-          </List>
+          categoryRows(everyday)
         )}
       </Section>
+
+      {reminders.length > 0 ? (
+        <Section title="Reminders" hint="Sent at the times below, in your club's time zone. Each one is sent at most once a day.">
+          {loading ? <SkeletonRows rows={reminders.length} label="Loading your settings" /> : categoryRows(reminders)}
+        </Section>
+      ) : null}
     </Screen>
   )
 }

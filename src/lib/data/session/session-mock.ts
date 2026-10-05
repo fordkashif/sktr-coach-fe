@@ -1,10 +1,12 @@
 import { readStoredMockPlans } from "@/components/coach/training-plan/mock-adapter"
 import { availabilityCovers, readMockAvailability } from "@/lib/data/athlete/availability-data"
 import { err, ok, type Result } from "@/lib/data/result"
+import { mockLiftMaxKg } from "@/lib/data/exercises/mock-exercise-store"
+import { cleanEffort, exerciseMatchKey } from "@/lib/data/session/log-assist"
 import {
-  exerciseKey,
   formatSetLog,
   isLogEmpty,
+  blueprintForAthlete,
   planBlueprints,
   summariseSets,
   targetValues,
@@ -104,7 +106,7 @@ const DEMO_TEMPLATES: Record<string, DemoTemplate> = {
       {
         id: "demo-a-3",
         title: "Strength",
-        notes: "",
+        notes: "Rest 2 min between sets.",
         exercises: [exercise("Power clean", "4", "3", "95kg"), exercise("Back squat", "3", "5", "120kg")],
       },
     ],
@@ -186,7 +188,10 @@ function buildCalendar(): Calendar {
   const byDate = new Map<string, SessionBlueprint>()
   const demoDates = new Set<string>()
   for (const plan of coachPlans) {
-    for (const blueprint of planBlueprints(plan)) if (!byDate.has(blueprint.date)) byDate.set(blueprint.date, blueprint)
+    // The demo athlete gets the coach's changes for them and their loads in kilograms (percent of best lift).
+    for (const blueprint of planBlueprints(plan)) {
+      if (!byDate.has(blueprint.date)) byDate.set(blueprint.date, blueprintForAthlete(blueprint, MOCK_ATHLETE_ID, (lift) => mockLiftMaxKg(MOCK_ATHLETE_ID, lift)))
+    }
   }
   const demo = demoPlan()
   for (const blueprint of planBlueprints(demo)) {
@@ -226,6 +231,7 @@ function blueprintBlocks(sessionId: string, blueprint: SessionBlueprint): Loggab
         label: row.label,
         target: row.target,
         helper: row.helper,
+        referenceUrl: row.referenceUrl ?? null,
         kind: row.kind,
         targetSets: row.targetSets,
         targetReps: row.targetReps,
@@ -257,6 +263,9 @@ function demoLogs(blocks: LoggableBlock[]): SessionRowLog[] {
         timeSeconds: target.timeSeconds ?? (row.kind === "time" ? Math.round((4.2 + index * 0.03) * 100) / 100 : null),
         distanceM: target.distanceM ?? null,
         mark: target.mark ?? (row.kind === "mark" ? Math.round((2.7 + index * 0.05) * 100) / 100 : null),
+        // Lifts were rated set by set, getting harder. The first set carries the exercise note.
+        rpe: row.kind === "strength" ? Math.min(10, 7 + Math.floor(index / 2)) : null,
+        note: index === 0 && row.label === "Back squat" ? "Last set was slow out of the hole." : null,
       }))
     }),
   )
@@ -552,10 +561,10 @@ export function listMockSessionRefs(from: string, to: string): AthleteSessionRef
   return [...planned, ...extras].sort((left, right) => right.date.localeCompare(left.date) || left.origin.localeCompare(right.origin))
 }
 
-/** For each exercise name: what was logged in the most recent finished session before `before`. */
-export function mockLastTime(labels: string[], before: string, excludeSessionId: string | null): Record<string, LastTimeResult> {
+/** For each exercise (keys from exerciseMatchKey): what was logged in the most recent finished session before `before`. */
+export function mockLastTime(keys: string[], before: string, excludeSessionId: string | null): Record<string, LastTimeResult> {
   const calendar = buildCalendar()
-  const wanted = new Set(labels.map(exerciseKey))
+  const wanted = new Set(keys.map(exerciseMatchKey))
   const finished = Object.entries(loadStore(calendar))
     .filter(([id, stored]) => stored?.completedOn && id !== excludeSessionId && stored.date <= before)
     .sort(([, left], [, right]) => right.date.localeCompare(left.date))
@@ -563,13 +572,27 @@ export function mockLastTime(labels: string[], before: string, excludeSessionId:
   for (const [, stored] of finished) {
     for (const block of stored.blocks ?? []) {
       for (const row of block.rows) {
-        const key = exerciseKey(row.label)
+        const key = exerciseMatchKey(row.label)
         if (!wanted.has(key) || found[key]) continue
-        const summary = summariseSets(
-          row.kind,
-          stored.logs.filter((log) => log.rowId === row.id && log.completed),
-        )
-        if (summary && summary !== "Done" && !/ done$/.test(summary)) found[key] = { date: stored.date, summary }
+        const logs = stored.logs.filter((log) => log.rowId === row.id && log.completed).sort((left, right) => left.setIndex - right.setIndex)
+        const summary = summariseSets(row.kind, logs)
+        if (!summary || summary === "Done" || / done$/.test(summary)) continue
+        found[key] = {
+          date: stored.date,
+          summary,
+          kind: row.kind,
+          sets: logs.map((log) => ({
+            setIndex: log.setIndex,
+            reps: log.reps,
+            loadKg: log.loadKg,
+            timeSeconds: log.timeSeconds,
+            distanceM: log.distanceM,
+            mark: log.mark,
+            rpe: cleanEffort(log.rpe),
+          })),
+          sessionEffort: cleanEffort(stored.rpe),
+          note: logs.find((log) => typeof log.note === "string" && log.note.trim() !== "")?.note ?? null,
+        }
       }
     }
   }
@@ -588,7 +611,9 @@ export function mockAthletePlans(): Array<{ summary: TrainingPlanSummary; detail
     { id: "demo-plan", name: "General performance block", plan: demo, emphasis: ["Getting back into rhythm", "Speed and strength", "Sharpen up", "Taper"], demo: true },
   ]
   return sources.map((source) => {
-    const blueprints = planBlueprints(source.plan).filter((blueprint) => (source.demo ? calendar.demoDates.has(blueprint.date) : true))
+    const blueprints = planBlueprints(source.plan)
+      .map((blueprint) => blueprintForAthlete(blueprint, MOCK_ATHLETE_ID, (lift) => mockLiftMaxKg(MOCK_ATHLETE_ID, lift)))
+      .filter((blueprint) => (source.demo ? calendar.demoDates.has(blueprint.date) : true))
     const weeks = Array.from({ length: Math.max(source.plan.weeks, 1) }, (_, index) => {
       const weekNumber = index + 1
       const start = addDaysIso(source.plan.startDate, index * 7)

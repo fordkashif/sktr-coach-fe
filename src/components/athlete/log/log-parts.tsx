@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react"
+import { CaretDown } from "@phosphor-icons/react"
 import {
   Button,
   Choices,
   DayPicker,
   Dialog,
+  EffortButton,
+  EffortScale,
   Field,
   Input,
   List,
@@ -14,12 +17,14 @@ import {
   Select,
   SetGroup,
   SetRow,
+  Sheet,
   StatusText,
   TickButton,
   WeekPager,
   type DayPickerDay,
 } from "@/components/sk"
 import type { Result } from "@/lib/data/result"
+import { canRepeatLastTime, effortBySet, lastTimeEffort, lastTimeSetText, NOTE_MAX_LENGTH, rowNote } from "@/lib/data/session/log-assist"
 import { formatSetLog, isLogEmpty, MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
 import type { SyncState } from "@/lib/data/session/session-log-sync"
 import {
@@ -148,7 +153,52 @@ function trim(value: number | null | undefined) {
   return value === null || value === undefined ? undefined : String(Math.round(value * 1000) / 1000)
 }
 
-/** One exercise of the session being logged: its sets, "Same as target", "Repeat set", "Add set". */
+export const EFFORT_WORDS = ["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Very hard", "Max effort"]
+
+/**
+ * What the athlete did last time for this exercise: one quiet line, which opens the full set list
+ * (each set with its effort) and the note they left.
+ */
+function LastTimeLine({ label, last }: { label: string; last: LastTimeResult }) {
+  const [open, setOpen] = useState(false)
+  const effort = lastTimeEffort(last)
+  const noun = SET_NOUN[last.kind]
+  return (
+    <div data-last-time={label}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="-mb-1 flex min-h-11 w-full cursor-pointer items-center gap-2 text-left text-sm leading-snug text-sk-mute hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+      >
+        <span className="min-w-0 flex-1">
+          Last time: {last.summary} ({formatShortDay(last.date)}){effort ? `, ${effort}` : ""}
+        </span>
+        <CaretDown className={open ? "size-4 shrink-0 rotate-180" : "size-4 shrink-0"} weight="bold" aria-hidden />
+        <span className="sr-only">{open ? "Hide the sets" : "Show every set"}</span>
+      </button>
+      {open ? (
+        <div className="pb-1 text-sm text-sk-ink-2">
+          <ol aria-label={`${label}, sets last time`}>
+            {last.sets.map((set) => (
+              <li key={set.setIndex} className="flex items-baseline gap-3 py-1 tabular-nums">
+                <span className="w-20 shrink-0 text-sk-mute">
+                  {noun} {set.setIndex}
+                </span>
+                <span className="min-w-0 flex-1 font-semibold text-sk-ink">{lastTimeSetText(last.kind, set)}</span>
+                <span className="shrink-0 text-sk-mute">{set.rpe ? `Effort ${set.rpe}` : ""}</span>
+              </li>
+            ))}
+          </ol>
+          {last.sessionEffort ? <p className="py-1 text-sk-mute">Whole session: effort {last.sessionEffort} out of 10.</p> : null}
+          {last.note ? <p className="py-1">Your note: {last.note}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** One exercise of the session being logged: its sets, effort per set, "Same as last time", a note. */
 export function ExerciseLog({
   row,
   logs,
@@ -156,9 +206,13 @@ export function ExerciseLog({
   lastTime,
   onToggle,
   onValue,
+  onEffort,
+  onNote,
   onFill,
   onRepeat,
+  onRepeatLast,
   onAddSet,
+  onStopwatch,
   hideLabel = false,
 }: {
   row: LoggableRow
@@ -167,9 +221,15 @@ export function ExerciseLog({
   lastTime: LastTimeResult | null
   onToggle: (setIndex: number) => void
   onValue: (setIndex: number, field: LogField, value: number | null) => void
+  onEffort: (setIndex: number, rpe: number | null) => void
+  onNote: (text: string) => void
   onFill: () => void
   onRepeat: () => void
+  /** "Same as last time": fills the sets with last time's numbers. */
+  onRepeatLast: () => void
   onAddSet: () => void
+  /** Opens the stopwatch for this exercise (timed reps only). */
+  onStopwatch?: () => void
   /** The block title already says it (a block with a single item and no exercises). */
   hideLabel?: boolean
 }) {
@@ -182,7 +242,12 @@ export function ExerciseLog({
   const hasTarget = row.kind === "strength" ? target.reps != null || target.loadKg != null : row.kind === "time" ? target.timeSeconds != null : target.mark != null
   const repeat = allDone ? null : repeatTarget(row, logs, count)
   const canAddSet = row.kind !== "check" && count < MAX_SETS
-  const hint = [row.helper, lastTime ? `Last time: ${lastTime.summary} (${formatShortDay(lastTime.date)})` : null].filter(Boolean).join(". ") || undefined
+  const note = rowNote(row.id, logs)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [effortSet, setEffortSet] = useState<number | null>(null)
+  const showNote = noteOpen || note !== ""
+  const hint = <RowHint row={row} />
+  const below = lastTime ? <LastTimeLine label={row.label} last={lastTime} /> : undefined
 
   if (single) {
     return (
@@ -196,16 +261,24 @@ export function ExerciseLog({
     )
   }
 
+  const rated = row.kind !== "check"
   return (
     <SetGroup
       data-exercise={row.label}
       title={hideLabel ? undefined : row.label}
       target={row.target}
       hint={hint}
+      below={below}
       status={allDone ? <StatusText tone="green">Done</StatusText> : `${doneCount} of ${count}`}
-      columns={row.kind === "strength" ? ["Reps", "kg"] : undefined}
+      columns={row.kind === "strength" ? ["Reps", "kg"] : row.kind === "time" ? ["Time"] : row.kind === "mark" ? ["Metres"] : undefined}
+      effortColumn={rated}
       actions={
         <>
+          {!allDone && canRepeatLastTime(row, lastTime) ? (
+            <Button variant="quiet" size="sm" onClick={onRepeatLast}>
+              Same as last time
+            </Button>
+          ) : null}
           {!allDone && row.kind !== "check" ? (
             <Button variant="quiet" size="sm" onClick={onFill}>
               {hasTarget ? "Same as target" : "Tick all"}
@@ -221,16 +294,75 @@ export function ExerciseLog({
               Add {noun.toLowerCase()}
             </Button>
           ) : null}
+          {onStopwatch && row.kind === "time" ? (
+            <Button variant="quiet" size="sm" onClick={onStopwatch}>
+              Stopwatch
+            </Button>
+          ) : null}
+          {!showNote ? (
+            <Button variant="quiet" size="sm" onClick={() => setNoteOpen(true)}>
+              Add note
+            </Button>
+          ) : null}
+        </>
+      }
+      footer={
+        <>
+          {showNote ? (
+            <Input
+              className="mt-2"
+              aria-label={`${row.label}, note`}
+              placeholder="Note for this exercise"
+              maxLength={NOTE_MAX_LENGTH}
+              autoFocus={noteOpen && note === ""}
+              enterKeyHint="done"
+              value={note}
+              onChange={(event) => onNote(event.target.value)}
+            />
+          ) : null}
+          {rated ? (
+            <Sheet
+              open={effortSet !== null}
+              onOpenChange={(open) => {
+                if (!open) setEffortSet(null)
+              }}
+              side="bottom"
+              title={`Effort, ${noun.toLowerCase()} ${effortSet ?? 1}`}
+              description={`${row.label}. 1 is very easy, 10 is everything you had.`}
+            >
+              <div className="pb-2">
+                <EffortScale
+                  label={`${row.label}, ${noun.toLowerCase()} ${effortSet ?? 1}, effort from 1 to 10`}
+                  words={EFFORT_WORDS}
+                  value={effortSet === null ? null : (logs[setKey(row.id, effortSet)]?.rpe ?? null)}
+                  onChange={(rpe) => {
+                    if (effortSet !== null) onEffort(effortSet, rpe)
+                    setEffortSet(null)
+                  }}
+                />
+              </div>
+            </Sheet>
+          ) : null}
         </>
       }
     >
       {sets.map((setIndex) => {
         const log = logs[setKey(row.id, setIndex)]
         const done = Boolean(log?.completed)
+        const rpe = log?.rpe ?? null
         return (
           <SetRow
             key={setIndex}
             index={setIndex}
+            effort={
+              rated ? (
+                <EffortButton
+                  value={rpe}
+                  label={`${row.label}, ${noun.toLowerCase()} ${setIndex}, effort${rpe ? ` ${rpe} out of 10` : ", not rated"}`}
+                  onClick={() => setEffortSet(setIndex)}
+                />
+              ) : undefined
+            }
             tick={<TickButton done={done} label={`${row.label}, ${noun.toLowerCase()} ${setIndex}, ${done ? "done" : "mark as done"}`} onClick={() => onToggle(setIndex)} />}
           >
             {row.kind === "strength" ? (
@@ -277,25 +409,26 @@ export function ExerciseLog({
   )
 }
 
-/** Read-only rows of what was logged: exercise, result, target. */
+/** Read-only rows of what was logged: exercise, result, effort set by set, the note, target. */
 export function LoggedSummary({ blocks, logs }: { blocks: LoggableBlock[]; logs: Record<string, SessionRowLog> }) {
   const all = Object.values(logs)
   return (
     <List>
       {blocks.flatMap((block) =>
         block.rows.map((row) => {
-          const sets = all
-            .filter((log) => log.rowId === row.id && !isLogEmpty(log))
-            .sort((left, right) => left.setIndex - right.setIndex)
-            .map((log) => formatSetLog(row.kind, log))
-            .filter(Boolean)
+          const logged = all.filter((log) => log.rowId === row.id && !isLogEmpty(log)).sort((left, right) => left.setIndex - right.setIndex)
+          const sets = logged.map((log) => formatSetLog(row.kind, log)).filter(Boolean)
           const onlyDone = sets.length > 0 && sets.every((entry) => entry === "Done")
           const result = sets.length === 0 ? "Not logged" : onlyDone ? (sets.length > 1 ? `${sets.length} done` : "Done") : sets.join(", ")
           const showBlock = block.name !== row.label && blocks.length > 1
+          const efforts = effortBySet(logged)
+          const note = rowNote(row.id, all)
           return (
             <ListRow key={row.id} data-logged={row.label}>
               <span className="sk-list-title">{row.label}</span>
               <span className={sets.length > 0 ? "block text-[0.9375rem] font-semibold leading-snug text-sk-ink tabular-nums" : "sk-list-sub"}>{result}</span>
+              {efforts ? <span className="block text-[0.9375rem] leading-snug text-sk-ink-2 tabular-nums">Effort by set: {efforts}</span> : null}
+              {note ? <span className="block text-[0.9375rem] leading-snug text-sk-ink-2">Your note: {note}</span> : null}
               <span className="sk-list-sub">
                 {showBlock ? `${block.name}. ` : ""}Target: {row.target}
               </span>
@@ -461,5 +594,21 @@ export function AddExerciseDialog({
         ) : null}
       </div>
     </Dialog>
+  )
+}
+
+/** The coach's cue for a row and, when the exercise has one, a link to its video or reference. */
+function RowHint({ row }: { row: LoggableRow }) {
+  if (!row.helper && !row.referenceUrl) return null
+  return (
+    <>
+      {row.helper}
+      {row.helper && row.referenceUrl ? " " : null}
+      {row.referenceUrl ? (
+        <a href={row.referenceUrl} target="_blank" rel="noopener noreferrer" className="sk-link whitespace-nowrap font-semibold">
+          Watch how
+        </a>
+      ) : null}
+    </>
   )
 }

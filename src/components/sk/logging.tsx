@@ -128,6 +128,8 @@ export function TickButton({ done, label, onClick, className }: { done: boolean;
  * hint line ("Last time: ..."), a short status on the right ("2 of 3") and, under that, the SetRows
  * and one row of quiet actions ("Same as target", "Add set"). Groups in a list are divided by hairlines.
  * With `trailing` and no children it is a single line with its control on the right (a tick-only item).
+ * `below` sits under the heading at full width (the "last time" line), `footer` under the actions (a note field).
+ * `effortColumn` adds the "Effort" label above the EffortButton of each SetRow.
  */
 export function SetGroup({
   title,
@@ -136,6 +138,9 @@ export function SetGroup({
   status,
   trailing,
   columns,
+  effortColumn = false,
+  below,
+  footer,
   actions,
   children,
   className,
@@ -149,6 +154,9 @@ export function SetGroup({
   trailing?: ReactNode
   /** Column labels above the inputs ("Reps", "kg"). Hidden from screen readers; every input has its own label. */
   columns?: string[]
+  effortColumn?: boolean
+  below?: ReactNode
+  footer?: ReactNode
   actions?: ReactNode
   children?: ReactNode
   className?: string
@@ -164,6 +172,7 @@ export function SetGroup({
         </div>
         {trailing ?? (status ? <span className="shrink-0 text-sm font-bold tabular-nums text-sk-mute">{status}</span> : null)}
       </div>
+      {below}
       {children ? (
         <>
           {columns ? (
@@ -174,6 +183,7 @@ export function SetGroup({
                   {column}
                 </span>
               ))}
+              {effortColumn ? <span className="w-[52px] shrink-0 text-center">Effort</span> : null}
               <span className="w-[52px] shrink-0 text-center">Done</span>
             </div>
           ) : null}
@@ -181,6 +191,7 @@ export function SetGroup({
         </>
       ) : null}
       {actions ? <div className="-ml-2.5 mt-1.5 flex flex-wrap items-center gap-x-1">{actions}</div> : null}
+      {footer}
     </li>
   )
 }
@@ -195,15 +206,38 @@ export function SetList({ children, className, ...rest }: { children: ReactNode;
 }
 
 /** SetRow: one set. Its number on the left, the inputs (or a line of text) in the middle, the TickButton on the right. */
-export function SetRow({ index, children, tick }: { index: number; children: ReactNode; tick: ReactNode }) {
+export function SetRow({ index, children, effort, tick }: { index: number; children: ReactNode; effort?: ReactNode; tick: ReactNode }) {
   return (
     <li className="flex items-center gap-2">
       <span className="w-6 shrink-0 text-center text-base font-extrabold tabular-nums text-sk-mute" aria-hidden>
         {index}
       </span>
       {children}
+      {effort}
       {tick}
     </li>
+  )
+}
+
+/**
+ * EffortButton: the effort of one set, in a SetRow between the inputs and the tick. It shows the
+ * number once given and a short dash before that, and opens whatever picks the number (an EffortScale).
+ */
+export function EffortButton({ value, label, onClick, className }: { value: number | null; label: string; onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-haspopup="dialog"
+      onClick={onClick}
+      className={cn(
+        "flex size-[52px] shrink-0 cursor-pointer items-center justify-center rounded-[14px] border text-lg font-extrabold tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
+        value ? "border-sk-ink bg-white text-sk-ink" : "border-sk-line-strong bg-white text-sk-faint hover:border-sk-ink hover:text-sk-ink",
+        className,
+      )}
+    >
+      {value ?? <span aria-hidden>&ndash;</span>}
+    </button>
   )
 }
 
