@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   TestWeekScreen,
   type ActionResult,
@@ -27,6 +27,8 @@ import type { Role } from "@/lib/mock-data"
 type Props = {
   initialRole: Role
   initialCoachTeamId: string | null
+  /** The coach's assigned teams. Null for club admins, who work on every team. */
+  coachTeamIds: string[] | null
 }
 
 const STARTER_TESTS: Array<{ name: string; unit: TestUnit }> = [
@@ -41,19 +43,27 @@ function toAction<T, U>(result: Result<T>, map: (data: T) => U): ActionResult<U>
   return result.ok ? { ok: true, data: map(result.data) } : { ok: false, message: result.error.message }
 }
 
-export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCoachTeamId }: Props) {
-  const scopedTeamId = initialRole === "coach" ? initialCoachTeamId : null
-  const [isLoading, setIsLoading] = useState(true)
+export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCoachTeamId, coachTeamIds }: Props) {
+  const isCoach = initialRole === "coach"
+  const scopedTeamId = isCoach ? initialCoachTeamId : null
+  const teamIdsKey = isCoach && coachTeamIds ? coachTeamIds.join(",") : null
   const [loadError, setLoadError] = useState<string | null>(null)
   const [teams, setTeams] = useState<TestWeekTeamOption[]>([])
-  const [weekItems, setWeekItems] = useState<CoachTestWeekListItem[]>([])
+  // The list remembers which team it was loaded for, so a switch never shows the last team's weeks.
+  const [loaded, setLoaded] = useState<{ scope: string | null; items: CoachTestWeekListItem[] } | null>(null)
+  const isLoading = loaded === null || loaded.scope !== scopedTeamId
+  const weekItems = useMemo(() => (loaded && loaded.scope === scopedTeamId ? loaded.items : []), [loaded, scopedTeamId])
+  const loadRun = useRef(0)
 
   const load = useCallback(async () => {
+    const run = ++loadRun.current
     const [teamsResult, weeksResult] = await Promise.all([
       getCoachTeamsSnapshotForCurrentUser(),
       getCoachTestWeeksForCurrentUser({ scopeTeamId: scopedTeamId, includeArchived: true }),
     ])
-    setIsLoading(false)
+    // Only the newest load may land.
+    if (run !== loadRun.current) return
+    setLoaded((current) => (current && current.scope === scopedTeamId ? current : { scope: scopedTeamId, items: [] }))
     if (!teamsResult.ok) {
       setLoadError(teamsResult.error.message)
       return
@@ -62,10 +72,15 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
       setLoadError(weeksResult.error.message)
       return
     }
-    setTeams(teamsResult.data.teams.map((team) => ({ id: team.id, name: team.name, athleteCount: team.athleteCount })))
-    setWeekItems(weeksResult.data)
+    const allowed = teamIdsKey === null ? null : new Set(teamIdsKey.split(","))
+    setTeams(
+      teamsResult.data.teams
+        .filter((team) => (allowed ? allowed.has(team.id) : true))
+        .map((team) => ({ id: team.id, name: team.name, athleteCount: team.athleteCount })),
+    )
+    setLoaded({ scope: scopedTeamId, items: weeksResult.data })
     setLoadError(null)
-  }, [scopedTeamId])
+  }, [scopedTeamId, teamIdsKey])
 
   useEffect(() => {
     void load()
@@ -156,7 +171,8 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     <TestWeekScreen
       weeks={weeks}
       teams={teams}
-      lockedTeamId={scopedTeamId}
+      lockedTeamId={isCoach && (coachTeamIds?.length ?? 0) <= 1 ? scopedTeamId : null}
+      defaultTeamId={scopedTeamId}
       isLoading={isLoading}
       loadError={loadError}
       starterTests={starterTests}

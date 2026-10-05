@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { CoachAthleteDetailContent, type AthleteDetailData } from "@/components/coach/athlete-detail-content"
-import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
+import { useCoachTeamScope } from "@/lib/coach-teams"
 import {
   getCoachAthleteDetailForCurrentUser,
   getCoachDashboardSnapshotForCurrentUser,
@@ -9,27 +9,52 @@ import {
   type CoachAthleteDetail,
   type CoachDashboardSnapshot,
 } from "@/lib/data/coach/dashboard-data"
+import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import type { Athlete, Team } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { InvalidEntityPage } from "@/pages/invalid-entity"
 
 export default function CoachAthleteDetailPage() {
-  const backendMode = getBackendMode()
   const { athleteId = "" } = useParams()
-  const role = getCookieValue(ROLE_COOKIE)
-  const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
+  // One screen per athlete in the address, so nothing from the previous athlete is ever shown.
+  return <CoachAthleteDetail key={athleteId} athleteId={athleteId} />
+}
+
+function CoachAthleteDetail({ athleteId }: { athleteId: string }) {
+  const backendMode = getBackendMode()
+  const { role, coachTeamId, coachTeams, coachTeamsLoading, isAssigned, syncSelectedTeam } = useCoachTeamScope()
+  const isCoach = role === "coach"
+  const hasSeveralTeams = isCoach && coachTeams.length > 1
+  // The team this screen was opened with. The athlete in the address decides the scope from here on,
+  // so picking another team in the switcher does not pull this screen back (the shell navigates away).
+  const [openedWithTeamId] = useState(coachTeamId)
+  // Real backend, coach on several teams: the athlete's own team, once the roster told us which it is.
+  const [resolvedTeamId, setResolvedTeamId] = useState<string | null>(null)
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
   const [backendDetail, setBackendDetail] = useState<CoachAthleteDetail | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [mockAthletes, setMockAthletes] = useState<Athlete[]>([])
   const [mockTeams, setMockTeams] = useState<Team[]>([])
-  const scopeTeamId = role === "coach" ? coachTeamId : null
+  const [mockLoaded, setMockLoaded] = useState(false)
+  const scopeTeamId = isCoach ? (resolvedTeamId ?? openedWithTeamId ?? coachTeamId) : null
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
+    if (backendMode !== "supabase" || coachTeamsLoading) return
     let cancelled = false
 
     const loadDetail = async () => {
+      // A link to an athlete on another of the coach's teams loads that team. The roster list is small
+      // and cached, and this effect then runs again with the right team.
+      if (hasSeveralTeams && !resolvedTeamId) {
+        const rosterResult = await getCoachTeamsSnapshotForCurrentUser()
+        if (cancelled) return
+        const rosterTeamId = rosterResult.ok ? rosterResult.data.athletes.find((item) => item.id === athleteId)?.teamId : null
+        if (rosterTeamId && rosterTeamId !== scopeTeamId) {
+          setResolvedTeamId(rosterTeamId)
+          return
+        }
+      }
+
       const [snapshotResult, detailResult] = await Promise.all([
         getCoachDashboardSnapshotForCurrentUser({ scopeTeamId }),
         getCoachAthleteDetailForCurrentUser(athleteId, { scopeTeamId }),
@@ -54,7 +79,7 @@ export default function CoachAthleteDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [athleteId, backendMode, scopeTeamId])
+  }, [athleteId, backendMode, coachTeamsLoading, hasSeveralTeams, resolvedTeamId, scopeTeamId])
 
   const saveSessionNote = useCallback(
     async (sessionId: string, note: string) => {
@@ -83,6 +108,7 @@ export default function CoachAthleteDetailPage() {
       if (!cancelled) {
         setMockAthletes(module.mockAthletes)
         setMockTeams(module.mockTeams)
+        setMockLoaded(true)
       }
     })
 
@@ -93,8 +119,15 @@ export default function CoachAthleteDetailPage() {
 
   const athletesSource = backendMode === "supabase" ? (backendSnapshot?.athletes ?? []) : mockAthletes
   const athlete = athletesSource.find((item) => item.id === athleteId)
+  const athleteTeamId = athlete?.teamId ?? null
+  const onOneOfMyTeams = isCoach && isAssigned(athleteTeamId)
 
-  if (backendMode === "supabase" && !backendSnapshot && !backendError) {
+  // Opening an athlete by link selects their team, so the rest of the app follows.
+  useEffect(() => {
+    if (onOneOfMyTeams) syncSelectedTeam(athleteTeamId)
+  }, [athleteTeamId, onOneOfMyTeams, syncSelectedTeam])
+
+  if (coachTeamsLoading || (backendMode === "supabase" ? !backendSnapshot && !backendError : !mockLoaded)) {
     return (
       <div className="sk-page">
         <p className="text-sm font-semibold text-sk-mute">Loading athlete details...</p>
@@ -122,7 +155,7 @@ export default function CoachAthleteDetailPage() {
     )
   }
 
-  if (role === "coach" && coachTeamId && athlete.teamId !== coachTeamId) {
+  if (isCoach && !onOneOfMyTeams) {
     return (
       <InvalidEntityPage
         title="Athlete unavailable"

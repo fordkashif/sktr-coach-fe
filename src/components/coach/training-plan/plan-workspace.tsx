@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   createEmptyPlan,
   duplicateAsDraft,
@@ -7,6 +7,7 @@ import {
   validateBasics,
   type PlanDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { PlanBuilder } from "./plan-builder"
 import { PlanList } from "./plan-list"
@@ -63,7 +64,18 @@ function setMobileDetailMode(active: boolean) {
  * The whole coach "Training plans" screen: plan list, setup, week planner, publish.
  * Storage is injected, so mock mode and the real backend share every pixel and feature.
  */
-export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageAdapter; lockedTeamId: string | null }) {
+export function PlanWorkspace({
+  adapter,
+  selectedTeamId,
+  teamLocked,
+}: {
+  adapter: PlanStorageAdapter
+  /** The coach's selected team: the list shows it and new plans start on it. Null for club admins. */
+  selectedTeamId: string | null
+  /** True when the team on a plan cannot be changed (a coach with one team). */
+  teamLocked: boolean
+}) {
+  const { syncSelectedTeam } = useCoachTeams()
   const [directory, setDirectory] = useState<PlanDirectory>({ teams: [], athletes: [] })
   const [plans, setPlans] = useState<PlanListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,8 +95,12 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
   const [builderKey, setBuilderKey] = useState(0)
   const opening = useRef(false)
 
+  // Only the newest load may land, so a slow answer for the last team never overwrites the new one.
+  const refreshRun = useRef(0)
   const refresh = useCallback(async () => {
+    const run = ++refreshRun.current
     const [directoryResult, plansResult] = await Promise.all([adapter.loadDirectory(), adapter.listPlans()])
+    if (run !== refreshRun.current) return
     setLoading(false)
     if (!directoryResult.ok) return setListError(`Could not load your teams: ${directoryResult.error.message}`)
     setDirectory(directoryResult.data)
@@ -96,6 +112,38 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Switching team: drop the last team's list before it can be seen, and leave a plan that belongs to
+  // another team. Unsaved edits are kept on this device (the list offers to pick them up again).
+  const latest = useRef({ view, plan, dirty })
+  useEffect(() => {
+    latest.current = { view, plan, dirty }
+  })
+  const shownTeamId = useRef(selectedTeamId)
+  useLayoutEffect(() => {
+    if (shownTeamId.current === selectedTeamId) return
+    shownTeamId.current = selectedTeamId
+    setPlans([])
+    setLoading(true)
+    setListError(null)
+    const open = latest.current
+    if (open.view === "list" || !open.plan || open.plan.teamId === selectedTeamId) return
+    if (open.dirty) {
+      writeUnsaved(open.plan)
+      setUnsaved(open.plan)
+    }
+    setView("list")
+    setPlan(null)
+    setDirty(false)
+    setActionError(null)
+    setMobileEditorOpen(false)
+  }, [selectedTeamId])
+
+  useTeamSwitchGuard(
+    plan && dirty && view !== "list"
+      ? "You have unsaved changes to this plan. Switch team anyway? Your work stays on this device so you can pick it up later."
+      : null,
+  )
 
   // Mirror unsaved edits to this browser.
   useEffect(() => {
@@ -160,7 +208,7 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
   }
 
   const startNew = () => {
-    setPlan(createEmptyPlan(lockedTeamId ?? directory.teams[0]?.id ?? ""))
+    setPlan(createEmptyPlan(selectedTeamId ?? directory.teams[0]?.id ?? ""))
     setIsNewSetup(true)
     setDirty(false)
     setActionError(null)
@@ -218,6 +266,8 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
     setActionError(null)
     setSavedLabel(`Draft saved at ${new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}.`)
     clearUnsaved()
+    // A plan saved for another of the coach's teams: show that team, so the plan is in the list.
+    if (selectedTeamId) syncSelectedTeam(plan.teamId)
   }
 
   const publish = async () => {
@@ -251,6 +301,7 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
     clearUnsaved()
     setPublished({ count: result.data.assignedCount, wasUpdate })
     setView("done")
+    if (selectedTeamId) syncSelectedTeam(target.teamId)
     void refresh()
   }
 
@@ -262,7 +313,7 @@ export function PlanWorkspace({ adapter, lockedTeamId }: { adapter: PlanStorageA
         plan={plan}
         teams={directory.teams}
         isNew={isNewSetup}
-        teamLocked={Boolean(lockedTeamId)}
+        teamLocked={teamLocked}
         onCancel={goBack}
         onDone={(next) => {
           if (isNewSetup) {

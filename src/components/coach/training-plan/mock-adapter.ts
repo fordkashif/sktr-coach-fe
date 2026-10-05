@@ -10,7 +10,7 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import { mockAthletes, mockTeams, mockTrainingPlans } from "@/lib/mock-data"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { countAssignedAthletes, type PlanStorageAdapter } from "./storage"
+import { countAssignedAthletes, type PlanScope, type PlanStorageAdapter } from "./storage"
 
 const STORAGE_KEY = "pacelab:coach-training-plans:v1"
 
@@ -96,9 +96,11 @@ function seedPlans(scopeTeamId: string | null): StoredPlan[] {
 }
 
 /** Mock mode: plans live in localStorage, per tenant, on top of a few demo plans. */
-export function createMockPlanAdapter(scopeTeamId: string | null): PlanStorageAdapter {
+export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
+  const scopeTeamId = scope.listTeamId
+  const allowedTeamIds = scope.teamIds ? new Set(scope.teamIds) : null
   const athletes = mockAthletes
-    .filter((athlete) => (scopeTeamId ? athlete.teamId === scopeTeamId : true))
+    .filter((athlete) => (allowedTeamIds ? allowedTeamIds.has(athlete.teamId) : true))
     .map((athlete) => ({
       id: athlete.id,
       name: athlete.name,
@@ -113,8 +115,9 @@ export function createMockPlanAdapter(scopeTeamId: string | null): PlanStorageAd
     const state = readState()
     const storedIds = new Set(state.plans.map((plan) => plan.id))
     const visibleSeeds = seeds.filter((seed) => !storedIds.has(seed.id) && !state.removedSeedIds.includes(seed.id))
-    return [...state.plans, ...visibleSeeds].filter((plan) => (scopeTeamId ? plan.teamId === scopeTeamId : true))
+    return [...state.plans, ...visibleSeeds].filter((plan) => (allowedTeamIds ? allowedTeamIds.has(plan.teamId) : true))
   }
+  const listedPlans = () => allPlans().filter((plan) => (scopeTeamId ? plan.teamId === scopeTeamId : true))
 
   const store = (plan: StoredPlan) => {
     const state = readState()
@@ -124,14 +127,14 @@ export function createMockPlanAdapter(scopeTeamId: string | null): PlanStorageAd
   return {
     async loadDirectory() {
       const teams = mockTeams
-        .filter((team) => (scopeTeamId ? team.id === scopeTeamId : true))
+        .filter((team) => (allowedTeamIds ? allowedTeamIds.has(team.id) : true))
         .map((team) => ({ id: team.id, name: team.name, eventGroup: team.eventGroup }))
       return ok({ teams, athletes })
     },
 
     async listPlans() {
       return ok(
-        allPlans()
+        listedPlans()
           .map((plan) => ({
             id: plan.id,
             name: plan.name,

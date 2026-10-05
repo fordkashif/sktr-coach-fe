@@ -17,6 +17,8 @@ type InvitePreview = {
   /** Pending invites past their expiry are reported as expired. */
   status: "pending" | "accepted" | "expired" | "revoked"
   expiresAt: string | null
+  /** True when the invite was sent to a different email address than the signed-in athlete's. */
+  addressedToSomeoneElse: boolean
 }
 
 function requireSupabaseClient(operation: string): ClientResolution {
@@ -101,6 +103,47 @@ export async function createAthleteInviteForCurrentCoach(params: {
   })
 }
 
+type InvitePreviewRow = {
+  invite_id: string
+  team_id: string
+  team_name: string | null
+  event_group: string | null
+  status: InvitePreview["status"]
+  expires_at: string | null
+  is_for_caller: boolean | null
+}
+
+function toInvitePreview(row: {
+  id: string
+  teamId: string
+  teamName: string | null
+  eventGroup: string | null
+  status: InvitePreview["status"]
+  expiresAt: string | null
+  addressedToSomeoneElse: boolean
+}): InvitePreview {
+  const isPastExpiry = row.status === "pending" && row.expiresAt !== null && new Date(row.expiresAt).getTime() < Date.now()
+  return {
+    inviteId: row.id,
+    teamId: row.teamId,
+    teamName: row.teamName ?? "Team",
+    eventGroup: row.eventGroup,
+    status: isPastExpiry ? "expired" : row.status,
+    expiresAt: row.expiresAt,
+    addressedToSomeoneElse: row.addressedToSomeoneElse,
+  }
+}
+
+/** PostgREST and Postgres codes for "this function does not exist (yet)". */
+function isMissingFunction(error: { code?: string } | null) {
+  return error?.code === "PGRST202" || error?.code === "42883"
+}
+
+/**
+ * What the join screen shows for an invite code. Athletes cannot read athlete_invites or other
+ * teams any more (migration 20261006150000), so this goes through get_athlete_invite_preview().
+ * The direct read below only runs against a database that does not have that function yet.
+ */
 export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): Promise<Result<InvitePreview>> {
   const clientResult = requireSupabaseClient("getAthleteInvitePreviewForCurrentUser")
   if (!clientResult.ok) return clientResult
@@ -108,6 +151,24 @@ export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): P
   const { data: authSession } = await clientResult.client.auth.getSession()
   const userId = authSession.session?.user.id
   if (!userId) return err("UNAUTHORIZED", "No authenticated Supabase session found.")
+
+  const preview = await clientResult.client.rpc("get_athlete_invite_preview", { p_invite_id: inviteId })
+  if (!isMissingFunction(preview.error)) {
+    if (preview.error) return { ok: false, error: mapPostgrestError(preview.error) }
+    const row = (Array.isArray(preview.data) ? preview.data[0] : preview.data) as InvitePreviewRow | null | undefined
+    if (!row) return err("NOT_FOUND", "Invite not found.")
+    return ok(
+      toInvitePreview({
+        id: row.invite_id,
+        teamId: row.team_id,
+        teamName: row.team_name,
+        eventGroup: row.event_group ?? null,
+        status: row.status,
+        expiresAt: row.expires_at ?? null,
+        addressedToSomeoneElse: row.is_for_caller === false,
+      }),
+    )
+  }
 
   const { data: profile, error: profileError } = await clientResult.client
     .from("profiles")
@@ -129,16 +190,17 @@ export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): P
   if (!data) return err("NOT_FOUND", "Invite not found.")
 
   const team = Array.isArray(data.teams) ? data.teams[0] : data.teams
-  const expiresAt = (data.expires_at as string | null) ?? null
-  const isPastExpiry = data.status === "pending" && expiresAt !== null && new Date(expiresAt).getTime() < Date.now()
-  return ok({
-    inviteId: data.id,
-    teamId: data.team_id,
-    teamName: team?.name ?? "Team",
-    eventGroup: team?.event_group ?? null,
-    status: isPastExpiry ? "expired" : data.status,
-    expiresAt,
-  })
+  return ok(
+    toInvitePreview({
+      id: data.id,
+      teamId: data.team_id,
+      teamName: team?.name ?? null,
+      eventGroup: team?.event_group ?? null,
+      status: data.status,
+      expiresAt: (data.expires_at as string | null) ?? null,
+      addressedToSomeoneElse: false,
+    }),
+  )
 }
 
 export async function acceptAthleteInviteForCurrentUser(inviteId: string): Promise<Result<void>> {

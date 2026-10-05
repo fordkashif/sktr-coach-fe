@@ -15,17 +15,19 @@ import {
   publishTrainingPlanForCurrentCoach,
   saveTrainingPlanDraftForCurrentCoach,
 } from "@/lib/data/training-plan/training-plan-data"
-import type { AthleteOption, PlanStorageAdapter } from "./storage"
+import type { AthleteOption, PlanScope, PlanStorageAdapter } from "./storage"
 
 /** Real backend: everything goes through src/lib/data/training-plan. */
-export function createSupabasePlanAdapter(scopeTeamId: string | null): PlanStorageAdapter {
+export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter {
+  const scopeTeamId = scope.listTeamId
+  const allowedTeamIds = scope.teamIds ? new Set(scope.teamIds) : null
   let athletes: AthleteOption[] = []
 
   const loadDirectory: PlanStorageAdapter["loadDirectory"] = async () => {
     const result = await getCoachTeamsSnapshotForCurrentUser()
     if (!result.ok) return result
     const teams = result.data.teams
-      .filter((team) => (scopeTeamId ? team.id === scopeTeamId : true))
+      .filter((team) => (allowedTeamIds ? allowedTeamIds.has(team.id) : true))
       .map((team) => ({ id: team.id, name: team.name, eventGroup: team.eventGroup }))
     const teamIds = new Set(teams.map((team) => team.id))
     athletes = result.data.athletes

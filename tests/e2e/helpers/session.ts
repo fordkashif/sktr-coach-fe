@@ -11,6 +11,12 @@ export async function seedMockSession(
     tenantId?: string
     userEmail?: string
     coachTeamId?: string
+    /**
+     * Mock mode: assign the demo coach to several teams (for example ["t1", "t4"]), which turns the
+     * team switcher on. Stored in localStorage "pacelab:mock-coach-teams". Leave out for the default
+     * one-team coach.
+     */
+    coachTeamIds?: string[]
   },
 ) {
   const tenantId = params.tenantId ?? "elite-track-club"
@@ -25,7 +31,12 @@ export async function seedMockSession(
           : "platformadmin@pacelab.local")
 
   await page.addInitScript(
-    ({ roleValue, emailValue, coachTeamIdValue }) => {
+    ({ roleValue, emailValue, coachTeamIdValue, coachTeamIdsValue }) => {
+      if (coachTeamIdsValue) {
+        window.localStorage.setItem("pacelab:mock-coach-teams", coachTeamIdsValue)
+      } else {
+        window.localStorage.removeItem("pacelab:mock-coach-teams")
+      }
       window.localStorage.setItem("pacelab:mock-role", roleValue)
       window.localStorage.setItem("pacelab:mock-user-email", emailValue)
       if (coachTeamIdValue) {
@@ -34,7 +45,12 @@ export async function seedMockSession(
         window.localStorage.removeItem("pacelab:mock-coach-team")
       }
     },
-    { roleValue: params.role, emailValue: userEmail, coachTeamIdValue: params.coachTeamId },
+    {
+      roleValue: params.role,
+      emailValue: userEmail,
+      coachTeamIdValue: params.coachTeamId,
+      coachTeamIdsValue: params.coachTeamIds?.join(",") ?? null,
+    },
   )
 
   await page.context().addCookies([

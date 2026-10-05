@@ -2,11 +2,10 @@
 
 import { ArrowRight, Plus, UserPlus, UsersThree } from "@phosphor-icons/react"
 import { Link, Navigate } from "react-router-dom"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { InviteAthleteDialog } from "@/components/coach/team-detail-content"
 import { EmptyState, Initials, PageHeader, Panel, ReadinessTag, Stat } from "@/components/sk"
-import { COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
-import { getCoachScope } from "@/lib/coach-scope"
+import { useCoachTeams } from "@/lib/coach-teams"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import {
   createClubAdminTeam,
@@ -17,7 +16,6 @@ import { useRole } from "@/lib/role-context"
 import { getBackendMode } from "@/lib/supabase/config"
 import type { Athlete, EventGroup, Team } from "@/lib/mock-data"
 
-const MOCK_COACH_TEAM_STORAGE_KEY = "pacelab:mock-coach-team"
 const teamEventGroupOptions: EventGroup[] = ["Sprint", "Mid", "Distance", "Jumps", "Throws"]
 
 function getTeamDisciplineLabel(team: Pick<Team, "disciplines" | "eventGroup"> | null | undefined) {
@@ -32,7 +30,9 @@ export default function CoachTeamsPage() {
   const { role } = useRole()
   const isCoachViewer = role === "coach"
   const isClubAdminViewer = role === "club-admin"
-  const coachScope = useMemo(() => getCoachScope(role === "coach" ? role : "club-admin"), [role])
+  // A coach works on one team at a time (see the team switcher in the shell), so this page sends
+  // them straight to the selected team. Club admins get the list of every team below.
+  const coachTeams = useCoachTeams()
   const [backendTeams, setBackendTeams] = useState<Team[]>([])
   const [backendAthletes, setBackendAthletes] = useState<Athlete[]>([])
   const [assignableCoaches, setAssignableCoaches] = useState<ClubAdminAssignableCoachOption[]>([])
@@ -42,12 +42,6 @@ export default function CoachTeamsPage() {
   const [creatingTeam, setCreatingTeam] = useState(false)
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode)
   const [backendError, setBackendError] = useState<string | null>(null)
-  const [coachTeamId, setCoachTeamId] = useState(() => {
-    if (typeof window === "undefined") return getCookieValue(COACH_TEAM_COOKIE) ?? ""
-    if (isSupabaseMode) return getCookieValue(COACH_TEAM_COOKIE) ?? ""
-    return window.localStorage.getItem(MOCK_COACH_TEAM_STORAGE_KEY) ?? coachScope.teamId ?? ""
-  })
-
   useEffect(() => {
     if (isSupabaseMode) return
     let cancelled = false
@@ -56,7 +50,6 @@ export default function CoachTeamsPage() {
       if (cancelled) return
       setBackendTeams(module.mockTeams)
       setBackendAthletes(module.mockAthletes)
-      setCoachTeamId((current) => current || module.mockTeams[0]?.id || "")
     })
 
     return () => {
@@ -65,7 +58,7 @@ export default function CoachTeamsPage() {
   }, [isSupabaseMode])
 
   useEffect(() => {
-    if (!isSupabaseMode) return
+    if (!isSupabaseMode || isCoachViewer) return
     let cancelled = false
 
     const loadSnapshot = async () => {
@@ -90,28 +83,18 @@ export default function CoachTeamsPage() {
       setBackendAthletes(result.data.athletes)
       if (coachOptionsResult?.ok) setAssignableCoaches(coachOptionsResult.data)
       setBackendLoading(false)
-      if (!coachTeamId && result.data.teams[0]?.id && isCoachViewer) setCoachTeamId(result.data.teams[0].id)
     }
 
     void loadSnapshot()
     return () => {
       cancelled = true
     }
-  }, [coachTeamId, isClubAdminViewer, isCoachViewer, isSupabaseMode])
+  }, [isClubAdminViewer, isCoachViewer, isSupabaseMode])
 
   const teamsSource = backendTeams
   const athletesSource = backendAthletes
 
-  const visibleTeams = useMemo(() => {
-    if (!isCoachViewer) return teamsSource
-    if (isSupabaseMode) {
-      return coachTeamId ? teamsSource.filter((team) => team.id === coachTeamId) : teamsSource
-    }
-    if (coachScope.isScopedCoach) {
-      return teamsSource.filter((team) => team.id === coachTeamId)
-    }
-    return teamsSource
-  }, [coachScope.isScopedCoach, coachTeamId, isCoachViewer, isSupabaseMode, teamsSource])
+  const visibleTeams = teamsSource
 
   const visibleTeamIds = new Set(visibleTeams.map((team) => team.id))
   const totalAthletes = athletesSource.filter((athlete) => visibleTeamIds.has(athlete.teamId)).length
@@ -150,17 +133,25 @@ export default function CoachTeamsPage() {
     setBackendError(null)
   }
 
-  if (isCoachViewer && !backendLoading) {
-    if (visibleTeams[0]?.id) {
-      return <Navigate to={`/coach/teams/${visibleTeams[0].id}`} replace />
+  if (isCoachViewer) {
+    if (coachTeams.loading) {
+      return (
+        <div className="sk-page">
+          <p className="text-sm text-sk-mute">Loading your team...</p>
+        </div>
+      )
+    }
+
+    if (coachTeams.selectedTeamId) {
+      return <Navigate to={`/coach/teams/${coachTeams.selectedTeamId}`} replace />
     }
 
     return (
       <div className="sk-page">
         <PageHeader title="Teams" lede="You are not assigned to a team yet." />
-        {backendError ? (
+        {coachTeams.error ? (
           <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-            Could not load your teams: {backendError}
+            Could not load your teams: {coachTeams.error}
           </p>
         ) : null}
         <EmptyState
@@ -258,30 +249,6 @@ export default function CoachTeamsPage() {
             </button>
           </form>
         </Panel>
-      ) : null}
-
-      {!isSupabaseMode && isCoachViewer && coachScope.allowTeamSwitcher ? (
-        <div className="flex flex-col gap-3 rounded-[20px] bg-sk-yellow-tint p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <label htmlFor="mock-team-switch" className="text-sm text-sk-ink-2">
-            <span className="block font-bold text-sk-ink">Demo mode team</span>
-            Switch which group this demo coach is assigned to.
-          </label>
-          <select
-            id="mock-team-switch"
-            className="sk-field sm:max-w-xs"
-            value={coachTeamId}
-            onChange={(event) => {
-              const value = event.target.value
-              setCoachTeamId(value)
-              window.localStorage.setItem(MOCK_COACH_TEAM_STORAGE_KEY, value)
-              document.cookie = `${COACH_TEAM_COOKIE}=${value}; Path=/; Max-Age=${60 * 60 * 8}; SameSite=Lax`
-            }}
-          >
-            {teamsSource.map((team) => (
-              <option key={team.id} value={team.id}>{team.name}</option>
-            ))}
-          </select>
-        </div>
       ) : null}
 
       {visibleTeams.length === 0 && !(isSupabaseMode && backendLoading) ? (

@@ -5,7 +5,7 @@ import { DownloadSimple, MagnifyingGlass, Printer } from "@phosphor-icons/react"
 import { BarChart } from "@mui/x-charts"
 import { Link } from "react-router-dom"
 import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Tag, scoreTone } from "@/components/sk"
-import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
+import { useCoachTeamScope } from "@/lib/coach-teams"
 import type { Athlete, PR, Team, WellnessEntry } from "@/lib/mock-data"
 import {
   getCoachDashboardSnapshotForCurrentUser,
@@ -70,9 +70,13 @@ function Summary({ items }: { items: Array<{ label: string; value: string | numb
 }
 
 export default function CoachReportsPage() {
+  const { role, coachTeamId } = useCoachTeamScope()
+  // One report screen per team: switching team reloads the data and clears the filters.
+  return <CoachReports key={coachTeamId ?? "all"} role={role} coachTeamId={coachTeamId} />
+}
+
+function CoachReports({ role, coachTeamId }: { role: string | null; coachTeamId: string | null }) {
   const backendMode = getBackendMode()
-  const role = getCookieValue(ROLE_COOKIE)
-  const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
   const [backendWellness, setBackendWellness] = useState<WellnessEntry[]>([])
   const [backendError, setBackendError] = useState<string | null>(null)

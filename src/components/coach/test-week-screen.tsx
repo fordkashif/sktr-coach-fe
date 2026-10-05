@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Archive,
   ArrowDown,
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
  * The mock client and the Supabase client each supply rows and handlers;
  * everything a coach sees and clicks lives here so the two cannot drift.
  */
+import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 
 export type TestUnit = "time" | "distance" | "weight" | "height" | "score"
 export type TestWeekStatus = "draft" | "published" | "closed"
@@ -73,7 +74,10 @@ export type TestWeekScreenProps = {
   weeks: TestWeekRow[]
   teams: TestWeekTeamOption[]
   /** Set for a coach who only works with one team. Hides the team picker. */
+  /** Set when the team cannot be changed (a coach with one team). */
   lockedTeamId: string | null
+  /** The coach's selected team: the list is for this team and new test weeks start on it. Null for club admins. */
+  defaultTeamId?: string | null
   isLoading: boolean
   loadError: string | null
   /** Tests a new week starts with on day 1, by team. */
@@ -192,6 +196,8 @@ function Change({ change }: { change: ResultChange | null }) {
 
 export function TestWeekScreen(props: TestWeekScreenProps) {
   const { weeks, teams, lockedTeamId, isLoading, loadError } = props
+  const defaultTeamId = props.defaultTeamId ?? null
+  const { syncSelectedTeam } = useCoachTeams()
   const [view, setView] = useState<View>({ kind: "list" })
   const [listFilter, setListFilter] = useState<"active" | "archived">("active")
   const [actionError, setActionError] = useState<string | null>(null)
@@ -203,7 +209,30 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
 
   const teamName = (teamId: string | null) => teams.find((team) => team.id === teamId)?.name ?? "No team"
   const lockedTeam = teams.find((team) => team.id === lockedTeamId) ?? null
+  const scopeTeam = lockedTeam ?? teams.find((team) => team.id === defaultTeamId) ?? null
   const inSubview = view.kind !== "list"
+
+  // Which team the open detail or builder belongs to, and what the builder looked like when it opened.
+  const viewTeamId = useRef<string | null>(null)
+  const [draftBaseline, setDraftBaseline] = useState<string | null>(null)
+  const builderDirty = view.kind === "builder" && draft !== null && JSON.stringify(draft) !== draftBaseline
+  useTeamSwitchGuard(builderDirty ? "You have unsaved changes to this test week. Switch team and lose them?" : null)
+
+  // Switching team closes a test week that belongs to another team, so nothing from the last team stays up.
+  const latestView = useRef(view)
+  useEffect(() => {
+    latestView.current = view
+  })
+  const shownTeamId = useRef(defaultTeamId)
+  useLayoutEffect(() => {
+    if (shownTeamId.current === defaultTeamId) return
+    shownTeamId.current = defaultTeamId
+    if (latestView.current.kind === "list" || viewTeamId.current === defaultTeamId) return
+    setActionError(null)
+    setNotice(null)
+    setDraft(null)
+    setView({ kind: "list" })
+  }, [defaultTeamId])
 
   // The app shell swaps the mobile tab bar for a Back button while a detail or builder is open.
   useEffect(() => {
@@ -219,6 +248,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const goTo = (next: View) => {
     setActionError(null)
     if (next.kind !== "detail") setNotice(null)
+    if (next.kind === "detail") viewTeamId.current = weeks.find((week) => week.id === next.id)?.teamId ?? viewTeamId.current
     setView(next)
     window.scrollTo?.({ top: 0 })
     document.querySelector("main")?.scrollTo?.({ top: 0 })
@@ -253,28 +283,35 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   }, [detailId, detailVersion, loadDetail])
 
   const openNew = () => {
-    const teamId = lockedTeamId ?? teams[0]?.id ?? ""
+    const preferredTeamId = lockedTeamId ?? defaultTeamId
+    const teamId = (teams.some((team) => team.id === preferredTeamId) ? preferredTeamId : null) ?? teams[0]?.id ?? ""
     const today = toInputDate(new Date())
-    setDraft({
+    const next: Draft = {
       id: null,
       name: "",
       teamId,
       startDate: today,
       endDate: addDays(today, 4),
       tests: props.starterTests(teamId).map((test) => ({ key: makeKey(), id: null, name: test.name, unit: test.unit, dayIndex: 0 })),
-    })
+    }
+    setDraft(next)
+    setDraftBaseline(JSON.stringify(next))
+    viewTeamId.current = teamId
     goTo({ kind: "builder", id: null })
   }
 
   const openEdit = (week: TestWeekRow, detail: TestWeekDetail) => {
-    setDraft({
+    const next: Draft = {
       id: week.id,
       name: week.name,
-      teamId: week.teamId ?? lockedTeamId ?? teams[0]?.id ?? "",
+      teamId: week.teamId ?? lockedTeamId ?? defaultTeamId ?? teams[0]?.id ?? "",
       startDate: week.startDate,
       endDate: week.endDate,
       tests: detail.tests.map((test) => ({ key: test.id, id: test.id, name: test.name, unit: test.unit, dayIndex: test.dayIndex })),
-    })
+    }
+    setDraft(next)
+    setDraftBaseline(JSON.stringify(next))
+    viewTeamId.current = next.teamId
     goTo({ kind: "builder", id: week.id })
   }
 
@@ -298,7 +335,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     const shownWeeks = listFilter === "archived" && archivedWeeks.length > 0 ? archivedWeeks : activeWeeks
     const openWeeks = activeWeeks.filter((week) => week.status === "published")
     const draftWeeks = activeWeeks.filter((week) => week.status === "draft")
-    const scope = lockedTeam ? ` for ${lockedTeam.name}` : ""
+    const scope = scopeTeam ? ` for ${scopeTeam.name}` : ""
     const lede = isLoading
       ? "Loading your test weeks."
       : activeWeeks.length === 0
@@ -437,6 +474,9 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
                       : "Draft saved. Publish it when you are ready for athletes to see it.",
                 )
                 setDetailVersion((version) => version + 1)
+                // Saved for another of the coach's teams: show that team, so this test week is in its list.
+                viewTeamId.current = input.teamId
+                if (defaultTeamId) syncSelectedTeam(input.teamId)
                 setView({ kind: "detail", id: result.data.id })
                 document.querySelector("main")?.scrollTo?.({ top: 0 })
               }

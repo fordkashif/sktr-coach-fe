@@ -1,20 +1,24 @@
+import { useMemo } from "react"
 import CoachTestWeekPageClient from "@/components/coach/test-week-page-client"
 import CoachTestWeekPageSupabaseClient from "@/components/coach/test-week-page-supabase-client"
-import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
+import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getBackendMode } from "@/lib/supabase/config"
 type CoachPageRole = "coach" | "club-admin"
 
 export default function CoachTestWeekPage() {
   const backendMode = getBackendMode()
-  const cookieRole = getCookieValue(ROLE_COOKIE)
+  const { role: cookieRole, coachTeamId, coachTeams, coachTeamsLoading } = useCoachTeamScope()
   const role: CoachPageRole = cookieRole === "club-admin" ? "club-admin" : "coach"
-  const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
+  // Null means every team (club admins). A coach gets the teams they are assigned to.
+  const coachTeamIds = useMemo(() => (role === "coach" ? coachTeams.map((team) => team.id) : null), [coachTeams, role])
+
+  if (coachTeamsLoading) return <div className="sk-page" aria-busy="true" />
 
   return (
     backendMode === "supabase" ? (
-      <CoachTestWeekPageSupabaseClient initialRole={role} initialCoachTeamId={coachTeamId} />
+      <CoachTestWeekPageSupabaseClient initialRole={role} initialCoachTeamId={coachTeamId} coachTeamIds={coachTeamIds} />
     ) : (
-      <CoachTestWeekPageClient initialRole={role} initialCoachTeamId={coachTeamId} />
+      <CoachTestWeekPageClient initialRole={role} initialCoachTeamId={coachTeamId} coachTeamIds={coachTeamIds} />
     )
   )
 }
