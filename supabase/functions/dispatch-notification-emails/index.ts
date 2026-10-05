@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4"
+import { escapeHtml } from "../_shared/club-access.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,8 +57,10 @@ async function sendWithResend(params: {
       to: [params.toEmail],
       subject: params.subject,
       text: params.body ?? params.subject,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.5;"><h2>${params.subject}</h2><p>${
-        (params.body ?? params.subject).replace(/\n/g, "<br />")
+      // Subject and body can contain text typed into the public club request form, so they are escaped:
+      // a visitor must not be able to put links or markup of their own into an email to the platform admin.
+      html: `<div style="font-family:Arial,sans-serif;line-height:1.5;"><h2>${escapeHtml(params.subject)}</h2><p>${
+        escapeHtml(params.body ?? params.subject).replace(/\n/g, "<br />")
       }</p></div>`,
     }),
   })

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import { withAccessPausedSignal } from "@/lib/access-paused"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
 
 let browserClient: SupabaseClient | null = null
@@ -16,6 +17,8 @@ export function getBrowserSupabaseClient() {
       detectSessionInUrl: true,
       flowType: "pkce",
     },
+    // Lets the route guard react the moment the database says this member is locked out.
+    global: { fetch: withAccessPausedSignal((input, init) => fetch(input, init)) },
   })
 
   return browserClient

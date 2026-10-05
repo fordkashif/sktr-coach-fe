@@ -358,12 +358,96 @@ No policy is added or changed.
 - Each send writes a tenant `audit_events` row (`coach_invite_email_sent`, `coach_invite_email_resent`, `coach_invite_email_failed` and the `athlete_` equivalents) with the inviter as actor and the invited email as target.
 - No double emails: the invite triggers queue only `in-app` notification events when an invite is created, so `dispatch-notification-emails` has nothing to send for it.
 
+### Security definer functions respect lifecycle (migration `20261006180000_definer_functions_respect_lifecycle.sql`)
+
+`20261005180000` closed the tables to a deactivated member and to everyone in a suspended or cancelled club. Security definer functions do not go through row policies, and the ones that looked the caller up in `profiles` themselves stayed open. This migration closes them. It supersedes the "not changed, because it does not use these helpers" notes in the two sections above for the functions listed here.
+
+One definition of "active member": `current_tenant_id()` returns a tenant (signed in, profile active, the club's latest provisioning record not `suspended` / `cancelled`; a club with no record counts as open). The guard functions only wrap it:
+
+| Function | Who can call it | What it does |
+|---|---|---|
+| `caller_is_active_member()` | authenticated, service role | `current_tenant_id() is not null` |
+| `assert_caller_active()` | internal only | raises the refusal below for a signed-in user who has a profile and is not an active member. Returns for a call with no session (service role, triggers) and for a signed-in user with no profile (platform admin, brand new account), who are then handled by the function's own checks exactly as before |
+| `raise_access_paused()` | internal only | the one refusal: SQLSTATE `42501`, hint `access_paused`, message "Your access is paused. ..." |
+| `tenant_access_blocked(tenant_id)` | service role, internal | the same suspended / cancelled rule for a given club, for callers that have no profile yet (invite acceptance, the account-creating edge functions) |
+
+Every security definer function, who may call it, how it knows the caller, and what a deactivated member or a member of a suspended / cancelled club gets. "Helpers" means it decides through `current_tenant_id()`, `is_club_admin()`, `is_coach_or_admin()`, `is_team_coach()`, `is_coach_of_athlete()` or `current_athlete_id()`, which already answered NULL / false for them. All of this was run on a throwaway Postgres 16 as 24 different callers, before and after the migration.
+
+| Function(s) | Callable by | Identifies caller by | Blocked member before | Now |
+|---|---|---|---|---|
+| `current_tenant_id`, `current_app_role`, `is_club_admin`, `is_coach_or_admin`, `is_team_coach`, `is_coach_of_athlete`, `current_athlete_id`, `current_coach_team_ids` | anon / authenticated | own profile lookup with the lifecycle rule | NULL / false / empty | unchanged |
+| `can_manage_team`, `can_manage_athlete`, `can_manage_test_week`, `can_manage_training_plan`, `athlete_can_enter_test_result`, `current_athlete_team_id`, `current_athlete_email`, `current_athlete_plan_ids`, `current_athlete_plan_week_ids`, `current_athlete_plan_day_ids`, `current_athlete_test_week_ids`, `current_coach_athlete_ids`, `current_tenant_athlete_count`, `get_athlete_invite_preview`, `remove_athlete_from_team` | authenticated | helpers | false / empty | unchanged |
+| `update_current_athlete_profile` | authenticated | profile lookup, no lifecycle check | **could rewrite own name, date of birth, events** | refused |
+| `complete_current_athlete_onboarding`, `complete_current_coach_onboarding`, `set_current_athlete_setup_guide_dismissed`, `set_current_coach_setup_guide_dismissed` | authenticated (were also anon) | profile lookup, no lifecycle check | **could write own profile** | refused |
+| `get_current_athlete_team_context` | authenticated (was also anon) | athlete row by `auth.uid()` | **returned team, club and coach names** | no row |
+| `set_tenant_member_access` | authenticated | profile lookup, checked `is_active` only | **admin of a suspended / cancelled club could deactivate, restore and re-role every member** | refused |
+| `get_tenant_member_emails` | authenticated | profile lookup, checked `is_active` only | **admin of a suspended / cancelled club got every member's email** | no rows |
+| `update_current_club_admin_billing_contact` | authenticated | profile lookup, `is_active` and not cancelled | **admin of a suspended club could change it** | refused |
+| `update_current_club_admin_onboarding_step` | authenticated (was also anon) | profile lookup, no lifecycle check | **deactivated admin, or admin of a suspended / cancelled club, could move the setup step** | refused |
+| `submit_tenant_package_upgrade_request` | authenticated (was also anon) | profile lookup, no lifecycle check | **same callers could file a request and write an audit row** | refused |
+| `complete_current_club_admin_mock_billing_setup` | authenticated (was also anon) | profile lookup, no `is_active` check | **deactivated admin of a club awaiting billing could complete billing and activate the club** | refused. Still works for the active admin of an `approved_pending_billing` or `billing_failed` club |
+| `accept_athlete_invite` | authenticated | `auth.users` email + invite | **invite of a suspended / cancelled club accepted; a deactivated athlete could use a join code to change team** | refused. New user and active athlete unchanged |
+| `accept_coach_invite` | authenticated | `auth.users` email + invite | **invite of a suspended / cancelled club accepted** (stale invite for a deactivated member was already refused) | refused. New user, and a deactivated member with an invite created after the deactivation, unchanged |
+| `get_current_club_admin_activation_state` | authenticated (was also anon) | profile lookup | returned lifecycle status and billing contact | still returns `lifecycle_status` (the route guard needs it); billing fields and setup step are NULL for a blocked caller |
+| `get_current_tenant_package` | authenticated | profile lookup | package + lifecycle status of own club | unchanged on purpose: the "access paused" page reads it |
+| `bootstrap_current_profile` | authenticated | profile, else `auth.users` email | returns own profile (user, club, role) | unchanged on purpose: sign-in needs it to know who the user is before it can show the notice |
+| `get_public_coach_invite`, `get_public_athlete_invite` | anon | invite id only | public preview | unchanged (public) |
+| `submit_tenant_provision_request` | anon | nobody (public form) | public | see the next section |
+| `submit_account_request` | was anon + authenticated | nobody | public | service role only, see the next section |
+| `is_platform_admin`, `get_platform_tenant_sizes`, `approve_and_provision_tenant_request`, `review_tenant_provision_request`, `review_tenant_package_upgrade_request`, `set_tenant_request_lifecycle_state`, `log_platform_admin_export` | authenticated (some were also anon) | `platform_admin_contacts` by user id or email | refused / empty for anyone who is not a platform admin | unchanged. Platform admins have no profile and are never guarded |
+| `notification_channel_enabled` | was anon + authenticated | arguments | **told anyone whether any user or email had notifications switched off** | service role only (the notification trigger runs as the owner) |
+| `is_active_tenant` | anon / authenticated | argument | true / false for a tenant id | unchanged (answers only "is this id an active club") |
+| `insert_platform_audit_event`, `provision_club_admin_tenant` | service role | arguments | not callable | unchanged |
+| trigger functions: `enqueue_coach_invite_notifications`, `enqueue_athlete_invite_notifications`, `enqueue_training_plan_assignment_notifications`, `enqueue_test_week_published_notifications`, `sync_user_notification_from_event`, `mark_session_in_progress_from_log`, `mark_session_completed_from_completion`, `prevent_delete_of_team_in_use` | not callable through the API | the row being written | run only when a row policy already let the write through | unchanged, never guarded |
+
+Also changed:
+- `tenant_package_upgrade_requests_club_admin_select` / `_insert` now use `is_club_admin()` and `current_tenant_id()`. Before, the admin of a suspended or cancelled club could still read the club's package requests and insert one directly.
+- `anon` lost `EXECUTE` on the member-only and platform-admin-only functions it had only by default. Each already refused a caller with no session.
+
+What a blocked person can still do, on purpose: read their own `profiles` row (`profiles_select_own`), call `bootstrap_current_profile()`, `get_current_tenant_package()` and (club admin) `get_current_club_admin_activation_state()`, read their own notifications and notification preferences, open a public invite preview, and use the public club request form. Nothing else. A club admin of a suspended or cancelled club is refused by `set_tenant_member_access`, both billing functions, the onboarding step, package requests, member emails, invite creation (row policies) and invite emails (`send-invite-email`).
+
+Edge functions:
+
+| Function | Who can call it | How it knows the caller | Deactivated member / suspended or cancelled club |
+|---|---|---|---|
+| `send-invite-email` | signed-in member | asks the database, as the caller, `current_tenant_id()`, `is_club_admin()`, `is_team_coach()` | refused with `not_allowed` (already the case, covered by a handler test) |
+| `claim-coach-invite-account`, `claim-athlete-invite-account` | anyone with an invite id | nobody; checks the invite and the email | now refuses (`403`, code `access_paused`) when the invite's club is suspended or cancelled, through `tenant_access_blocked`. If that check cannot be made the account is created as before; joining the club is still decided by `accept_*_invite` |
+| `platform-admin-send-club-admin-invite`, `platform-admin-preview-club-admin-invite`, `dispatch-notification-emails` | signed-in platform admin | reads `platform_admin_contacts` as the caller | not applicable: platform admins have no club. `dispatch-notification-emails` now escapes subject and body in the HTML it sends |
+| `local-preview-password-reset` | anyone, only when `ALLOW_LOCAL_PASSWORD_RESET_PREVIEW=true` | nobody | off on hosted projects, unchanged |
+
+### Public request form protection (migration `20261006181000_request_form_protection.sql`)
+
+`submit_tenant_provision_request` is the only write the API offers to visitors who are not signed in. There is now one version of it (the six-argument and thirteen-argument ones are dropped).
+
+| Protection | Rule | What the caller sees |
+|---|---|---|
+| Honeypot (`p_reference_code`) | any text in the hidden field | success and a made-up id; nothing is stored, no notification, no audit event |
+| Minimum fill time (`p_fill_ms`) | reported and below 2,500 ms | the same silent drop. The page itself waits until 3 seconds have passed before sending |
+| Per email | 3 accepted requests per 24 hours; `name+tag@host` counts as `name@host` | `PT429` (HTTP 429), "Too many requests. Try again later." |
+| Per network address | 5 accepted requests per 24 hours; IPv6 counted per /64; skipped when no address is known | the same |
+| Everyone together | 30 accepted requests per hour and 150 per 24 hours | the same |
+| Duplicate | same club name and email already pending | "A pending request already exists ..." (unchanged) |
+| Validation | email shape and 254 characters; name and club name 160; job title and region 120; type 80; website empty or `http(s)://host.tld...` up to 300; notes 1,000; head counts 0 to 100,000; start date from 31 days ago to 5 years ahead; no control characters | a message per rule, mapped to a plain sentence in `src/lib/auth-errors.ts` |
+
+- The limits are columns of the single row in `request_form_settings`; change one with an `update` in the SQL editor. The same row holds a random salt generated by the migration.
+- `request_form_attempts` holds one row per accepted request: a salted SHA-256 of the email and of the network address, and a timestamp. No raw IP is stored anywhere. Rows older than the longest window are deleted by the function on the next call.
+- Both tables have RLS enabled, no policies, and no privileges for `anon` / `authenticated`.
+- The network address comes from the request headers PostgREST exposes: `cf-connecting-ip`, then `x-real-ip`, then the first entry of `x-forwarded-for`. The last one can be forged by the sender, so the per-address limit is a speed bump; the per-email and global limits do not depend on it.
+- Who is emailed: only the platform admins, once per accepted request. The requester is emailed once, later, when a platform admin approves or declines.
+
+| Table / function | Before | Now |
+|---|---|---|
+| `submit_account_request(...)` | anyone, signed in or not, could add a request to any club by its name | service role only. No screen calls it |
+| `account_requests` insert (`account_requests_insert_authenticated`) | any member could insert a request for their own club | policy dropped. Club admins still read and review through `account_requests_staff_all` |
+| every other table | no policy for `anon` | unchanged; an anon insert was tried on all 35 tables and refused |
+
 ## Service-Role Only Operations (Documented)
 
 These are intentionally not available to regular authenticated users:
 - Tenant creation
 - Profile creation outside the three paths in "Profile bootstrap lockdown" (invite acceptance, club admin first access), and any direct role assignment
 - `provision_club_admin_tenant` (self-serve club creation)
+- `submit_account_request`, `notification_channel_enabled`, `tenant_access_blocked`, and everything in `request_form_settings` / `request_form_attempts`
 - Cross-tenant admin jobs
 - Backfill/migration scripts
 
@@ -375,6 +459,8 @@ These are intentionally not available to regular authenticated users:
 - Coaches and club-admins operate only within current tenant.
 - A coach operates only on teams they are assigned to, and on athletes currently on those teams. Club admins operate on the whole club.
 - Cross-tenant access is blocked even for coach/admin roles.
+- A deactivated member, and every member of a suspended or cancelled club, is refused by the tables and by every security definer function that acts for a member. They can still learn why they are locked out, and nothing more.
+- The only write open to visitors who are not signed in is the club request form, which is validated and rate limited in the database.
 
 ## Review Checklist
 

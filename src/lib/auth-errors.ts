@@ -98,12 +98,29 @@ const REQUEST_FIELD_MESSAGES: Array<[RegExp, string]> = [
   [/region is required/i, "Add your country or region."],
   [/coach count/i, "Enter how many coaches you expect, 0 or more."],
   [/athlete count/i, "Enter how many athletes you expect, 0 or more."],
+  // Server-side checks added with the request form protection (20261006181000). The form catches most
+  // of these first; these lines are for what gets past it.
+  [/requestor email is not valid/i, "That does not look like an email address. Check for typos."],
+  [/organization website/i, "Use a web address like yourclub.com, or leave the website empty."],
+  [/desired start date/i, "Pick a start date closer to today, or leave it empty."],
+  [/expected seats/i, "Check the number of coaches and athletes."],
+  [/notes is too long/i, "Your notes are too long. Keep them under 1,000 characters."],
+  [/is too long/i, "One of your answers is too long. Shorten it and send again."],
+  [/characters that are not allowed/i, "One of your answers has characters we cannot accept. Retype it without pasting and send again."],
 ]
+
+/** Raised by submit_tenant_provision_request when a limit is reached (SQLSTATE PT429, HTTP 429). */
+function isRequestFormRateLimited(error: ErrorLike) {
+  if (!error || typeof error === "string") return false
+  return error.code === "PT429" || (error as { hint?: string }).hint === "rate_limited"
+}
 
 export function describeAccessRequestError(error: ErrorLike): string {
   const { message } = parts(error)
   if (isConnectionError(error)) return CONNECTION_MESSAGE
-  if (isRateLimited(error)) return "Too many requests from this device. Wait a minute, then try again."
+  if (isRequestFormRateLimited(error) || isRateLimited(error)) {
+    return "Too many requests right now. Please try again later."
+  }
   if (/pending request already exists/i.test(message)) {
     return "We already have a request from this email for this club. It is in review, so there is no need to send it again."
   }
