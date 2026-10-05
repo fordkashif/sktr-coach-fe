@@ -186,6 +186,17 @@ No table or column changes. One new index, one new function, redefined functions
 - `review_tenant_provision_request(uuid, text, text)`: writes platform audit event `tenant_provision_request_reviewed` again.
 - `insert_platform_audit_event(...)`: internal. Not executable by `anon` or `authenticated`.
 
+## Profile Bootstrap Lockdown (migration `20261005200000_lock_down_profile_bootstrap.sql`)
+
+No table or column changes. Policies `profiles_insert_self_bootstrap` and `athletes_insert_self_bootstrap` are dropped; `anon` and `authenticated` lose `INSERT/UPDATE/DELETE/TRUNCATE` on `profiles` and `platform_admin_contacts`.
+
+- New: `bootstrap_current_profile()` returns `table (user_id uuid, tenant_id uuid, role text, status text)`, always one row. No arguments. `status` is `existing | created | invite_pending | none`. Creates a `club-admin` profile only when the caller's confirmed email is the `requestor_email` of an approved request with a provisioned, active tenant (latest reviewed request wins), and writes a `club_admin_first_access` row to `audit_events`. `tenant_id` and `role` are null for `invite_pending` and `none`. `authenticated` and `service_role` only.
+- Changed: `accept_athlete_invite(p_invite_id uuid)` creates the caller's `athlete` profile from the invite when they have none, provided the invite is addressed to their email. Same return value (the team id) and same error texts.
+- Changed: `accept_coach_invite(p_invite_id uuid)` refuses to reactivate a deactivated profile through an invite older than the profile's last change. Same return value (the tenant id).
+- Both accept functions: the invite row is locked for the call, a repeat call by the same user on an invite they already accepted returns the same value, `EXECUTE` revoked from `public` and `anon`.
+- `provision_club_admin_tenant(...)`: `service_role` only.
+- The app no longer reads `tenant_id`, `role` or `team_id` from auth user metadata anywhere. Only `display_name` is read from it (as a default name).
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

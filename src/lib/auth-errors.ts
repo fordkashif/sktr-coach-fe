@@ -47,6 +47,20 @@ export function describeSignInError(error: ErrorLike): string {
   return "Sign in did not work. Try again in a moment."
 }
 
+/**
+ * The password was right but the account has nothing to open. The reason comes from the database
+ * (bootstrap_current_profile), which is the only place that decides who belongs to which club.
+ */
+export function describeNoAccessError(reason: "invite_pending" | "none" | "error" | null | undefined): string {
+  if (reason === "invite_pending") {
+    return "Your password is right, but you have not joined your club yet. Open the link in your invite email to finish joining, then sign in."
+  }
+  if (reason === "error") {
+    return "Your password is right, but we could not load your account. Try again in a moment."
+  }
+  return "Your password is right, but this account is not active in a club right now. Ask your club admin to restore your access or send a new invite."
+}
+
 export function describeAuthLinkError(error: ErrorLike): string {
   const { message, code } = parts(error)
   if (isConnectionError(error)) return CONNECTION_MESSAGE

@@ -20,6 +20,20 @@ export type CoachOnboardingState = {
   setupGuideDismissedAt?: string | null
 }
 
+/** The claim function explains refusals in its JSON body; supabase-js only reports "non-2xx status". */
+async function readFunctionErrorMessage(error: { message: string; context?: unknown }) {
+  const response = error.context
+  if (response instanceof Response) {
+    try {
+      const body = (await response.clone().json()) as { error?: unknown }
+      if (typeof body.error === "string" && body.error) return body.error
+    } catch {
+      // Not JSON: keep the generic message.
+    }
+  }
+  return error.message
+}
+
 function requireSupabaseClient(operation: string) {
   if (getBackendMode() !== "supabase") {
     return err("UNKNOWN", `[${operation}] backend mode is not 'supabase'.`)
@@ -128,7 +142,7 @@ export async function claimCoachInviteAccount(params: {
     },
   })
 
-  if (error) return err("UNKNOWN", error.message, error)
+  if (error) return err("UNKNOWN", await readFunctionErrorMessage(error), error)
   if (data && typeof data === "object" && "error" in data && typeof data.error === "string") {
     return err("UNKNOWN", data.error)
   }

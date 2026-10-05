@@ -11,6 +11,7 @@ import {
   getPublicAthleteInvitePreview,
   type AthleteInvitePreview,
 } from "@/lib/data/athlete/invite-claim-data"
+import { setSessionCookies } from "@/lib/auth-session"
 import { MOCK_ORGANIZATION_NAME, eventGroupLabel } from "@/lib/data/athlete/profile-data"
 import { resolveSessionActor } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -27,6 +28,13 @@ function friendlyInviteError(message: string) {
     return "We could not find this invite. Check that you opened the full link from your email."
   }
   if (text.includes("different email")) return "This invite was sent to a different email address."
+  if (text.includes("only athlete users")) {
+    return "This invite is for an athlete account, and you are signed in with a coach or club admin account. Sign in with the invited athlete email."
+  }
+  if (text.includes("tenant")) return "This invite is for a different club than the one your account belongs to."
+  if (text.includes("already exists")) {
+    return "An account already exists for this email. Sign in with it, then open this invite link again."
+  }
   return message
 }
 
@@ -133,23 +141,6 @@ export default function AthleteClaimPage() {
         return
       }
 
-      const actor = await resolveSessionActor(supabase, sessionData.session)
-      if (!actor) {
-        if (!cancelled) {
-          setStage("error")
-          setMessage("Sign-in succeeded, but your session did not resolve to an app role.")
-        }
-        return
-      }
-
-      if (actor.role !== "athlete") {
-        if (!cancelled) {
-          setStage("error")
-          setMessage(`This invite must be claimed with an athlete account. Current role: ${actor.role}.`)
-        }
-        return
-      }
-
       if (
         invitePreview.email &&
         (sessionData.session.user.email ?? "").trim().toLowerCase() !== invitePreview.email.trim().toLowerCase()
@@ -161,6 +152,8 @@ export default function AthleteClaimPage() {
         return
       }
 
+      // Accepting comes first: for a new athlete the database creates the profile from this invite.
+      // The browser cannot create one itself.
       const acceptResult = await acceptAthleteInviteForCurrentUser(inviteId)
       if (!acceptResult.ok) {
         if (!cancelled) {
@@ -169,6 +162,17 @@ export default function AthleteClaimPage() {
         }
         return
       }
+
+      const actor = await resolveSessionActor(supabase, sessionData.session)
+      if (!actor || actor.role !== "athlete") {
+        if (!cancelled) {
+          setStage("error")
+          setMessage("The invite was accepted, but your session did not open as an athlete account. Sign in again.")
+        }
+        return
+      }
+      // The profile did not exist when the app first looked at this session, so record the role now.
+      setSessionCookies(actor.role, actor.tenantId ?? "", sessionData.session.user.email ?? sessionData.session.user.id)
 
       const onboardingResult = await getCurrentAthleteOnboardingState()
       if (!onboardingResult.ok) {
@@ -257,19 +261,22 @@ export default function AthleteClaimPage() {
       return
     }
 
-    const actor = await resolveSessionActor(supabase, signInResult.data.session)
-    if (!actor || actor.role !== "athlete") {
-      setSubmitting(false)
-      setError("Claim succeeded, but the session did not resolve to an athlete account.")
-      return
-    }
-
+    // Accepting comes first: the database creates the athlete profile from this invite.
     const acceptResult = await acceptAthleteInviteForCurrentUser(inviteId)
     if (!acceptResult.ok) {
       setSubmitting(false)
       setError(friendlyInviteError(acceptResult.error.message))
       return
     }
+
+    const actor = await resolveSessionActor(supabase, signInResult.data.session)
+    if (!actor || actor.role !== "athlete") {
+      setSubmitting(false)
+      setError("Claim succeeded, but the session did not resolve to an athlete account.")
+      return
+    }
+    // The profile did not exist when the app first looked at this session, so record the role now.
+    setSessionCookies(actor.role, actor.tenantId ?? "", signInResult.data.session.user.email ?? signInResult.data.session.user.id)
 
     const completeResult = await completeCurrentAthleteOnboarding({
       displayName: fullName.trim(),

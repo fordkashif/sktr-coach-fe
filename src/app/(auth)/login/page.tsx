@@ -19,14 +19,14 @@ import {
 import { Tag } from "@/components/sk"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AUTH_PHOTOS, AuthSplit } from "@/layouts/auth-layout"
-import { describeAccessRequestError, describeAuthLinkError, describeSignInError } from "@/lib/auth-errors"
+import { describeAccessRequestError, describeAuthLinkError, describeNoAccessError, describeSignInError } from "@/lib/auth-errors"
 import { setSessionCookies } from "@/lib/auth-session"
 import { getPackageById, getRecommendedPackage, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import type { AccountRequest } from "@/lib/mock-club-admin"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { resolveSessionActor } from "@/lib/supabase/actor"
+import { resolveSessionAccess, resolveSessionActor } from "@/lib/supabase/actor"
 import { cn } from "@/lib/utils"
 
 type DemoCredential = {
@@ -432,13 +432,11 @@ export default function LoginPage() {
       return
     }
 
-    const actor = await resolveSessionActor(supabase, data.session)
+    const { actor, noAccessReason } = await resolveSessionAccess(supabase, data.session)
     if (!actor) {
-      // Signed in, but nothing to open: the account is not active in any club. Do not leave a half signed-in session behind.
+      // Signed in, but nothing to open: the database found no club this account belongs to. Do not leave a half signed-in session behind.
       await supabase.auth.signOut().catch(() => undefined)
-      setError(
-        "Your password is right, but this account is not active in a club right now. Ask your club admin to restore your access or send a new invite.",
-      )
+      setError(describeNoAccessError(noAccessReason))
       return
     }
 
