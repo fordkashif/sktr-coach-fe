@@ -13,6 +13,7 @@ import {
   List,
   ListRow,
   Notice,
+  RowMenu,
   Screen,
   ScreenHeader,
   Section,
@@ -85,6 +86,7 @@ export function PlanBuilder({
   onSaveDraft,
   onReview,
   onPrint,
+  onSaveAsTemplate,
 }: {
   plan: PlanDraft
   team: TeamOption | null
@@ -104,6 +106,7 @@ export function PlanBuilder({
   onReview: () => void
   /** Opens the print dialog on the week that is showing. */
   onPrint: (week: number) => void
+  onSaveAsTemplate: () => void
 }) {
   const [week, setWeek] = useState(1)
   const [dayIndex, setDayIndex] = useState(() => weekSessions(plan, 1)[0]?.dayIndex ?? 0)
@@ -440,6 +443,7 @@ export function PlanBuilder({
                 <PencilSimple className="size-5" weight="bold" aria-hidden />
                 Plan details
               </Button>
+              <RowMenu label="More for this plan" items={[{ label: "Save as template", onSelect: onSaveAsTemplate, disabled: busy }]} />
             </>
           }
         />

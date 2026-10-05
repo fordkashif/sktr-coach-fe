@@ -53,10 +53,11 @@ import { getBackendMode } from "@/lib/supabase/config"
  * Callers that need to survive a bad connection go through session-log-sync.ts, not these directly.
  */
 
-const SESSION_COLUMNS =
+/** Exported for the coach side (logging for an athlete, src/lib/data/coach/athlete-log-data.ts). */
+export const SESSION_COLUMNS =
   "id, athlete_id, title, status, scheduled_for, estimated_duration_minutes, coach_note, completed_at, location, plan_id, plan_week_number, plan_day_index, origin, skip_reason, skip_note"
 
-type SessionRecord = {
+export type SessionRecord = {
   id: string
   athlete_id: string
   title: string
@@ -203,7 +204,7 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-async function loadSessionBody(
+export async function loadSessionBody(
   client: SupabaseClient,
   record: SessionRecord,
 ): Promise<Result<AthleteSession>> {

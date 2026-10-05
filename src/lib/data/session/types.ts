@@ -183,5 +183,9 @@ export type LoggedSessionResults = {
     target: string
     /** One formatted entry per logged set, for example "5 x 100 kg" or "4.12 s". */
     sets: string[]
+    /** The effort given to each set in order, for example "7, 8, none". Empty or missing when no set was rated. */
+    efforts?: string
+    /** The athlete's note on this exercise. */
+    note?: string | null
   }>
 }

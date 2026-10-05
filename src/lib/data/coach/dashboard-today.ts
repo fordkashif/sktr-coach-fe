@@ -1,7 +1,9 @@
 import { availabilityCovers, currentAvailability, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { getCompetitionsForStaff, splitCompetitions } from "@/lib/data/competition/competition-data"
+import { listMockCoachEnteredSessions } from "@/lib/data/coach/athlete-log-data"
 import { ok, type Result } from "@/lib/data/result"
-import { skippedLabel, type SkipReason } from "@/lib/data/session/types"
+import { listMockLoggedSessions, MOCK_ATHLETE_ID } from "@/lib/data/session/session-mock"
+import { skipReasonLabel, type SkipReason } from "@/lib/data/session/types"
 import { getOpenPainReportsForTeam } from "@/lib/data/wellness/pain-report-data"
 import type { TeamPainReport } from "@/lib/data/wellness/pain-report-types"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -14,13 +16,13 @@ import { getBackendMode } from "@/lib/supabase/config"
  * the dashboard still works. Works in mock mode on the demo squad.
  */
 
-export type TodaySessionState = "done" | "not-done" | "excused"
+export type TodaySessionState = "done" | "not-done" | "skipped" | "excused"
 
 export type TodaySessionRow = {
   athleteId: string
   name: string
   state: TodaySessionState
-  /** Why it is excused: "injured", "skipped: sick". Lower case, for use after the name. */
+  /** Why it is excused or skipped: "injured", "sick", "school or work". Lower case, for use after the name. */
   reason: string | null
 }
 
@@ -88,10 +90,15 @@ export async function getCoachTodaySnapshot(params: {
     if (params.mockSessionTitle) {
       todaySession = {
         title: params.mockSessionTitle,
-        rows: athletes.map((athlete) => {
+        rows: athletes.map((athlete): TodaySessionRow => {
+          // What was logged in this browser wins: by the demo athlete himself, or by staff for an athlete.
+          const logged = [...listMockLoggedSessions(athlete.id), ...listMockCoachEnteredSessions(athlete.id)].find((session) => session.date === todayKey)
+          if (logged?.status === "completed") return { athleteId: athlete.id, name: athlete.name, state: "done", reason: null }
+          if (logged?.status === "skipped") return { athleteId: athlete.id, name: athlete.name, state: "skipped", reason: logged.skipReason ? skipReasonLabel(logged.skipReason).toLowerCase() : null }
           const period = excusedToday(athlete.id)
           if (period) return { athleteId: athlete.id, name: athlete.name, state: "excused", reason: period.kind }
-          return { athleteId: athlete.id, name: athlete.name, state: (athlete.adherence ?? 0) >= 90 ? "done" : "not-done", reason: null }
+          // The demo athlete's state is real (above). The other demo athletes get a canned one.
+          return { athleteId: athlete.id, name: athlete.name, state: athlete.id !== MOCK_ATHLETE_ID && (athlete.adherence ?? 0) >= 90 ? "done" : "not-done", reason: null }
         }),
       }
     }
@@ -122,13 +129,13 @@ export async function getCoachTodaySnapshot(params: {
           const next: TodaySessionRow = done
             ? { athleteId: row.athlete_id, name: nameOf.get(row.athlete_id) ?? "Athlete", state: "done", reason: null }
             : row.status === "skipped"
-              ? { athleteId: row.athlete_id, name: nameOf.get(row.athlete_id) ?? "Athlete", state: "excused", reason: skippedLabel(row.skip_reason).toLowerCase() }
+              ? { athleteId: row.athlete_id, name: nameOf.get(row.athlete_id) ?? "Athlete", state: "skipped", reason: row.skip_reason ? skipReasonLabel(row.skip_reason).toLowerCase() : null }
               : period
                 ? { athleteId: row.athlete_id, name: nameOf.get(row.athlete_id) ?? "Athlete", state: "excused", reason: period.kind }
                 : { athleteId: row.athlete_id, name: nameOf.get(row.athlete_id) ?? "Athlete", state: "not-done", reason: null }
           // An athlete with two planned sessions today counts as done only when none is left open.
           const existing = byAthlete.get(row.athlete_id)
-          if (!existing || next.state === "not-done" || (existing.state === "done" && next.state === "excused")) byAthlete.set(row.athlete_id, next)
+          if (!existing || next.state === "not-done" || (existing.state === "done" && next.state !== "done")) byAthlete.set(row.athlete_id, next)
         }
         todaySession = {
           title: mostCommon(planned.map((row) => row.title)) ?? "Today's session",

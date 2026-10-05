@@ -210,7 +210,10 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
   const sessionRows = today?.todaySession?.rows ?? []
   const sessionDone = sessionRows.filter((row) => row.state === "done")
   const sessionOpen = sessionRows.filter((row) => row.state === "not-done")
+  const sessionSkipped = sessionRows.filter((row) => row.state === "skipped")
   const sessionExcused = sessionRows.filter((row) => row.state === "excused")
+  // Attendance is taken per team: the coach's selected team, or the only team a club admin has.
+  const attendanceTeamId = role === "coach" ? coachTeamId : sourceTeams.length === 1 ? sourceTeams[0].id : null
 
   const readyCount = scopedAthletes.filter((athlete) => athlete.readiness === "green").length
   const needLookCount = scopedAthletes.filter((athlete) => athlete.readiness !== "green" || (athlete.adherence !== null && athlete.adherence < 75)).length
@@ -408,6 +411,13 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             title="Today's session"
             hint={today?.todaySession?.title}
             meta={today?.todaySession ? `${sessionDone.length} of ${sessionDone.length + sessionOpen.length} done` : undefined}
+            action={
+              attendanceTeamId && scopedAthletes.length > 0 ? (
+                <Link to={`/coach/teams/${attendanceTeamId}/attendance`} className="sk-link">
+                  Take attendance
+                </Link>
+              ) : undefined
+            }
           >
             {today === null && scopedAthletes.length > 0 ? (
               <SkeletonRows rows={2} label="Loading today's session" />
@@ -415,6 +425,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
               <List>
                 <ListRow leading={<StatusDot tone="green" />} title="Done" subtitle={sessionDone.length > 0 ? names(sessionDone) : "Nobody yet"} trailing={sessionDone.length} />
                 <ListRow leading={<StatusDot tone={sessionOpen.length > 0 ? "blue" : "neutral"} />} title="Not yet" subtitle={sessionOpen.length > 0 ? names(sessionOpen) : "Nobody left"} trailing={sessionOpen.length} />
+                {sessionSkipped.length > 0 ? <ListRow leading={<StatusDot tone="neutral" />} title="Skipped" subtitle={names(sessionSkipped)} trailing={sessionSkipped.length} /> : null}
                 {sessionExcused.length > 0 ? <ListRow leading={<StatusDot tone="amber" />} title="Excused" subtitle={names(sessionExcused)} trailing={sessionExcused.length} /> : null}
               </List>
             ) : (

@@ -512,3 +512,60 @@ How a percentage load is worked out:
 - Per athlete changes to a plan row live in `training_plans.builder_state` (`sessions[].blocks[].exercises[].overrides[]`: `athleteId`, `sets`, `reps`, `load`, `note`). The app applies them when it writes that athlete's session rows, on publish, on update and when an athlete's session is created on demand. Updating a published plan replaces sessions that are still untouched and upcoming; a session the athlete has started is left as it is.
 
 The link is stored on the row (`reference_url`) but the athlete log screen does not show it yet.
+
+## Plan templates (20261012090000_plan_templates.sql)
+
+`plan_templates`: a club's library of plans its coaches reuse across teams and seasons.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id` | uuid | the club; fixed after insert |
+| `name` | text | 1 to 80 characters, trimmed by trigger. Not unique. |
+| `description` | text, null | up to 500 characters |
+| `phase` | text, null | general-prep, specific-prep, competition or taper |
+| `event_group` | text, null | Sprint, Mid, Distance, Jumps or Throws (the team event groups) |
+| `weeks` | integer | 1 to 24 |
+| `session_count` | integer | sessions in `structure`, set by trigger |
+| `start_weekday` | smallint, null | 0 (Sunday) to 6: the weekday the source plan started on |
+| `structure` | jsonb | `{ version, weekFocus, sessions[] }`: the builder model of `training_plans.builder_state` without `assign` and without `overrides` on exercise rows |
+| `is_archived` | boolean | archived templates are not offered when starting a plan |
+| `created_by_user_id`, `created_by_name` | uuid null, text | set by trigger from the caller; the name is a copy taken when it was made |
+| `last_used_at` | timestamptz, null | written by `mark_plan_template_used(uuid)` |
+| `created_at`, `updated_at` | timestamptz | `updated_at` moves on a real change, not when the template is used |
+
+How it is used:
+
+- Save as template: the app copies a plan's weeks, sessions, blocks and exercise rows (library link, cue, reference link, percentage load, reference lift) with fresh ids. Team, start date, notes for athletes, assignment and per athlete changes are left out.
+- Start a plan from a template: the app copies the structure again with fresh ids into a new draft (`training_plans.builder_state`) for the chosen team and start date. Sessions are stored by week and day slot, so every date follows from the start date. The plan keeps no reference to the template, so changing or deleting either never touches the other.
+
+## Coach notes, attendance and logging for an athlete (20261012100000)
+
+`coach_athlete_notes`: private notes coaches keep about an athlete. Staff only, never readable by the athlete, never part of an athlete query or export.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id`, `athlete_id` | uuid | set from the athlete by trigger; cascade with the athlete |
+| `author_user_id` | uuid null | set by trigger from the caller |
+| `note_date` | date | the day the note is about, default today |
+| `body` | text | 1 to 2000 characters |
+| `pinned` | boolean | pinned notes list first |
+| `created_at`, `updated_at` | timestamptz | |
+
+`athlete_attendance`: one mark per team, athlete and day (`unique (tenant_id, team_id, athlete_id, attendance_date)`).
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id`, `team_id`, `athlete_id` | uuid | the athlete must be on the team when the mark is first taken |
+| `attendance_date` | date | not more than a day ahead |
+| `session_id` | uuid null | the athlete's planned session of that day, when there is one |
+| `status` | text | `present`, `late`, `absent` or `excused` |
+| `reason` | text null | up to 200 characters |
+| `marked_by_user_id` | uuid null | set by trigger from the caller |
+| `created_at`, `updated_at` | timestamptz | |
+
+The attendance rate used by the app is (present + late) / (present + late + absent) over the last 28 days; excused marks are left out and nothing counted means no figure (`src/lib/data/coach/attendance.ts`).
+
+Logging for an athlete adds no table. A coach of the athlete's team or a club admin writes the athlete's own `session_row_logs` and `session_completions` rows; `logged_by_user_id` and `completed_by_user_id` are stamped with the caller by trigger, and `get_session_logged_by(session_id)` returns that person to the athlete ("Logged by Coach ...").

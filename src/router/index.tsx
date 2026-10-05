@@ -51,8 +51,11 @@ const CoachTeamDetailPage = lazy(() => import("@/app/(authenticated)/coach/teams
 const CoachTestWeekPage = lazy(() => import("@/app/(authenticated)/coach/test-week/page"))
 const CoachTrainingPlanPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/page"))
 const CoachExercisesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/exercises/page"))
+const CoachPlanTemplatesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/templates/page"))
 const CoachLiftMaxesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/maxes/page"))
 const CoachAthleteDetailPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/page"))
+const CoachLogForAthletePage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/log/page"))
+const CoachTeamAttendancePage = lazy(() => import("@/app/(authenticated)/coach/teams/[teamId]/attendance/page"))
 const CoachAddAthleteResultPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/results/new/page"))
 const CoachEditAthleteResultPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/results/[resultId]/page"))
 const CoachCompetitionsPage = lazy(() => import("@/app/(authenticated)/coach/competitions/page"))
@@ -156,7 +159,10 @@ export function AppRouter() {
             <Route path="/coach/training-plan" element={routeElement(CoachTrainingPlanPage)} />
             <Route path="/coach/training-plan/exercises" element={routeElement(CoachExercisesPage)} />
             <Route path="/coach/training-plan/maxes" element={routeElement(CoachLiftMaxesPage)} />
+            <Route path="/coach/training-plan/templates" element={routeElement(CoachPlanTemplatesPage)} />
             <Route path="/coach/athletes/:athleteId" element={routeElement(CoachAthleteDetailPage)} />
+            <Route path="/coach/athletes/:athleteId/log" element={routeElement(CoachLogForAthletePage)} />
+            <Route path="/coach/teams/:teamId/attendance" element={routeElement(CoachTeamAttendancePage)} />
             <Route path="/coach/athletes/:athleteId/results/new" element={routeElement(CoachAddAthleteResultPage)} />
             <Route path="/coach/athletes/:athleteId/results/:resultId" element={routeElement(CoachEditAthleteResultPage)} />
             <Route path="/coach/competitions" element={routeElement(CoachCompetitionsPage)} />

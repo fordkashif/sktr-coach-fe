@@ -7,7 +7,9 @@ import {
   type CoachAthleteSessionRow,
   type CoachAthleteWellnessRow,
 } from "@/lib/data/coach/dashboard-data"
+import { listMockCoachEnteredSessions } from "@/lib/data/coach/athlete-log-data"
 import { loadMockRoster, mergeMockAthletes, mockSessionIdentity } from "@/lib/data/coach/roster-mock"
+import { mockStaffEnteredSessionIds } from "@/lib/data/session/logged-by-data"
 import { err, ok, type Result } from "@/lib/data/result"
 import { listMockLoggedSessions } from "@/lib/data/session/session-mock"
 import { getOpenPainReportsForAthlete } from "@/lib/data/wellness/pain-report-data"
@@ -94,8 +96,10 @@ async function mockDetail(athleteId: string): Promise<Result<CoachAthleteDetail>
   wellness.sort((left, right) => right.date.localeCompare(left.date))
 
   const notes = readMockNotes()
+  const staffEntered = mockStaffEnteredSessionIds(athleteId)
   const sessions: CoachAthleteSessionRow[] = [
-    ...listMockLoggedSessions(athleteId).map(
+    // Marcus logs for himself in this browser; for the other demo athletes this is what staff entered for them.
+    ...[...listMockLoggedSessions(athleteId), ...listMockCoachEnteredSessions(athleteId)].map(
       (logged): CoachAthleteSessionRow => ({
         id: logged.id,
         athleteId,
@@ -113,6 +117,7 @@ async function mockDetail(athleteId: string): Promise<Result<CoachAthleteDetail>
         completedOn: logged.completedOn,
         durationMinutes: null,
         results: logged.results,
+        enteredByStaff: staffEntered.has(logged.id),
       }),
     ),
     ...module.mockLogs

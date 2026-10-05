@@ -4,7 +4,7 @@ import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/d
 import { inferBlockType, planBlueprints, type SessionBlueprint } from "@/lib/data/session/session-from-plan"
 import { removeUnstartedPlanSessions, syncPlanSessions } from "@/lib/data/session/session-plan-sync"
 import { planFromBuilderState, todayIso } from "@/lib/data/training-plan/plan-builder-model"
-import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
+import type { PublishPlanStructure, TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary } from "@/lib/data/training-plan/types"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -98,25 +98,7 @@ export type PublishTrainingPlanInput = {
   assignTarget: "team" | "subgroup" | "selected"
   assignSubgroup: string | null
   selectedAthleteIds: string[]
-  structure: Array<{
-    weekNumber: number
-    emphasis: string | null
-    status: "completed" | "current" | "up-next"
-    days: Array<{
-      dayIndex: number
-      dayLabel: string
-      date: string
-      title: string
-      sessionType: "Track" | "Gym" | "Recovery" | "Technical" | "Mixed"
-      focus: string
-      status: "completed" | "scheduled" | "up-next"
-      durationMinutes: number | null
-      location: string | null
-      coachNote: string | null
-      isTrainingDay: boolean
-      blockPreview: string[]
-    }>
-  }>
+  structure: PublishPlanStructure
 }
 
 export type PublishTrainingPlanOutput = {

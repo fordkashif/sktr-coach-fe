@@ -20,7 +20,7 @@ test.describe("ui workflow audit", () => {
     await expect(page.locator("main")).toBeVisible()
     await page.getByRole("button", { name: "New plan" }).click()
     await page.getByLabel("Plan name").fill("Audit plan")
-    await page.getByRole("tab", { name: "Template" }).click()
+    await page.getByRole("tab", { name: "Starter outline" }).click()
     await page.waitForTimeout(250)
     await page.screenshot({
       path: path.join(screenshotDir, "coach-training-plan-setup.png"),

@@ -29,11 +29,13 @@ import {
   ListRow,
   Notice,
   ReadinessText,
+  RowMenu,
   Screen,
   ScreenHeader,
   Section,
   Select,
   SkeletonRows,
+  Split,
   Stat,
   StatStrip,
   StatusDot,
@@ -46,6 +48,8 @@ import {
   type DataTableColumn,
   type StateTone,
 } from "@/components/sk"
+import { AthleteAttendanceSection } from "@/components/coach/athlete-attendance-section"
+import { CoachNotesSection } from "@/components/coach/coach-notes-section"
 import { CoachAthleteGoals } from "@/components/goals/coach-athlete-goals"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import {
@@ -110,6 +114,11 @@ function sessionState(session: CoachAthleteSessionRow): { label: string; tone: S
   if (session.status === "skipped") return { label: skippedLabel(session.skipReason), tone: "neutral" }
   if (session.isoDate < todayIso()) return session.excused ? { label: "Excused", tone: "neutral" } : { label: "Not done", tone: "coral" }
   return { label: session.excused ? "Excused" : "Scheduled", tone: "neutral" }
+}
+
+/** The screen where a coach enters a session for the athlete. */
+function logPath(athleteId: string, isoDate?: string) {
+  return isoDate && isoDate !== todayIso() ? `/coach/athletes/${athleteId}/log?date=${isoDate}` : `/coach/athletes/${athleteId}/log`
 }
 
 /* ---------- Dialogs ---------------------------------------------------------------------------------- */
@@ -474,10 +483,13 @@ function SessionList({
   sessions,
   athleteId,
   onNoteSaved,
+  onLog,
 }: {
   sessions: CoachAthleteSessionRow[]
   athleteId: string
   onNoteSaved: (sessionId: string, note: string | null) => void
+  /** Opens the log for that day, to enter the session for the athlete. */
+  onLog: (isoDate: string) => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -509,6 +521,7 @@ function SessionList({
             shortDay(session.isoDate),
             session.durationMinutes ? `${session.durationMinutes} min` : null,
             session.origin === "athlete" ? "added by athlete" : null,
+            session.enteredByStaff ? "entered by a coach" : null,
             session.status === "completed" && session.completedOn && session.completedOn !== session.isoDate ? `done ${shortDay(session.completedOn)}` : null,
           ].filter(Boolean)
           const editing = editingId === session.id
@@ -529,6 +542,16 @@ function SessionList({
                               <span className="font-semibold text-sk-ink">{exercise.label}</span>{" "}
                               {exercise.sets.every((entry) => entry === "Done") ? (exercise.sets.length > 1 ? `${exercise.sets.length} done` : "done") : exercise.sets.join(", ")}
                               {exercise.target ? <span className="text-sk-mute"> (target {exercise.target})</span> : null}
+                              {exercise.efforts ? (
+                                <span className="block text-sk-mute" data-set-efforts>
+                                  Effort by set: {exercise.efforts}
+                                </span>
+                              ) : null}
+                              {exercise.note ? (
+                                <span className="block text-sk-mute" data-exercise-note>
+                                  Their note: {exercise.note}
+                                </span>
+                              ) : null}
                             </span>
                           ))
                         : "Finished without logging any sets."}
@@ -550,18 +573,23 @@ function SessionList({
               className="[&_.sk-list-row]:items-start"
               actions={
                 editing ? undefined : (
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    aria-label={`${session.coachNote ? "Edit your note on" : "Add a note to"} ${session.title}, ${shortDay(session.isoDate)}`}
-                    onClick={() => {
-                      setEditingId(session.id)
-                      setDraft(session.coachNote ?? "")
-                      setError(null)
-                    }}
-                  >
-                    {session.coachNote ? "Edit note" : "Add note"}
-                  </Button>
+                  <RowMenu
+                    label={`More for ${session.title}, ${shortDay(session.isoDate)}`}
+                    items={[
+                      {
+                        label: session.coachNote ? "Edit note" : "Add note",
+                        onSelect: () => {
+                          setEditingId(session.id)
+                          setDraft(session.coachNote ?? "")
+                          setError(null)
+                        },
+                      },
+                      // Entering results for the athlete: a planned session, today or earlier.
+                      ...(session.origin === "plan" && session.isoDate <= todayIso()
+                        ? [{ label: session.status === "completed" ? "Edit their log" : "Log it for them", onSelect: () => onLog(session.isoDate) }]
+                        : []),
+                    ]}
+                  />
                 )
               }
               below={
@@ -610,6 +638,7 @@ function OverviewTab({
   onGoTo: (tab: DetailTab) => void
 }) {
   const { athlete, sessions, availability, openPainReports, wellness } = detail
+  const navigate = useNavigate()
   const [confirmEnd, setConfirmEnd] = useState(false)
   const [ending, setEnding] = useState(false)
   const [endError, setEndError] = useState<string | null>(null)
@@ -710,21 +739,31 @@ function OverviewTab({
         )}
       </Section>
 
-      <Section title="Recent sessions" hint="What was planned and what was logged. A note you add is shown to the athlete in that session.">
-        {sessions.length > 0 ? (
-          <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} />
-        ) : (
-          <EmptyState
-            title="No sessions yet"
-            body="Sessions appear here once a training plan is published to this athlete's team."
-            action={
-              <LinkButton to="/coach/training-plan" size="sm">
-                Open plans
-              </LinkButton>
-            }
-          />
-        )}
-      </Section>
+      <Split
+        main={
+          <Section title="Recent sessions" hint="What was planned and what was logged, set by set. A note you add to a session is shown to the athlete.">
+            {sessions.length > 0 ? (
+              <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} />
+            ) : (
+              <EmptyState
+                title="No sessions yet"
+                body="Sessions appear here once a training plan is published to this athlete's team."
+                action={
+                  <LinkButton to="/coach/training-plan" size="sm">
+                    Open plans
+                  </LinkButton>
+                }
+              />
+            )}
+          </Section>
+        }
+        side={
+          <>
+            <CoachNotesSection athleteId={athlete.id} athleteName={athlete.name} />
+            <AthleteAttendanceSection athleteId={athlete.id} athleteName={athlete.name} teamId={athlete.teamId} />
+          </>
+        }
+      />
     </>
   )
 }
@@ -1188,6 +1227,7 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
         actions={
           <>
             <Button onClick={() => setAvailabilityOpen(true)}>{period ? "Change availability" : "Set availability"}</Button>
+            <LinkButton to={logPath(athlete.id)}>Log a session</LinkButton>
             <LinkButton to={`/coach/athletes/${athlete.id}/results/new`} variant="primary">
               <Plus className="size-[18px]" weight="bold" aria-hidden />
               Add result

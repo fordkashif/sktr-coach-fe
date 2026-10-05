@@ -2,7 +2,7 @@ import { readStoredMockPlans } from "@/components/coach/training-plan/mock-adapt
 import { availabilityCovers, readMockAvailability } from "@/lib/data/athlete/availability-data"
 import { err, ok, type Result } from "@/lib/data/result"
 import { mockLiftMaxKg } from "@/lib/data/exercises/mock-exercise-store"
-import { cleanEffort, exerciseMatchKey } from "@/lib/data/session/log-assist"
+import { cleanEffort, effortBySet, exerciseMatchKey, rowNote } from "@/lib/data/session/log-assist"
 import {
   formatSetLog,
   isLogEmpty,
@@ -660,12 +660,11 @@ export function loggedResults(
 ): LoggedSessionResults | null {
   const exercises = blocks.flatMap((block) =>
     block.rows.flatMap((row) => {
-      const sets = logs
-        .filter((log) => log.rowId === row.id && !isLogEmpty(log))
-        .sort((left, right) => left.setIndex - right.setIndex)
-        .map((log) => formatSetLog(row.kind, log))
-        .filter(Boolean)
-      return sets.length > 0 ? [{ id: row.id, blockName: block.name, label: row.label, target: row.target, sets }] : []
+      const logged = logs.filter((log) => log.rowId === row.id && !isLogEmpty(log)).sort((left, right) => left.setIndex - right.setIndex)
+      const sets = logged.map((log) => formatSetLog(row.kind, log)).filter(Boolean)
+      return sets.length > 0
+        ? [{ id: row.id, blockName: block.name, label: row.label, target: row.target, sets, efforts: effortBySet(logged), note: rowNote(row.id, logs) || null }]
+        : []
     }),
   )
   if (exercises.length === 0 && rpe === null && !comment) return null

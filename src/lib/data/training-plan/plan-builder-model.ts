@@ -1,6 +1,5 @@
 import type { EventGroup } from "@/lib/mock-data"
-import type { PublishTrainingPlanInput } from "@/lib/data/training-plan/training-plan-data"
-import type { TrainingPlanDetail } from "@/lib/data/training-plan/types"
+import type { PublishPlanStructure, TrainingPlanDetail } from "@/lib/data/training-plan/types"
 
 /**
  * The coach plan builder model. One plain draft object that both the mock and the
@@ -420,7 +419,7 @@ export function validateForPublish(plan: PlanDraft, assignedCount: number): stri
 }
 
 /** Athlete-facing structure written to the weeks, days and blocks tables on publish. */
-export function toPublishStructure(plan: PlanDraft): PublishTrainingPlanInput["structure"] {
+export function toPublishStructure(plan: PlanDraft): PublishPlanStructure {
   return Array.from({ length: plan.weeks }, (_, index) => index + 1).map((weekNumber) => ({
     weekNumber,
     emphasis: plan.weekFocus[String(weekNumber)]?.trim() || null,

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { availabilityCovers, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { adherenceCounts, adherencePercent, type AdherenceSession } from "@/lib/data/session/adherence"
+import { cleanEffort, effortBySet, rowNote } from "@/lib/data/session/log-assist"
 import { formatSetLog, isLogEmpty, logKindForBlockType } from "@/lib/data/session/session-from-plan"
 import { skippedLabel, type LogKind, type LoggedSessionResults, type SessionBlockType, type SessionOrigin, type SessionStatus, type SkipReason } from "@/lib/data/session/types"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
@@ -668,6 +669,8 @@ export type CoachAthleteSessionRow = LogEntry & {
   coachNote: string | null
   completedOn: string | null
   durationMinutes: number | null
+  /** A coach or club admin entered this session for the athlete. */
+  enteredByStaff?: boolean
 }
 
 export type CoachAthletePrRow = PR & {
@@ -737,6 +740,7 @@ type CoachAthleteAccess = {
   eventGroup: EventGroup
   primaryEvent: string | null
   hasLogin: boolean
+  athleteUserId: string | null
 }
 
 async function resolveCoachAthleteAccess(
@@ -792,6 +796,7 @@ async function resolveCoachAthleteAccess(
     eventGroup: toEventGroup(athleteRow.event_group as string | null),
     primaryEvent: (athleteRow.primary_event as string | null) ?? null,
     hasLogin: athleteRow.user_id !== null,
+    athleteUserId: (athleteRow.user_id as string | null) ?? null,
   })
 }
 
@@ -830,7 +835,7 @@ export async function getCoachAthleteDetailForCurrentUser(
       .limit(60),
     client
       .from("session_completions")
-      .select("session_id, completion_date")
+      .select("session_id, completion_date, completed_by_user_id")
       .eq("athlete_id", athleteId)
       .order("completion_date", { ascending: false })
       .limit(200),
@@ -886,8 +891,11 @@ export async function getCoachAthleteDetailForCurrentUser(
   }))
 
   const completionBySession = new Map<string, string>()
-  for (const row of (completionsResult.data as Array<{ session_id: string; completion_date: string }> | null) ?? []) {
+  // Finished by someone other than the athlete: a coach or club admin entered it for them.
+  const enteredByStaff = new Set<string>()
+  for (const row of (completionsResult.data as Array<{ session_id: string; completion_date: string; completed_by_user_id: string | null }> | null) ?? []) {
     if (!completionBySession.has(row.session_id)) completionBySession.set(row.session_id, row.completion_date)
+    if (row.completed_by_user_id && row.completed_by_user_id !== access.data.athleteUserId) enteredByStaff.add(row.session_id)
   }
 
   const sessions: CoachAthleteSessionRow[] = ((sessionsResult.data as Array<{
@@ -922,6 +930,7 @@ export async function getCoachAthleteDetailForCurrentUser(
       completedOn,
       durationMinutes: row.estimated_duration_minutes,
       results: null,
+      enteredByStaff: enteredByStaff.has(row.id),
     }
   })
 
@@ -936,7 +945,7 @@ export async function getCoachAthleteDetailForCurrentUser(
         .order("sort_order", { ascending: true }),
       client
         .from("session_row_logs")
-        .select("session_id, session_block_row_id, set_index, completed, reps, load_kg, time_seconds, distance_m, mark")
+        .select("session_id, session_block_row_id, set_index, completed, reps, load_kg, time_seconds, distance_m, mark, rpe, note")
         .in("session_id", loggedIds)
         .limit(2000),
       client.from("session_completions").select("session_id, rpe, athlete_comment").in("session_id", loggedIds),
@@ -973,7 +982,7 @@ export async function getCoachAthleteDetailForCurrentUser(
                   row.log_kind === "strength" || row.log_kind === "time" || row.log_kind === "mark" || row.log_kind === "check"
                     ? row.log_kind
                     : logKindForBlockType(block.block_type)
-                const sets = logRows
+                const rowLogs = logRows
                   .filter((log) => log.session_block_row_id === row.id)
                   .map((log) => ({
                     rowId: row.id,
@@ -984,12 +993,15 @@ export async function getCoachAthleteDetailForCurrentUser(
                     timeSeconds: num(log.time_seconds),
                     distanceM: num(log.distance_m),
                     mark: num(log.mark),
+                    rpe: cleanEffort(num(log.rpe)),
+                    note: typeof log.note === "string" && log.note ? log.note : null,
                   }))
-                  .filter((log) => !isLogEmpty(log))
-                  .sort((left, right) => left.setIndex - right.setIndex)
-                  .map((log) => formatSetLog(kind, log))
-                  .filter(Boolean)
-                return sets.length > 0 ? [{ id: row.id, blockName: block.name, label: row.label, target: row.target, sets }] : []
+                const logged = rowLogs.filter((log) => !isLogEmpty(log)).sort((left, right) => left.setIndex - right.setIndex)
+                const sets = logged.map((log) => formatSetLog(kind, log)).filter(Boolean)
+                // Per set effort and the athlete's note on the exercise (20261011100000).
+                return sets.length > 0
+                  ? [{ id: row.id, blockName: block.name, label: row.label, target: row.target, sets, efforts: effortBySet(logged), note: rowNote(row.id, rowLogs) || null }]
+                  : []
               }),
           )
         const effort = effortBySession.get(session.id)

@@ -16,6 +16,7 @@ import {
   SyncStatus,
 } from "@/components/athlete/log/log-parts"
 import { ClockBar, useLogClock, type RestSuggestion } from "@/components/athlete/log/log-clock"
+import { MyAttendanceLine, SessionEnteredBy } from "@/components/athlete/log/log-extras"
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
   ActionBar,
@@ -186,6 +187,10 @@ export default function AthleteLogPage() {
       <AvailabilityNotice current={availability.current} />
 
       {day && !sessionParam ? <DayNav week={day.week} selected={date} today={today} onSelect={selectDate} /> : null}
+
+      {/* Taken or entered by a coach (attendance, a session logged for the athlete). Read only here. */}
+      {day ? <MyAttendanceLine date={date} /> : null}
+      {session ? <SessionEnteredBy sessionId={session.id} /> : null}
 
       {!day && !log.loadError ? <SkeletonRows rows={5} label="Getting your session" /> : null}
 
