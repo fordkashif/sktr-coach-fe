@@ -1,5 +1,5 @@
 import type { Session, SupabaseClient } from "@supabase/supabase-js"
-import { ensureProfileForSession } from "@/lib/supabase/profile-bootstrap"
+import { ensureProfileForSession, type ProfileBootstrapReason } from "@/lib/supabase/profile-bootstrap"
 
 export type AppRole = "athlete" | "coach" | "club-admin" | "platform-admin"
 
@@ -14,20 +14,38 @@ function isProfileRole(value: unknown): value is Exclude<AppRole, "platform-admi
   return value === "athlete" || value === "coach" || value === "club-admin"
 }
 
+/** The actor for a session, or the reason the signed-in account has nothing to open. */
+export type SessionAccess =
+  | { actor: SessionActor; noAccessReason: null }
+  | { actor: null; noAccessReason: ProfileBootstrapReason }
+
+export async function resolveSessionAccess(supabase: SupabaseClient, session: Session): Promise<SessionAccess> {
+  const { profile, reason } = await ensureProfileForSession(supabase, session)
+  if (profile && isProfileRole(profile.role)) {
+    return {
+      actor: {
+        userId: session.user.id,
+        userEmail: session.user.email ?? null,
+        role: profile.role,
+        tenantId: profile.tenant_id,
+      },
+      noAccessReason: null,
+    }
+  }
+
+  const platformAdmin = await resolvePlatformAdminActor(supabase, session)
+  if (platformAdmin) return { actor: platformAdmin, noAccessReason: null }
+  return { actor: null, noAccessReason: reason ?? "none" }
+}
+
 export async function resolveSessionActor(
   supabase: SupabaseClient,
   session: Session,
 ): Promise<SessionActor | null> {
-  const profile = await ensureProfileForSession(supabase, session)
-  if (profile && isProfileRole(profile.role)) {
-    return {
-      userId: session.user.id,
-      userEmail: session.user.email ?? null,
-      role: profile.role,
-      tenantId: profile.tenant_id,
-    }
-  }
+  return (await resolveSessionAccess(supabase, session)).actor
+}
 
+async function resolvePlatformAdminActor(supabase: SupabaseClient, session: Session): Promise<SessionActor | null> {
   const normalizedEmail = session.user.email?.trim().toLowerCase() ?? null
   if (!normalizedEmail) return null
 

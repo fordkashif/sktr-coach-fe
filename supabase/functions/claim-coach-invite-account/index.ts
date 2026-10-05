@@ -87,29 +87,49 @@ Deno.serve(async (request) => {
       return json(400, { error: "This email already belongs to another tenant. Sign in with the invited account owner or use another email." })
     }
 
-    const updateResult = await serviceClient.auth.admin.updateUserById(existingUser.id, {
-      password,
-      email_confirm: true,
-      user_metadata: {
-        ...(existingUser.user_metadata ?? {}),
-        display_name: displayName,
-        role: "coach",
-        tenant_id: invite.tenant_id,
-      },
+    // Never change an existing account from here. This function is public and the invite id is known to
+    // whoever created the invite, so resetting the password of an existing account (which this branch
+    // used to do) let an inviter take over any account that had no profile in another club, including a
+    // platform admin's. Someone who already has an account signs in with their own password and then
+    // accepts the invite; the database checks the invite against their email.
+    return json(409, {
+      error: "An account already exists for this email. Sign in with it, then open this invite link again. If you do not know the password, reset it from the sign in page.",
     })
+  }
 
-    if (updateResult.error) return json(400, { error: updateResult.error.message })
-    return json(200, { userId: existingUser.id, mode: "updated" })
+  // This function creates a CONFIRMED account for the invited email on the word of whoever holds the
+  // invite link, and the person who created the invite holds it too. That is fine for an email that
+  // means nothing elsewhere, but two things in the database are granted by email alone: platform admin
+  // access (platform_admin_contacts) and club admin first access (an approved club request). An inviter
+  // must not be able to mint an account for such an email, so those are refused here.
+  // ilike is used for a case-insensitive exact match, so its wildcards are escaped.
+  const emailPattern = email.replace(/[\\%_]/g, "\\$&")
+  const [platformContactResult, approvedRequestResult] = await Promise.all([
+    serviceClient.from("platform_admin_contacts").select("id").ilike("email", emailPattern).limit(1),
+    serviceClient
+      .from("tenant_provision_requests")
+      .select("id")
+      .ilike("requestor_email", emailPattern)
+      .eq("status", "approved")
+      .limit(1),
+  ])
+
+  if (platformContactResult.error) return json(400, { error: platformContactResult.error.message })
+  if (approvedRequestResult.error) return json(400, { error: approvedRequestResult.error.message })
+  if ((platformContactResult.data ?? []).length > 0 || (approvedRequestResult.data ?? []).length > 0) {
+    return json(409, {
+      error: "This email already has its own access to SKTR Coach. Sign in with it first, then open this invite link again.",
+    })
   }
 
   const createResult = await serviceClient.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
+    // Display name only. Club and role are never read from metadata: accept_coach_invite takes them
+    // from the invite when the new coach signs in.
     user_metadata: {
       display_name: displayName,
-      role: "coach",
-      tenant_id: invite.tenant_id,
     },
   })
 

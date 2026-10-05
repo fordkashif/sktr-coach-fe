@@ -45,25 +45,16 @@ export async function requestPasswordReset(email: string) {
       },
     })
 
-    if (error) {
-      const contextualMessage =
-        typeof (error as { context?: { json?: { error?: string } } }).context?.json?.error === "string"
-          ? (error as { context?: { json?: { error?: string } } }).context!.json!.error!
-          : error.message
-      return { ok: false as const, message: contextualMessage }
-    }
-
+    // The preview function is off on hosted projects (it would let anyone reset any account), so a
+    // failure here is normal: fall through to the emailed reset link like every other origin.
     const response = (data ?? {}) as { actionLink?: string; error?: string }
-    if (response.error) return { ok: false as const, message: response.error }
-    if (!response.actionLink) {
-      return { ok: false as const, message: "Local reset preview did not return an action link." }
-    }
-
-    return {
-      ok: true as const,
-      mode: "supabase" as const,
-      message: "Local dev generated a reset link instead of sending email.",
-      actionLink: response.actionLink,
+    if (!error && !response.error && response.actionLink) {
+      return {
+        ok: true as const,
+        mode: "supabase" as const,
+        message: "Local dev generated a reset link instead of sending email.",
+        actionLink: response.actionLink,
+      }
     }
   }
 

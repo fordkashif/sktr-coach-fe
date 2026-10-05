@@ -52,10 +52,15 @@ export function SupabaseAuthSync() {
         return
       }
 
+      // The role and club come from the database (the profile row, or bootstrap_current_profile() for a
+      // first sign-in). Nothing here reads them from the user's auth metadata, which the user can edit.
       const actor = await resolveSessionActor(supabase, session)
 
       if (!active) return
       if (!actor || !isTenantRole(actor.role) || !actor.tenantId) {
+        // No club for this account (yet). Only the role cookies are cleared: the Supabase session stays,
+        // because the invite claim pages sign a new user in first and accept the invite a moment later.
+        // The login page is the place that signs such an account out and explains why.
         clearSessionCookies()
         return
       }

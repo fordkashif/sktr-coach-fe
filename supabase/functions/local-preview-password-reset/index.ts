@@ -54,6 +54,18 @@ Deno.serve(async (request) => {
     })
   }
 
+  // This function hands a working password reset link for ANY email straight back to the caller, with
+  // no proof that the caller owns the email. The "localhost only" check further down reads appBaseUrl,
+  // which the caller sends, so it protects nothing: on a hosted project anyone could take over any
+  // account, platform admins included. It therefore stays off unless the project explicitly opts in,
+  // which must only ever be done on a throwaway local Supabase stack, never on a hosted project.
+  if (Deno.env.get("ALLOW_LOCAL_PASSWORD_RESET_PREVIEW") !== "true") {
+    return new Response(JSON.stringify({ error: "Local password reset preview is turned off for this project." }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    })
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL")
   const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 

@@ -99,9 +99,11 @@ Server/CI only (never in browser bundle):
 - Frontend should use anon key + RLS-protected tables only.
 - Privileged operations use service role only in controlled server context:
   - migrations
-  - profile bootstrap
+  - profile creation outside invite acceptance and club admin first access (those run as database functions, see `SUPABASE_RLS_POLICY_MATRIX.md`)
   - admin batch jobs
 - Do not embed service-role actions directly in client routes/components.
+- `ALLOW_LOCAL_PASSWORD_RESET_PREVIEW` (edge function secret): leave unset on every hosted project. When it is `true`, `local-preview-password-reset` hands a password reset link for any email to any caller. Only for a local Supabase stack.
+- Auth settings: keep "Confirm email" on (or public sign-ups off). Platform admin access and club admin first access are granted by account email.
 
 ## Developer Checklist
 
