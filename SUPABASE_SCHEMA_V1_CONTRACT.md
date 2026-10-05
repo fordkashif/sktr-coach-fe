@@ -422,3 +422,93 @@ Migration `20261010090000_club_admin_invite_role_and_member_removal.sql`. Additi
 - `club_profiles.primary_color` is now used in exactly two places: behind the club's short name where it has no logo (`ClubMark`) and as a rule on printed plans. It does not theme the app.
 - New audit actions. Club (`audit_events`): `package_changed` (actor role `platform-admin`), `club_logo_update`, `club_logo_remove` (written by the browser). Platform (`platform_audit_events`): `tenant_package_changed`, `notification_email_retry_requested`.
 - Additive and idempotent: nothing is dropped and no existing row is changed.
+
+## Session log depth (migration `20261011100000_session_log_depth.sql`)
+
+- `session_row_logs.rpe smallint` (1 to 10, nullable) is the effort of that one set. `session_row_logs.note text` (nullable, at most 500 characters, check `session_row_logs_note_length`) is the athlete's note for the exercise; the app keeps it on the lowest numbered set of the row and may save a row with `completed = false` and no numbers just to hold it. Both columns existed since `20261005090000` and were never written before this.
+- New function `exercise_match_key(text) returns text`: how an exercise is matched between sessions (rows have no stable exercise id). App twin: `exerciseMatchKey()` in `src/lib/data/session/log-assist.ts`.
+- New function `get_my_last_exercise_logs(p_labels text[], p_before date default current_date, p_exclude_session_id uuid default null)` returns `label_key, session_id, session_date, session_rpe, log_kind, block_type, set_index, reps, load_kg, time_seconds, distance_m, mark, rpe, note`: for each exercise, the ticked sets of the caller's most recent completed session up to `p_before` that has it (one row of that session when the exercise is named twice). `get_my_last_exercise_results` is kept; the app falls back to it when the new function is missing.
+- Additive and idempotent: nothing is dropped and no existing row is changed.
+
+## Reminders (20261011120000_reminders.sql)
+
+- `club_profiles.timezone text not null default 'America/Jamaica'`: IANA time zone of the club. Changed with `set_current_club_timezone(name)`.
+- `reminder_deliveries (id, tenant_id, user_id, reminder_type, subject_id, local_date, queued_count, created_at)`: one row per reminder handed to the notification queue. `unique (user_id, reminder_type, subject_id, local_date)` is what makes a reminder go out at most once per person per subject per local day.
+- `run_reminders(p_now timestamptz default now(), p_tenant_id uuid default null)` returns `(reminder_type, queued)`. Runs hourly from pg_cron. Per club it works out the local date and hour in the club's time zone and sends:
+
+| Event type | To | When (club local time) | Subject id | Email by default |
+| --- | --- | --- | --- | --- |
+| `reminder_session_today` | athlete | 07:00, a session planned today, not done, not skipped, athlete not injured, sick or away | athlete id | no |
+| `reminder_checkin` | athlete | 09:00, no wellness entry for today | athlete id | no |
+| `reminder_test_week_closing` | athlete | last day of a published test week, 08:00 to 20:00, a required test has no result | test week id | yes |
+| `reminder_test_week_closing_coach` | coaches of the week's team | same window, at least one athlete has required results missing | test week id | yes |
+| `reminder_athletes_not_logged` | coach | 08:00, one row counting athletes on their teams who did not log yesterday's session | club id | no |
+
+- A test week has no close time of its own: it is treated as closing at the end of `end_date` in the club's time zone.
+- Metadata on each event carries `reminder: true`, `local_date`, and the ids the app needs to open the right screen (`session_date`, `test_week_id`, `team_id`). Screens are decided in `supabase/functions/_shared/notification-target.ts`.
+- "Email by default: no" is enforced by the job (it only queues an email when the person has an explicit "on" row in `notification_preferences`), not by `notification_default_enabled()`, which this migration leaves untouched.
+
+## Athlete goals (20261011110000_athlete_goals_and_history.sql)
+
+`athlete_goals`: one row per goal of an athlete.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id` | uuid | from the athlete, set by trigger |
+| `athlete_id` | uuid | references `athletes`, cascade on delete |
+| `event_key`, `event_label`, `event_group`, `mark_unit`, `lower_is_better` | text, boolean | the same event fields as `athlete_results`; for a listed event they come from `result_events`, for `other` the label and unit are the athlete's own test |
+| `target_value` | numeric(12,3) | the mark to reach, compared with `athlete_results.compare_value` |
+| `start_value` | numeric(12,3), null | best wind legal mark when the goal was set |
+| `target_date` | date, null | optional |
+| `note` | text, null | up to 500 characters |
+| `achieved_on` | date, null | null while open |
+| `achieved_result_id` | uuid, null | the result that met the target; null when marked by hand |
+| `achieved_manually` | boolean | true when marked achieved by hand; set it back to false to let results decide |
+| `set_by_staff` | boolean | true when a coach or club admin set the goal |
+| `created_by_user_id`, `created_at`, `updated_at` | | |
+
+Progress is not stored. The app reads it from `athlete_results` (start mark, current best, target). The session history and test week history screens read existing tables only.
+
+## Exercise library, best lifts and percentage loads (20261011090000_exercise_library_and_loads.sql)
+
+`exercise_library`: the saved exercises of a club.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id` | uuid | the club |
+| `name` | text | 1 to 80 characters |
+| `name_key` | text | `lift_key(name)`, set by trigger; unique per club, archived exercises included |
+| `category` | text | sprint, strength, plyometric, throws, jumps, mobility, conditioning, other |
+| `measure` | text | reps_load, time, distance |
+| `cue` | text, null | coaching cue, up to 500 characters |
+| `link_url` | text, null | http or https link, up to 500 characters, no spaces. Never a file. |
+| `is_archived` | boolean | archived exercises are not suggested; plans that use them are unchanged |
+| `created_by_user_id`, `created_at`, `updated_at` | | |
+
+`athlete_lift_maxes`: an athlete's best single lift (1RM), one current row per athlete and lift.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id`, `athlete_id` | uuid | the athlete must belong to the club (trigger) |
+| `lift_name` | text | as typed ("Back squat") |
+| `lift_key` | text | `lift_key(lift_name)`, set by trigger; unique with `athlete_id` |
+| `exercise_id` | uuid, null | optional link to `exercise_library` |
+| `value_kg` | numeric(6,2) | above 0, up to 1000 |
+| `measured_on` | date | |
+| `source` | text | coach or athlete, set by trigger from who wrote it |
+| `updated_by_user_id`, `created_at`, `updated_at` | | |
+
+New columns on `session_block_rows`: `percent_1rm` numeric(5,2), `lift_name`, `lift_key`, `target_volume` ("4 x 4"), `cue`, `reference_url` (http or https), `exercise_id`.
+
+How a percentage load is worked out:
+
+- The plan builder stores a row's load as text. A load written with a percent sign ("80%") is a percentage of the athlete's best lift for the row's lift (the exercise itself, or the lift named in `percentOf`).
+- When a session is written for an athlete, the app sends `percent_1rm`, `lift_name` and `target_volume`. The trigger `resolve_session_row_load()` looks up the athlete's best lift: the row in `athlete_lift_maxes`, otherwise the highest kilogram mark in `athlete_results` whose `event_label` has the same `lift_key`.
+- With a best lift: `target` becomes "4 x 4 at 80%, 120 kg" (nearest 2.5 kg), `target_load` "120 kg", `helper` the cue. Without one: `target` "4 x 4 at 80%", `target_load` "80%", and `helper` ends with a short hint.
+- Saving, correcting or removing a best lift, or adding a kilogram result, works the athlete's sessions out again when their status is scheduled or in progress. Completed and skipped sessions keep what the athlete saw.
+- Per athlete changes to a plan row live in `training_plans.builder_state` (`sessions[].blocks[].exercises[].overrides[]`: `athleteId`, `sets`, `reps`, `load`, `note`). The app applies them when it writes that athlete's session rows, on publish, on update and when an athlete's session is created on demand. Updating a published plan replaces sessions that are still untouched and upcoming; a session the athlete has started is left as it is.
+
+The link is stored on the row (`reference_url`) but the athlete log screen does not show it yet.

@@ -11,7 +11,7 @@ import {
 } from "@/lib/data/pr/marks"
 import { formatFullDay, parseLocalDay } from "@/lib/data/pr/pr-display"
 
-/** The four screens under the athlete's Progress tab. */
+/** The five screens under the athlete's Progress tab. */
 export function ProgressTabs() {
   return (
     <NavTabs
@@ -19,6 +19,7 @@ export function ProgressTabs() {
       items={[
         { to: "/athlete/trends", label: "Overview" },
         { to: "/athlete/prs", label: "Records" },
+        { to: "/athlete/goals", label: "Goals" },
         { to: "/athlete/competitions", label: "Competitions" },
         { to: "/athlete/test-week", label: "Tests" },
       ]}

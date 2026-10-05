@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { ArrowRight, Check, PencilSimple, Plus } from "@phosphor-icons/react"
 import { AvailabilityDialog, AvailabilityNotice, useMyAvailability } from "@/components/athlete/availability"
 import {
   AddExerciseDialog,
   DayNav,
+  EFFORT_WORDS,
   ExerciseLog,
   formatLongDay,
   LoggedSummary,
@@ -14,6 +15,7 @@ import {
   SkipDialog,
   SyncStatus,
 } from "@/components/athlete/log/log-parts"
+import { ClockBar, useLogClock, type RestSuggestion } from "@/components/athlete/log/log-clock"
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
   ActionBar,
@@ -38,11 +40,11 @@ import {
   notify,
   notifyError,
 } from "@/components/sk"
+import { DEFAULT_REST_SECONDS, nextOpenTimeSet, restSecondsForRow } from "@/lib/data/session/log-assist"
 import { MAX_SETS, logKindForBlockType } from "@/lib/data/session/session-from-plan"
 import { skipReasonLabel, skippedLabel } from "@/lib/data/session/types"
 import { todayIso } from "@/lib/data/training-plan/plan-builder-model"
 
-const EFFORT_WORDS = ["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Very hard", "Max effort"]
 const HOME_REDIRECT_MS = 1800
 
 function isIsoDay(value: string | null): value is string {
@@ -68,6 +70,21 @@ export default function AthleteLogPage() {
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, setBusy] = useState(false)
+  const clock = useLogClock()
+  const [rest, setRest] = useState<RestSuggestion>({ seconds: DEFAULT_REST_SECONDS, prescribed: false, label: null })
+  // The timed exercise the athlete last touched: where a stopwatch time goes.
+  const [timedRowId, setTimedRowId] = useState<string | null>(null)
+
+  const timedRows = useMemo(() => (session?.blocks ?? []).flatMap((block) => block.rows.filter((row) => row.kind === "time")), [session?.blocks])
+  const shownCount = (row: (typeof timedRows)[number]) => Math.min(setCount(row, log.logs) + (log.extraSets[row.id] ?? 0), MAX_SETS)
+  const stopwatchRowId = clock.clock.mode === "stopwatch" ? clock.clock.rowId : null
+  const stopwatchRow = (() => {
+    const preferred = timedRows.find((row) => row.id === (stopwatchRowId ?? timedRowId))
+    if (preferred) return preferred
+    // Nothing picked: the first timed exercise that still has a rep with no time.
+    return timedRows.find((row) => nextOpenTimeSet(row.id, log.logs, shownCount(row), shownCount(row)) !== null) ?? timedRows[0] ?? null
+  })()
+  const stopwatchSet = stopwatchRow ? nextOpenTimeSet(stopwatchRow.id, log.logs, shownCount(stopwatchRow), MAX_SETS) : null
 
   useEffect(() => {
     setEditing(false)
@@ -336,12 +353,30 @@ export default function AthleteLogPage() {
                         row={row}
                         logs={log.logs}
                         count={count}
-                        lastTime={log.lastTime(row.label)}
-                        onToggle={(setIndex) => log.toggleSet(row, setIndex)}
-                        onValue={(setIndex, field, value) => log.setValue(row, setIndex, field, value)}
+                        lastTime={log.lastTime(row)}
+                        onToggle={(setIndex) => {
+                          log.toggleSet(row, setIndex)
+                          // The rest button in the bar now offers what the coach set for this exercise.
+                          setRest({ ...restSecondsForRow([row.helper, row.target, block.restLabel, block.coachNote]), label: row.label })
+                          if (row.kind === "time") setTimedRowId(row.id)
+                        }}
+                        onValue={(setIndex, field, value) => {
+                          log.setValue(row, setIndex, field, value)
+                          if (row.kind === "time") setTimedRowId(row.id)
+                        }}
+                        onEffort={(setIndex, rpe) => log.setEffort(row, setIndex, rpe)}
+                        onNote={(text) => log.setRowNote(row, text)}
                         onFill={() => log.fillRowFromTarget(row)}
                         onRepeat={() => log.repeatLastSet(row, count)}
+                        onRepeatLast={() => {
+                          log.repeatLastTime(row, count)
+                          setRest({ ...restSecondsForRow([row.helper, row.target, block.restLabel, block.coachNote]), label: row.label })
+                        }}
                         onAddSet={() => log.addSet(row)}
+                        onStopwatch={() => {
+                          setTimedRowId(row.id)
+                          clock.openStopwatch(row.id)
+                        }}
                         hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
                       />
                     )
@@ -434,7 +469,7 @@ export default function AthleteLogPage() {
               <ListRow onClick={() => setConfirmRemove(true)} chevron title="Remove this session" subtitle="For a session you added by mistake." />
             ) : null}
             <ListRow to="/athlete/log/new" title="Add a session" subtitle="Log something that was not in your plan." />
-            <ListRow to="/athlete/log/history" title="Session history" subtitle="What you did, skipped and missed." />
+            <ListRow to="/athlete/history" title="Session history" subtitle="What you did, skipped and missed." />
             {!availability.current ? (
               <ListRow onClick={() => setAvailabilityOpen(true)} chevron title="I can't train for a while" subtitle="Injured, sick or away. Your coach is told." />
             ) : null}
@@ -443,9 +478,27 @@ export default function AthleteLogPage() {
       ) : null}
 
       {session && (showForm || (completed && !editing && sync.status !== "saved")) ? (
-        <ActionBar aria-label="Progress">
-          {showForm ? <LogProgress done={totals.done} total={totals.total} /> : <p className="min-w-0 flex-1 text-sm font-bold text-sk-ink">Session done</p>}
-          <SyncStatus sync={sync} onRetry={log.retrySync} className="shrink-0" />
+        <ActionBar aria-label="Progress and timer">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {showForm ? (
+              <ClockBar
+                control={clock}
+                suggestion={rest}
+                showStopwatch={timedRows.length > 0}
+                target={stopwatchRow && stopwatchSet ? { rowLabel: stopwatchRow.label, setIndex: stopwatchSet } : null}
+                onUseTime={(seconds) => {
+                  if (!stopwatchRow || !stopwatchSet) return
+                  if (stopwatchSet > shownCount(stopwatchRow)) log.addSet(stopwatchRow)
+                  log.setValue(stopwatchRow, stopwatchSet, "timeSeconds", seconds)
+                  setRest({ ...restSecondsForRow([stopwatchRow.helper, stopwatchRow.target]), label: stopwatchRow.label })
+                }}
+              />
+            ) : null}
+            <div className="flex min-h-11 items-center justify-between gap-4">
+              {showForm ? <LogProgress done={totals.done} total={totals.total} /> : <p className="min-w-0 flex-1 text-sm font-bold text-sk-ink">Session done</p>}
+              <SyncStatus sync={sync} onRetry={log.retrySync} className="shrink-0" />
+            </div>
+          </div>
         </ActionBar>
       ) : null}
 

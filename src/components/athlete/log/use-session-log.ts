@@ -18,7 +18,8 @@ import {
   subscribeSyncState,
 } from "@/lib/data/session/session-log-sync"
 import type { Result } from "@/lib/data/result"
-import { exerciseKey, MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
+import { cleanEffort, lastTimeForRow, NOTE_MAX_LENGTH, repeatFill } from "@/lib/data/session/log-assist"
+import { MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
 import type {
   AthleteSession,
   AthleteSessionDay,
@@ -33,6 +34,7 @@ import { tenantStorageKey } from "@/lib/tenant-storage"
 
 const DAY_CACHE_KEY = "pacelab:session-day-cache:v2"
 const WRAP_UP_KEY = "pacelab:session-wrap-up:v1"
+const LAST_TIME_CACHE_KEY = "pacelab:session-last-time:v1"
 
 type LogMap = Record<string, SessionRowLog>
 type WrapUp = { rpe: number | null; comment: string }
@@ -72,7 +74,7 @@ export function setKey(rowId: string, setIndex: number) {
 }
 
 function emptyLog(rowId: string, setIndex: number): SessionRowLog {
-  return { rowId, setIndex, completed: false, reps: null, loadKg: null, timeSeconds: null, distanceM: null, mark: null }
+  return { rowId, setIndex, completed: false, reps: null, loadKg: null, timeSeconds: null, distanceM: null, mark: null, rpe: null, note: null }
 }
 
 function toMap(logs: SessionRowLog[]): LogMap {
@@ -150,6 +152,10 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
   const sessionRef = useRef<AthleteSession | null>(null)
   // Mirrors `logs` so handlers fired back to back always read the latest entry.
   const logsRef = useRef<LogMap>({})
+  const lastTimeRef = useRef<Record<string, LastTimeResult>>({})
+  useEffect(() => {
+    lastTimeRef.current = lastTime
+  }, [lastTime])
 
   useEffect(() => {
     resumeSessionOutbox()
@@ -200,8 +206,18 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
     setLastTime({})
     if (!loadedSessionId || !loadedLabels) return
     let cancelled = false
+    // One request for every exercise of the session. The answer is kept on the phone so the
+    // hint and "Same as last time" still work with no signal.
     void loadLastTime(loadedLabels.split("|"), date, loadedSessionId).then((result) => {
-      if (!cancelled && result.ok) setLastTime(result.data)
+      if (cancelled) return
+      const cache = readJson<Record<string, Record<string, LastTimeResult>>>(LAST_TIME_CACHE_KEY, {})
+      if (!result.ok) {
+        if (cache[loadedSessionId]) setLastTime(cache[loadedSessionId])
+        return
+      }
+      setLastTime(result.data)
+      const keep = Object.fromEntries(Object.entries(cache).filter(([id]) => id !== loadedSessionId).slice(-9))
+      writeJson(LAST_TIME_CACHE_KEY, { ...keep, [loadedSessionId]: result.data })
     })
     return () => {
       cancelled = true
@@ -264,6 +280,42 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
     [commit, currentLog],
   )
 
+  /** How hard one set was (1 to 10). Null clears it. Does not tick the set. */
+  const setEffort = useCallback(
+    (row: LoggableRow, setIndex: number, rpe: number | null) => {
+      const existing = currentLog(row.id, setIndex)
+      const next = cleanEffort(rpe)
+      if ((existing.rpe ?? null) === next) return
+      commit({ ...existing, rpe: next })
+    },
+    [commit, currentLog],
+  )
+
+  /** The athlete's note for one exercise. It lives on the lowest set that already has one, else on set 1. */
+  const setRowNote = useCallback(
+    (row: LoggableRow, text: string) => {
+      const holders = Object.values(logsRef.current)
+        .filter((log) => log.rowId === row.id && typeof log.note === "string" && log.note !== "")
+        .sort((left, right) => left.setIndex - right.setIndex)
+      const existing = currentLog(row.id, holders[0]?.setIndex ?? 1)
+      const next = text.slice(0, NOTE_MAX_LENGTH) || null
+      if ((existing.note ?? null) === next) return
+      commit({ ...existing, note: next })
+    },
+    [commit, currentLog],
+  )
+
+  /** "Same as last time": last time's numbers into every set not ticked yet, ticked. */
+  const repeatLastTime = useCallback(
+    (row: LoggableRow, shownCount: number) => {
+      const fill = repeatFill(row, lastTimeForRow(row, lastTimeRef.current), logsRef.current, shownCount, MAX_SETS)
+      if (fill.entries.length === 0) return
+      if (fill.count > shownCount) setExtraSets((current) => ({ ...current, [row.id]: (current[row.id] ?? 0) + (fill.count - shownCount) }))
+      for (const entry of fill.entries) commit(entry)
+    },
+    [commit],
+  )
+
   const fillRowFromTarget = useCallback(
     (row: LoggableRow) => {
       const count = setCount(row, logsRef.current)
@@ -285,7 +337,8 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
       if (!target) return
       const source = currentLog(row.id, target.from)
       if (target.to > shownCount) setExtraSets((current) => ({ ...current, [row.id]: (current[row.id] ?? 0) + 1 }))
-      commit({ ...source, setIndex: target.to, completed: true })
+      // The numbers are copied. The effort and the exercise note belong to the set they were given to.
+      commit({ ...source, setIndex: target.to, completed: true, rpe: currentLog(row.id, target.to).rpe ?? null, note: currentLog(row.id, target.to).note ?? null })
     },
     [commit, currentLog],
   )
@@ -412,8 +465,11 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
     loadError,
     fromCache,
     reload,
-    lastTime: (label: string) => lastTime[exerciseKey(label)] ?? null,
+    lastTime: (row: Pick<LoggableRow, "label" | "kind">) => lastTimeForRow(row, lastTime),
     repeatLastSet,
+    repeatLastTime,
+    setEffort,
+    setRowNote,
     skip,
     unskip,
     addExercise,

@@ -84,7 +84,7 @@ const coachLinks: ShellLink[] = [
 ]
 
 /** Everything under the athlete's Progress tab. Each is its own screen, with the tab bar showing. */
-const ATHLETE_PROGRESS_PATHS = ["/athlete/trends", "/athlete/prs", "/athlete/competitions", "/athlete/test-week"]
+const ATHLETE_PROGRESS_PATHS = ["/athlete/trends", "/athlete/prs", "/athlete/competitions", "/athlete/test-week", "/athlete/goals", "/athlete/history"]
 
 /** The athlete's third item is the log action: a raised round button in the phone tab bar. */
 const ATHLETE_LOG_ID = "log"

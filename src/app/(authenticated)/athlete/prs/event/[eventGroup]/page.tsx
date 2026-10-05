@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
 import { Link, useLocation, useParams } from "react-router-dom"
 import { dayText, markText, ordinal, StandingTag, whenAndWhere } from "@/components/athlete/results-parts"
+import { GoalList, useGoals } from "@/components/goals/goals-parts"
 import {
   DataTable,
   EmptyState,
@@ -30,6 +31,7 @@ import {
   standingsOverTime,
   type AthleteResult,
 } from "@/lib/data/pr/marks"
+import { getCurrentAthleteGoals } from "@/lib/data/goals/goals-data"
 import { parseLocalDay } from "@/lib/data/pr/pr-display"
 import { canViewerEditResult, getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
 
@@ -41,6 +43,7 @@ export default function AthleteEventHistoryPage() {
   const saved = (location.state as { saved?: SavedNotice } | null)?.saved ?? null
   const [records, setRecords] = useState<AthleteRecords | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const goals = useGoals(getCurrentAthleteGoals)
 
   useEffect(() => {
     let cancelled = false
@@ -222,6 +225,28 @@ export default function AthleteEventHistoryPage() {
             )} on ${dayText(legalOldestFirst[legalOldestFirst.length - 1].date)}.${personalBest ? ` Personal best ${markText(personalBest)}.` : ""}`}
           />
         </Section>
+      ) : null}
+
+      {goals.view ? (
+        (() => {
+          const eventGoals = goals.view.goals.filter((goal) => goal.eventGroup === event.group)
+          return (
+            <Section
+              title={eventGoals.length === 1 ? "Goal" : "Goals"}
+              action={
+                <Link className="sk-link" to="/athlete/goals">
+                  {eventGoals.length > 0 ? "All goals" : "Set a goal"}
+                </Link>
+              }
+            >
+              {eventGoals.length > 0 ? (
+                <GoalList aria-label={`Your ${event.label} goals`} view={goals.view} goals={eventGoals} audience="athlete" onChanged={goals.reload} />
+              ) : (
+                <p className="sk-list-sub">No goal in this event. Set a mark to aim for and follow how close you are.</p>
+              )}
+            </Section>
+          )
+        })()
       ) : null}
 
       <Section title="All results" meta="Newest first">

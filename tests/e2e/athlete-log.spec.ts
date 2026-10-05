@@ -103,8 +103,8 @@ test.describe("athlete session log (mock mode)", () => {
     // Nothing to log while it is skipped.
     await expect(page.getByRole("button", { name: "Finish session" })).toHaveCount(0)
 
-    await page.goto("/athlete/log/history")
-    await expect(page.getByRole("heading", { level: 1, name: "Session history" })).toBeVisible()
+    await page.goto("/athlete/history")
+    await expect(page.getByRole("heading", { level: 1, name: "History" })).toBeVisible()
     await expect(page.locator('[data-history="Acceleration and weights"]').first()).toContainText("Skipped: sick")
 
     // The plan shows it as skipped, not missed.
@@ -181,9 +181,9 @@ test.describe("athlete session log (mock mode)", () => {
     await page.waitForURL(/\/athlete\/home/)
 
     // It is in the history, marked as added by the athlete, and the planned session is untouched.
-    await page.goto("/athlete/log/history")
+    await page.goto("/athlete/history")
     const extra = page.locator('[data-history="Pool run"]')
-    await expect(extra).toContainText("added by you")
+    await expect(extra).toContainText("Added by you")
     await expect(extra).toContainText("Done")
     await page.goto("/athlete/log")
     await expect(page.getByRole("heading", { level: 1, name: "Acceleration and weights" })).toBeVisible()

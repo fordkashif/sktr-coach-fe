@@ -32,7 +32,7 @@ export {
 } from "./status"
 export { Button, LinkButton, HeroAction, Field, Input, Textarea, Select, Segmented, Tabs, InlineConfirm, type ButtonVariant, type ButtonSize } from "./controls"
 export { Sheet, Dialog, notify, notifyError } from "./overlays"
-export { NumberInput, TickButton, SetList, SetGroup, SetRow, EffortScale } from "./logging"
+export { NumberInput, TickButton, SetList, SetGroup, SetRow, EffortScale, EffortButton } from "./logging"
 export { WeekPager, DayPicker, DayLabel, ActionBar, type DayPickerDay } from "./week"
 export { TapScale, Stepper, Choices, type ChoiceOption } from "./inputs"
 export { FactList, Fact } from "./facts"
@@ -59,3 +59,4 @@ export { RadioRow } from "./radio-row"
 // Deprecated v1 names. They keep older screens working on the v2 look. Replacements are noted on each.
 export { PageHeader, Panel } from "./legacy"
 export { ReadinessTag, Initials, type Tone } from "./status"
+export { SuggestInput, type SuggestOption } from "./suggest-input"

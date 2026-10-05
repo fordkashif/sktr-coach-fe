@@ -3,6 +3,7 @@ import { useState } from "react"
 import { ActionRow, Button, EmptyState, InlineConfirm, List, Notice, RowMenu, Screen, ScreenHeader, Section, Segmented, SkeletonRows } from "@/components/sk"
 import { addDaysIso, formatDateRange, type PlanStatus } from "@/lib/data/training-plan/plan-builder-model"
 import type { PlanListItem, TeamOption } from "./storage"
+import { PlansNav } from "./plans-nav"
 import { PlanStatusText, plural } from "./ui"
 
 type Filter = "all" | PlanStatus
@@ -69,6 +70,8 @@ export function PlanList({
           </Button>
         }
       />
+
+      <PlansNav />
 
       {error ? <Notice tone="error">{error}</Notice> : null}
 

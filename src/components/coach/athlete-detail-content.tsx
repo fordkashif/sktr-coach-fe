@@ -46,6 +46,7 @@ import {
   type DataTableColumn,
   type StateTone,
 } from "@/components/sk"
+import { CoachAthleteGoals } from "@/components/goals/coach-athlete-goals"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import {
   AVAILABILITY_KINDS,
@@ -1222,6 +1223,7 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
         />
       ) : null}
       {tab === "wellness" ? <WellnessTab detail={detail} /> : null}
+      {tab === "results" ? <CoachAthleteGoals athleteId={athlete.id} athleteName={athlete.name} /> : null}
       {tab === "results" ? <ResultsTab detail={detail} records={records} error={recordsError} /> : null}
       {tab === "details" ? (
         <DetailsTab

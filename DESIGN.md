@@ -152,6 +152,7 @@ All from `@/components/sk`.
 | `PasswordInput` | An `Input` for a password with a "Show" / "Hide" button inside it. Wrap it in a `Field`. Two of them (new password and confirm) can share one `shown` state. |
 | `ClubMark` | A club's logo as a small square. With no logo: the club's short name on the club colour, with black or white letters picked for contrast. The only place a club colour appears on screen; it never colours buttons, links or state. Always put the club's name in words beside it. |
 | `RadioRow` | A list row you pick one of, the whole row being the label of its radio button: `title`, `subtitle`, `detail`, and a plain `note` on the right. For choices that need a line of explanation (a package). Goes inside a `List`. |
+| `SuggestInput` | A text input that offers matching saved items under it while you type (an exercise from the club library): `options`, `onPick`, a `listLabel`. Free text is always allowed. Arrow keys and Enter pick, Escape closes; with nothing highlighted every key reaches `onKeyDown`, so it works inside `EditableRows` style tables. |
 | `Notice` | One line about the screen: could not load, saved, heads up. Tones `info`, `success`, `warning`, `error`. Small and tinted. It never wraps other content. |
 | `notify`, `notifyError` | A short toast after an action ("Plan saved"). |
 
@@ -175,6 +176,7 @@ All from `@/components/sk`.
 | `NumberInput` | A big number field for a phone (52px, decimal keypad, unit inside on the right). `mode="time"` also takes minutes and seconds. |
 | `TickButton` | A 52px square tick: tap to mark a set done (green), tap again to undo. |
 | `EffortScale` | A 1 to 10 answer in one tap, two rows of five, with the word for the chosen number under it. |
+| `EffortButton` | The effort of one set, in a `SetRow` between the inputs and the tick (`effort` slot; `SetGroup effortColumn` labels it). Shows the number once given, a dash before, and opens an `EffortScale` in a bottom `Sheet`. `SetGroup` also takes `below` (a full width line under the heading, the "last time" line) and `footer` (under the actions, a note field). |
 | `ActionBar` | A bar that stays at the bottom while the screen scrolls, above the phone tab bar: progress and save state of a long task, at most one button (a quiet text action such as "Save draft" may sit beside the state). Last child of `Screen`. |
 | `Tabs` | Underlined tabs for more views or longer labels. |
 | `StepIndicator` | Where someone is in a short run of screens done in order (the club setup wizard): one thin bar per step, blue up to the current one, the step names under them from tablet up. Read only. Goes straight under the `ScreenHeader`, whose `fact` says "Step 3 of 6: Club details" for phones. |

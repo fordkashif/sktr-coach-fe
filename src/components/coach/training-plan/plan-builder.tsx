@@ -1,11 +1,10 @@
 import { ArrowRight, CopySimple, PencilSimple, Plus, Printer, Swap, Trash, X } from "@phosphor-icons/react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ActionBar,
   Button,
   DayChecks,
   DayLabel,
-  EditableRows,
   EmptyState,
   Field,
   FormGrid,
@@ -20,7 +19,6 @@ import {
   Select,
   Split,
   Tabs,
-  type EditableColumn,
 } from "@/components/sk"
 import {
   QUICK_BLOCKS,
@@ -32,7 +30,6 @@ import {
   formatDayMonth,
   getSession,
   newBlock,
-  newExercise,
   newSession,
   nextSlot,
   planEndDate,
@@ -42,22 +39,16 @@ import {
   weekSessions,
   weekdayLabel,
   type BlockDraft,
-  type ExerciseDraft,
-  type PlanDraft,
+    type PlanDraft,
   type SessionDraft,
   type SessionType,
 } from "@/lib/data/training-plan/plan-builder-model"
-import type { TeamOption } from "./storage"
+import { ExerciseRows } from "./exercise-rows"
+import type { AthleteOption, TeamOption } from "./storage"
 import { PlanStatusText, plural } from "./ui"
+import { useExerciseTools, type ExerciseTools } from "./use-exercise-tools"
 
 const DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6]
-
-const EXERCISE_COLUMNS: EditableColumn[] = [
-  { key: "name", header: "Exercise", size: "grow" },
-  { key: "sets", header: "Sets" },
-  { key: "reps", header: "Reps" },
-  { key: "load", header: "Load", size: "md" },
-]
 
 type WeekTool = null | "duplicate-confirm" | "ab"
 
@@ -81,6 +72,7 @@ function dayOfMonth(dateIso: string) {
 export function PlanBuilder({
   plan,
   team,
+  athletes,
   dirty,
   busy,
   error,
@@ -96,6 +88,8 @@ export function PlanBuilder({
 }: {
   plan: PlanDraft
   team: TeamOption | null
+  /** The athletes of the plan's team: who a row can be adjusted for. */
+  athletes: AthleteOption[]
   dirty: boolean
   busy: boolean
   error: string | null
@@ -117,6 +111,8 @@ export function PlanBuilder({
   const [confirmCopy, setConfirmCopy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const isDesktop = useIsDesktop()
+  const athleteIds = useMemo(() => athletes.map((athlete) => athlete.id), [athletes])
+  const exerciseTools = useExerciseTools(athleteIds)
   const editorRef = useRef<HTMLDivElement | null>(null)
   // What to put the cursor in once the screen has caught up with a change.
   const pendingFocus = useRef<null | "title" | { blockId: string; field: "name" | "details" }>(null)
@@ -384,6 +380,8 @@ export function PlanBuilder({
                 key={block.id}
                 block={block}
                 index={blockIndex}
+                athletes={athletes}
+                tools={exerciseTools}
                 onChange={(updater) => updateBlock(block.id, updater)}
                 onRemove={() => updateSession({ blocks: session.blocks.filter((candidate) => candidate.id !== block.id) })}
               />
@@ -492,17 +490,18 @@ export function PlanBuilder({
 function SessionBlock({
   block,
   index,
+  athletes,
+  tools,
   onChange,
   onRemove,
 }: {
   block: BlockDraft
   index: number
+  athletes: AthleteOption[]
+  tools: ExerciseTools
   onChange: (updater: (block: BlockDraft) => BlockDraft) => void
   onRemove: () => void
 }) {
-  const setExercise = (exerciseId: string, patch: Partial<ExerciseDraft>) =>
-    onChange((current) => ({ ...current, exercises: current.exercises.map((exercise) => (exercise.id === exerciseId ? { ...exercise, ...patch } : exercise)) }))
-
   return (
     <li data-block data-block-id={block.id} className="py-4 first:pt-2">
       <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_2.75rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,13rem)_minmax(0,1fr)_2.75rem]">
@@ -551,16 +550,14 @@ function SessionBlock({
         </button>
       </div>
 
-      <EditableRows
+      <ExerciseRows
         className="mt-2 sm:pl-8"
-        columns={EXERCISE_COLUMNS}
-        rows={block.exercises.map((exercise) => ({ id: exercise.id, values: { name: exercise.name, sets: exercise.sets, reps: exercise.reps, load: exercise.load } }))}
-        onChange={(exerciseId, key, value) => setExercise(exerciseId, { [key]: value })}
-        onAdd={() => onChange((current) => ({ ...current, exercises: [...current.exercises, newExercise()] }))}
-        onRemove={(exerciseId) => onChange((current) => ({ ...current, exercises: current.exercises.filter((exercise) => exercise.id !== exerciseId) }))}
-        addLabel="Add exercise"
-        cellLabel={(rowIndex, column) => `Block ${index + 1} exercise ${rowIndex + 1} ${column.key}`}
-        removeLabel={(rowIndex) => `Remove block ${index + 1} exercise ${rowIndex + 1}`}
+        blockIndex={index}
+        blockTitle={block.title}
+        exercises={block.exercises}
+        athletes={athletes}
+        tools={tools}
+        onChange={(updater) => onChange((current) => ({ ...current, exercises: updater(current.exercises) }))}
       />
     </li>
   )

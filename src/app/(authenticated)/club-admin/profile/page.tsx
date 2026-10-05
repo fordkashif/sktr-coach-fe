@@ -20,6 +20,7 @@ import {
   notify,
   type StateTone,
 } from "@/components/sk"
+import { ClubTimezoneSection } from "@/components/club-admin/club-timezone-section"
 import { DEFAULT_CLUB_ADMIN_PROFILE, useClubAdmin } from "@/lib/club-admin-context"
 import { refreshClubBrand, useClubBrand } from "@/lib/club-brand-store"
 import {
@@ -535,6 +536,8 @@ export default function ClubAdminProfilePage() {
                   </FactList>
                 )}
               </Section>
+
+              <ClubTimezoneSection />
             </>
           }
         />

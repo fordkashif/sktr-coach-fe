@@ -289,6 +289,7 @@ export function PlanWorkspace({
   }
 
   const team = useMemo(() => directory.teams.find((candidate) => candidate.id === plan?.teamId) ?? null, [directory.teams, plan?.teamId])
+  const teamAthletes = useMemo(() => directory.athletes.filter((athlete) => athlete.teamId === plan?.teamId), [directory.athletes, plan?.teamId])
 
   const printFromList = async (item: PlanListItem) => {
     setBusyPlanId(item.id)
@@ -339,6 +340,7 @@ export function PlanWorkspace({
         key={builderKey}
         plan={plan}
         team={team}
+        athletes={teamAthletes}
         dirty={dirty}
         busy={busy !== null}
         error={actionError}

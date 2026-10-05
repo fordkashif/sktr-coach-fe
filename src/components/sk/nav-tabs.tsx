@@ -6,6 +6,8 @@ export type NavTabItem = {
   label: string
   /** Other path prefixes that belong to this tab. `to` itself always counts. */
   match?: string[]
+  /** Only the address itself counts, not the screens under it (for a tab whose address is the parent of the other tabs). */
+  exact?: boolean
 }
 
 /**
@@ -17,7 +19,7 @@ export type NavTabItem = {
  */
 export function NavTabs({ label, items, className }: { label: string; items: NavTabItem[]; className?: string }) {
   const { pathname } = useLocation()
-  const isActive = (item: NavTabItem) => [item.to, ...(item.match ?? [])].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  const isActive = (item: NavTabItem) => [item.to, ...(item.match ?? [])].some((prefix) => pathname === prefix || (!item.exact && pathname.startsWith(`${prefix}/`)))
   return (
     <nav aria-label={label} className={cn("sk-tabs [scrollbar-width:none]", className)}>
       {items.map((item) => {

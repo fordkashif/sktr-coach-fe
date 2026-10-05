@@ -9,6 +9,7 @@ import {
   summariseSets,
   type SessionBlueprint,
 } from "@/lib/data/session/session-from-plan"
+import { cleanEffort, cleanNote, exerciseMatchKey } from "@/lib/data/session/log-assist"
 import {
   addMockExtraExercise,
   createMockExtraSession,
@@ -32,6 +33,7 @@ import type {
   ExtraExerciseInput,
   ExtraSessionInput,
   LastTimeResult,
+  LastTimeSet,
   LogKind,
   LoggableBlock,
   LoggableRow,
@@ -187,6 +189,7 @@ type BlockRecord = {
     target_sets: number | null
     target_reps: string | null
     target_load: string | null
+    reference_url: string | null
   }> | null
 }
 
@@ -208,13 +211,13 @@ async function loadSessionBody(
     client
       .from("session_blocks")
       .select(
-        "id, session_id, sort_order, block_type, name, focus, coach_note, previous_result, rest_label, session_block_rows(id, session_block_id, sort_order, label, target, helper, log_kind, target_sets, target_reps, target_load)",
+        "id, session_id, sort_order, block_type, name, focus, coach_note, previous_result, rest_label, session_block_rows(id, session_block_id, sort_order, label, target, helper, log_kind, target_sets, target_reps, target_load, reference_url)",
       )
       .eq("session_id", record.id)
       .order("sort_order", { ascending: true }),
     client
       .from("session_row_logs")
-      .select("session_block_row_id, set_index, completed, reps, load_kg, time_seconds, distance_m, mark")
+      .select("session_block_row_id, set_index, completed, reps, load_kg, time_seconds, distance_m, mark, rpe, note")
       .eq("session_id", record.id),
     client
       .from("session_completions")
@@ -250,6 +253,7 @@ async function loadSessionBody(
         targetSets: parseSetCount(row.target_sets),
         targetReps: row.target_reps,
         targetLoad: row.target_load,
+        referenceUrl: row.reference_url ?? null,
       })),
   }))
 
@@ -262,6 +266,8 @@ async function loadSessionBody(
     timeSeconds: numberOrNull(row.time_seconds),
     distanceM: numberOrNull(row.distance_m),
     mark: numberOrNull(row.mark),
+    rpe: cleanEffort(numberOrNull(row.rpe)),
+    note: typeof row.note === "string" && row.note ? row.note : null,
   }))
 
   const completion = completionResult.data as { completion_date: string; rpe: number | null; athlete_comment: string | null } | null
@@ -470,6 +476,9 @@ export async function saveSessionRowLogs(sessionId: string, logs: SessionRowLog[
         time_seconds: log.timeSeconds,
         distance_m: log.distanceM,
         mark: log.mark,
+        // Entries queued before these fields existed have neither: they save as null.
+        rpe: cleanEffort(log.rpe),
+        note: cleanNote(log.note ?? ""),
         logged_by_user_id: context.userId,
       })),
       { onConflict: "session_block_row_id,athlete_id,set_index" },
@@ -683,53 +692,84 @@ export async function listAthleteSessions(from: string, to: string, limit = 400)
   })
 }
 
+type LastTimeRow = {
+  label_key: string
+  session_date: string
+  session_rpe?: unknown
+  log_kind: string | null
+  block_type: SessionBlockType | null
+  set_index: number
+  reps: unknown
+  load_kg: unknown
+  time_seconds: unknown
+  distance_m: unknown
+  mark: unknown
+  rpe?: unknown
+  note?: unknown
+}
+
+function lastTimeFromRows(rows: LastTimeRow[]): Record<string, LastTimeResult> {
+  const grouped = new Map<string, LastTimeRow[]>()
+  for (const row of rows) {
+    const key = exerciseMatchKey(row.label_key)
+    grouped.set(key, [...(grouped.get(key) ?? []), row])
+  }
+  const found: Record<string, LastTimeResult> = {}
+  for (const [key, group] of grouped) {
+    const kind = asLogKind(group[0].log_kind, group[0].block_type ?? "Strength")
+    const sets: LastTimeSet[] = group
+      .map((row) => ({
+        setIndex: Number(row.set_index),
+        reps: numberOrNull(row.reps),
+        loadKg: numberOrNull(row.load_kg),
+        timeSeconds: numberOrNull(row.time_seconds),
+        distanceM: numberOrNull(row.distance_m),
+        mark: numberOrNull(row.mark),
+        rpe: cleanEffort(numberOrNull(row.rpe)),
+      }))
+      .sort((left, right) => left.setIndex - right.setIndex)
+    const summary = summariseSets(
+      kind,
+      sets.map((set) => ({ ...set, rowId: key, completed: true })),
+    )
+    // "Done" on its own says nothing worth repeating.
+    if (!summary || summary === "Done" || / done$/.test(summary)) continue
+    const noted = group.filter((row) => typeof row.note === "string" && row.note.trim() !== "").sort((left, right) => Number(left.set_index) - Number(right.set_index))[0]
+    found[key] = {
+      date: group[0].session_date,
+      summary,
+      kind,
+      sets,
+      sessionEffort: cleanEffort(numberOrNull(group[0].session_rpe)),
+      note: noted ? String(noted.note) : null,
+    }
+  }
+  return found
+}
+
 /**
- * What the athlete did the last time for each of these exercises (matched on the exercise name,
- * in their most recent finished session before `before`). Keys are exerciseKey(label).
+ * What the athlete did the last time for each of these exercises, set by set, from their most
+ * recent finished session before `before` that has the exercise. One query for the whole screen.
+ * Rows have no stable exercise id, so the match is on the name (see exerciseMatchKey).
+ * Keys of the result are exerciseMatchKey(label).
  */
 export async function loadLastTime(labels: string[], before: string, excludeSessionId: string | null): Promise<Result<Record<string, LastTimeResult>>> {
-  const wanted = [...new Set(labels.map(exerciseKey).filter(Boolean))]
+  const wanted = [...new Set(labels.map(exerciseMatchKey).filter(Boolean))]
   if (wanted.length === 0) return ok({})
   if (getBackendMode() !== "supabase") return ok(mockLastTime(wanted, before, excludeSessionId))
   return withAthlete("loadLastTime", async (client) => {
-    const { data, error } = await client.rpc("get_my_last_exercise_results", {
-      p_labels: wanted,
+    const exclude = /^[0-9a-f-]{36}$/i.test(excludeSessionId ?? "") ? excludeSessionId : null
+    const { data, error } = await client.rpc("get_my_last_exercise_logs", { p_labels: wanted, p_before: before, p_exclude_session_id: exclude })
+    if (!error) return ok(lastTimeFromRows((data as LastTimeRow[] | null) ?? []))
+    // A database that does not have the newer function yet: the older one gives the numbers
+    // (matched on the plain lower case name), without per set effort or the note.
+    if (error.code !== "PGRST202" && error.code !== "42883") return { ok: false, error: mapPostgrestError(error) }
+    const older = await client.rpc("get_my_last_exercise_results", {
+      p_labels: [...new Set(labels.map(exerciseKey).filter(Boolean))],
       p_before: before,
-      p_exclude_session_id: /^[0-9a-f-]{36}$/i.test(excludeSessionId ?? "") ? excludeSessionId : null,
+      p_exclude_session_id: exclude,
     })
-    if (error) return { ok: false, error: mapPostgrestError(error) }
-    type Row = {
-      label_key: string
-      session_date: string
-      log_kind: string | null
-      block_type: SessionBlockType | null
-      set_index: number
-      reps: unknown
-      load_kg: unknown
-      time_seconds: unknown
-      distance_m: unknown
-      mark: unknown
-    }
-    const grouped = new Map<string, Row[]>()
-    for (const row of (data as Row[] | null) ?? []) grouped.set(row.label_key, [...(grouped.get(row.label_key) ?? []), row])
-    const found: Record<string, LastTimeResult> = {}
-    for (const [key, rows] of grouped) {
-      const summary = summariseSets(
-        asLogKind(rows[0].log_kind, rows[0].block_type ?? "Strength"),
-        rows.map((row) => ({
-          rowId: key,
-          setIndex: Number(row.set_index),
-          completed: true,
-          reps: numberOrNull(row.reps),
-          loadKg: numberOrNull(row.load_kg),
-          timeSeconds: numberOrNull(row.time_seconds),
-          distanceM: numberOrNull(row.distance_m),
-          mark: numberOrNull(row.mark),
-        })),
-      )
-      // "Done" on its own says nothing worth repeating.
-      if (summary && summary !== "Done" && !/ done$/.test(summary)) found[key] = { date: rows[0].session_date, summary }
-    }
-    return ok(found)
+    if (older.error) return { ok: false, error: mapPostgrestError(older.error) }
+    return ok(lastTimeFromRows((older.data as LastTimeRow[] | null) ?? []))
   })
 }

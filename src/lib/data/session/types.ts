@@ -77,6 +77,10 @@ export type SessionRowLog = {
   timeSeconds: number | null
   distanceM: number | null
   mark: number | null
+  /** How hard this one set was, 1 to 10. Optional so entries saved before it existed still read. */
+  rpe?: number | null
+  /** The athlete's note for the exercise. Kept on the first set of the row (see rowNote in log-assist.ts). */
+  note?: string | null
 }
 
 export type LoggableRow = SessionBlockRow & {
@@ -84,6 +88,8 @@ export type LoggableRow = SessionBlockRow & {
   targetSets: number
   targetReps: string | null
   targetLoad: string | null
+  /** A link to a video or reference for the exercise, from the coach's library. */
+  referenceUrl?: string | null
 }
 
 export type LoggableBlock = Omit<SessionBlock, "rows"> & { rows: LoggableRow[] }
@@ -122,7 +128,20 @@ export type AthleteSessionRef = {
 }
 
 /** What the athlete did the last time they logged an exercise with the same name. */
-export type LastTimeResult = { date: string; summary: string }
+export type LastTimeSet = Pick<SessionRowLog, "setIndex" | "reps" | "loadKg" | "timeSeconds" | "distanceM" | "mark"> & { rpe: number | null }
+
+export type LastTimeResult = {
+  date: string
+  /** All sets in a few words, for example "3 x 5 at 120kg". */
+  summary: string
+  kind: LogKind
+  /** The sets as they were logged, in order. Used for the full list and for "Same as last time". */
+  sets: LastTimeSet[]
+  /** The effort (1 to 10) given to that whole session, when the athlete rated it. */
+  sessionEffort: number | null
+  /** The note the athlete left on the exercise that day. */
+  note: string | null
+}
 
 export type ExtraSessionInput = { title: string; blockType: SessionBlockType; date: string }
 export type ExtraExerciseInput = { label: string; kind: LogKind; sets: number }

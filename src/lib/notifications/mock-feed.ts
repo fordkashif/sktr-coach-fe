@@ -23,6 +23,23 @@ const DAY = 24 * 60
 
 const SEEDS: Record<NotificationRole, MockSeed[]> = {
   athlete: [
+    // Reminders (made by the hourly job in supabase mode, see 20261011120000_reminders.sql).
+    {
+      id: "mock-athlete-reminder-session",
+      eventType: "reminder_session_today",
+      subject: "Today: Acceleration and block starts",
+      body: "Open your log to see what is planned and to log it when you are done.",
+      minutesAgo: 12,
+      href: "/athlete/log",
+    },
+    {
+      id: "mock-athlete-reminder-checkin",
+      eventType: "reminder_checkin",
+      subject: "Your check-in for today is not done",
+      body: "It takes under a minute and tells your coach how you are feeling before training.",
+      minutesAgo: 25,
+      href: "/athlete/wellness",
+    },
     {
       id: "mock-athlete-plan",
       eventType: "training_plan_published",
@@ -49,6 +66,15 @@ const SEEDS: Record<NotificationRole, MockSeed[]> = {
       read: true,
     },
     {
+      id: "mock-athlete-reminder-test-week",
+      eventType: "reminder_test_week_closing",
+      subject: "Autumn testing closes tonight",
+      body: "You still have 2 required tests without a result. Add them before the end of today.",
+      minutesAgo: 2 * DAY + 3 * 60,
+      href: "/athlete/test-week",
+      read: true,
+    },
+    {
       id: "mock-athlete-team",
       eventType: "athlete_team_added",
       subject: "You were added to Sprint Group",
@@ -59,6 +85,14 @@ const SEEDS: Record<NotificationRole, MockSeed[]> = {
     },
   ],
   coach: [
+    {
+      id: "mock-coach-reminder-not-logged",
+      eventType: "reminder_athletes_not_logged",
+      subject: "4 athletes did not log yesterday's session",
+      body: "For yesterday. Open the team to see who.",
+      minutesAgo: 8,
+      href: "/coach/teams/t1",
+    },
     {
       id: "mock-coach-readiness",
       eventType: "athlete_low_readiness",
@@ -81,6 +115,15 @@ const SEEDS: Record<NotificationRole, MockSeed[]> = {
       subject: "Sarah Chen submitted test week results",
       body: "Autumn testing",
       minutesAgo: DAY + 2 * 60,
+      href: "/coach/test-week",
+      read: true,
+    },
+    {
+      id: "mock-coach-reminder-test-week",
+      eventType: "reminder_test_week_closing_coach",
+      subject: "Autumn testing closes tonight",
+      body: "3 athletes still have required results missing.",
+      minutesAgo: 2 * DAY + 3 * 60,
       href: "/coach/test-week",
       read: true,
     },

@@ -726,3 +726,53 @@ Club logos live in the Storage bucket `club-logos` (public, 2 MB limit, JPEG/PNG
 | `retry_platform_notification_email(uuid)` | refused | refused | refused | a failed email not older than 72 hours | resets the try count and writes `notification_email_retry_requested` to the platform audit |
 
 Verified on a throwaway Postgres 16 with every migration applied (this one twice): 102 assertions as each identity (club admin, coach, athlete, deactivated admin, admin of another club, admin of a suspended club, platform admin, an account with no profile, anon).
+
+### Session log depth: per set effort, exercise note, last time set by set (migration `20261011100000_session_log_depth.sql`)
+
+No new table and no new policy. `session_row_logs.rpe` (1 to 10) and `session_row_logs.note` (up to 500 characters, new check `session_row_logs_note_length`) are now written by the athlete log; they are covered by the existing row policies of `session_row_logs`.
+
+| Object | Athlete | Coach | Club admin | Other club, signed out | Notes |
+|---|---|---|---|---|---|
+| `session_row_logs.rpe`, `.note` (existing policies `session_row_logs_select_own`, `_insert_own`, `_update_own`, `_select_tenant_staff`, `_staff_write_managed`) | read and write own rows only | read for athletes of teams they coach; write only for an athlete with no login | read whole club | none | a team mate reads nothing; a coach of another team of the same club reads nothing |
+| `exercise_match_key(text)` | execute | execute | execute | `anon` has no execute | immutable; lower case, anything that is not a letter or digit becomes one space |
+| `get_my_last_exercise_logs(text[], date, uuid)` | own history only | no rows | no rows | no rows; `anon` has no execute | security invoker, so row policies apply, and it also filters on `current_athlete_id()`: nothing for a deactivated athlete or a suspended or cancelled club |
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 55 assertions as each identity (the athlete, a team mate, the team's coach, a coach of both teams, a coach of another team, the club admin, coach, admin and athlete of another club, a deactivated coach and athlete, an athlete of a suspended club, signed out).
+
+## Reminders (20261011120000_reminders.sql)
+
+| Object | Athlete | Coach | Club admin | Platform admin | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `reminder_deliveries` | none | none | none | none | Row level security on, no policies, no grants to `anon` or `authenticated`. Written and read only by `run_reminders()` (security definer). Unique on `(user_id, reminder_type, subject_id, local_date)`. |
+| `club_profiles.timezone` | read (own club) | read (own club) | read and write (own club) | none | Uses the existing `club_profiles` policies. A trigger refuses a time zone name Postgres does not know. |
+| `set_current_club_timezone(text)` | refused | refused | allowed (own club) | refused | Starts with `assert_caller_active()`: a deactivated admin or a paused club is refused. Writes an `audit_events` row. |
+| `run_reminders(timestamptz, uuid)`, `send_reminder(...)`, `reminder_tenant_timezone(uuid)` | no execute | no execute | no execute | no execute | Run by pg_cron (job `sktr-run-reminders`, hourly) and the service role. |
+
+Reminders are queued with `enqueue_notification()`, so the recipient rules of 20261007090000 apply unchanged: active members only, never a suspended or cancelled club, the person's own channel choices. Coach reminders go only to coaches assigned to the team (`team_coaches`).
+
+## Athlete goals (20261011110000_athlete_goals_and_history.sql)
+
+| Object | Athlete | Coach | Club admin | Other club, deactivated, signed out | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `athlete_goals` select, insert, update, delete (`athlete_goals_select_scope`, `_insert_scope`, `_update_scope`, `_delete_scope`) | own goals only | athletes of the teams they coach (`current_coach_athlete_ids()`) | every athlete of the club | none | `tenant_id = current_tenant_id()` on every policy. Another athlete, even a team mate, gets no rows. |
+| `athlete_goals_normalise()` (before insert or update) | n/a | n/a | n/a | n/a | Security definer, `search_path = public`, no execute for clients. Sets the tenant from the athlete, the event name, unit and direction from `result_events`, the starting mark on insert, and whether the goal is achieved. Athlete, tenant, creator and starting mark cannot be changed afterwards. Refuses a target the current best already meets (23514). |
+| `athlete_results_refresh_goals()` (after insert, update or delete on `athlete_results`) | n/a | n/a | n/a | n/a | Security definer. Touches the open goals of that athlete and event so they are worked out again. A goal marked achieved by hand is left alone. |
+
+A goal is achieved by the first wind legal result of its event, dated on or after the day the goal was set, that meets the target (`compare_value`, lower or higher by the event). Nothing is notified.
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 72 assertions as each identity (the athlete, a team mate, an athlete of another team, the team's coach, a coach of both teams, a coach of another team, a deactivated coach, the club admin, coach, athlete and admin of another club, an athlete of a suspended club, signed out).
+
+## Exercise library, best lifts and percentage loads (20261011090000_exercise_library_and_loads.sql)
+
+| Object | Athlete | Coach | Club admin | Other club, deactivated, signed out | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `exercise_library` select, insert, update (`exercise_library_select_staff`, `_insert_staff`, `_update_staff`) | none | every exercise of their club (the library is shared by all coaches of a club, not per team) | every exercise of their club | none | `tenant_id = current_tenant_id() and is_coach_or_admin()`. No delete policy and no delete grant: exercises are archived. A trigger sets the name key and the creator, and keeps club and creator fixed on update. |
+| `athlete_lift_maxes` select, insert, update, delete (`athlete_lift_maxes_select`, `_insert`, `_update`, `_delete`) | own rows only (read and write) | athletes of the teams they coach (`can_manage_athlete`) | every athlete of the club | none | `tenant_id = current_tenant_id()` on every policy. A team mate and a coach of another team get no rows. `source` and `updated_by_user_id` are set by trigger from the caller, whatever the browser sends. |
+| `session_block_rows` new columns (`percent_1rm`, `lift_name`, `lift_key`, `target_volume`, `cue`, `reference_url`, `exercise_id`) | read on own sessions | as before (team scope) | as before | none | No policy changed. The existing row policies cover the new columns. |
+| `resolve_session_row_load()` (before insert or update on `session_block_rows`) | n/a | n/a | n/a | n/a | Security definer, `search_path = public`, no execute for clients. Reads the best lift of the athlete the session belongs to and writes `target`, `target_load` and `helper`. |
+| `athlete_lift_max_kg_unchecked(uuid, text)`, `refresh_athlete_session_loads(uuid, text)`, `refresh_loads_after_lift_max_change()`, `refresh_loads_after_result_change()` | no execute | no execute | no execute | no execute | Internal, security definer, used by triggers only. They check nobody, so nobody may call them. |
+| `lift_key(text)`, `format_load_number(numeric)` | execute | execute | execute | n/a | Immutable text helpers, no data access. |
+
+Athletes never read `exercise_library`: the cue and the link are copied onto their session rows when the session is written.
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 82 assertions as each identity (the athlete, a team mate, the team's coach, a coach of another team, a deactivated coach, the club admin, coach and admin of another club, coach and athlete of a suspended club, signed out).

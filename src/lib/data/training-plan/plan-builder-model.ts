@@ -12,12 +12,33 @@ export type SessionType = "Track" | "Gym" | "Recovery" | "Technical" | "Mixed"
 export type PlanStatus = "draft" | "published" | "archived"
 export type AssignTarget = "team" | "subgroup" | "selected"
 
+/** A change to one exercise row for one athlete ("except David: 70%"). Empty fields keep the row's own value. */
+export type ExerciseOverrideDraft = {
+  id: string
+  athleteId: string
+  sets: string
+  reps: string
+  /** A weight ("100kg") or a percentage ("70%"). */
+  load: string
+  /** A swap or a word for this athlete ("Goblet squat instead"). */
+  note: string
+}
+
 export type ExerciseDraft = {
   id: string
   name: string
   sets: string
   reps: string
+  /** A weight ("100kg"), a percentage of the athlete's best lift ("80%") or free text. */
   load: string
+  /** The club library exercise this row was picked from. Missing on a row typed by hand. */
+  libraryId?: string | null
+  /** Coaching cue and reference link, copied from the library when the row was picked. */
+  cue?: string
+  link?: string
+  /** For a percentage load: the lift it is a percentage of. Empty means this exercise itself. */
+  percentOf?: string
+  overrides?: ExerciseOverrideDraft[]
 }
 
 export type BlockDraft = {
@@ -440,6 +461,37 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
+/** Library link, cue, reference lift and per athlete changes of an exercise row. Only what is filled in is kept. */
+function sanitizeExerciseExtras(exercise: Record<string, unknown>): Partial<ExerciseDraft> {
+  const extras: Partial<ExerciseDraft> = {}
+  if (typeof exercise.libraryId === "string" && exercise.libraryId) extras.libraryId = exercise.libraryId
+  if (typeof exercise.cue === "string" && exercise.cue) extras.cue = exercise.cue.slice(0, 500)
+  if (typeof exercise.link === "string" && /^https?:\/\/\S+$/i.test(exercise.link)) extras.link = exercise.link.slice(0, 500)
+  if (typeof exercise.percentOf === "string" && exercise.percentOf) extras.percentOf = exercise.percentOf.slice(0, 80)
+  if (Array.isArray(exercise.overrides)) {
+    const seen = new Set<string>()
+    const overrides = exercise.overrides.flatMap((value) => {
+      const raw = asRecord(value)
+      const athleteId = raw ? asString(raw.athleteId) : ""
+      // One change per athlete. A row with no athlete yet is kept so the coach can finish it.
+      if (!raw || (athleteId && seen.has(athleteId))) return []
+      if (athleteId) seen.add(athleteId)
+      return [
+        {
+          id: asString(raw.id) || makeId("ovr"),
+          athleteId,
+          sets: asString(raw.sets),
+          reps: asString(raw.reps),
+          load: asString(raw.load),
+          note: asString(raw.note).slice(0, 200),
+        },
+      ]
+    })
+    if (overrides.length > 0) extras.overrides = overrides
+  }
+  return extras
+}
+
 function sanitizeSession(value: unknown, maxWeeks: number): SessionDraft | null {
   const raw = asRecord(value)
   if (!raw) return null
@@ -477,6 +529,7 @@ function sanitizeSession(value: unknown, maxWeeks: number): SessionDraft | null 
                 sets: asString(exercise.sets),
                 reps: asString(exercise.reps),
                 load: asString(exercise.load),
+                ...sanitizeExerciseExtras(exercise),
               },
             ]
           }),

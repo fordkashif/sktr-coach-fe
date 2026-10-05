@@ -375,7 +375,7 @@ export default function AthleteTestWeekPage() {
       action={
         pastWeeks && pastWeeks.length > 0 ? (
           <Link className="sk-link" to="/athlete/test-week/history">
-            See all
+            History and comparison
           </Link>
         ) : undefined
       }
