@@ -1,13 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
-import { Alert02Icon, ArrowLeft01Icon, Link01Icon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { ArrowClockwise, ArrowLeft, ArrowRight, CheckCircle, WarningCircle } from "@phosphor-icons/react"
 import { acceptCoachInviteForCurrentUser } from "@/lib/data/club-admin/ops-data"
 import {
   claimCoachInviteAccount,
@@ -35,6 +30,7 @@ export default function CoachInviteAcceptPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [requiresPassword, setRequiresPassword] = useState(true)
+  const formId = useId()
 
   useEffect(() => {
     let cancelled = false
@@ -147,7 +143,7 @@ export default function CoachInviteAcceptPage() {
     if (!preview) return null
     const parts = [preview.organizationName]
     if (preview.teamName) parts.push(preview.teamName)
-    return parts.join(" | ")
+    return parts.join(", ")
   }, [preview])
 
   const handleClaimWithPassword = async () => {
@@ -236,166 +232,212 @@ export default function CoachInviteAcceptPage() {
     navigate("/coach/dashboard", { replace: true })
   }
 
+  const handleSetupSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void (requiresPassword ? handleClaimWithPassword() : handleExistingCoachSetup())
+  }
+
+  const title =
+    stage === "accepted"
+      ? "You are in"
+      : stage === "error"
+        ? "This invite needs a second look"
+        : preview
+          ? `Join ${preview.organizationName}`
+          : "Your coach invite"
+
+  const steps = [
+    {
+      title: "We check the invited email",
+      body: "If it already has an account you sign in. If not, you set a password here.",
+    },
+    {
+      title: "You accept with that same email",
+      body: "Your team access is tied to the exact email this invite was sent to.",
+    },
+    {
+      title: "You land on your dashboard",
+      body: "It walks you through your roster, your first plan and your first test week.",
+    },
+  ]
+
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6">
-      <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-6 shadow-sm sm:px-8">
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Coach invite</p>
-          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">Join the coach workspace</h1>
-          <p className="max-w-2xl text-sm leading-6 text-slate-600">
-            This invite should feel like part of SKTR Coach. Accept the team assignment, complete your first-time setup if needed, and then enter the coach workspace with the right context.
-          </p>
-          {inviteSummary ? <p className="text-sm font-medium text-slate-950">{inviteSummary}</p> : null}
-        </div>
-      </section>
+    <main className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-12 pt-8 sm:px-6 sm:pt-14">
+      <header className="space-y-3">
+        <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-blue">SKTR Coach</p>
+        <h1 className="sk-title">{title}</h1>
+        <p className="sk-lede" aria-live="polite">
+          {stage === "error" ? "Something stopped this invite from opening. Nothing has been changed on your account." : message}
+        </p>
+      </header>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Invite status</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{message}</h2>
+      <section className="sk-card" aria-label="Invite details">
+        <dl className={stage === "error" && !preview ? "hidden" : undefined}>
+          <div className="sk-row pt-0">
+            <dt className="sk-label">Invited email</dt>
+            <dd className="min-w-0 break-all text-right font-bold text-sk-ink">
+              {preview?.email ?? (stage === "loading" ? "Loading..." : "Not available")}
+            </dd>
           </div>
-
-          <div className="mt-4 space-y-4 text-sm text-slate-600">
-            {stage === "error" ? (
-              <EmptyStateCard
-                eyebrow="Invite issue"
-                title="This coach invite cannot continue yet."
-                description={error ?? message}
-                hint="Open the latest invite link, or sign in with the exact invited email if this coach account already exists."
-                icon={<HugeiconsIcon icon={Alert02Icon} className="size-5" />}
-                className="rounded-[18px] bg-slate-50 px-4 py-5 shadow-none"
-                contentClassName="gap-2"
-                actions={
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild variant="outline" className="h-11 rounded-full px-5">
-                      <Link to="/login">
-                        <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
-                        Back to login
-                      </Link>
-                    </Button>
-                    <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => window.location.reload()}>
-                      <HugeiconsIcon icon={Link01Icon} className="size-4" />
-                      Retry invite
-                    </Button>
-                  </div>
-                }
-              />
-            ) : null}
-            <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Invited email</p>
-              <p className="mt-1 text-sm font-medium text-slate-950">{preview?.email ?? "Loading..."}</p>
+          {preview ? (
+            <div className="sk-row">
+              <dt className="sk-label">Club</dt>
+              <dd className="min-w-0 text-right font-bold text-sk-ink">{preview.organizationName}</dd>
             </div>
-            <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Team access</p>
-              <p className="mt-1 text-sm font-medium text-slate-950">{preview?.teamName ?? "General coach access"}</p>
-            </div>
+          ) : null}
+          <div className={stage === "loading" ? "sk-row pb-0" : "sk-row"}>
+            <dt className="sk-label">Team access</dt>
+            <dd className="min-w-0 text-right font-bold text-sk-ink">
+              {preview ? (preview.teamName ?? "General coach access") : stage === "loading" ? "Loading..." : "Not available"}
+            </dd>
+          </div>
+        </dl>
 
-            {stage === "needs-auth" ? (
-              <div className="space-y-3">
-                <p className="text-sm text-slate-500">
-                  SKTR Coach found an existing account for this invited email. Sign in with that account and the invite will attach automatically.
+        {stage === "error" ? (
+          <div className={preview ? "mt-5 space-y-4" : "space-y-4"}>
+            <div className="flex items-start gap-3 rounded-2xl bg-sk-coral-tint p-4" role="alert">
+              <WarningCircle className="mt-0.5 size-5 shrink-0 text-[#b32a0c]" weight="fill" aria-hidden />
+              <div className="space-y-1 text-sm">
+                <p className="font-bold text-[#b32a0c]">{error ?? message}</p>
+                <p className="text-sk-ink-2">
+                  Open the newest invite link from your email, or sign in with the exact email the invite was sent to.
                 </p>
-                <Button asChild className="h-11 rounded-full px-5">
-                  <Link to={`/login?redirect=${encodeURIComponent(`/invite/coach/${inviteId}`)}`}>Sign in to continue</Link>
-                </Button>
               </div>
-            ) : null}
-
-            {stage === "accepted" ? (
-              <div className="flex flex-wrap gap-3">
-                <Button type="button" className="h-11 rounded-full px-5" onClick={() => navigate("/coach/dashboard")}>
-                  Open coach dashboard
-                </Button>
-                <Button asChild variant="outline" className="h-11 rounded-full px-5">
-                  <Link to="/coach/teams">Open teams</Link>
-                </Button>
-              </div>
-            ) : null}
-
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
+                <ArrowClockwise className="size-5" weight="bold" />
+                Try again
+              </button>
+              <Link to="/login" className="sk-btn sk-btn-quiet">
+                <ArrowLeft className="size-5" weight="bold" />
+                Back to login
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="mobile-card-primary">
-          <div className="space-y-1 border-b border-slate-200 pb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              {stage === "setup" ? "First access" : "What happens next"}
+        {stage === "needs-auth" ? (
+          <div className="mt-5 space-y-4">
+            <p className="text-sm leading-relaxed text-sk-ink-2">
+              This email already has a SKTR Coach account. Sign in with it and the invite attaches itself.
             </p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
-              {stage === "setup" ? "Complete coach setup" : "Coach onboarding path"}
-            </h2>
+            <Link to={`/login?redirect=${encodeURIComponent(`/invite/coach/${inviteId}`)}`} className="sk-btn sk-btn-primary">
+              Sign in to continue
+              <ArrowRight className="size-5" weight="bold" />
+            </Link>
           </div>
+        ) : null}
 
-          {stage === "setup" ? (
-            <div className="mt-4 grid gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-slate-950">Full name</Label>
-                <Input
-                  className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                />
-              </div>
-              {requiresPassword ? (
-                <>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-slate-950">Password</Label>
-                    <Input
-                      type="password"
-                      className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-slate-950">Confirm password</Label>
-                    <Input
-                      type="password"
-                      className="h-12 rounded-[16px] border-slate-200 bg-slate-50"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                    />
-                  </div>
-                </>
-              ) : null}
-              <p className="text-sm text-slate-500">
-                {requiresPassword
-                  ? "No existing account was found for this invited email, so this invite will create the coach account directly."
-                  : "Your account is already attached. Finish the remaining profile details and continue into the coach workspace."}
+        {stage === "accepted" ? (
+          <div className="mt-5 space-y-4">
+            <p className="flex items-center gap-2 text-sm font-bold text-[#07673f]">
+              <CheckCircle className="size-5" weight="fill" aria-hidden />
+              {inviteSummary ? `You now coach at ${inviteSummary}.` : "Your invite is accepted."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="sk-btn sk-btn-primary" onClick={() => navigate("/coach/dashboard")}>
+                Open coach dashboard
+                <ArrowRight className="size-5" weight="bold" />
+              </button>
+              <Link to="/coach/teams" className="sk-btn sk-btn-quiet">
+                Open teams
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        {stage === "setup" ? (
+          <form className="mt-5 grid gap-4" onSubmit={handleSetupSubmit} noValidate>
+            <h2 className="sk-h2">{requiresPassword ? "Create your account" : "Finish your profile"}</h2>
+            <p className="-mt-2 text-sm leading-relaxed text-sk-mute">
+              {requiresPassword
+                ? "There is no account for this email yet, so this creates one."
+                : "Your account is already linked. Confirm your name and you are done."}
+            </p>
+            <div>
+              <label htmlFor={`${formId}-name`} className="sk-label mb-1.5 block">
+                Full name
+              </label>
+              <input
+                id={`${formId}-name`}
+                className="sk-field"
+                autoComplete="name"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+              />
+            </div>
+            {requiresPassword ? (
+              <>
+                <div>
+                  <label htmlFor={`${formId}-password`} className="sk-label mb-1.5 block">
+                    Password
+                  </label>
+                  <input
+                    id={`${formId}-password`}
+                    type="password"
+                    className="sk-field"
+                    autoComplete="new-password"
+                    aria-describedby={`${formId}-password-hint`}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  <p id={`${formId}-password-hint`} className="mt-1.5 text-sm text-sk-mute">
+                    At least 8 characters.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor={`${formId}-confirm`} className="sk-label mb-1.5 block">
+                    Confirm password
+                  </label>
+                  <input
+                    id={`${formId}-confirm`}
+                    type="password"
+                    className="sk-field"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </div>
+              </>
+            ) : null}
+            {error ? (
+              <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+                {error}
               </p>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  type="button"
-                  disabled={submitting}
-                  className="h-11 rounded-full px-5"
-                  onClick={() => void (requiresPassword ? handleClaimWithPassword() : handleExistingCoachSetup())}
-                >
-                  {submitting ? "Saving..." : "Complete coach setup"}
-                </Button>
-                <Button type="button" variant="outline" className="h-11 rounded-full px-5" onClick={() => navigate("/login")}>
-                  Back to login
-                </Button>
-              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={submitting} className="sk-btn sk-btn-primary">
+                {submitting ? "Saving..." : requiresPassword ? "Create account and join" : "Finish setup"}
+              </button>
+              <button type="button" className="sk-btn sk-btn-ghost" onClick={() => navigate("/login")}>
+                Back to login
+              </button>
             </div>
-          ) : (
-            <div className="mt-4 space-y-3 text-sm text-slate-600">
-              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="font-medium text-slate-950">1. SKTR Coach checks the invited email first</p>
-                <p className="mt-1">If the email already has an account, the invite goes straight to sign-in. If not, the invite goes straight to account setup.</p>
-              </div>
-              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="font-medium text-slate-950">2. Accept the invite with the invited email</p>
-                <p className="mt-1">The team assignment is tied to the exact invited email shown on this page.</p>
-              </div>
-              <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="font-medium text-slate-950">3. Continue into the coach workspace</p>
-                <p className="mt-1">Once accepted, the dashboard should guide the next steps instead of dropping you into a blank experience.</p>
-              </div>
-            </div>
-          )}
-        </div>
+          </form>
+        ) : null}
       </section>
+
+      {stage !== "setup" && stage !== "accepted" ? (
+        <section aria-labelledby={`${formId}-steps`} className="px-1">
+          <h2 id={`${formId}-steps`} className="sk-h3">
+            How joining works
+          </h2>
+          <ol className="mt-3 space-y-4">
+            {steps.map((step, index) => (
+              <li key={step.title} className="flex items-start gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sk-yellow text-sm font-extrabold text-sk-ink">
+                  {index + 1}
+                </span>
+                <div>
+                  <p className="font-bold text-sk-ink">{step.title}</p>
+                  <p className="text-sm leading-relaxed text-sk-mute">{step.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
     </main>
   )
 }
-

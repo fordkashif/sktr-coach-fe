@@ -114,7 +114,7 @@ test("coach route inventory resolves for a coach session", async ({ page }) => {
     await page.goto(route)
     if (route === "/coach/teams") {
       await expect(page).toHaveURL(/\/coach\/teams\/t4$/)
-      await expect(page.locator("body")).toContainText(/Sprint Group|Team not found|Roster State/)
+      await expect(page.locator("body")).toContainText(/Sprint Group|Throws Group|Team not found|Roster/)
       continue
     }
 
@@ -166,34 +166,21 @@ test("coach can complete the training plan setup-build-review-publish flow", asy
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/training-plan")
 
-  await page.getByRole("button", { name: "Create program" }).click()
+  await page.getByRole("button", { name: "New plan" }).click()
 
-  await page
-    .locator("label:has-text('Plan Name')")
-    .locator("xpath=following::input[1]")
-    .fill("Throws Preseason Block")
+  await page.getByLabel("Plan name").fill("Throws Preseason Block")
   await page.getByPlaceholder("Optional plan notes").fill("High emphasis on power and technical rhythm.")
-  const buildModeCombobox = page
-    .locator("label:has-text('Build Mode')")
-    .locator("xpath=following::button[@role='combobox'][1]")
-  await buildModeCombobox.click()
-  await page.getByText("Advanced", { exact: true }).click()
-  await page.getByRole("button", { name: "Continue to Build" }).click()
+  await page.getByRole("tab", { name: "Template" }).click()
+  await page.getByRole("button", { name: "Continue to build" }).click()
 
-  await expect(page.getByRole("heading", { name: "Build", exact: true })).toBeVisible()
-  await expect(page.locator("body")).toContainText("Build Summary")
+  await expect(page.getByRole("heading", { name: "Throws Preseason Block" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: /^Week 1/ })).toBeVisible()
+  await expect(page.locator('[data-has-session="true"]')).toHaveCount(5)
 
-  const regenerateButton = page.getByRole("button", { name: "Regenerate from source" })
-  if (await regenerateButton.count()) {
-    await regenerateButton.click()
-    await expect(page.getByRole("alertdialog")).toContainText("Regenerate plan structure?")
-    await page.getByRole("button", { name: "Keep current build" }).click()
-  }
-
-  await page.getByRole("button", { name: "Continue to Review" }).first().click()
-  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible()
+  await page.getByRole("button", { name: "Publish", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Publish plan" })).toBeVisible()
   await expect(page.locator("body")).toContainText("Throws Preseason Block")
 
-  await page.getByRole("button", { name: "Publish" }).click()
+  await page.getByRole("button", { name: /^Publish to/ }).click()
   await expect(page.locator("body")).toContainText("Plan published to")
 })

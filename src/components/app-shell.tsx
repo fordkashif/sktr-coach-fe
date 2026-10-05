@@ -1,27 +1,31 @@
 "use client"
 
-import { HugeiconsIcon } from "@hugeicons/react"
 import {
-  ArrowLeft01Icon,
-  AssignmentsIcon,
-  Fire03Icon,
-  Home01Icon,
-  Menu01Icon,
-  Moon01Icon,
-  Notification01Icon,
-  PlayIcon,
-  PieChartSquareIcon,
-  StarAward02Icon,
-  Sun01Icon,
-  Table03Icon,
-  TextCreationIcon,
-  UserGroupIcon,
-  UserStoryIcon,
-} from "@hugeicons/core-free-icons"
+  ArrowLeft,
+  Bell,
+  Briefcase,
+  Buildings,
+  ChartBar,
+  ClipboardText,
+  House,
+  type Icon,
+  List,
+  ListChecks,
+  NotePencil,
+  Play,
+  Receipt,
+  SignOut,
+  SquaresFour,
+  Timer,
+  Tray,
+  TrendUp,
+  User,
+  UsersThree,
+  X,
+} from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import type React from "react"
-import { useTheme } from "next-themes"
 import { getCoachScope } from "@/lib/coach-scope"
 import { getNotificationFeed, markNotificationsRead, type NotificationItem } from "@/lib/data/notifications-data"
 import { cn } from "@/lib/utils"
@@ -33,53 +37,49 @@ import {
 } from "@/lib/mock-auth"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Button } from "@/components/ui/button"
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
-type IconType = React.ComponentProps<typeof HugeiconsIcon>["icon"]
-
-type ShellLink = { href: string; label: string; icon: IconType }
+type ShellLink = { href: string; label: string; icon: Icon }
 
 const coachLinks: ShellLink[] = [
-  { href: "/coach/dashboard", label: "Dashboard", icon: Table03Icon },
-  { href: "/coach/teams", label: "Teams", icon: UserGroupIcon },
-  { href: "/coach/training-plan", label: "Plan", icon: AssignmentsIcon },
-  { href: "/coach/test-week", label: "Test", icon: StarAward02Icon },
-  { href: "/coach/reports", label: "Reports", icon: PieChartSquareIcon },
+  { href: "/coach/dashboard", label: "Dashboard", icon: SquaresFour },
+  { href: "/coach/teams", label: "Teams", icon: UsersThree },
+  { href: "/coach/training-plan", label: "Plan", icon: ClipboardText },
+  { href: "/coach/test-week", label: "Test", icon: Timer },
+  { href: "/coach/reports", label: "Reports", icon: ChartBar },
 ]
 
 const athleteLinks: ShellLink[] = [
-  { href: "/athlete/home", label: "Home", icon: Home01Icon },
-  { href: "/athlete/training-plan", label: "Plan", icon: AssignmentsIcon },
-  { href: "/athlete/log", label: "Log", icon: TextCreationIcon },
-  { href: "/athlete/trends", label: "Progress", icon: PieChartSquareIcon },
-  { href: "/athlete/profile", label: "Profile", icon: UserStoryIcon },
+  { href: "/athlete/home", label: "Home", icon: House },
+  { href: "/athlete/training-plan", label: "Plan", icon: ClipboardText },
+  { href: "/athlete/log", label: "Log", icon: NotePencil },
+  { href: "/athlete/trends", label: "Progress", icon: TrendUp },
+  { href: "/athlete/profile", label: "Profile", icon: User },
 ]
 
 const clubAdminLinks: ShellLink[] = [
-  { href: "/club-admin/dashboard", label: "Dashboard", icon: Table03Icon },
-  { href: "/club-admin/profile", label: "Profile", icon: UserStoryIcon },
-  { href: "/club-admin/users", label: "Users", icon: UserGroupIcon },
-  { href: "/club-admin/teams", label: "Teams", icon: AssignmentsIcon },
-  { href: "/club-admin/reports", label: "Reports", icon: PieChartSquareIcon },
-  { href: "/club-admin/audit", label: "Audit", icon: Notification01Icon },
-  { href: "/club-admin/billing", label: "Billing", icon: TextCreationIcon },
+  { href: "/club-admin/dashboard", label: "Dashboard", icon: SquaresFour },
+  { href: "/club-admin/profile", label: "Profile", icon: Buildings },
+  { href: "/club-admin/users", label: "Users", icon: UsersThree },
+  { href: "/club-admin/teams", label: "Teams", icon: ClipboardText },
+  { href: "/club-admin/reports", label: "Reports", icon: ChartBar },
+  { href: "/club-admin/audit", label: "Audit", icon: ListChecks },
+  { href: "/club-admin/billing", label: "Billing", icon: Receipt },
 ]
 
 const platformAdminLinks: ShellLink[] = [
-  { href: "/platform-admin/dashboard", label: "Dashboard", icon: Table03Icon },
-  { href: "/platform-admin/requests", label: "Requests", icon: Notification01Icon },
-  { href: "/platform-admin/tenants", label: "Tenants", icon: UserGroupIcon },
-  { href: "/platform-admin/billing", label: "Billing", icon: Fire03Icon },
-  { href: "/platform-admin/commercial", label: "Commercial", icon: TextCreationIcon },
-  { href: "/platform-admin/audit", label: "Audit", icon: PieChartSquareIcon },
+  { href: "/platform-admin/dashboard", label: "Dashboard", icon: SquaresFour },
+  { href: "/platform-admin/requests", label: "Requests", icon: Tray },
+  { href: "/platform-admin/tenants", label: "Tenants", icon: Buildings },
+  { href: "/platform-admin/billing", label: "Billing", icon: Receipt },
+  { href: "/platform-admin/commercial", label: "Commercial", icon: Briefcase },
+  { href: "/platform-admin/audit", label: "Audit", icon: ListChecks },
 ]
 
 function getRoleLabel(role: string) {
@@ -157,8 +157,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, userEmail } = useRole()
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { resolvedTheme, setTheme } = useTheme()
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
@@ -169,15 +169,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname === "/club-admin/setup/billing" || pathname === "/club-admin/get-started"
   const useAthleteHomeActionNav = pathname.startsWith("/athlete/home")
   const hideMobileNav = mobileDetailMode
-  const useSectionBoundTopTone =
-    pathname.startsWith("/coach/dashboard") ||
-    pathname.startsWith("/coach/teams") ||
-    pathname.startsWith("/coach/athletes") ||
-    pathname.startsWith("/coach/training-plan") ||
-    pathname.startsWith("/coach/test-week") ||
-    pathname.startsWith("/coach/reports") ||
-    pathname.startsWith("/club-admin") ||
-    pathname.startsWith("/platform-admin")
 
   useEffect(() => {
     if (role !== "coach" || typeof window === "undefined") {
@@ -272,11 +263,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return clubAdminLinks
   }, [coachTeamsHref, role])
 
-  const activeLink = links.find((link) => pathname.startsWith(link.href)) ?? links[0]
-  const isDark = resolvedTheme === "dark"
-  const toggleTheme = () => setTheme(isDark ? "light" : "dark")
   const useAthleteDrawerMenu = role === "athlete"
-  const athleteDisplayName = role === "athlete" ? displayNameFromEmail(userEmail, role) : null
+  const displayName = displayNameFromEmail(userEmail, role)
   const unreadNotifications = notifications.filter((item) => item.channel === "in-app" && item.state === "unread")
 
   useEffect(() => {
@@ -351,8 +339,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     navigate("/login")
   }
 
+  const prefetchHandlers = (label: string) =>
+    role === "coach"
+      ? {
+          onMouseEnter: () => void prefetchCoachLink(label),
+          onFocus: () => void prefetchCoachLink(label),
+          onPointerDown: () => void prefetchCoachLink(label),
+        }
+      : {}
+
+  const iconButton =
+    "relative inline-flex size-11 items-center justify-center rounded-[14px] border border-sk-line bg-white text-sk-ink transition-colors hover:border-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+
+  const profileMenuItems = (
+    <>
+      <DropdownMenuItem asChild>
+        <Link to="/settings/notifications">Notification settings</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onSelect={() => {
+          void handleSignOut()
+        }}
+      >
+        Sign out
+      </DropdownMenuItem>
+    </>
+  )
+
   return (
-    <div className="flex h-dvh overflow-hidden bg-[#06101d] text-slate-950">
+    <div className="flex h-dvh overflow-hidden bg-sk-canvas text-sk-ink">
       <a
         href="#main-content"
         className="sr-only z-[60] rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
@@ -361,476 +376,297 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </a>
 
       {!isRestrictedClubAdminSetupRoute ? (
-        <aside className="hidden w-[320px] shrink-0 border-r border-white/10 bg-[linear-gradient(180deg,rgba(7,17,34,0.98)_0%,rgba(9,21,41,0.96)_100%)] text-white lg:flex lg:flex-col">
-          <div className="flex items-center gap-3 px-7 pb-6 pt-7">
-            <img src="/app-icon.png" alt="SKTR Coach" className="size-14 object-contain" />
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">SKTR Coach</p>
-            <p className="text-sm text-white/60">Performance workspace</p>
+        <aside className="hidden w-[264px] shrink-0 flex-col border-r border-sk-line bg-white lg:flex">
+          <div className="flex items-center gap-3 px-6 pb-6 pt-7">
+            <img src="/app-icon.png" alt="" className="size-11 rounded-[14px] object-contain" />
+            <div className="leading-tight">
+              <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-ink">SKTR Coach</p>
+              <p className="text-sm text-sk-mute">{getRoleLabel(role)}</p>
+            </div>
+            {useAthleteDrawerMenu ? null : (
+              <button type="button" className={cn(iconButton, "ml-auto")} aria-label="Notifications" onClick={() => setPanelOpen(true)}>
+                <Bell className="size-5" weight="bold" />
+                {unreadNotifications.length > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral px-1 text-[11px] font-bold leading-5 text-white">
+                    {unreadNotifications.length}
+                  </span>
+                ) : null}
+              </button>
+            )}
           </div>
-        </div>
 
-        <div className="px-5">
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 backdrop-blur-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#6fb6ff]">Signed in as</p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">{getRoleLabel(role)}</p>
-            <p className="mt-2 text-sm leading-6 text-white/62">{userEmail}</p>
-          </div>
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-2 px-5 py-6">
-          {links.map((link) => {
-            const isActive = pathname.startsWith(link.href)
-            return (
-              <Link
-                key={link.href}
-                to={link.href}
-                onMouseEnter={() => {
-                  if (role === "coach") void prefetchCoachLink(link.label)
-                }}
-                onFocus={() => {
-                  if (role === "coach") void prefetchCoachLink(link.label)
-                }}
-                onPointerDown={() => {
-                  if (role === "coach") void prefetchCoachLink(link.label)
-                }}
-                className={cn(
-                  "group flex items-center justify-between rounded-[22px] px-4 py-3.5 text-sm font-medium transition-all duration-200",
-                  isActive
-                    ? "bg-white text-slate-950 shadow-[0_12px_36px_rgba(15,23,42,0.24)]"
-                    : "text-white/68 hover:bg-white/[0.06] hover:text-white",
-                )}
-              >
-                <span className="flex items-center gap-3">
-                  <HugeiconsIcon icon={link.icon} className={cn("size-4", isActive ? "text-[#1368ff]" : "text-white/70")} />
+          <nav aria-label="Main" className="flex flex-1 flex-col gap-1 px-3">
+            {links.map((link) => {
+              const isActive = pathname.startsWith(link.href)
+              const LinkIcon = link.icon
+              return (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  {...prefetchHandlers(link.label)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-3 rounded-[14px] px-3.5 py-3 text-[0.98rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
+                    isActive ? "bg-sk-blue text-white" : "text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink",
+                  )}
+                >
+                  <LinkIcon className="size-5" weight={isActive ? "fill" : "bold"} />
                   {link.label}
-                </span>
-                <span className={cn("h-2.5 w-2.5 rounded-full transition-colors", isActive ? "bg-[#1368ff]" : "bg-transparent group-hover:bg-white/25")} />
-              </Link>
-            )
-          })}
-        </nav>
+                </Link>
+              )
+            })}
+          </nav>
 
-        <div className="space-y-3 border-t border-white/10 px-5 py-5">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-12 w-full justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 text-white hover:bg-white/[0.08]"
-            onClick={toggleTheme}
-            aria-label="Toggle theme"
-          >
-            <span className="text-sm font-medium">Theme</span>
-            <HugeiconsIcon icon={isDark ? Moon01Icon : Sun01Icon} className="size-4 text-white/80" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-12 w-full justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 text-white hover:bg-white/[0.08]"
-            onClick={() => {
-              void handleSignOut()
-            }}
-          >
-            <span className="text-sm font-medium">Sign out</span>
-            <span className="text-xs uppercase tracking-[0.18em] text-white/55">Exit</span>
-          </Button>
-        </div>
+          <div className="border-t border-sk-line p-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-[14px] p-2.5 text-left transition-colors hover:bg-sk-canvas focus-visible:outline-2 focus-visible:outline-sk-blue"
+                  aria-label="Open profile menu"
+                >
+                  <img src={getProfileImage(role)} alt="" className="size-10 rounded-full object-cover" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-sk-ink">{displayName}</span>
+                    <span className="block truncate text-xs text-sk-mute">{userEmail}</span>
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="w-56">
+                {profileMenuItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </aside>
       ) : null}
 
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 flex-col overflow-hidden",
-          useSectionBoundTopTone
-            ? "bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)] lg:bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)]"
-            : "bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)] lg:bg-[linear-gradient(180deg,#06101d_0%,#091425_160px,#f3f6fb_160px,#eef3f8_100%)]",
-        )}
-      >
-        <header
-          className={cn(
-            "px-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-6 lg:px-8 lg:pt-4",
-            "bg-[#f2f5fa] pb-3 text-slate-950 lg:text-white",
-            useSectionBoundTopTone
-              ? "lg:bg-[#06101d] lg:pb-4"
-              : "lg:bg-[linear-gradient(180deg,#f3f6fb_0%,#eef3f8_100%)] lg:pb-0",
-          )}
-        >
-          <div className="py-0 lg:bg-transparent">
-            <div className="flex items-start justify-between gap-4 lg:items-center">
-              <div className="hidden min-w-0 lg:block">
-                <h1 className="truncate text-[clamp(1.5rem,2vw,2rem)] font-semibold tracking-[-0.04em] text-white">
-                  {activeLink?.label ?? "Workspace"}
-                </h1>
-              </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.875rem)] sm:px-6 lg:hidden">
+          <div className="min-w-0 lg:hidden">
+            {mobileDetailMode ? (
+              <button type="button" className={iconButton} aria-label="Back" onClick={handleMobileBack}>
+                <ArrowLeft className="size-5" weight="bold" />
+              </button>
+            ) : role === "athlete" ? (
+              <Link to="/athlete/profile" className="flex items-center gap-3">
+                <img src={getProfileImage(role)} alt="" className="size-11 rounded-full object-cover" />
+                <span className="truncate text-base font-bold text-sk-ink">{displayName}</span>
+              </Link>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-sk-blue" aria-label="Open profile menu">
+                    <img src={getProfileImage(role)} alt="" className="size-11 rounded-full object-cover" />
+                    <span className="min-w-0 text-left leading-tight">
+                      <span className="block truncate text-base font-bold text-sk-ink">{displayName}</span>
+                      {displayName !== getRoleLabel(role) ? <span className="block text-sm text-sk-mute">{getRoleLabel(role)}</span> : null}
+                    </span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">{profileMenuItems}</DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
 
-              <div className="min-w-0 lg:hidden">
-                {mobileDetailMode ? (
-                  <div className="flex items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-14 rounded-[24px] border border-slate-200/70 bg-white/95 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] hover:bg-white"
-                      aria-label="Back"
-                      onClick={handleMobileBack}
-                    >
-                      <HugeiconsIcon icon={ArrowLeft01Icon} className="size-5" />
-                    </Button>
-                    <div className="min-w-0 text-left">
-                      {role === "athlete" ? (
-                        <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.06)]">
-                          <span className="flex size-4 items-center justify-center rounded-full bg-[#5d7f2c] text-white">
-                            <HugeiconsIcon icon={Fire03Icon} className="size-3" />
-                          </span>
-                          124 kcal
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="size-2 rounded-full bg-[#678c26]" />
-                          <p className="truncate text-[15px] font-medium text-slate-950">{getRoleLabel(role)}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : role === "athlete" ? (
-                  <Link to="/athlete/profile" className="flex items-center gap-3">
-                    <img
-                      src={getProfileImage(role)}
-                      alt={`${getRoleLabel(role)} profile`}
-                      className="size-14 rounded-[24px] object-cover shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-                    />
-                    <div className="min-w-0 text-left">
-                      <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.06)]">
-                        <span className="flex size-4 items-center justify-center rounded-full bg-[#5d7f2c] text-white">
-                          <HugeiconsIcon icon={Fire03Icon} className="size-3" />
-                        </span>
-                        124 kcal
-                      </div>
-                    </div>
-                  </Link>
-                ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        className="flex h-auto items-center gap-3 rounded-[24px] px-0 py-0 hover:bg-transparent"
-                        aria-label="Open profile menu"
-                      >
-                        <img
-                          src={getProfileImage(role)}
-                          alt={`${getRoleLabel(role)} profile`}
-                          className="size-14 rounded-[24px] object-cover shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-                        />
-                        <div className="min-w-0 text-left">
-                          <div className="flex items-center gap-1.5">
-                            <span className="size-2 rounded-full bg-[#678c26]" />
-                            <p className="truncate text-[15px] font-medium text-slate-950">{getRoleLabel(role)}</p>
-                          </div>
-                        </div>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem>Profile</DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link to="/settings/notifications">Settings</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          void handleSignOut()
-                        }}
-                      >
-                        Sign out
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                {isRestrictedClubAdminSetupRoute ? null : (
-                  <>
-                <Badge className="hidden rounded-full border-none bg-white/10 px-3 py-1.5 text-white lg:inline-flex">{userEmail}</Badge>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="hidden size-9 rounded-full border border-slate-200/90 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50 lg:inline-flex lg:size-8 lg:border-white/10 lg:bg-white/[0.04] lg:text-white lg:hover:bg-white/[0.1]"
-                  aria-label="Toggle theme"
-                  onClick={toggleTheme}
-                >
-                  <HugeiconsIcon icon={isDark ? Moon01Icon : Sun01Icon} className="size-3.5" />
-                </Button>
-
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button variant="ghost" size="icon" className="relative size-14 rounded-[24px] border border-slate-200/70 bg-white/95 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] hover:bg-white lg:size-8 lg:rounded-full lg:border-white/10 lg:bg-white/[0.04] lg:text-white lg:shadow-none lg:hover:bg-white/[0.1]" aria-label={useAthleteDrawerMenu ? "Open menu" : "Notifications"}>
-                      <HugeiconsIcon icon={useAthleteDrawerMenu ? Menu01Icon : Notification01Icon} className="size-3.5" />
-                      {!useAthleteDrawerMenu && unreadNotifications.length > 0 ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[#ff6a55]" /> : null}
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="right" showCloseButton={false} className="w-full border-l-slate-200 bg-white sm:max-w-md">
-                    {useAthleteDrawerMenu ? null : (
-                      <SheetHeader className="border-b border-slate-200 px-4 py-3">
-                        <div className="grid grid-cols-[auto_1fr_auto] items-center">
-                          <SheetClose asChild>
-                            <Button type="button" variant="ghost" size="icon" className="rounded-full" aria-label="Back">
-                              <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
-                            </Button>
-                          </SheetClose>
-                          <SheetTitle className="text-center text-base font-semibold text-slate-950">Notifications</SheetTitle>
-                          <span aria-hidden className="size-9" />
-                        </div>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {isRestrictedClubAdminSetupRoute ? null : (
+              <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
+                <SheetTrigger asChild>
+                  <button type="button" className={iconButton} aria-label={useAthleteDrawerMenu ? "Open menu" : "Notifications"}>
+                    {useAthleteDrawerMenu ? <List className="size-5" weight="bold" /> : <Bell className="size-5" weight="bold" />}
+                    {!useAthleteDrawerMenu && unreadNotifications.length > 0 ? (
+                      <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-sk-coral px-1 text-[11px] font-bold leading-5 text-white">
+                        {unreadNotifications.length}
+                      </span>
+                    ) : null}
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="right" showCloseButton={false} className="w-full border-l-sk-line bg-white sm:max-w-md">
+                  {useAthleteDrawerMenu ? (
+                    <div className="flex h-full flex-col px-5 pb-5 pt-6">
+                      <SheetHeader className="sr-only">
+                        <SheetTitle>Menu</SheetTitle>
                       </SheetHeader>
-                    )}
-                    {useAthleteDrawerMenu ? (
-                      <div className="flex h-full flex-col px-4 pb-4 pt-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={getProfileImage(role)}
-                              alt="Athlete profile"
-                              className="size-12 rounded-[18px] object-cover"
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate text-base font-semibold tracking-[-0.03em] text-slate-950">{athleteDisplayName ?? "Athlete"}</p>
-                              <p className="truncate text-xs text-slate-500">
-                                {getRoleLabel(role)}
-                              </p>
-                            </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <img src={getProfileImage(role)} alt="" className="size-12 rounded-full object-cover" />
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-bold tracking-[-0.02em] text-sk-ink">{displayName}</p>
+                            <p className="truncate text-sm text-sk-mute">{getRoleLabel(role)}</p>
                           </div>
-                          <SheetClose asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-10 rounded-full border border-slate-200 bg-white text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                              aria-label="Close menu"
-                            >
-                              <span className="text-base leading-none">x</span>
-                            </Button>
-                          </SheetClose>
                         </div>
+                        <SheetClose asChild>
+                          <button type="button" className={iconButton} aria-label="Close menu">
+                            <X className="size-5" weight="bold" />
+                          </button>
+                        </SheetClose>
+                      </div>
 
-                        <div className="mt-7 space-y-1">
-                          {links.map((link) => (
+                      <div className="mt-6 space-y-1">
+                        {links.map((link) => {
+                          const isActive = pathname.startsWith(link.href)
+                          const LinkIcon = link.icon
+                          return (
                             <SheetClose asChild key={link.href}>
                               <Link
                                 to={link.href}
                                 className={cn(
-                                  "flex items-center justify-between rounded-[20px] px-1 py-3 text-[1.15rem] font-medium tracking-[-0.03em] text-slate-950",
-                                  pathname.startsWith(link.href) && "text-[#1368ff]",
+                                  "flex items-center gap-3 rounded-[14px] px-3.5 py-3.5 text-lg font-bold",
+                                  isActive ? "bg-sk-blue text-white" : "text-sk-ink hover:bg-sk-canvas",
                                 )}
                               >
-                                <span>{link.label}</span>
-                                {pathname.startsWith(link.href) ? (
-                                  <span className="inline-flex size-2 rounded-full bg-[#1368ff]" />
-                                ) : null}
+                                <LinkIcon className="size-5" weight={isActive ? "fill" : "bold"} />
+                                {link.label}
                               </Link>
                             </SheetClose>
-                          ))}
-                        </div>
+                          )
+                        })}
+                      </div>
 
-                        <div className="mt-6 border-t border-slate-200 pt-5">
-                          <div className="space-y-3 text-sm text-slate-700">
-                            <SheetClose asChild>
-                              <Link to="/athlete/profile" className="block">
-                                Profile
-                              </Link>
-                            </SheetClose>
-                            <button type="button" className="block text-left" onClick={toggleTheme}>
-                              Theme
-                            </button>
-                            <SheetClose asChild>
-                              <Link to="/athlete/join" className="block">
-                                Join Team
-                              </Link>
-                            </SheetClose>
-                            <button
-                              type="button"
-                              className="block text-left"
-                              onClick={() => {
-                                void handleSignOut()
-                              }}
-                            >
-                              Sign out
-                            </button>
-                          </div>
-                        </div>
+                      <div className="mt-5 space-y-1 border-t border-sk-line pt-5">
+                        <SheetClose asChild>
+                          <Link to="/athlete/join" className="block rounded-[14px] px-3.5 py-3 font-semibold text-sk-ink-2 hover:bg-sk-canvas">
+                            Join a team
+                          </Link>
+                        </SheetClose>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-[14px] px-3.5 py-3 text-left font-semibold text-sk-ink-2 hover:bg-sk-canvas"
+                          onClick={() => {
+                            void handleSignOut()
+                          }}
+                        >
+                          <SignOut className="size-5" weight="bold" />
+                          Sign out
+                        </button>
+                      </div>
 
-                        <div className="mt-auto pt-6">
+                      <div className="mt-auto pt-6">
+                        <SheetClose asChild>
+                          <Link to="/athlete/log" className="sk-btn sk-btn-primary h-14 w-full text-base">
+                            <Play className="size-5" weight="fill" />
+                            Start workout
+                          </Link>
+                        </SheetClose>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <SheetHeader className="border-b border-sk-line px-5 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <SheetTitle className="text-xl font-extrabold tracking-[-0.02em] text-sk-ink">Notifications</SheetTitle>
                           <SheetClose asChild>
-                            <Link
-                              to="/athlete/log"
-                              className="flex h-[58px] items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(7,17,34,0.94)_0%,rgba(9,20,39,0.92)_100%)] px-5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(5,12,24,0.24)]"
-                            >
-                              Start Workout
-                            </Link>
+                            <button type="button" className={iconButton} aria-label="Close notifications">
+                              <X className="size-5" weight="bold" />
+                            </button>
                           </SheetClose>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 p-4">
-                        {notificationsLoading ? (
-                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                            <p className="text-sm font-medium text-slate-950">Loading notifications</p>
-                            <p className="text-xs text-slate-500">Fetching your latest events.</p>
-                          </div>
-                        ) : null}
+                      </SheetHeader>
+                      <div className="space-y-3 overflow-y-auto p-5">
+                        {notificationsLoading ? <p className="text-sm text-sk-mute">Loading notifications...</p> : null}
                         {notificationsError ? (
-                          <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4">
-                            <p className="text-sm font-medium text-rose-700">{notificationsError}</p>
-                          </div>
+                          <p className="rounded-2xl bg-sk-coral-tint p-4 text-sm font-semibold text-[#b32a0c]">{notificationsError}</p>
                         ) : null}
                         {!notificationsLoading && !notificationsError && notifications.length === 0 ? (
-                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                            <p className="text-sm font-medium text-slate-950">No new notifications</p>
-                            <p className="text-xs text-slate-500">You are all caught up.</p>
+                          <div className="rounded-2xl bg-sk-canvas p-5">
+                            <p className="font-bold text-sk-ink">You are all caught up</p>
+                            <p className="mt-1 text-sm text-sk-mute">New invites, plans and test weeks show up here.</p>
                           </div>
                         ) : null}
                         {!notificationsLoading && !notificationsError && notifications.length > 0 ? (
                           <>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-10 rounded-full border-slate-200"
-                              onClick={async () => {
-                                const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
-                                const result = await markNotificationsRead(pendingIds)
-                                if (!result.ok) {
-                                  setNotificationsError(result.error.message)
-                                  return
-                                }
-                                setNotifications((current) =>
-                                  current.map((item) =>
-                                    pendingIds.includes(item.userNotificationId)
-                                      ? { ...item, state: "read", readAt: new Date().toISOString() }
-                                      : item,
-                                  ),
-                                )
-                                setNotificationsError(null)
-                              }}
-                            >
-                              Mark all read
-                            </Button>
+                            {unreadNotifications.length > 0 ? (
+                              <button
+                                type="button"
+                                className="sk-btn sk-btn-quiet sk-btn-sm"
+                                onClick={async () => {
+                                  const pendingIds = unreadNotifications.map((item) => item.userNotificationId)
+                                  const result = await markNotificationsRead(pendingIds)
+                                  if (!result.ok) {
+                                    setNotificationsError(result.error.message)
+                                    return
+                                  }
+                                  setNotifications((current) =>
+                                    current.map((item) =>
+                                      pendingIds.includes(item.userNotificationId)
+                                        ? { ...item, state: "read", readAt: new Date().toISOString() }
+                                        : item,
+                                    ),
+                                  )
+                                  setNotificationsError(null)
+                                }}
+                              >
+                                Mark all read
+                              </button>
+                            ) : null}
                             {notifications.map((item) => (
-                              <div key={item.id} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm font-medium text-slate-950">{item.subject}</p>
-                                    {item.body ? <p className="mt-1 text-xs leading-5 text-slate-500">{item.body}</p> : null}
-                                  </div>
-                                  <span
-                                    className={cn(
-                                      "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                                      item.state === "read" && "bg-slate-200 text-slate-600",
-                                      item.state === "unread" && "bg-[#dbeafe] text-[#1368ff]",
-                                      item.state === "dismissed" && "bg-slate-100 text-slate-500",
-                                    )}
-                                  >
-                                    {item.state}
-                                  </span>
-                                </div>
-                                <p className="mt-2 text-[11px] text-slate-400">
-                                  {item.channel} · {formatNotificationTime(item.createdAt)}
-                                </p>
+                              <div
+                                key={item.id}
+                                className={cn(
+                                  "rounded-2xl border p-4",
+                                  item.state === "unread" ? "border-sk-blue/30 bg-sk-blue-tint" : "border-sk-line bg-white",
+                                )}
+                              >
+                                <p className="font-bold text-sk-ink">{item.subject}</p>
+                                {item.body ? <p className="mt-1 text-sm leading-relaxed text-sk-ink-2">{item.body}</p> : null}
+                                <p className="mt-2 text-xs text-sk-mute">{formatNotificationTime(item.createdAt)}</p>
                               </div>
                             ))}
                           </>
                         ) : null}
                       </div>
-                    )}
-                  </SheetContent>
-                </Sheet>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="hidden size-10 overflow-hidden rounded-full border border-slate-200/80 bg-white/90 p-0 shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:bg-white lg:inline-flex lg:size-8 lg:border-white/10 lg:bg-white/[0.04] lg:shadow-none lg:hover:bg-white/[0.1]" aria-label="Open profile menu">
-                      <img
-                        src={getProfileImage(role)}
-                        alt={`${getRoleLabel(role)} profile`}
-                        className="size-10 rounded-full object-cover lg:size-8"
-                      />
-                      <span className="sr-only">Profile menu</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Profile</DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/settings/notifications">Settings</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        void handleSignOut()
-                      }}
-                    >
-                      Sign out
-                    </DropdownMenuItem>
-                        </DropdownMenuContent>
-                </DropdownMenu>
-                  </>
-                )}
-              </div>
-            </div>
+                    </>
+                  )}
+                </SheetContent>
+              </Sheet>
+            )}
           </div>
         </header>
 
         <main
           id="main-content"
-          className={cn(
-            "flex-1 overflow-y-auto lg:pb-0",
-            mobileDetailMode ? "pb-0" : useAthleteHomeActionNav ? "pb-24" : "pb-28",
-          )}
+          className={cn("flex-1 overflow-y-auto lg:pb-0", mobileDetailMode ? "pb-0" : "pb-28")}
         >
-          <div className="min-h-full rounded-t-none bg-transparent lg:rounded-t-[40px]">{children}</div>
+          <div className="min-h-full">{children}</div>
         </main>
       </div>
 
       {!isRestrictedClubAdminSetupRoute ? (
-        <nav className={cn("fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden", hideMobileNav && "hidden")}>
+        <nav
+          aria-label="Main"
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 border-t border-sk-line bg-white px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
+            hideMobileNav && "hidden",
+          )}
+        >
           {useAthleteHomeActionNav ? (
-            <div className="mx-auto max-w-md">
-              <Link
-                to="/athlete/log"
-              className="flex h-[60px] items-center justify-center gap-2 rounded-[28px] bg-[linear-gradient(135deg,rgba(7,17,34,0.94)_0%,rgba(9,20,39,0.92)_100%)] px-5 text-white shadow-[0_20px_60px_rgba(5,12,24,0.34)]"
-            >
-              <span className="text-sm font-semibold">Start Workout</span>
-              <HugeiconsIcon icon={PlayIcon} className="size-4 text-[#6fb6ff]" />
-            </Link>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-md rounded-[28px] border border-white/12 bg-[linear-gradient(135deg,rgba(7,17,34,0.94)_0%,rgba(9,20,39,0.92)_100%)] px-2 py-2 shadow-[0_20px_60px_rgba(5,12,24,0.34)] backdrop-blur-xl">
-            <div
-              className="grid gap-1"
-              style={{ gridTemplateColumns: `repeat(${links.length}, minmax(0, 1fr))` }}
-            >
+            <div className="mx-auto max-w-md px-2 pb-1">
+              <Link to="/athlete/log" className="sk-btn sk-btn-primary h-14 w-full text-base">
+                <Play className="size-5" weight="fill" />
+                Start workout
+              </Link>
+            </div>
+          ) : (
+            <div className="mx-auto grid max-w-lg gap-1" style={{ gridTemplateColumns: `repeat(${links.length}, minmax(0, 1fr))` }}>
               {links.map((link) => {
                 const isActive = pathname.startsWith(link.href)
+                const LinkIcon = link.icon
                 return (
                   <Link
                     key={link.href}
                     to={link.href}
-                    onMouseEnter={() => {
-                      if (role === "coach") void prefetchCoachLink(link.label)
-                    }}
-                    onFocus={() => {
-                      if (role === "coach") void prefetchCoachLink(link.label)
-                    }}
-                    onPointerDown={() => {
-                      if (role === "coach") void prefetchCoachLink(link.label)
-                    }}
-                    aria-label={link.label}
-                    title={link.label}
+                    {...prefetchHandlers(link.label)}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "flex flex-col items-center justify-center gap-1 rounded-[20px] px-2 py-2.5 text-[11px] font-medium transition-all duration-200",
-                      isActive ? "bg-white text-slate-950 shadow-sm" : "text-white/68 hover:bg-white/[0.06] hover:text-white",
+                      "flex flex-col items-center justify-center gap-1 rounded-[14px] px-1 py-2 text-xs font-bold transition-colors",
+                      isActive ? "bg-sk-blue text-white" : "text-sk-mute hover:text-sk-ink",
                     )}
                   >
-                    <HugeiconsIcon icon={link.icon} className={cn("size-5", isActive ? "text-[#1368ff]" : "text-white/78")} />
+                    <LinkIcon className="size-6" weight={isActive ? "fill" : "bold"} />
                     <span className="truncate">{link.label}</span>
                   </Link>
                 )
               })}
-            </div>
             </div>
           )}
         </nav>

@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { CoachAthleteDetailContent, type AthleteDetailData } from "@/components/coach/athlete-detail-content"
 import { COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE } from "@/lib/auth-session"
 import {
-  getCoachAthleteSessionLogsForCurrentUser,
+  getCoachAthleteDetailForCurrentUser,
   getCoachDashboardSnapshotForCurrentUser,
+  updateCoachSessionNoteForCurrentUser,
+  type CoachAthleteDetail,
   type CoachDashboardSnapshot,
 } from "@/lib/data/coach/dashboard-data"
-import type { Athlete, LogEntry } from "@/lib/mock-data"
+import type { Athlete, Team } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { InvalidEntityPage } from "@/pages/invalid-entity"
 
@@ -17,38 +19,61 @@ export default function CoachAthleteDetailPage() {
   const role = getCookieValue(ROLE_COOKIE)
   const coachTeamId = getCookieValue(COACH_TEAM_COOKIE)
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(null)
-  const [backendLogs, setBackendLogs] = useState<LogEntry[]>([])
+  const [backendDetail, setBackendDetail] = useState<CoachAthleteDetail | null>(null)
   const [backendError, setBackendError] = useState<string | null>(null)
   const [mockAthletes, setMockAthletes] = useState<Athlete[]>([])
+  const [mockTeams, setMockTeams] = useState<Team[]>([])
+  const scopeTeamId = role === "coach" ? coachTeamId : null
 
   useEffect(() => {
     if (backendMode !== "supabase") return
     let cancelled = false
 
     const loadDetail = async () => {
-      const [snapshotResult, logsResult] = await Promise.all([
-        getCoachDashboardSnapshotForCurrentUser({ scopeTeamId: role === "coach" ? coachTeamId : null }),
-        getCoachAthleteSessionLogsForCurrentUser(athleteId, { scopeTeamId: role === "coach" ? coachTeamId : null }),
+      const [snapshotResult, detailResult] = await Promise.all([
+        getCoachDashboardSnapshotForCurrentUser({ scopeTeamId }),
+        getCoachAthleteDetailForCurrentUser(athleteId, { scopeTeamId }),
       ])
       if (cancelled) return
       if (!snapshotResult.ok) {
         setBackendError(snapshotResult.error.message)
         return
       }
-      if (!logsResult.ok) {
-        setBackendError(logsResult.error.message)
+      setBackendSnapshot(snapshotResult.data)
+      if (!detailResult.ok) {
+        // The roster still tells us who this is, so show the athlete and say what failed.
+        setBackendDetail(null)
+        setBackendError(detailResult.error.message)
         return
       }
       setBackendError(null)
-      setBackendSnapshot(snapshotResult.data)
-      setBackendLogs(logsResult.data)
+      setBackendDetail(detailResult.data)
     }
 
     void loadDetail()
     return () => {
       cancelled = true
     }
-  }, [athleteId, backendMode, coachTeamId, role])
+  }, [athleteId, backendMode, scopeTeamId])
+
+  const saveSessionNote = useCallback(
+    async (sessionId: string, note: string) => {
+      const result = await updateCoachSessionNoteForCurrentUser(athleteId, sessionId, note, { scopeTeamId })
+      if (!result.ok) return result.error.message
+      setBackendDetail((current) =>
+        current
+          ? {
+              ...current,
+              sessions: current.sessions.map((session) =>
+                session.id === sessionId ? { ...session, coachNote: result.data.coachNote } : session,
+              ),
+            }
+          : current,
+      )
+      return null
+    },
+    [athleteId, scopeTeamId],
+  )
 
   useEffect(() => {
     if (backendMode === "supabase") return
@@ -57,6 +82,7 @@ export default function CoachAthleteDetailPage() {
     void import("@/lib/mock-data").then((module) => {
       if (!cancelled) {
         setMockAthletes(module.mockAthletes)
+        setMockTeams(module.mockTeams)
       }
     })
 
@@ -69,7 +95,21 @@ export default function CoachAthleteDetailPage() {
   const athlete = athletesSource.find((item) => item.id === athleteId)
 
   if (backendMode === "supabase" && !backendSnapshot && !backendError) {
-    return <div className="p-6 text-sm text-slate-500">Loading athlete details...</div>
+    return (
+      <div className="sk-page">
+        <p className="text-sm font-semibold text-sk-mute">Loading athlete details...</p>
+      </div>
+    )
+  }
+
+  if (!athlete && backendMode === "supabase" && backendError && !backendSnapshot) {
+    return (
+      <div className="sk-page">
+        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+          Could not load this athlete: {backendError}
+        </p>
+      </div>
+    )
   }
 
   if (!athlete) {
@@ -92,24 +132,39 @@ export default function CoachAthleteDetailPage() {
     )
   }
 
+  const teamsSource = backendMode === "supabase" ? (backendSnapshot?.teams ?? []) : mockTeams
+  const teamName = teamsSource.find((team) => team.id === athlete.teamId)?.name
+
+  // Roster-level PRs, tests and trend come from the snapshot; the per-athlete detail replaces them when it loaded.
   const backendData: AthleteDetailData | undefined =
     backendMode === "supabase" && backendSnapshot
       ? {
-          prs: backendSnapshot.prs.filter((item) => item.athleteId === athlete.id),
-          logs: backendLogs.filter((item) => item.athleteId === athlete.id),
+          prs: backendDetail?.prs ?? backendSnapshot.prs.filter((item) => item.athleteId === athlete.id),
+          logs: backendDetail?.sessions ?? [],
           testWeek: backendSnapshot.tests.find((item) => item.athleteId === athlete.id) ?? null,
           trend: backendSnapshot.trendSeries[athlete.id] ?? [],
+          wellness: backendDetail?.wellness,
+          tests: backendDetail?.tests,
+          dateOfBirth: backendDetail?.dateOfBirth ?? null,
+          hasReadiness: backendDetail
+            ? backendDetail.wellness.length > 0 || backendDetail.readinessFlag !== null
+            : (backendSnapshot.trendSeries[athlete.id] ?? []).length > 0,
         }
       : undefined
 
   return (
-    <>
-      {backendError ? (
-        <div className="mx-auto mt-4 max-w-8xl rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          Backend sync issue: {backendError}
-        </div>
-      ) : null}
-      <CoachAthleteDetailContent athlete={athlete} data={backendData} />
-    </>
+    <CoachAthleteDetailContent
+      athlete={athlete}
+      data={backendData}
+      teamName={teamName}
+      onSaveSessionNote={backendMode === "supabase" && backendDetail ? saveSessionNote : undefined}
+      banner={
+        backendError ? (
+          <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+            Could not load the latest data: {backendError}
+          </p>
+        ) : null
+      }
+    />
   )
 }

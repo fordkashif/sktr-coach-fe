@@ -146,3 +146,64 @@ export async function acceptAthleteInviteForCurrentUser(inviteId: string): Promi
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
 }
+
+export type AthleteInviteStatus = "pending" | "accepted" | "expired" | "revoked"
+
+export type TeamAthleteInvite = {
+  id: string
+  email: string
+  status: AthleteInviteStatus
+  createdAt: string
+  expiresAt: string | null
+  invitePath: string
+}
+
+/** Invites issued for one team, newest first. Pending invites past their expiry are reported as expired. */
+export async function getAthleteInvitesForTeam(teamId: string): Promise<Result<TeamAthleteInvite[]>> {
+  const clientResult = requireSupabaseClient("getAthleteInvitesForTeam")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client
+    .from("athlete_invites")
+    .select("id, email, status, created_at, expires_at")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: false })
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const now = Date.now()
+  return ok(
+    ((data as Array<{
+      id: string
+      email: string | null
+      status: AthleteInviteStatus
+      created_at: string
+      expires_at: string | null
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      email: row.email ?? "",
+      status:
+        row.status === "pending" && row.expires_at && new Date(row.expires_at).getTime() < now ? "expired" : row.status,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      invitePath: `/athlete/claim/${row.id}`,
+    })),
+  )
+}
+
+/** Cancels a pending invite so its link stops working. */
+export async function revokeAthleteInviteForCurrentCoach(inviteId: string): Promise<Result<void>> {
+  const clientResult = requireSupabaseClient("revokeAthleteInviteForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client
+    .from("athlete_invites")
+    .update({ status: "revoked" })
+    .eq("id", inviteId)
+    .eq("status", "pending")
+    .select("id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (!data || data.length === 0) return err("NOT_FOUND", "This invite is no longer pending.")
+  return ok(undefined)
+}

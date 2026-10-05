@@ -10,7 +10,7 @@ test("club-admin, coach, and athlete core surfaces are reachable", async ({ page
   await seedMockSession(page, { role: "coach", tenantId: "tenant-alpha", coachTeamId: "t1" })
   await page.goto("/coach/teams")
   await expect(page).toHaveURL(/\/coach\/teams\/t1$/)
-  await expect(page.locator("body")).toContainText(/Sprint Group|Team not found|Roster State/)
+  await expect(page.locator("body")).toContainText(/Sprint Group|Team not found|Roster/)
 
   await seedMockSession(page, { role: "athlete", tenantId: "tenant-alpha" })
   await page.goto("/athlete/wellness")

@@ -83,7 +83,7 @@
 }
 
 @theme inline {
-  --font-sans: "Outfit", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Outfit Variable", "Outfit", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -135,4 +135,160 @@
     @apply bg-background text-foreground;
   }
 
+}
+
+/* ------------------------------------------------------------------
+   SKTR Coach visual system (2026 redesign)
+   Light only. Outfit throughout. Flat color blocks, no gradients,
+   no drop shadows. One loud thing per screen: the numbers.
+------------------------------------------------------------------- */
+:root {
+  --sk-ink: #0e1320;
+  --sk-ink-2: #3a4252;
+  --sk-mute: #6a7385;
+  --sk-line: #e3e6ee;
+  --sk-canvas: #f5f6fa;
+  --sk-paper: #ffffff;
+  --sk-blue: #2152ff;
+  --sk-blue-tint: #e8edff;
+  --sk-coral: #ff5c39;
+  --sk-coral-tint: #ffe9e3;
+  --sk-green: #0c9d61;
+  --sk-green-tint: #dff5ea;
+  --sk-yellow: #ffc93c;
+  --sk-yellow-tint: #fff3cc;
+
+  --background: var(--sk-canvas);
+  --foreground: var(--sk-ink);
+  --card: var(--sk-paper);
+  --card-foreground: var(--sk-ink);
+  --popover: var(--sk-paper);
+  --popover-foreground: var(--sk-ink);
+  --primary: var(--sk-blue);
+  --primary-foreground: #ffffff;
+  --secondary: #eceef4;
+  --secondary-foreground: var(--sk-ink);
+  --muted: #eef0f5;
+  --muted-foreground: var(--sk-mute);
+  --accent: var(--sk-blue-tint);
+  --accent-foreground: var(--sk-ink);
+  --destructive: #e5391a;
+  --border: var(--sk-line);
+  --input: #d5d9e3;
+  --ring: var(--sk-blue);
+  --chart-1: var(--sk-blue);
+  --chart-2: var(--sk-green);
+  --chart-3: var(--sk-yellow);
+  --chart-4: var(--sk-coral);
+  --chart-5: #7a5cff;
+  --radius: 0.875rem;
+}
+
+@theme inline {
+  --color-sk-ink: var(--sk-ink);
+  --color-sk-ink-2: var(--sk-ink-2);
+  --color-sk-mute: var(--sk-mute);
+  --color-sk-line: var(--sk-line);
+  --color-sk-canvas: var(--sk-canvas);
+  --color-sk-blue: var(--sk-blue);
+  --color-sk-blue-tint: var(--sk-blue-tint);
+  --color-sk-coral: var(--sk-coral);
+  --color-sk-coral-tint: var(--sk-coral-tint);
+  --color-sk-green: var(--sk-green);
+  --color-sk-green-tint: var(--sk-green-tint);
+  --color-sk-yellow: var(--sk-yellow);
+  --color-sk-yellow-tint: var(--sk-yellow-tint);
+}
+
+body {
+  font-family: "Outfit Variable", "Outfit", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  /* Page frame: every screen sits in this */
+  .sk-page {
+    @apply mx-auto w-full max-w-[1320px] space-y-6 px-4 pb-10 pt-2 sm:px-6 lg:space-y-8 lg:px-10 lg:pt-8;
+  }
+  .sk-title {
+    @apply text-[2.25rem] font-extrabold leading-[0.95] tracking-[-0.045em] text-sk-ink sm:text-[3rem] lg:text-[3.5rem];
+  }
+  .sk-lede {
+    @apply max-w-[58ch] text-base leading-relaxed text-sk-mute;
+  }
+  .sk-h2 {
+    @apply text-xl font-bold tracking-[-0.02em] text-sk-ink sm:text-2xl;
+  }
+  .sk-h3 {
+    @apply text-base font-bold tracking-[-0.01em] text-sk-ink;
+  }
+  .sk-label {
+    @apply text-sm font-semibold text-sk-mute;
+  }
+  .sk-num {
+    @apply font-extrabold leading-none tracking-[-0.05em] text-sk-ink tabular-nums;
+  }
+
+  /* Surfaces: flat, bordered, never nested more than one deep */
+  .sk-card {
+    @apply rounded-[20px] border border-sk-line bg-white p-5 sm:p-6;
+  }
+  .sk-well {
+    @apply rounded-2xl bg-sk-canvas p-4;
+  }
+  .sk-row {
+    @apply flex items-center justify-between gap-4 border-b border-sk-line py-3.5 last:border-b-0;
+  }
+
+  /* Stat blocks: solid tint, big numeral */
+  .sk-stat {
+    @apply flex min-h-[112px] flex-col justify-between rounded-[20px] p-4 sm:p-5;
+  }
+  .sk-stat-blue { @apply bg-sk-blue text-white; }
+  .sk-stat-ink { @apply bg-sk-ink text-white; }
+  .sk-stat-yellow { @apply bg-sk-yellow text-sk-ink; }
+  .sk-stat-green { @apply bg-sk-green-tint text-sk-ink; }
+  .sk-stat-coral { @apply bg-sk-coral-tint text-sk-ink; }
+  .sk-stat-plain { @apply border border-sk-line bg-white text-sk-ink; }
+
+  /* Buttons */
+  .sk-btn {
+    @apply inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] px-5 text-[0.95rem] font-bold transition-colors disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue;
+  }
+  .sk-btn-primary { @apply bg-sk-blue text-white hover:bg-[#1741d6]; }
+  .sk-btn-ink { @apply bg-sk-ink text-white hover:bg-[#232a3b]; }
+  .sk-btn-quiet { @apply border border-sk-line bg-white text-sk-ink hover:border-sk-ink; }
+  .sk-btn-ghost { @apply px-3 text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink; }
+  .sk-btn-danger { @apply border border-sk-coral/40 bg-white text-[#c7300f] hover:bg-sk-coral-tint; }
+  .sk-btn-sm { @apply h-9 rounded-xl px-3.5 text-sm; }
+
+  /* Status tags: carry state, never decoration */
+  .sk-tag {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold;
+  }
+  .sk-tag-green { @apply bg-sk-green-tint text-[#07673f]; }
+  .sk-tag-yellow { @apply bg-sk-yellow-tint text-[#7a5600]; }
+  .sk-tag-coral { @apply bg-sk-coral-tint text-[#b32a0c]; }
+  .sk-tag-blue { @apply bg-sk-blue-tint text-[#1638b8]; }
+  .sk-tag-plain { @apply bg-[#eceef4] text-sk-ink-2; }
+
+  /* Segmented control */
+  .sk-seg {
+    @apply inline-flex rounded-[14px] bg-[#eceef4] p-1;
+  }
+  .sk-seg-item {
+    @apply rounded-[11px] px-4 py-2 text-sm font-bold text-sk-mute transition-colors hover:text-sk-ink;
+  }
+  .sk-seg-item[data-active="true"], .sk-seg-item[data-state="active"] {
+    @apply bg-white text-sk-ink;
+  }
+
+  /* Form fields */
+  .sk-field {
+    @apply h-11 w-full rounded-[14px] border border-[#d5d9e3] bg-white px-3.5 text-[0.95rem] text-sk-ink placeholder:text-[#9aa2b1] focus:border-sk-blue focus:outline-none focus:ring-2 focus:ring-sk-blue/20;
+  }
+
+  /* Meter */
+  .sk-meter { @apply h-2.5 w-full overflow-hidden rounded-full bg-[#e6e9f0]; }
+  .sk-meter > span { @apply block h-full rounded-full bg-sk-blue; }
 }

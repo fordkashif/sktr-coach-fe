@@ -110,6 +110,25 @@ Legend:
 - coach: `R/C/U/D` tenant test results
 - club-admin: `R/C/U/D` tenant test results
 
+### `training_plans`
+
+- athlete: `R` tenant plans whose status is not `draft` (drafts are never visible; migration `20261004120000_training_plan_drafts.sql`)
+- coach: `R/C/U/D` tenant plans, including drafts
+- club-admin: `R/C/U/D` tenant plans, including drafts
+
+### `training_plan_weeks`, `training_plan_days`, `training_plan_blocks`
+
+- athlete: `R` structure of tenant plans whose status is not `draft`
+- coach: `R/C/U/D` structure of tenant plans
+- club-admin: `R/C/U/D` structure of tenant plans
+
+### `training_plan_assignments`
+
+- athlete: `R` assignments addressed to own athlete row or own team
+- coach: `R/C/U/D` tenant assignments
+- club-admin: `R/C/U/D` tenant assignments
+- Draft plans have no assignment rows. Inserting an assignment with `visibility_start = 'immediate'` queues the `training_plan_published` notification, so assignments are only written at publish time.
+
 ## Service-Role Only Operations (Documented)
 
 These are intentionally not available to regular authenticated users:
