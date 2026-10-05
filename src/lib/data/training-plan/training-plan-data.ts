@@ -965,3 +965,79 @@ export async function getTrainingPlanDetail(planId: string): Promise<Result<Trai
     })),
   })
 }
+
+/** One week of a team's plan, as the coach dashboard lists it. */
+export type TeamPlanWeek = {
+  planId: string
+  planName: string
+  weekNumber: number
+  totalWeeks: number
+  emphasis: string | null
+  days: Array<{ id: string; dayLabel: string; date: string; title: string; summary: string | null }>
+}
+
+type PlanWeekSource = {
+  weekNumber: number
+  emphasis?: string | null
+  status: "completed" | "current" | "up-next"
+  days: Array<{ id: string; dayLabel: string; date: string; title: string; focus?: string | null; blockPreview: string[] }>
+}
+
+/**
+ * Picks the week of a plan that contains `todayKey` (YYYY-MM-DD). With `allowStatusFallback` (demo data
+ * whose dates are fixed in the past) the week marked "current" is used when no date matches.
+ */
+export function pickTeamPlanWeek(
+  plan: { id: string; name: string; weeks: number },
+  weeks: PlanWeekSource[],
+  todayKey: string,
+  allowStatusFallback = false,
+): TeamPlanWeek | null {
+  const containsToday = (week: PlanWeekSource) => {
+    const keys = week.days.map((day) => day.date.slice(0, 10)).sort()
+    if (keys.length === 0) return false
+    const start = new Date(`${keys[0]}T00:00:00`)
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    const today = new Date(`${todayKey}T00:00:00`)
+    return start <= today && today <= end
+  }
+  const week = weeks.find(containsToday) ?? (allowStatusFallback ? weeks.find((candidate) => candidate.status === "current") : undefined)
+  if (!week) return null
+  return {
+    planId: plan.id,
+    planName: plan.name,
+    weekNumber: week.weekNumber,
+    totalWeeks: plan.weeks,
+    emphasis: week.emphasis ?? null,
+    days: [...week.days]
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((day) => ({
+        id: day.id,
+        dayLabel: day.dayLabel,
+        date: day.date.slice(0, 10),
+        title: day.title,
+        summary: day.blockPreview.length > 0 ? day.blockPreview.join(", ") : day.focus || null,
+      })),
+  }
+}
+
+/** The published plan week a team is in today, or null when no published plan covers today. */
+export async function getCurrentPlanWeekForCoachTeam(params: { scopeTeamId?: string | null; todayKey: string }): Promise<Result<TeamPlanWeek | null>> {
+  const plansResult = await getCoachTrainingPlansForCurrentUser({ scopeTeamId: params.scopeTeamId })
+  if (!plansResult.ok) return plansResult
+
+  const plan = plansResult.data.find((candidate) => {
+    if (candidate.status !== "published") return false
+    const end = new Date(`${candidate.startDate.slice(0, 10)}T00:00:00`)
+    end.setDate(end.getDate() + candidate.weeks * 7 - 1)
+    const endKey = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`
+    return candidate.startDate.slice(0, 10) <= params.todayKey && params.todayKey <= endKey
+  })
+  if (!plan) return ok(null)
+
+  const detailResult = await getTrainingPlanDetail(plan.id)
+  if (!detailResult.ok) return detailResult
+  return ok(pickTeamPlanWeek(plan, detailResult.data?.weeks ?? [], params.todayKey))
+}

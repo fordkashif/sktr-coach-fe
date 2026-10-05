@@ -138,27 +138,38 @@
 }
 
 /* ------------------------------------------------------------------
-   SKTR Coach visual system (2026 redesign)
-   Light only. Outfit throughout. Flat color blocks, no gradients,
-   no drop shadows. One loud thing per screen: the numbers.
+   SKTR Coach visual system v2: "Clean lists". See DESIGN.md.
+   White page, hairlines, type does the work. Light only, Outfit only.
+   No bordered section boxes, no drop shadows, no grey canvas.
 ------------------------------------------------------------------- */
 :root {
   --sk-ink: #0e1320;
   --sk-ink-2: #3a4252;
-  --sk-mute: #6a7385;
-  --sk-line: #e3e6ee;
-  --sk-canvas: #f5f6fa;
+  --sk-mute: #5a6274;
+  --sk-faint: #8a91a1;
+  --sk-line: #e6e8ee;
+  --sk-line-strong: #d5d9e3;
+  --sk-soft: #f3f4f8;
+  --sk-soft-2: #eef0f5;
+  /* Legacy name. It used to be the grey page canvas; it is now only the soft fill for chips and inputs. */
+  --sk-canvas: #f3f4f8;
   --sk-paper: #ffffff;
   --sk-blue: #2152ff;
+  --sk-blue-ink: #1638b8;
+  --sk-blue-link: #1b46e0;
   --sk-blue-tint: #e8edff;
   --sk-coral: #ff5c39;
+  --sk-coral-ink: #c7300f;
   --sk-coral-tint: #ffe9e3;
   --sk-green: #0c9d61;
+  --sk-green-ink: #07673f;
   --sk-green-tint: #dff5ea;
+  --sk-amber: #e0a800;
+  --sk-amber-ink: #7a5600;
   --sk-yellow: #ffc93c;
   --sk-yellow-tint: #fff3cc;
 
-  --background: var(--sk-canvas);
+  --background: #ffffff;
   --foreground: var(--sk-ink);
   --card: var(--sk-paper);
   --card-foreground: var(--sk-ink);
@@ -166,15 +177,15 @@
   --popover-foreground: var(--sk-ink);
   --primary: var(--sk-blue);
   --primary-foreground: #ffffff;
-  --secondary: #eceef4;
+  --secondary: var(--sk-soft-2);
   --secondary-foreground: var(--sk-ink);
-  --muted: #eef0f5;
+  --muted: var(--sk-soft-2);
   --muted-foreground: var(--sk-mute);
-  --accent: var(--sk-blue-tint);
+  --accent: var(--sk-soft);
   --accent-foreground: var(--sk-ink);
-  --destructive: #e5391a;
+  --destructive: #c7300f;
   --border: var(--sk-line);
-  --input: #d5d9e3;
+  --input: var(--sk-line-strong);
   --ring: var(--sk-blue);
   --chart-1: var(--sk-blue);
   --chart-2: var(--sk-green);
@@ -188,36 +199,62 @@
   --color-sk-ink: var(--sk-ink);
   --color-sk-ink-2: var(--sk-ink-2);
   --color-sk-mute: var(--sk-mute);
+  --color-sk-faint: var(--sk-faint);
   --color-sk-line: var(--sk-line);
+  --color-sk-line-strong: var(--sk-line-strong);
+  --color-sk-soft: var(--sk-soft);
+  --color-sk-soft-2: var(--sk-soft-2);
   --color-sk-canvas: var(--sk-canvas);
   --color-sk-blue: var(--sk-blue);
+  --color-sk-blue-ink: var(--sk-blue-ink);
+  --color-sk-blue-link: var(--sk-blue-link);
   --color-sk-blue-tint: var(--sk-blue-tint);
   --color-sk-coral: var(--sk-coral);
+  --color-sk-coral-ink: var(--sk-coral-ink);
   --color-sk-coral-tint: var(--sk-coral-tint);
   --color-sk-green: var(--sk-green);
+  --color-sk-green-ink: var(--sk-green-ink);
   --color-sk-green-tint: var(--sk-green-tint);
+  --color-sk-amber: var(--sk-amber);
+  --color-sk-amber-ink: var(--sk-amber-ink);
   --color-sk-yellow: var(--sk-yellow);
   --color-sk-yellow-tint: var(--sk-yellow-tint);
+}
+
+html,
+body {
+  background: #ffffff;
 }
 
 body {
   font-family: "Outfit Variable", "Outfit", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  color: var(--sk-ink);
 }
 
 @layer components {
-  /* Page frame: every screen sits in this */
+  /* ---- Page frame (Screen) ---------------------------------------- */
   .sk-page {
-    @apply mx-auto w-full max-w-[1320px] space-y-6 px-4 pb-10 pt-2 sm:px-6 lg:space-y-8 lg:px-10 lg:pt-8;
+    @apply mx-auto flex w-full max-w-[1240px] flex-col gap-7 bg-white px-5 pb-12 pt-3 sm:px-6 lg:gap-9 lg:px-10 lg:pb-16 lg:pt-9;
   }
+  /* Older screens set vertical rhythm with space-y on the same element. The frame owns it now. */
+  .sk-page > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: 0;
+  }
+  .sk-page-narrow { @apply max-w-[720px]; }
+
+  /* ---- Type -------------------------------------------------------- */
   .sk-title {
-    @apply text-[2.25rem] font-extrabold leading-[0.95] tracking-[-0.045em] text-sk-ink sm:text-[3rem] lg:text-[3.5rem];
+    @apply text-[1.875rem] font-extrabold leading-[1.05] tracking-[-0.04em] text-sk-ink lg:text-[2.75rem] lg:leading-none lg:tracking-[-0.045em];
+  }
+  .sk-title-compact {
+    @apply text-[1.5rem] font-extrabold leading-[1.1] tracking-[-0.035em] text-sk-ink lg:text-[2rem];
   }
   .sk-lede {
-    @apply max-w-[58ch] text-base leading-relaxed text-sk-mute;
+    @apply max-w-[62ch] text-[0.9375rem] leading-normal text-sk-mute lg:text-[1.0625rem];
   }
   .sk-h2 {
-    @apply text-xl font-bold tracking-[-0.02em] text-sk-ink sm:text-2xl;
+    @apply text-lg font-bold leading-tight tracking-[-0.02em] text-sk-ink lg:text-[1.375rem];
   }
   .sk-h3 {
     @apply text-base font-bold tracking-[-0.01em] text-sk-ink;
@@ -226,69 +263,210 @@ body {
     @apply text-sm font-semibold text-sk-mute;
   }
   .sk-num {
-    @apply font-extrabold leading-none tracking-[-0.05em] text-sk-ink tabular-nums;
+    @apply font-extrabold leading-none tracking-[-0.04em] text-sk-ink tabular-nums;
+  }
+  .sk-link {
+    @apply rounded-[6px] font-bold text-sk-blue-link hover:text-sk-blue-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue;
   }
 
-  /* Surfaces: flat, bordered, never nested more than one deep */
+  /* ---- Sections: whitespace and hairlines, never a box ------------- */
+  .sk-section { @apply flex min-w-0 flex-col; }
+  .sk-section-head { @apply mb-1.5 flex items-baseline justify-between gap-4; }
+  .sk-section-meta { @apply shrink-0 text-sm font-semibold text-sk-mute; }
+
+  /* Legacy surface classes. They no longer draw a box. Use Section and List instead. */
   .sk-card {
-    @apply rounded-[20px] border border-sk-line bg-white p-5 sm:p-6;
+    @apply min-w-0 rounded-none border-0 bg-transparent p-0;
   }
+  /* Legacy flush panels padded their own rows by the old card padding. */
+  .sk-flush-body { @apply -mx-5 sm:-mx-6; }
   .sk-well {
-    @apply rounded-2xl bg-sk-canvas p-4;
+    @apply rounded-none border-t border-sk-line bg-transparent px-0 py-4;
   }
   .sk-row {
-    @apply flex items-center justify-between gap-4 border-b border-sk-line py-3.5 last:border-b-0;
+    @apply flex min-h-14 items-center justify-between gap-4 border-b border-sk-line py-3.5 last:border-b-0;
   }
 
-  /* Stat blocks: solid tint, big numeral */
-  .sk-stat {
-    @apply flex min-h-[112px] flex-col justify-between rounded-[20px] p-4 sm:p-5;
+  /* ---- Lists -------------------------------------------------------- */
+  .sk-list { @apply flex flex-col; }
+  .sk-list > li { @apply border-b border-sk-line last:border-b-0; }
+  .sk-list-row {
+    @apply flex min-h-14 w-full items-center gap-3.5 py-3.5 text-left text-sk-ink;
   }
-  .sk-stat-blue { @apply bg-sk-blue text-white; }
-  .sk-stat-ink { @apply bg-sk-ink text-white; }
-  .sk-stat-yellow { @apply bg-sk-yellow text-sk-ink; }
-  .sk-stat-green { @apply bg-sk-green-tint text-sk-ink; }
-  .sk-stat-coral { @apply bg-sk-coral-tint text-sk-ink; }
-  .sk-stat-plain { @apply border border-sk-line bg-white text-sk-ink; }
+  a.sk-list-row, button.sk-list-row {
+    @apply rounded-[8px] outline-offset-2 transition-colors focus-visible:outline-2 focus-visible:outline-sk-blue;
+  }
+  a.sk-list-row:hover .sk-list-title, button.sk-list-row:hover .sk-list-title { @apply text-sk-blue-link; }
+  .sk-list-title { @apply block text-base font-semibold leading-snug text-sk-ink transition-colors; }
+  .sk-list-sub { @apply block text-sm leading-snug text-sk-mute; }
 
-  /* Buttons */
+  /* ---- Stat strip --------------------------------------------------- */
+  .sk-statstrip {
+    @apply grid grid-cols-2 border-y border-sk-line lg:grid-flow-col lg:auto-cols-fr lg:grid-cols-none;
+  }
+  .sk-stat { @apply flex min-w-0 flex-col border-t border-sk-line pt-3; }
+  .sk-stat-label { @apply text-sm font-semibold text-sk-mute; }
+  .sk-stat-value { @apply text-[2rem] font-extrabold leading-[1.15] tracking-[-0.04em] text-sk-ink tabular-nums lg:text-[2.5rem]; }
+  .sk-stat-of { @apply ml-1.5 text-base font-semibold tracking-normal text-sk-mute lg:text-lg; }
+  .sk-stat-hint { @apply mt-0.5 text-sm text-sk-mute; }
+  .sk-statstrip > .sk-stat { @apply border-t-0 px-4 py-4 lg:px-6 lg:py-5; }
+  .sk-statstrip > .sk-stat:nth-child(odd) { @apply pl-0; }
+  .sk-statstrip > .sk-stat:nth-child(even) { @apply border-l border-sk-line pr-0; }
+  .sk-statstrip > .sk-stat:nth-child(n + 3) { @apply border-t border-sk-line; }
+  @media (min-width: 1024px) {
+    .sk-statstrip > .sk-stat:nth-child(n) { @apply border-l border-t-0 border-sk-line px-6; }
+    .sk-statstrip > .sk-stat:first-child { @apply border-l-0 pl-0; }
+    .sk-statstrip > .sk-stat:last-child { @apply pr-0; }
+  }
+
+  /* ---- Tables ------------------------------------------------------- */
+  .sk-table { @apply w-full border-collapse text-left text-[0.9375rem] leading-snug; }
+  .sk-table thead th { @apply border-b border-sk-line px-3 py-2.5 font-semibold text-sk-mute; }
+  .sk-table tbody th, .sk-table tbody td { @apply border-b border-sk-line px-3 py-3.5 align-middle; }
+  .sk-table tbody tr:last-child > * { @apply border-b-0; }
+  .sk-table tr > :first-child { @apply pl-0; }
+  .sk-table tr > :last-child { @apply pr-0; }
+  .sk-table tbody th { @apply font-bold text-sk-ink; }
+  .sk-table tbody td { @apply text-sk-ink-2; }
+  .sk-table [data-align="right"] { @apply text-right tabular-nums; }
+  .sk-table td[data-strong="true"] { @apply font-bold text-sk-ink; }
+  .sk-table-sub { @apply block text-sm font-normal text-sk-mute; }
+  @media (max-width: 639px) {
+    /* Phone: every row restacks into a list row. No sideways scrolling. */
+    .sk-table, .sk-table tbody { @apply block; }
+    .sk-table thead { @apply sr-only; }
+    .sk-table tbody tr { @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-sk-line py-3.5; }
+    .sk-table tbody tr:last-child { @apply border-b-0; }
+    .sk-table tbody th, .sk-table tbody td { @apply block border-b-0 p-0; }
+    .sk-table tbody th { @apply col-start-1 row-start-1 text-base; }
+    .sk-table tbody td { @apply col-span-2 flex items-baseline justify-between gap-4 text-sm; }
+    .sk-table tbody td::before { content: attr(data-label); @apply shrink-0 text-sk-mute; }
+    .sk-table tbody td[data-phone="trailing"] { @apply col-span-1 col-start-2 row-start-1 text-base; }
+    .sk-table tbody td[data-phone="trailing"]::before { content: none; }
+    .sk-table tbody td[data-phone="plain"] { @apply justify-start; }
+    .sk-table tbody td[data-phone="plain"]::before { content: none; }
+    .sk-table tbody td[data-phone="hide"] { @apply hidden; }
+    .sk-table [data-align="right"] { @apply text-left; }
+  }
+
+  /* ---- Buttons ------------------------------------------------------- */
   .sk-btn {
-    @apply inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] px-5 text-[0.95rem] font-bold transition-colors disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue;
+    @apply inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[14px] px-[18px] text-[0.9375rem] font-bold transition-colors disabled:pointer-events-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue;
   }
   .sk-btn-primary { @apply bg-sk-blue text-white hover:bg-[#1741d6]; }
-  .sk-btn-ink { @apply bg-sk-ink text-white hover:bg-[#232a3b]; }
-  .sk-btn-quiet { @apply border border-sk-line bg-white text-sk-ink hover:border-sk-ink; }
-  .sk-btn-ghost { @apply px-3 text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink; }
-  .sk-btn-danger { @apply border border-sk-coral/40 bg-white text-[#c7300f] hover:bg-sk-coral-tint; }
-  .sk-btn-sm { @apply h-9 rounded-xl px-3.5 text-sm; }
-
-  /* Status tags: carry state, never decoration */
-  .sk-tag {
-    @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold;
+  .sk-btn-secondary, .sk-btn-quiet { @apply border border-sk-line-strong bg-white text-sk-ink hover:border-sk-ink; }
+  /* Legacy: the solid ink button is now a stronger outlined button. */
+  .sk-btn-ink { @apply border border-sk-ink bg-white text-sk-ink hover:bg-sk-soft; }
+  .sk-btn-text, .sk-btn-ghost { @apply px-2.5 text-sk-blue-link hover:bg-sk-soft hover:text-sk-blue-ink; }
+  .sk-btn-danger { @apply border border-sk-line-strong bg-white text-sk-coral-ink hover:border-sk-coral-ink; }
+  .sk-btn-danger-solid { @apply bg-sk-coral-ink text-white hover:bg-[#a82709]; }
+  .sk-btn-on-color { @apply bg-white text-sk-ink hover:bg-sk-soft; }
+  .sk-btn-sm { @apply rounded-[12px] px-3.5 text-sm lg:h-10; }
+  .sk-btn-lg { @apply h-[52px] rounded-2xl px-6 text-[1.0625rem]; }
+  .sk-btn-block { @apply w-full; }
+  .sk-icon-btn {
+    @apply relative inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[12px] border border-sk-line-strong bg-white text-sk-ink transition-colors hover:border-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue lg:size-10;
   }
-  .sk-tag-green { @apply bg-sk-green-tint text-[#07673f]; }
-  .sk-tag-yellow { @apply bg-sk-yellow-tint text-[#7a5600]; }
-  .sk-tag-coral { @apply bg-sk-coral-tint text-[#b32a0c]; }
-  .sk-tag-blue { @apply bg-sk-blue-tint text-[#1638b8]; }
-  .sk-tag-plain { @apply bg-[#eceef4] text-sk-ink-2; }
 
-  /* Segmented control */
+  /* ---- State: dot and text; tags only inside tables ------------------ */
+  .sk-dot { @apply inline-block size-2.5 shrink-0 rounded-full bg-sk-faint; }
+  .sk-dot-sm { @apply size-2; }
+  .sk-dot-green { @apply bg-sk-green; }
+  .sk-dot-amber { @apply bg-sk-amber; }
+  .sk-dot-yellow { @apply bg-sk-yellow; }
+  .sk-dot-coral { @apply bg-sk-coral; }
+  .sk-dot-blue { @apply bg-sk-blue; }
+  .sk-status { @apply inline-flex items-center gap-1.5 font-bold; }
+  .sk-status-green { @apply text-sk-green-ink; }
+  .sk-status-amber { @apply text-sk-amber-ink; }
+  .sk-status-coral { @apply text-sk-coral-ink; }
+  .sk-status-blue { @apply text-sk-blue-ink; }
+  .sk-status-neutral { @apply text-sk-ink-2; }
+
+  .sk-tag {
+    @apply inline-flex items-center gap-1.5 rounded-[8px] px-2 py-0.5 text-[0.8125rem] font-bold;
+  }
+  .sk-tag-green { @apply bg-sk-green-tint text-sk-green-ink; }
+  .sk-tag-yellow { @apply bg-sk-yellow-tint text-sk-amber-ink; }
+  .sk-tag-coral { @apply bg-sk-coral-tint text-sk-coral-ink; }
+  .sk-tag-blue { @apply bg-sk-blue-tint text-sk-blue-ink; }
+  .sk-tag-plain { @apply bg-sk-soft-2 text-sk-ink-2; }
+
+  /* ---- Segmented and tabs --------------------------------------------- */
   .sk-seg {
-    @apply inline-flex rounded-[14px] bg-[#eceef4] p-1;
+    @apply inline-flex max-w-full overflow-x-auto rounded-[14px] bg-sk-soft-2 p-1;
   }
   .sk-seg-item {
-    @apply rounded-[11px] px-4 py-2 text-sm font-bold text-sk-mute transition-colors hover:text-sk-ink;
+    @apply min-h-9 shrink-0 cursor-pointer whitespace-nowrap rounded-[11px] px-4 py-2 text-sm font-bold text-sk-mute transition-colors hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-sk-blue;
   }
   .sk-seg-item[data-active="true"], .sk-seg-item[data-state="active"] {
     @apply bg-white text-sk-ink;
   }
+  .sk-tabs { @apply flex max-w-full gap-6 overflow-x-auto border-b border-sk-line; }
+  .sk-tab {
+    @apply -mb-px min-h-11 shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent px-0.5 text-[0.9375rem] font-semibold text-sk-mute transition-colors hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-sk-blue;
+  }
+  .sk-tab[data-active="true"] { @apply border-sk-blue font-bold text-sk-blue-ink; }
 
-  /* Form fields */
+  /* ---- Fields ----------------------------------------------------------- */
   .sk-field {
-    @apply h-11 w-full rounded-[14px] border border-[#d5d9e3] bg-white px-3.5 text-[0.95rem] text-sk-ink placeholder:text-[#9aa2b1] focus:border-sk-blue focus:outline-none focus:ring-2 focus:ring-sk-blue/20;
+    @apply h-11 w-full rounded-[14px] border border-sk-line-strong bg-white px-3.5 text-base text-sk-ink placeholder:text-sk-faint focus:border-sk-blue focus:outline-none focus:ring-2 focus:ring-sk-blue/20 disabled:bg-sk-soft disabled:text-sk-mute;
+  }
+  textarea.sk-field { @apply h-auto min-h-24 py-2.5 leading-normal; }
+  .sk-field[aria-invalid="true"] { @apply border-sk-coral-ink; }
+  .sk-field-label { @apply text-sm font-semibold text-sk-ink; }
+  .sk-field-hint { @apply text-sm text-sk-mute; }
+  .sk-field-error { @apply text-sm font-semibold text-sk-coral-ink; }
+
+  /* ---- Meter, skeleton --------------------------------------------------- */
+  .sk-meter { @apply h-2 w-full overflow-hidden rounded-full bg-sk-soft-2; }
+  .sk-meter > span { @apply block h-full rounded-full bg-sk-blue; }
+  .sk-skel { @apply block animate-pulse rounded-[6px] bg-sk-soft-2; }
+
+  /* ---- Empty state: plain text and one action, never a box --------------- */
+  .sk-empty {
+    @apply flex flex-col items-start gap-3 py-2;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding-inline: 0 !important;
   }
 
-  /* Meter */
-  .sk-meter { @apply h-2.5 w-full overflow-hidden rounded-full bg-[#e6e9f0]; }
-  .sk-meter > span { @apply block h-full rounded-full bg-sk-blue; }
+  /* ---- Notice -------------------------------------------------------------- */
+  .sk-notice { @apply flex items-start gap-3 rounded-[12px] bg-sk-soft px-3.5 py-3 text-[0.9375rem] leading-snug text-sk-ink; }
+  .sk-notice-error { @apply bg-sk-coral-tint; }
+  .sk-notice-warning { @apply bg-sk-yellow-tint; }
+  .sk-notice-success { @apply bg-sk-green-tint; }
+
+  /* ---- Hero block: the one solid colour block a screen may have ----------- */
+  .sk-hero { @apply flex flex-col gap-3.5 rounded-3xl bg-sk-blue p-5 text-white lg:p-7; }
+  @media (min-width: 1024px) {
+    .sk-hero .sk-btn-block { @apply w-auto min-w-56 self-start; }
+  }
+  .sk-hero-label { @apply text-sm font-semibold text-[#dfe6ff]; }
+  .sk-hero-title { @apply text-[1.75rem] font-extrabold leading-[1.05] tracking-[-0.035em] lg:text-[2.25rem]; }
+  .sk-hero-body { @apply max-w-[56ch] text-[0.9375rem] leading-[1.45] text-[#eef1ff]; }
+
+  /* ---- Day strip -------------------------------------------------------------- */
+  .sk-daystrip { @apply grid grid-cols-7 gap-1.5 text-center; }
+  .sk-day-letter { @apply block text-xs font-semibold text-sk-mute; }
+  .sk-day-num { @apply mx-auto mt-1.5 flex size-9 items-center justify-center rounded-full text-sm font-semibold tabular-nums text-sk-faint; }
+  .sk-day[data-state="planned"] .sk-day-num { @apply bg-sk-soft-2 font-bold text-sk-ink; }
+  .sk-day[data-state="today"] .sk-day-num { @apply bg-sk-blue font-bold text-white; }
+  .sk-day[data-state="done"] .sk-day-num { @apply bg-sk-green-tint font-bold text-sk-green-ink; }
+  .sk-day[data-today="true"] .sk-day-letter { @apply font-bold text-sk-blue-link; }
+}
+
+/* Floating layers (menus, sheets, dialogs) stay flat: a hairline, no shadow. */
+[data-slot="dropdown-menu-content"],
+[data-slot="sheet-content"],
+[data-slot="dialog-content"],
+[data-slot="popover-content"],
+[data-slot="select-content"] {
+  box-shadow: none;
+  border-color: var(--sk-line-strong);
+}
+[data-slot="sheet-overlay"],
+[data-slot="dialog-overlay"] {
+  background: rgb(14 19 32 / 0.28);
 }

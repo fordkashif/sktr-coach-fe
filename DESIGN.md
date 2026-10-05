@@ -1,43 +1,213 @@
-# SKTR Coach design system
+# SKTR Coach design system v2: clean lists
 
-Light, friendly, bold. One typeface (Outfit). Flat color, no gradients, no drop shadows, no dark surfaces.
-The loudest thing on any screen is a number or a name, never decoration.
+This is the only design direction for the app. If a screen disagrees with this file, the screen is wrong.
 
-## Tokens (Tailwind classes, defined in `src/styles/globals.css`)
+Two reference screens show everything below in use. Copy them:
+
+- Phone: `src/app/(authenticated)/athlete/home/page.tsx`
+- Desktop: `src/app/(authenticated)/coach/dashboard/page.tsx`
+
+## The idea in five lines
+
+1. The page is white. Content sits directly on it. There are no boxes around sections, no grey canvas, no drop shadows.
+2. Sections are separated by whitespace. Things inside a section are separated by 1px hairlines.
+3. Lists are rows. Tables are tables. A stat is a number with a small label.
+4. Type does the work: one typeface (Outfit), big tight bold titles, plain sentence case words.
+5. Colour means state. If a colour is not telling the reader "act", "ready", "watch" or "needs attention", remove it.
+
+It has to feel like an app, not a report: the same chrome on every screen, the same header pattern on every screen, content that starts straight away, and nothing that jumps while loading.
+
+## How to build a screen
+
+Import from `@/components/sk` and nothing else for layout. A screen file contains data loading and a tree of kit parts. It contains no hand-written page padding, max width, card, border, heading style or grid.
+
+```tsx
+<Screen>
+  <ScreenHeader title="Sprint Group" lede="Week 3 of 8. One athlete needs a look today." actions={...} />
+  <StatStrip>
+    <Stat label="Plan adherence" value={86} unit="%" />
+    <Stat label="Ready to train" value={3} of={4} />
+  </StatStrip>
+  <Split
+    main={<Section title="Athletes" action={<Link className="sk-link" to="...">Open roster</Link>}><DataTable ... /></Section>}
+    side={<Section title="This week's plan"><List>...</List></Section>}
+  />
+</Screen>
+```
+
+Checklist before you open a pull request:
+
+- The root is `Screen`. The first child is exactly one `ScreenHeader`.
+- Every block under it is a `Section`, `StatStrip`, `Split`, `Notice` or (at most one) `HeroBlock`.
+- No element on the screen has a border on all four sides except a control (button, input, tag).
+- No `bg-*` on anything larger than a control, apart from the one `HeroBlock`.
+- One primary button at most.
+- At 390px wide nothing scrolls sideways and every tap target is 44px tall.
+- While loading, the screen shows `SkeletonRows` where the rows will be. It never shows "Loading..." text in place of the screen and never changes height when data arrives.
+
+If you need something the kit does not have, add it to the kit (and to this file) rather than writing it in the screen.
+
+## Tokens
+
+Defined in `src/styles/globals.css`. Use the Tailwind names (`text-sk-mute`, `border-sk-line`), never raw hex in a screen.
 
 | Token | Hex | Use |
 |---|---|---|
-| `sk-ink` | #0E1320 | Text, ink buttons |
-| `sk-ink-2` / `sk-mute` | #3A4252 / #6A7385 | Secondary and tertiary text |
-| `sk-line` | #E3E6EE | Borders, dividers |
-| `sk-canvas` | #F5F6FA | Page background, wells |
-| `sk-blue` (+ `-tint`) | #2152FF | Primary action, active nav, the key metric |
-| `sk-green` (+ `-tint`) | #0C9D61 | Ready, on track, improved |
-| `sk-yellow` (+ `-tint`) | #FFC93C | Watch, highlights, PRs |
-| `sk-coral` (+ `-tint`) | #FF5C39 | Review, behind, destructive |
+| `sk-ink` | #0e1320 | Text. The athlete's round log button. Never a panel or a large surface. |
+| `sk-ink-2` | #3a4252 | Secondary text in tables, inactive top bar tabs |
+| `sk-mute` | #5a6274 | Labels, subtitles, hints (14px) |
+| `sk-faint` | #8a91a1 | Placeholders, rest days |
+| `sk-line` | #e6e8ee | Hairlines |
+| `sk-line-strong` | #d5d9e3 | Borders of controls (outlined buttons, inputs) |
+| `sk-soft`, `sk-soft-2` | #f3f4f8, #eef0f5 | Soft fill for neutral chips, inputs, hover, skeletons |
+| `sk-blue` | #2152ff | Action and active. Primary button, active tab, today |
+| `sk-blue-link`, `sk-blue-ink`, `sk-blue-tint` | #1b46e0, #1638b8, #e8edff | Text links, active tab text, active tab fill |
+| `sk-green`, `sk-green-ink` | #0c9d61, #07673f | Ready, done |
+| `sk-amber`, `sk-amber-ink` | #e0a800, #7a5600 | Watch. Amber is a dot; the words beside it use the dark amber |
+| `sk-coral`, `sk-coral-ink` | #ff5c39, #c7300f | Needs attention, destructive |
+| `sk-yellow` | #ffc93c | Avatar fill and to-do dots only |
 
-Color always means something: green ready, yellow watch, coral review. Blue is action. Do not use color as decoration.
+The page background is white everywhere, including sign-in screens. There is no dark theme and no near-black surface.
 
-## Building blocks
+## Type
 
-Import from `@/components/sk`: `PageHeader`, `Stat`, `Panel`, `Tag`, `ReadinessTag`, `Initials`, `Meter`, `scoreTone`, `EmptyState`, `Segmented`.
+Outfit only, loaded as a variable font. No other typeface, no serif, no monospace for numbers (use `tabular-nums`).
 
-CSS classes: `sk-page` (page frame), `sk-title`, `sk-lede`, `sk-h2`, `sk-h3`, `sk-label`, `sk-num`, `sk-card`, `sk-well`, `sk-row`,
-`sk-btn` + `sk-btn-primary | -ink | -quiet | -ghost | -danger` (+ `sk-btn-sm`), `sk-tag-*`, `sk-seg`, `sk-field`, `sk-meter`.
+| Role | Class | Phone | Desktop |
+|---|---|---|---|
+| Screen title (h1) | `sk-title` | 30px, 800, -0.04em | 44px, 800, -0.045em |
+| Detail screen title (h1) | `sk-title-compact` | 24px, 800 | 32px, 800 |
+| Lede under the title | `sk-lede` | 15px, mute | 17px, mute |
+| Section heading (h2) | `sk-h2` | 18px, 700, -0.02em | 22px, 700 |
+| Row title | `sk-list-title` | 16px, 600 | same |
+| Body | (default) | 15 to 17px, ink | same |
+| Secondary, labels, hints | `sk-label`, `sk-list-sub` | 14px, mute | same |
+| Stat number | `sk-stat-value` | 32px, 800 | 40px, 800 |
 
-Icons: `@phosphor-icons/react` only, `weight="bold"` by default and `weight="fill"` for active or emphasis. No Hugeicons, no Lucide.
+Rules: sentence case everywhere, including buttons, tabs and table headers. No uppercase, no letter-spaced labels, no small category label above a heading. A screen has one h1 and its sections use h2. The kit sets all of this; do not restyle headings in a screen.
 
-## Rules
+## Colour means state
 
-1. Every screen is `<div className="sk-page">` starting with one `PageHeader`. The title is the thing itself (team name, athlete name, "Training plans"), said once. No eyebrow labels above headings.
-2. No uppercase tracked labels. Labels are sentence case, `text-sm font-semibold text-sk-mute`.
-3. One level of card. A `Panel` holds rows, lists, tables or a `sk-well`. Never a bordered card inside a bordered card.
-4. Lists of people or items are rows with dividers (`sk-row` or a table), not a stack of mini cards.
-5. One primary (`sk-btn-primary`) action per screen. Everything else is quiet or ghost.
-6. Radius: 20px cards, 14px controls, 8px tags. Buttons are not full pills.
-7. Copy is plain and short, written to the coach: "Who needs you", "Build a plan". Sentence case. No em dashes. Button text says what happens.
-8. Empty states say what will appear and give the next action. Never show placeholder or made-up numbers.
-9. Mobile first: stat blocks 2 across, panels stack, tables scroll sideways inside the panel, tap targets 44px.
-10. Keep visible focus rings and semantic markup (tables with `th scope`, `aria-current`, labels on inputs).
+| Meaning | Colour | Shown as |
+|---|---|---|
+| Something to do, or the current item | blue | Primary button, active tab, today's day, a blue dot |
+| Ready, done, improved | green | Green dot plus dark green text |
+| Watch | amber | Amber dot plus dark amber text |
+| Needs attention, behind, destructive | coral | Coral dot plus dark coral text |
+| Everything else | ink and mute | No colour |
 
-Reference implementation: `src/app/(authenticated)/coach/dashboard/page.tsx`.
+State is a small dot followed by text (`StatusText`, `StatusDot`, `ReadinessText`). It is not a pill. The only place a tinted tag is allowed is a status column inside a `DataTable` (`Tag`). Stats, section headings and icons are never coloured for decoration.
+
+### The one colour block
+
+A screen may have at most one solid colour block, `HeroBlock`, and most screens have none. It is for the single most important thing on the screen together with its primary action: the athlete's session for today with "Start session". Do not use it for stats, tips, onboarding, notices or because a screen looks plain. If you are not sure the screen needs one, it does not.
+
+## The kit
+
+All from `@/components/sk`.
+
+### Frame
+
+| Part | What it is |
+|---|---|
+| `Screen` | Root of every screen. White, centred, 1160px content width on desktop with 40px side padding, 20px side padding on phone, 28px between blocks on phone and 36px on desktop. `width="narrow"` (720px) for forms and simple detail screens. |
+| `ScreenHeader` | The h1 with an optional lede, optional `actions` (buttons, right on desktop, under the title on phone) and optional `fact` (one plain line above the title such as today's date). With `back={{ to, label }}` it becomes the detail variant: a back link above a smaller title. Every screen reached from a list has `back`. |
+| `Section` | An h2 and its content. `hint` is a line under the heading, `meta` is plain text on the right ("2 of 4 done"), `action` is a link on the right (`<Link className="sk-link">`). No border, no background. |
+| `Split` | The only two-column layout: `main` (about two thirds) and `side`. Stacks on phone, main first. |
+| `HeroBlock` | The one solid colour block. See above. Its button is `HeroAction`. |
+
+### Lists, numbers, tables
+
+| Part | What it is |
+|---|---|
+| `List`, `ListRow` | Rows with hairline dividers, 56px minimum. `leading` takes a `StatusDot`, `Avatar`, icon, weekday or step number. `title`, `subtitle`, `trailing` (a value). Pass `to`, `href` or `onClick` to make the whole row the target; rows that navigate get a chevron. |
+| `StatStrip`, `Stat` | A hairline above and below, stats divided by vertical hairlines. One row on desktop, two columns on phone. `Stat` takes `label`, `value`, `unit`, and `of` for "3 of 4". Two to five stats. Never coloured. |
+| `DataTable`, `TableSub` | A real table: caption for screen readers, `th scope`, right-aligned numeric columns (`align: "right"`). The first column is the row header (name, with `TableSub` for a second line). On phone each row restacks into a list row: use `phone: "trailing"` for the one value to keep on the right, `"plain"` for a value that needs no label, `"hide"` to drop a column; other columns become labelled lines. It never scrolls the page sideways. |
+| `DayStrip` | Seven days of a week as circles: today blue, done green tick, planned soft fill, rest plain. |
+| `Meter` | A thin progress bar. Give it an `aria-label` via `label`. |
+| `EmptyState` | Two lines of plain text (what will appear here) and one action. No box, no icon. |
+| `SkeletonRows`, `Skeleton`, `ScreenSkeleton` | Loading placeholders the height of real rows. |
+
+### State and people
+
+| Part | What it is |
+|---|---|
+| `StatusDot`, `StatusText` | Dot, and dot plus bold text. Tones: `green`, `amber`, `coral`, `blue`, `neutral`. |
+| `ReadinessText` | Readiness with the app-wide mapping: green Ready, yellow Watch, red Review. Optional `detail` ("slept 5h"). |
+| `Tag` | Small tinted tag for a status column in a table only. |
+| `Avatar` | The photo when `src` is given, otherwise initials on a solid colour chosen from the name. Sizes `sm` 32, `md` 40, `lg` 44, `xl` 64. |
+| `Notice` | One line about the screen: could not load, saved, heads up. Tones `info`, `success`, `warning`, `error`. Small and tinted. It never wraps other content. |
+| `notify`, `notifyError` | A short toast after an action ("Plan saved"). |
+
+### Controls
+
+| Part | What it is |
+|---|---|
+| `Button`, `LinkButton` | `variant`: `primary` (solid blue, one per screen), `secondary` (outlined, the default), `quiet` (blue text, for cancel and minor actions), `danger` (outlined, coral text). `size`: `md` 44px, `sm` (44px on phone, 40px on desktop), `lg` 52px. `LinkButton` whenever pressing goes to another screen. Text says what happens; an icon may go before the text. |
+| `Field` with `Input`, `Textarea`, `Select` | Label above, control (44px), then a hint or an error. `Field` wires ids and aria for you. |
+| `Segmented` | Two to four views of the same thing. |
+| `Tabs` | Underlined tabs for more views or longer labels. |
+| `InlineConfirm` | "Are you sure" in place, where the button was. Use it instead of a dialog for remove, archive, cancel. |
+| `Sheet` | A panel over the screen with a title and a close button. `side="right"` for something to glance at (notifications), `side="bottom"` for a short choice on phone. |
+| `Dialog` | A centred panel for one short form or decision. Title, close button, actions in `footer`. |
+
+Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus rings stay visible (2px blue).
+
+Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weight="fill"` for the active tab. No Lucide, no Hugeicons. Icons support words; they do not replace them, except the bell, back, close and the athlete's log button, which carry an `aria-label`.
+
+## Navigation
+
+Built once in `src/components/app-shell.tsx`. Screens never draw navigation.
+
+**Desktop, 1024px and wider: a top bar.** There is no sidebar. Left to right: the brand, the team switcher (only for a coach on two or more teams), the role's destinations as tabs, then the notifications bell and the profile avatar. The active tab has the soft blue fill with dark blue text. The bar is one row at every width from 1024px up; labels are kept short so that seven destinations fit.
+
+**Phone: an app bar and a tab bar.** The app bar is one 56px row: the brand on the left (or the team switcher for a multi-team coach, or a back button while a screen is in detail mode), the bell and the avatar on the right. The tab bar is white with a hairline on top, icon over label, the active one blue. It holds at most five items. A role with more destinations shows four and "More", which opens a bottom sheet with the rest. For the athlete the centre item is a raised round ink button that opens the session log.
+
+| Role | Desktop tabs | Phone tabs |
+|---|---|---|
+| Athlete | Home, Plan, Log, Progress, Profile | Home, Plan, (log button), Progress, Me |
+| Coach | Dashboard, Athletes, Plans, Test weeks, Reports | Dashboard, Athletes, Plans, Tests, Reports |
+| Club admin | Dashboard, People, Teams, Reports, Club, Activity, Billing | Dashboard, People, Teams, Reports, More (Club, Activity, Billing) |
+| Platform admin | Dashboard, Requests, Clubs, Billing, Packages, Activity | Dashboard, Requests, Clubs, Billing, More (Packages, Activity) |
+
+The avatar opens the profile menu: Your account, Notification settings, Sign out (athletes also get Join a team).
+
+Detail screens (an athlete, a plan, a test week) use `ScreenHeader` with `back`. A phone screen that takes over the whole view can also ask the shell for a back button and no tab bar by dispatching `pacelab:mobile-detail-mode` (see `app-shell.tsx`).
+
+## Words
+
+- Plain and short, written to the person: "Who needs a look", "Build a plan", "Nothing planned today".
+- Sentence case. No exclamation marks. Never an em dash; use a comma, a full stop or brackets.
+- Buttons say what happens ("Save plan", not "Submit").
+- Empty states say what will appear and give the next step. Never show placeholder or made-up numbers.
+- Errors say what went wrong and what to do next.
+
+## Never
+
+- A bordered or filled box around a section, a card inside a card, a drop shadow.
+- A grey page, a dark or near-black panel, a gradient.
+- Coloured stat tiles. More than one colour block on a screen.
+- Pill badges for state outside a table. Uppercase labels. A label above a heading.
+- A second primary button on the same screen.
+- A sidebar. A marquee or ticker.
+- Sideways scrolling of the page on a phone.
+- Layout written by hand in a screen file.
+
+## Older screens
+
+Screens that have not been converted still import the v1 names. Those names now render the v2 look, so nothing is boxed while the work is in progress, but they are deprecated. Replace them when you convert a screen:
+
+| Old | Use instead |
+|---|---|
+| `<div className="sk-page">` | `Screen` |
+| `PageHeader` | `ScreenHeader` |
+| `Panel` | `Section` with `List`, `DataTable` or plain content |
+| `Stat tone="..."` in a grid | `StatStrip` with `Stat` (tone is ignored) |
+| `ReadinessTag` | `ReadinessText` |
+| `Initials` | `Avatar` |
+| `EmptyState icon=... className="bg-..."` | `EmptyState` with title, body, action only |
+| `sk-card`, `sk-well` | `Section` (both classes no longer draw a box) |
+| `sk-row` | `List` and `ListRow` |
+| `sk-btn sk-btn-*` | `Button` or `LinkButton` (`sk-btn-ink` is now outlined, `sk-btn-ghost` is the quiet variant) |
+| `sk-field` on a bare input | `Field` with `Input` |
+| `sk-h2`, `sk-h3`, `sk-label` in a screen | `Section` titles, `ListRow` titles |
