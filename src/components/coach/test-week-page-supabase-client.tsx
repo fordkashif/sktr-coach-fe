@@ -1,13 +1,13 @@
-"use client"
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   TestWeekScreen,
   type ActionResult,
   type TestUnit,
   type TestWeekDetail,
+  type TestWeekResultInput,
   type TestWeekRow,
   type TestWeekSaveInput,
+  type TestWeekSavedResult,
   type TestWeekTeamOption,
 } from "@/components/coach/test-week-screen"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
@@ -16,7 +16,9 @@ import {
   deleteTestWeekForCurrentCoach,
   getCoachTestWeekDetail,
   getCoachTestWeeksForCurrentUser,
+  saveTestResultForAthleteAsCoach,
   saveTestWeekForCurrentCoach,
+  setTestWeekOpenForCurrentCoach,
   updateTestWeekStateForCurrentCoach,
   type CoachTestWeekListItem,
 } from "@/lib/data/test-week/test-week-data"
@@ -116,7 +118,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         results: Object.fromEntries(
           Object.entries(athlete.resultsByDefinitionId).map(([definitionId, value]) => [
             definitionId,
-            { value: value.valueText, numeric: value.valueNumeric, change: value.change },
+            { value: value.valueText, numeric: value.valueNumeric, change: value.change, enteredBy: value.enteredByRole },
           ]),
         ),
       })),
@@ -154,6 +156,36 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     [afterWrite],
   )
 
+  const onSetOpen = useCallback(
+    async (testWeekId: string, open: boolean) => afterWrite(toAction(await setTestWeekOpenForCurrentCoach(testWeekId, open), () => null)),
+    [afterWrite],
+  )
+
+  // Results are typed one cell at a time, so the list (its "results in" counts) is reloaded once the typing pauses.
+  const reloadTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (reloadTimer.current !== null) window.clearTimeout(reloadTimer.current)
+  }, [])
+  const onSaveResult = useCallback(
+    async (input: TestWeekResultInput): Promise<ActionResult<TestWeekSavedResult | null>> => {
+      const result = await saveTestResultForAthleteAsCoach({
+        testWeekId: input.testWeekId,
+        testDefinitionId: input.testId,
+        athleteId: input.athleteId,
+        unit: input.unit,
+        value: input.value,
+      })
+      if (result.ok) {
+        if (reloadTimer.current !== null) window.clearTimeout(reloadTimer.current)
+        reloadTimer.current = window.setTimeout(() => void load(), 2000)
+      }
+      return toAction(result, (saved) =>
+        saved ? { value: saved.valueText, numeric: saved.valueNumeric, enteredBy: saved.enteredByRole, submittedAt: saved.submittedAt } : null,
+      )
+    },
+    [load],
+  )
+
   const onSetArchived = useCallback(
     async (testWeekId: string, archived: boolean) =>
       afterWrite(toAction(await updateTestWeekStateForCurrentCoach(testWeekId, { isArchived: archived }), () => null)),
@@ -179,6 +211,8 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
       loadDetail={loadDetail}
       onSave={onSave}
       onPublish={onPublish}
+      onSetOpen={onSetOpen}
+      onSaveResult={onSaveResult}
       onSetArchived={onSetArchived}
       onDelete={onDelete}
     />

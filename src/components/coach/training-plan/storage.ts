@@ -59,13 +59,16 @@ export interface PlanStorageAdapter {
   remove(planId: string): Promise<Result<{ planId: string }>>
 }
 
+/** The athletes a draft's assignment settings would reach. */
+export function assignedAthletes(plan: PlanDraft, athletes: AthleteOption[]) {
+  const teamAthletes = athletes.filter((athlete) => athlete.teamId === plan.teamId)
+  if (plan.assign.target === "team") return teamAthletes
+  if (plan.assign.target === "subgroup") return teamAthletes.filter((athlete) => athlete.eventGroup === plan.assign.subgroup)
+  const ids = new Set(plan.assign.athleteIds)
+  return teamAthletes.filter((athlete) => ids.has(athlete.id))
+}
+
 /** How many athletes a draft's assignment settings would reach. */
 export function countAssignedAthletes(plan: PlanDraft, athletes: AthleteOption[]) {
-  const teamAthletes = athletes.filter((athlete) => athlete.teamId === plan.teamId)
-  if (plan.assign.target === "team") return teamAthletes.length
-  if (plan.assign.target === "subgroup") {
-    return teamAthletes.filter((athlete) => athlete.eventGroup === plan.assign.subgroup).length
-  }
-  const ids = new Set(plan.assign.athleteIds)
-  return teamAthletes.filter((athlete) => ids.has(athlete.id)).length
+  return assignedAthletes(plan, athletes).length
 }

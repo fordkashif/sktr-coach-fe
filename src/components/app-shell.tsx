@@ -6,11 +6,13 @@ import {
   Buildings,
   CalendarBlank,
   ChartBar,
+  ChatCircle,
   ClipboardText,
   DotsThree,
   House,
   type Icon,
   ListChecks,
+  Medal,
   Plus,
   Receipt,
   SquaresFour,
@@ -26,6 +28,7 @@ import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
 import { useCoachTeams } from "@/lib/coach-teams"
 import { NotificationBell, NotificationSheet } from "@/components/notifications/notification-center"
+import { MessagesButton, MessagesCount, MessageUnreadKeeper, useMessagesLabel } from "@/components/messages/messages-button"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useCurrentAccount } from "@/lib/account-store"
@@ -49,6 +52,7 @@ import { Avatar, List, ListRow, Sheet } from "@/components/sk"
  * Desktop (1024px and up): one top bar. Brand, team switcher, the role's destinations, bell, profile menu.
  * Phone: a slim app bar (brand or team switcher or back, bell, profile menu) and a bottom tab bar of at
  * most five items. A role with more destinations gets "More" as the fifth, opening a sheet.
+ * Messages is an icon button with its unread count beside the bell wherever it is not a tab.
  * There is no sidebar.
  */
 
@@ -57,17 +61,25 @@ type ShellLink = {
   href: string
   /** Desktop top bar label. */
   label: string
-  /** Phone tab label when the desktop one is too long. */
+  /** A shorter label: for a phone tab, and for the desktop bar between 1024px and 1280px when the team switcher takes room. */
   short?: string
   icon: Icon
+  /** Desktop: "icon" takes it out of the tabs and shows it as an icon button beside the bell (Messages). */
+  desktop?: "icon"
+  /** Phone: "more" puts it behind More, "icon" in the app bar beside the bell. Left out: a tab while there is room. */
+  phone?: "more" | "icon"
 }
+
+const MESSAGES_ID = "messages"
 
 const coachLinks: ShellLink[] = [
   { id: "dashboard", href: "/coach/dashboard", label: "Dashboard", icon: SquaresFour },
   { id: "teams", href: "/coach/teams", label: "Athletes", icon: UsersThree },
   { id: "plans", href: "/coach/training-plan", label: "Plans", icon: ClipboardText },
-  { id: "tests", href: "/coach/test-week", label: "Test weeks", short: "Tests", icon: Timer },
-  { id: "reports", href: "/coach/reports", label: "Reports", icon: ChartBar },
+  { id: MESSAGES_ID, href: "/coach/messages", label: "Messages", icon: ChatCircle, desktop: "icon" },
+  { id: "tests", href: "/coach/test-week", label: "Test weeks", short: "Tests", icon: Timer, phone: "more" },
+  { id: "competitions", href: "/coach/competitions", label: "Competitions", short: "Meets", icon: Medal, phone: "more" },
+  { id: "reports", href: "/coach/reports", label: "Reports", icon: ChartBar, phone: "more" },
 ]
 
 /** Everything under the athlete's Progress tab. Each is its own screen, with the tab bar showing. */
@@ -81,6 +93,7 @@ const athleteLinks: ShellLink[] = [
   { id: ATHLETE_LOG_ID, href: "/athlete/log", label: "Log", icon: Plus },
   { id: "progress", href: "/athlete/trends", label: "Progress", icon: TrendUp },
   { id: "profile", href: "/athlete/profile", label: "Profile", short: "Me", icon: User },
+  { id: MESSAGES_ID, href: "/athlete/messages", label: "Messages", icon: ChatCircle, desktop: "icon", phone: "icon" },
 ]
 
 const clubAdminLinks: ShellLink[] = [
@@ -91,6 +104,7 @@ const clubAdminLinks: ShellLink[] = [
   { id: "club", href: "/club-admin/profile", label: "Club", icon: Buildings },
   { id: "activity", href: "/club-admin/audit", label: "Activity", icon: ListChecks },
   { id: "billing", href: "/club-admin/billing", label: "Billing", icon: Receipt },
+  { id: MESSAGES_ID, href: "/club-admin/messages", label: "Messages", icon: ChatCircle, desktop: "icon", phone: "more" },
 ]
 
 const platformAdminLinks: ShellLink[] = [
@@ -196,9 +210,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const homeHref = links[0]?.href ?? "/"
   const accountHref = role === "athlete" ? "/athlete/profile" : "/account"
-  const phoneTabs = links.length > PHONE_TAB_LIMIT ? links.slice(0, PHONE_TAB_LIMIT - 1) : links
-  const moreLinks = links.length > PHONE_TAB_LIMIT ? links.slice(PHONE_TAB_LIMIT - 1) : []
+  // Desktop: every destination is a tab except the ones shown as an icon button (Messages).
+  const desktopTabs = links.filter((link) => link.desktop !== "icon")
+  const messagesLink = links.find((link) => link.id === MESSAGES_ID) ?? null
+  // Phone: links with no placement are tabs while they fit. With More in the bar there is room for four.
+  const tabCandidates = links.filter((link) => !link.phone)
+  const placedInMore = links.filter((link) => link.phone === "more")
+  const overflows = tabCandidates.length + (placedInMore.length > 0 ? 1 : 0) > PHONE_TAB_LIMIT
+  const phoneTabs = overflows ? tabCandidates.slice(0, PHONE_TAB_LIMIT - 1) : tabCandidates
+  const moreLinks = [...placedInMore, ...(overflows ? tabCandidates.slice(PHONE_TAB_LIMIT - 1) : [])]
   const moreActive = moreLinks.some(isLinkActive)
+  const messagesInAppBar = messagesLink?.phone === "icon"
+  const messagesLabel = useMessagesLabel()
 
   // The person's real name and photo. The email is only a fallback for an account with no name yet.
   const { displayName, avatarUrl } = useCurrentAccount()
@@ -263,6 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showBell = showChrome
 
   const bell = showBell ? <NotificationBell onOpen={() => setPanelOpen(true)} /> : null
+  const messagesButton = showChrome && messagesLink ? <MessagesButton to={messagesLink.href} active={isLinkActive(messagesLink)} /> : null
 
   const menuItem = "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold text-sk-ink focus:bg-sk-soft"
   const profileMenu = (size: "md" | "lg") => (
@@ -332,7 +356,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {brand}
           {showTeamSwitcher ? <CoachTeamSwitcher variant="topbar" onSwitched={handleTeamSwitched} /> : null}
           <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-            {links.map((link) => {
+            {desktopTabs.map((link) => {
               const isActive = isLinkActive(link)
               return (
                 <Link
@@ -345,12 +369,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     isActive ? "bg-sk-blue-tint font-bold text-sk-blue-ink" : "font-semibold text-sk-ink-2 hover:bg-sk-soft hover:text-sk-ink",
                   )}
                 >
-                  {link.label}
+                  {showTeamSwitcher && link.short ? (
+                    // The team switcher shares the row: below 1280px the long labels give way so nothing clips.
+                    <>
+                      <span className="xl:hidden">{link.short}</span>
+                      <span className="hidden xl:inline">{link.label}</span>
+                    </>
+                  ) : (
+                    link.label
+                  )}
                 </Link>
               )
             })}
           </nav>
           <div className="flex shrink-0 items-center gap-3">
+            {messagesButton}
             {bell}
             {profileMenu("md")}
           </div>
@@ -371,6 +404,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
+          {messagesInAppBar ? messagesButton : null}
           {bell}
           {profileMenu("lg")}
         </div>
@@ -413,12 +447,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   to={link.href}
                   {...prefetchHandlers(link.id)}
                   aria-current={isActive ? "page" : undefined}
+                  aria-label={link.id === MESSAGES_ID ? messagesLabel : undefined}
                   className={cn(
                     "flex min-h-12 flex-col items-center justify-center gap-[3px] rounded-[12px] text-xs outline-offset-0 focus-visible:outline-2 focus-visible:outline-sk-blue",
                     isActive ? "font-bold text-sk-blue" : "font-semibold text-sk-mute",
                   )}
                 >
-                  <LinkIcon className="size-6" weight={isActive ? "fill" : "regular"} aria-hidden />
+                  <span className="relative">
+                    <LinkIcon className="size-6" weight={isActive ? "fill" : "regular"} aria-hidden />
+                    {link.id === MESSAGES_ID ? <MessagesCount className="absolute -right-2.5 -top-1.5" /> : null}
+                  </span>
                   <span className="max-w-full truncate">{link.short ?? link.label}</span>
                 </Link>
               )
@@ -455,6 +493,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   aria-current={isActive ? "page" : undefined}
                   leading={<LinkIcon className={cn("size-6", isActive ? "text-sk-blue" : "text-sk-ink-2")} weight={isActive ? "fill" : "regular"} aria-hidden />}
                   title={link.label}
+                  trailing={link.id === MESSAGES_ID ? <MessagesCount /> : undefined}
                 />
               )
             })}
@@ -463,6 +502,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       {showBell ? <NotificationSheet open={panelOpen} onOpenChange={setPanelOpen} /> : null}
+      {showChrome && messagesLink ? <MessageUnreadKeeper /> : null}
     </div>
   )
 }

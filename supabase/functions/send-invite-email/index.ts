@@ -20,5 +20,6 @@ Deno.serve((request) =>
     createServiceClient: (url, serviceRoleKey) => createClient(url, serviceRoleKey, clientOptions),
     fetch: (input, init) => fetch(input, init),
     now: () => new Date(),
+    sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   }),
 )

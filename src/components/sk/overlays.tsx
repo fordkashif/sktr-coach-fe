@@ -1,13 +1,15 @@
 import { X } from "@phosphor-icons/react"
-import type { ReactNode } from "react"
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react"
 import { Dialog as UiDialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Sheet as UiSheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
 
-function CloseButton({ label }: { label: string }) {
+// Radix (SheetClose / DialogClose with asChild) hands the click handler and ref to this button as
+// props, so they must be passed on, or the button does nothing.
+function CloseButton({ label, ...props }: { label: string } & ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }) {
   return (
-    <button type="button" aria-label={label} className="sk-icon-btn">
+    <button type="button" aria-label={label} className="sk-icon-btn" {...props}>
       <X className="size-5" weight="bold" aria-hidden />
     </button>
   )

@@ -12,11 +12,14 @@ import {
   describeNotSendable,
   isLocalBaseUrl,
   MAX_SENDS_PER_INVITE,
+  MAX_INVITES_PER_BATCH,
   normalizeAppBaseUrl,
+  parseInviteBatchPayload,
   parseInvitePayload,
   renderInviteEmail,
   RESEND_COOLDOWN_SECONDS,
   type InviteEmailErrorCode,
+  type InviteKind,
 } from "./invite-email.ts"
 
 // The Supabase client is used structurally so tests can pass a small fake.
@@ -32,7 +35,12 @@ export type HandlerDeps = {
   createServiceClient: (supabaseUrl: string, serviceRoleKey: string) => LooseClient
   fetch: typeof fetch
   now: () => Date
+  /** Pause between two provider calls of one batch. Left out in tests, where nothing waits. */
+  sleep?: (milliseconds: number) => Promise<void>
 }
+
+/** A batch sends one email at a time with this pause in between, so the email provider is never flooded. */
+export const BATCH_PAUSE_MS = 600
 
 type InviteRow = {
   id: string
@@ -91,10 +99,21 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   } catch {
     rawPayload = null
   }
-  // Only kind and inviteId are read. Anything else the caller sends (an origin, an email, a link) is ignored:
-  // the recipient comes from the invite row and the link from the server-side PUBLIC_APP_URL.
-  const payload = parseInvitePayload(rawPayload)
-  if (!payload) return fail(400, "invalid_request", "Expected { kind: 'coach' | 'athlete', inviteId }.")
+  // Only kind and inviteId (or inviteIds) are read. Anything else the caller sends (an origin, an email, a link)
+  // is ignored: the recipient comes from the invite row and the link from the server-side PUBLIC_APP_URL.
+  //
+  // Batch mode: { kind, inviteIds: [...] } sends up to MAX_INVITES_PER_BATCH invites in one call. The caller is
+  // identified once; after that EVERY invite goes through exactly the same steps as a single send (club and
+  // team permission, still pending, opt-out, per-invite cooldown and maximum, the send slot, the audit event),
+  // one after the other. The answer lists what happened to each invite.
+  const isBatch = Boolean(rawPayload && typeof rawPayload === "object" && "inviteIds" in (rawPayload as Record<string, unknown>))
+  const batch = isBatch ? parseInviteBatchPayload(rawPayload) : null
+  const single = isBatch ? null : parseInvitePayload(rawPayload)
+  if (isBatch && !batch) {
+    return fail(400, "invalid_request", `Expected { kind: 'coach' | 'athlete', inviteIds: 1 to ${MAX_INVITES_PER_BATCH} invite ids }.`)
+  }
+  if (!isBatch && !single) return fail(400, "invalid_request", "Expected { kind: 'coach' | 'athlete', inviteId }.")
+  const kind: InviteKind = (batch ?? single)!.kind
 
   const userClient = deps.createUserClient(supabaseUrl, supabaseAnonKey, authorization)
   const serviceClient = deps.createServiceClient(supabaseUrl, supabaseServiceRoleKey)
@@ -114,7 +133,12 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const callerTenantId = typeof tenantResult.data === "string" ? tenantResult.data : null
   const callerIsClubAdmin = clubAdminResult.data === true
 
-  const table = payload.kind === "coach" ? "coach_invites" : "athlete_invites"
+  const table = kind === "coach" ? "coach_invites" : "athlete_invites"
+  // is_team_coach() is asked once per team in a batch.
+  const teamCoachAnswers = new Map<string, boolean>()
+  let providerCalls = 0
+
+  const sendOne = async (payload: { kind: InviteKind; inviteId: string }): Promise<Response> => {
   const { data: inviteData, error: inviteError } = await serviceClient
     .from(table)
     .select(INVITE_COLUMNS)
@@ -134,8 +158,14 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
     callerTenantId !== null &&
     callerTenantId === invite.tenant_id
   ) {
-    const teamCoachResult = await userClient.rpc("is_team_coach", { p_team_id: invite.team_id })
-    callerIsTeamCoach = !teamCoachResult.error && teamCoachResult.data === true
+    const known = teamCoachAnswers.get(invite.team_id)
+    if (known !== undefined) {
+      callerIsTeamCoach = known
+    } else {
+      const teamCoachResult = await userClient.rpc("is_team_coach", { p_team_id: invite.team_id })
+      callerIsTeamCoach = !teamCoachResult.error && teamCoachResult.data === true
+      teamCoachAnswers.set(invite.team_id, callerIsTeamCoach)
+    }
   }
 
   // A missing invite, an invite of another club and an invite of a team the coach is not assigned to all
@@ -268,6 +298,9 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   let providerMessageId: string | null = null
   if (!isLocalPreview) {
     let providerError: string | null = null
+    // Second and later emails of a batch wait a moment first.
+    if (providerCalls > 0 && deps.sleep) await deps.sleep(BATCH_PAUSE_MS)
+    providerCalls += 1
     try {
       const response = await deps.fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -326,4 +359,22 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
     recipientEmail,
     ...(isLocalPreview ? { preview: true, actionLink: claimLink } : {}),
   })
+  }
+
+  if (single) return sendOne(single)
+
+  const results: Array<Record<string, unknown>> = []
+  for (const inviteId of batch!.inviteIds) {
+    let body: Record<string, unknown> | null = null
+    try {
+      const response = await sendOne({ kind, inviteId })
+      body = (await response.json().catch(() => null)) as Record<string, unknown> | null
+    } catch {
+      // One invite going wrong must not hide what happened to the ones before it.
+      body = null
+    }
+    results.push(body ? { inviteId, ...body } : { inviteId, ok: false, code: "provider_failure", error: "The invite email could not be sent. Try again." })
+  }
+  const sent = results.filter((result) => result.ok === true).length
+  return json(200, { ok: true, batch: true, sent, failed: results.length - sent, results })
 }

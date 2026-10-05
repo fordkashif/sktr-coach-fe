@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo } from "react"
+import { ScreenSkeleton } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -15,10 +16,10 @@ export default function CoachTrainingPlanPage() {
   // Null means every team (club admins). A coach gets the teams they are assigned to.
   const coachTeamIds = useMemo(() => (role === "coach" ? coachTeams.map((team) => team.id) : null), [coachTeams, role])
 
-  if (coachTeamsLoading) return <div className="sk-page" aria-busy="true" />
+  if (coachTeamsLoading) return <ScreenSkeleton />
 
   return (
-    <Suspense fallback={<div className="sk-page" aria-busy="true" />}>
+    <Suspense fallback={<ScreenSkeleton />}>
       {backendMode === "supabase" ? (
         <CoachTrainingPlanPageSupabaseClient initialRole={role} initialCoachTeamId={coachTeamId} coachTeamIds={coachTeamIds} />
       ) : (

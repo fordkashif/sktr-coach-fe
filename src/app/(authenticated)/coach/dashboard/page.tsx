@@ -2,9 +2,11 @@ import { useEffect, useState } from "react"
 import { ArrowDown, ArrowUp, Minus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { useCoachTeamScope } from "@/lib/coach-teams"
+import { PersonAvatar } from "@/components/account/person-avatar"
 import {
   Button,
   DataTable,
+  DayLabel,
   EmptyState,
   LinkButton,
   List,
@@ -18,6 +20,8 @@ import {
   Split,
   Stat,
   StatStrip,
+  StatusDot,
+  StatusText,
   TableSub,
   type DataTableColumn,
 } from "@/components/sk"
@@ -32,6 +36,9 @@ import {
   setCurrentCoachSetupGuideDismissed,
 } from "@/lib/data/coach/invite-claim-data"
 import { getCurrentPlanWeekForCoachTeam, pickTeamPlanWeek, type TeamPlanWeek } from "@/lib/data/training-plan/training-plan-data"
+import { describeAvailability } from "@/lib/data/athlete/availability-data"
+import { getCoachTodaySnapshot, type CoachTodaySnapshot, type TodaySessionRow } from "@/lib/data/coach/dashboard-today"
+import { PAIN_SEVERITY_WORDS, bodyAreasSummary, painImpactLabel } from "@/lib/data/wellness/pain-report-types"
 import { dateKeyLocal } from "@/lib/athlete-session"
 import { adherenceText, averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -48,6 +55,27 @@ function Change({ change }: { change: "up" | "down" | "same" }) {
   if (change === "up") return <ArrowUp className="size-4 text-sk-green" weight="bold" aria-label="Improved" />
   if (change === "down") return <ArrowDown className="size-4 text-sk-coral" weight="bold" aria-label="Dropped" />
   return <Minus className="size-4 text-sk-mute" weight="bold" aria-label="No change" />
+}
+
+/** The coach competitions screens (src/app/(authenticated)/coach/competitions). */
+const COMPETITIONS_PATH = "/coach/competitions"
+
+function sentenceCase(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function dayDate(isoDay: string) {
+  return new Date(`${isoDay.slice(0, 10)}T00:00:00`)
+}
+
+/** "today", "tomorrow", "in 12 days". */
+function daysAway(isoDay: string, todayKey: string) {
+  const days = Math.round((dayDate(isoDay).getTime() - dayDate(todayKey).getTime()) / 86_400_000)
+  return days <= 0 ? "on now" : days === 1 ? "tomorrow" : `in ${days} days`
+}
+
+function names(rows: TodaySessionRow[]) {
+  return rows.map((row) => (row.reason ? `${row.name} (${row.reason})` : row.name)).join(", ")
 }
 
 /** Athletes who need a look come first, then by name. */
@@ -79,6 +107,8 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
   // undefined while loading, null when no published plan covers this week.
   const [planWeek, setPlanWeek] = useState<TeamPlanWeek | null | undefined>(undefined)
   const todayKey = dateKeyLocal(new Date())
+  // Availability, today's session, pain reports and the next competition. Null while loading.
+  const [today, setToday] = useState<CoachTodaySnapshot | null>(null)
 
   useEffect(() => {
     if (backendMode !== "supabase") return
@@ -155,6 +185,33 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
   const scopedTests = sourceTests.filter((row) => athleteIds.has(row.athleteId))
   const scopedTeam = sourceTeams.find((team) => team.id === coachTeamId)
 
+  // Loaded once the squad is known. Each part is optional: a failed read leaves that part empty.
+  const todaySessionTitle = planWeek
+    ? (planWeek.days.find((day) => (backendMode === "supabase" ? day.date === todayKey : day.dayLabel === new Date().toLocaleDateString("en-GB", { weekday: "short" })))?.title ?? null)
+    : null
+  const squadKey = scopedAthletes.length > 0 ? JSON.stringify(scopedAthletes.map((athlete) => [athlete.id, athlete.name, athlete.adherence])) : ""
+  const planReady = planWeek !== undefined
+  useEffect(() => {
+    if (!squadKey || !planReady) return
+    let cancelled = false
+    void getCoachTodaySnapshot({
+      teamId: role === "coach" ? coachTeamId : null,
+      todayKey,
+      athletes: (JSON.parse(squadKey) as Array<[string, string, number | null]>).map(([id, name, adherence]) => ({ id, name, adherence })),
+      mockSessionTitle: todaySessionTitle,
+    }).then((result) => {
+      if (!cancelled && result.ok) setToday(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [coachTeamId, planReady, role, squadKey, todayKey, todaySessionTitle])
+
+  const sessionRows = today?.todaySession?.rows ?? []
+  const sessionDone = sessionRows.filter((row) => row.state === "done")
+  const sessionOpen = sessionRows.filter((row) => row.state === "not-done")
+  const sessionExcused = sessionRows.filter((row) => row.state === "excused")
+
   const readyCount = scopedAthletes.filter((athlete) => athlete.readiness === "green").length
   const needLookCount = scopedAthletes.filter((athlete) => athlete.readiness !== "green" || (athlete.adherence !== null && athlete.adherence < 75)).length
   // Athletes with no sessions due have no figure and are left out of the average.
@@ -194,13 +251,26 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       key: "athlete",
       header: "Athlete",
       cell: (athlete) => (
-        <Link to={`/coach/athletes/${athlete.id}`} className="hover:text-sk-blue-link">
-          {athlete.name}
-          <TableSub>{athlete.primaryEvent}</TableSub>
+        <Link to={`/coach/athletes/${athlete.id}`} className="flex items-center gap-3 hover:text-sk-blue-link">
+          <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
+          <span className="min-w-0">
+            {athlete.name}
+            <TableSub>{athlete.primaryEvent}</TableSub>
+          </span>
         </Link>
       ),
     },
     { key: "readiness", header: "Readiness", phone: "plain", cell: (athlete) => <ReadinessText status={athlete.readiness} /> },
+    {
+      key: "availability",
+      header: "Availability",
+      phone: "plain",
+      cell: (athlete) => {
+        const period = today?.availability[athlete.id]
+        // Injured, sick or away, now or coming up. Athletes with nothing set need no line on a phone.
+        return period ? <StatusText tone="amber">{sentenceCase(describeAvailability(period, todayKey))}</StatusText> : <span className="text-sk-mute max-sm:hidden">Available</span>
+      },
+    },
     { key: "checkin", header: "Last check-in", phone: "hide", cell: (athlete) => athlete.lastWellness || "None yet" },
     { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
   ]
@@ -249,6 +319,23 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       />
 
       {backendError ? <Notice tone="error">Could not load the latest data: {backendError}</Notice> : null}
+
+      {today && today.painReports.length > 0 ? (
+        <Section title="Needs you" hint="Open pain reports that change training." meta={`${today.painReports.length} open`}>
+          <List>
+            {today.painReports.slice(0, 5).map((report) => (
+              <ListRow
+                key={report.id}
+                to={`/coach/athletes/${report.athleteId}`}
+                leading={<StatusDot tone="coral" />}
+                title={report.athleteName}
+                subtitle={`${bodyAreasSummary(report.bodyAreas)}, ${(PAIN_SEVERITY_WORDS[report.severity - 1] ?? "pain").toLowerCase()}. Since ${dayDate(report.startedOn).toLocaleDateString(undefined, { day: "numeric", month: "short" })}.`}
+                trailing={<StatusText tone={report.trainingImpact === "cannot_train" ? "coral" : "amber"}>{painImpactLabel(report.trainingImpact)}</StatusText>}
+              />
+            ))}
+          </List>
+        </Section>
+      ) : null}
 
       {coachNeedsGuide && !setupGuideDismissedAt ? (
         <Section
@@ -316,6 +403,24 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
           </Section>
         }
         side={
+          <>
+          <Section
+            title="Today's session"
+            hint={today?.todaySession?.title}
+            meta={today?.todaySession ? `${sessionDone.length} of ${sessionDone.length + sessionOpen.length} done` : undefined}
+          >
+            {today === null && scopedAthletes.length > 0 ? (
+              <SkeletonRows rows={2} label="Loading today's session" />
+            ) : today?.todaySession ? (
+              <List>
+                <ListRow leading={<StatusDot tone="green" />} title="Done" subtitle={sessionDone.length > 0 ? names(sessionDone) : "Nobody yet"} trailing={sessionDone.length} />
+                <ListRow leading={<StatusDot tone={sessionOpen.length > 0 ? "blue" : "neutral"} />} title="Not yet" subtitle={sessionOpen.length > 0 ? names(sessionOpen) : "Nobody left"} trailing={sessionOpen.length} />
+                {sessionExcused.length > 0 ? <ListRow leading={<StatusDot tone="amber" />} title="Excused" subtitle={names(sessionExcused)} trailing={sessionExcused.length} /> : null}
+              </List>
+            ) : (
+              <EmptyState title="No session planned today" body="A rest day, or the plan has nothing on this date." />
+            )}
+          </Section>
           <Section title="This week's plan">
             {planWeek === undefined ? (
               <SkeletonRows rows={4} label="Loading this week's plan" />
@@ -347,6 +452,32 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
               />
             )}
           </Section>
+          {today?.nextCompetition ? (
+            <Section title="Next competition" action={<Link to={COMPETITIONS_PATH} className="sk-link">All competitions</Link>}>
+              <List>
+                <ListRow
+                  to={`${COMPETITIONS_PATH}/${today.nextCompetition.id}`}
+                  leading={
+                    <DayLabel
+                      weekday={dayDate(today.nextCompetition.startDate).toLocaleDateString(undefined, { month: "short" })}
+                      number={dayDate(today.nextCompetition.startDate).getDate()}
+                    />
+                  }
+                  title={<span className="font-bold">{today.nextCompetition.name}</span>}
+                  subtitle={sentenceCase(
+                    [
+                      today.nextCompetition.venue,
+                      daysAway(today.nextCompetition.startDate, todayKey),
+                      today.nextCompetition.enteredCount > 0 ? `${today.nextCompetition.enteredCount} entered` : "nobody entered yet",
+                    ]
+                      .filter(Boolean)
+                      .join(", "),
+                  )}
+                />
+              </List>
+            </Section>
+          ) : null}
+          </>
         }
       />
 

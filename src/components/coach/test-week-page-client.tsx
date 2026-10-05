@@ -1,17 +1,19 @@
-"use client"
-
 import { useCallback, useMemo, useState } from "react"
 import {
   TestWeekScreen,
   type ActionResult,
   type ResultChange,
+  type ResultEnteredBy,
   type TestUnit,
   type TestWeekDetail,
+  type TestWeekResultInput,
   type TestWeekRow,
   type TestWeekSaveInput,
+  type TestWeekSavedResult,
   type TestWeekStatus,
 } from "@/components/coach/test-week-screen"
 import { mockAthletes, mockTeams, mockTestWeekResults, onCreateTestWeek, type EventGroup, type Role } from "@/lib/mock-data"
+import { checkTestResultEntry } from "@/lib/data/test-week/result-entry"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
 /** Mock mode: test weeks live in localStorage, seeded with three published examples. */
@@ -23,7 +25,7 @@ interface CoachTestWeekPageClientProps {
   coachTeamIds: string[] | null
 }
 
-type StoredResult = { value: string; change: ResultChange | null }
+type StoredResult = { value: string; change: ResultChange | null; enteredBy?: ResultEnteredBy | null }
 
 type StoredWeek = {
   id: string
@@ -224,7 +226,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
               const results: TestWeekDetail["athletes"][number]["results"] = {}
               for (const test of week.tests) {
                 const result = submission?.results[test.id]
-                if (result) results[test.id] = { value: result.value, numeric: null, change: result.change }
+                if (result) results[test.id] = { value: result.value, numeric: null, change: result.change, enteredBy: result.enteredBy ?? "athlete" }
               }
               return {
                 athleteId: athlete.id,
@@ -280,6 +282,47 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
     [commit],
   )
 
+  const onSetOpen = useCallback(
+    async (testWeekId: string, open: boolean): Promise<ActionResult> => {
+      const week = storedWeeks.find((candidate) => candidate.id === testWeekId)
+      if (!week) return { ok: false, message: "This test week no longer exists." }
+      if (week.status === "draft") return { ok: false, message: "This test week is still a draft. Publish it first." }
+      commit((current) => current.map((item) => (item.id === testWeekId ? { ...item, status: open ? ("published" as const) : ("closed" as const) } : item)))
+      return done
+    },
+    [commit, storedWeeks],
+  )
+
+  // The coach types a result for an athlete. Same checks as the real backend; kept in this browser.
+  const onSaveResult = useCallback(
+    async (input: TestWeekResultInput): Promise<ActionResult<TestWeekSavedResult | null>> => {
+      const week = storedWeeks.find((candidate) => candidate.id === input.testWeekId)
+      if (!week) return { ok: false, message: "This test week no longer exists." }
+      if (week.status === "draft") return { ok: false, message: "Publish this test week before entering results." }
+      const submittedAt = new Date().toISOString()
+      let saved: TestWeekSavedResult | null = null
+      if (input.value.trim()) {
+        const checked = checkTestResultEntry(input.value, input.unit)
+        if (!checked.ok) return { ok: false, message: checked.message }
+        saved = { value: checked.valueText, numeric: checked.numeric, enteredBy: initialRole === "club-admin" ? "club-admin" : "coach", submittedAt }
+      }
+      commit((current) =>
+        current.map((item) => {
+          if (item.id !== input.testWeekId) return item
+          const submissions = { ...item.submissions }
+          const results = { ...(submissions[input.athleteId]?.results ?? {}) }
+          if (saved) results[input.testId] = { value: saved.value, change: null, enteredBy: saved.enteredBy }
+          else delete results[input.testId]
+          if (Object.keys(results).length === 0) delete submissions[input.athleteId]
+          else submissions[input.athleteId] = { submittedAt: saved ? submittedAt : (submissions[input.athleteId]?.submittedAt ?? submittedAt), results }
+          return { ...item, submissions }
+        }),
+      )
+      return { ok: true, data: saved }
+    },
+    [commit, initialRole, storedWeeks],
+  )
+
   const onSetArchived = useCallback(
     async (testWeekId: string, archived: boolean) => {
       commit((current) => current.map((week) => (week.id === testWeekId ? { ...week, isArchived: archived } : week)))
@@ -310,6 +353,8 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
       loadDetail={loadDetail}
       onSave={onSave}
       onPublish={onPublish}
+      onSetOpen={onSetOpen}
+      onSaveResult={onSaveResult}
       onSetArchived={onSetArchived}
       onDelete={onDelete}
     />

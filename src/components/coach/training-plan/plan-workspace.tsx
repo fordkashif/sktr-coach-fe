@@ -11,6 +11,7 @@ import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import { PlanBuilder } from "./plan-builder"
 import { PlanList } from "./plan-list"
+import { PlanPrintDialog } from "./plan-print"
 import { PlanPublish, PlanPublished } from "./plan-publish"
 import { PlanSetup } from "./plan-setup"
 import type { PlanDirectory, PlanListItem, PlanStorageAdapter } from "./storage"
@@ -55,11 +56,6 @@ function writeUnsaved(plan: PlanDraft | null) {
   }
 }
 
-function setMobileDetailMode(active: boolean) {
-  ;(window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }).__PACELAB_MOBILE_DETAIL_MODE = active
-  window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active } }))
-}
-
 /**
  * The whole coach "Training plans" screen: plan list, setup, week planner, publish.
  * Storage is injected, so mock mode and the real backend share every pixel and feature.
@@ -93,6 +89,8 @@ export function PlanWorkspace({
   const [published, setPublished] = useState<{ count: number; wasUpdate: boolean } | null>(null)
   const [unsaved, setUnsaved] = useState<PlanDraft | null>(() => readUnsaved())
   const [builderKey, setBuilderKey] = useState(0)
+  // The plan the print dialog is open for, and the week it starts on.
+  const [printing, setPrinting] = useState<{ plan: PlanDraft; week: number } | null>(null)
   const opening = useRef(false)
 
   // Only the newest load may land, so a slow answer for the last team never overwrites the new one.
@@ -152,12 +150,6 @@ export function PlanWorkspace({
     return () => window.clearTimeout(timer)
   }, [dirty, plan])
 
-  // Tell the app shell we are in a detail view: it shows Back and hides the tab bar on phones.
-  useEffect(() => {
-    setMobileDetailMode(view !== "list")
-    return () => setMobileDetailMode(false)
-  }, [view])
-
   // Each step starts at the top of the page.
   useEffect(() => {
     document.getElementById("main-content")?.scrollTo({ top: 0 })
@@ -177,7 +169,6 @@ export function PlanWorkspace({
   }, [dirty, plan, refresh])
 
   const goBack = useCallback(() => {
-    if (view === "build" && mobileEditorOpen) return setMobileEditorOpen(false)
     if (view === "publish") return setView("build")
     if (view === "setup" && !isNewSetup) return setView("build")
     if (view === "setup" && isNewSetup) {
@@ -186,15 +177,7 @@ export function PlanWorkspace({
       return
     }
     backToList()
-  }, [backToList, isNewSetup, mobileEditorOpen, view])
-
-  useEffect(() => {
-    const handleBack = () => {
-      if (view !== "list") goBack()
-    }
-    window.addEventListener("pacelab:mobile-detail-back", handleBack)
-    return () => window.removeEventListener("pacelab:mobile-detail-back", handleBack)
-  }, [goBack, view])
+  }, [backToList, isNewSetup, view])
 
   const enterBuilder = (next: PlanDraft, options: { dirty: boolean; savedLabel?: string | null }) => {
     setPlan(next)
@@ -307,6 +290,25 @@ export function PlanWorkspace({
 
   const team = useMemo(() => directory.teams.find((candidate) => candidate.id === plan?.teamId) ?? null, [directory.teams, plan?.teamId])
 
+  const printFromList = async (item: PlanListItem) => {
+    setBusyPlanId(item.id)
+    const result = await adapter.loadPlan(item.id)
+    setBusyPlanId(null)
+    if (!result.ok) return setListError(`Could not open "${item.name}" to print it: ${result.error.message}`)
+    setListError(null)
+    setPrinting({ plan: result.data, week: 1 })
+  }
+
+  const printDialog = printing ? (
+    <PlanPrintDialog
+      plan={printing.plan}
+      team={directory.teams.find((candidate) => candidate.id === printing.plan.teamId) ?? null}
+      athletes={directory.athletes}
+      initialWeek={printing.week}
+      onClose={() => setPrinting(null)}
+    />
+  ) : null
+
   if (view === "setup" && plan) {
     return (
       <PlanSetup
@@ -331,6 +333,8 @@ export function PlanWorkspace({
 
   if (view === "build" && plan) {
     return (
+      <>
+      {printDialog}
       <PlanBuilder
         key={builderKey}
         plan={plan}
@@ -353,7 +357,9 @@ export function PlanWorkspace({
           setMobileEditorOpen(false)
           setView("publish")
         }}
+        onPrint={(week) => setPrinting({ plan, week })}
       />
+      </>
     )
   }
 
@@ -374,20 +380,28 @@ export function PlanWorkspace({
 
   if (view === "done" && plan && published) {
     return (
+      <>
+      {printDialog}
       <PlanPublished
         plan={plan}
         count={published.count}
         wasUpdate={published.wasUpdate}
         onBackToList={backToList}
         onKeepEditing={() => setView("build")}
+        onPrint={() => setPrinting({ plan, week: 1 })}
       />
+      </>
     )
   }
 
   return (
+    <>
+    {printDialog}
     <PlanList
       plans={plans}
       teams={directory.teams}
+      showTeam={selectedTeamId === null}
+      onPrint={(item) => void printFromList(item)}
       loading={loading}
       error={listError}
       busyPlanId={busyPlanId}
@@ -404,5 +418,6 @@ export function PlanWorkspace({
       }}
       onDiscardUnsaved={clearUnsaved}
     />
+    </>
   )
 }

@@ -54,6 +54,7 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     case "training_plan_updated":
       return "/athlete/training-plan"
     case "test_week_published":
+    case "test_week_reopened":
       return "/athlete/test-week"
     case "competition_entry_added": {
       // The athlete was entered in a meet: straight to it.
@@ -102,6 +103,13 @@ export function notificationTargetPath(eventType: string, metadata: Notification
       const athleteId = id(metadata, "athlete_id")
       return athleteId ? `/coach/athletes/${athleteId}` : teamPath(metadata, "coach")
     }
+    case "athlete_joined_team":
+    case "athlete_moved_team": {
+      // Joined with the team join code, or moved by staff. The new team's coaches get the athlete;
+      // the old team's coaches can no longer open them, so their notification carries only the team.
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId && role !== "club-admin" ? `/coach/athletes/${athleteId}` : teamPath(metadata, role)
+    }
     case "athlete_left_team":
       // The athlete is no longer on the team, so their page is closed to the coach: open the team.
       return teamPath(metadata, role)
@@ -111,6 +119,25 @@ export function notificationTargetPath(eventType: string, metadata: Notification
       return teamPath(metadata, "coach")
     case "coach_team_removed":
       return "/coach/teams"
+
+    // Messaging (athlete, coach, club admin)
+    case "direct_message_received": {
+      // Straight into the conversation. A club admin who coaches a team has their conversations on the coach screens.
+      const threadId = id(metadata, "thread_id")
+      const base = role === "athlete" ? "/athlete/messages" : "/coach/messages"
+      return threadId ? `${base}/t/${threadId}` : base
+    }
+    case "announcement_posted": {
+      const announcementId = id(metadata, "announcement_id")
+      const base = role === "athlete" ? "/athlete/messages" : role === "club-admin" ? "/club-admin/messages" : "/coach/messages"
+      return announcementId ? `${base}/a/${announcementId}` : `${base}?tab=announcements`
+    }
+    case "message_reported": {
+      // Only club admins are told: the conversation in message oversight.
+      const threadId = id(metadata, "thread_id")
+      if (role !== "club-admin") return NOTIFICATIONS_PATH
+      return threadId ? `/club-admin/messages/t/${threadId}` : "/club-admin/messages?tab=oversight"
+    }
 
     // Club admin
     case "coach_invite_created":
@@ -155,6 +182,8 @@ export function notificationActionLabel(eventType: string): string {
       return "Open the athlete"
     case "availability_set_by_coach":
       return "Open your plan"
+    case "athlete_joined_team":
+    case "athlete_moved_team":
     case "athlete_left_team":
       return "Open the team"
     case "athlete_invite_accepted":
@@ -164,6 +193,12 @@ export function notificationActionLabel(eventType: string): string {
       return "Open people"
     case "package_request_reviewed":
       return "Open billing"
+    case "direct_message_received":
+      return "Open the conversation"
+    case "announcement_posted":
+      return "Read the announcement"
+    case "message_reported":
+      return "Review the message"
     case "tenant_provision_request_submitted":
       return "Review the request"
     default:

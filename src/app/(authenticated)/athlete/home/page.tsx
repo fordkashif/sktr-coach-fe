@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Check, Play } from "@phosphor-icons/react"
 import { MyAvailabilityNotice } from "@/components/athlete/availability"
+import { UnreadAnnouncementsNotice } from "@/components/messages/unread-announcements-notice"
 import { NextCompetitionSection } from "@/components/athlete/next-competition"
 import {
   Button,
@@ -422,6 +423,7 @@ export default function AthleteHomePage() {
       <ScreenHeader fact={dateLine} title={title} />
 
       <MyAvailabilityNotice />
+      <UnreadAnnouncementsNotice role="athlete" />
 
       {backendError ? <Notice tone="error">We could not load your session. {backendError}</Notice> : null}
 

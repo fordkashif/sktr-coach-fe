@@ -13,6 +13,7 @@ import type {
   TestBenchmarkResult,
   TestWeekSubmissionResult,
 } from "@/lib/data/test-week/types"
+import { checkTestResultEntry } from "@/lib/data/test-week/result-entry"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -852,6 +853,7 @@ export async function deleteTestWeekForCurrentCoach(testWeekId: string): Promise
 }
 
 export type CoachTestWeekResultChange = "up" | "down" | "same"
+export type TestResultEnteredBy = "athlete" | "coach" | "club-admin"
 
 export type CoachTestWeekAthleteRow = {
   athleteId: string
@@ -862,7 +864,14 @@ export type CoachTestWeekAthleteRow = {
   submittedAt: string | null
   resultsByDefinitionId: Record<
     string,
-    { valueText: string; valueNumeric: number | null; submittedAt: string; change: CoachTestWeekResultChange | null }
+    {
+      valueText: string
+      valueNumeric: number | null
+      submittedAt: string
+      change: CoachTestWeekResultChange | null
+      /** Who typed it: the athlete, or a coach or club admin on their behalf. Null for old rows. */
+      enteredByRole: TestResultEnteredBy | null
+    }
   >
 }
 
@@ -932,10 +941,11 @@ export async function getCoachTestWeekDetail(testWeekId: string): Promise<Result
     value_text: string
     value_numeric: number | string | null
     submitted_at: string
+    entered_by_role: TestResultEnteredBy | null
   }>((from, to) =>
     client
       .from("test_results")
-      .select("athlete_id, test_definition_id, value_text, value_numeric, submitted_at")
+      .select("athlete_id, test_definition_id, value_text, value_numeric, submitted_at, entered_by_role")
       .eq("tenant_id", tenantId)
       .eq("test_week_id", testWeekId)
       .order("id", { ascending: true })
@@ -1038,6 +1048,7 @@ export async function getCoachTestWeekDetail(testWeekId: string): Promise<Result
       valueNumeric: valueNumeric !== null && Number.isFinite(valueNumeric) ? valueNumeric : null,
       submittedAt: row.submitted_at,
       change,
+      enteredByRole: row.entered_by_role ?? null,
     }
     if (!athleteRow.submittedAt || row.submitted_at > athleteRow.submittedAt) athleteRow.submittedAt = row.submitted_at
   }
@@ -1245,4 +1256,105 @@ export async function updateTestWeekStateForCurrentCoach(
   if (!data || data.length === 0) return err("NOT_FOUND", "This test week no longer exists, or you cannot change it.")
   if (next.status === "published") kickNotificationEmails()
   return ok({ testWeekId })
+}
+
+/**
+ * Close a published test week (athletes can no longer enter results) or reopen a closed one.
+ * The database checks who is asking, writes the audit entry and, on a reopen, tells the team's
+ * athletes in the app (set_test_week_open, 20261009100000).
+ */
+export async function setTestWeekOpenForCurrentCoach(
+  testWeekId: string,
+  open: boolean,
+): Promise<Result<{ testWeekId: string; status: "published" | "closed" }>> {
+  const clientResult = requireSupabaseClient("setTestWeekOpenForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client.rpc("set_test_week_open", { p_test_week_id: testWeekId, p_open: open })
+  if (error) {
+    const mapped = mapPostgrestError(error)
+    // The function says exactly why (a draft, an archived week, not your team): keep its words.
+    if (mapped.code === "FORBIDDEN" && error.message && !/access is paused/i.test(error.message) && !/row-level security/i.test(error.message)) {
+      return { ok: false, error: { ...mapped, message: error.message } }
+    }
+    return { ok: false, error: mapped }
+  }
+  return ok({ testWeekId, status: data === "closed" ? "closed" : "published" })
+}
+
+export type CoachSavedTestResult = {
+  valueText: string
+  valueNumeric: number
+  submittedAt: string
+  enteredByRole: TestResultEnteredBy | null
+}
+
+/**
+ * A coach or club admin types one result for one athlete (C16). An empty value removes the result.
+ * Works for athletes with no login and on closed weeks (corrections). The value is checked the way
+ * the athlete form checks it; the database repeats the checks, marks the row "entered by coach" and
+ * copies it into the results history like any other result. Returns the saved result, or null when
+ * it was removed.
+ */
+export async function saveTestResultForAthleteAsCoach(input: {
+  testWeekId: string
+  testDefinitionId: string
+  athleteId: string
+  unit: TestDefinitionUnit
+  value: string
+}): Promise<Result<CoachSavedTestResult | null>> {
+  const clientResult = requireSupabaseClient("saveTestResultForAthleteAsCoach")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+
+  const coachContext = await getCurrentCoachContext(client)
+  if (!coachContext.ok) return coachContext
+
+  if (!input.value.trim()) {
+    const { error } = await client
+      .from("test_results")
+      .delete()
+      .eq("tenant_id", coachContext.data.tenantId)
+      .eq("test_week_id", input.testWeekId)
+      .eq("test_definition_id", input.testDefinitionId)
+      .eq("athlete_id", input.athleteId)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    return ok(null)
+  }
+
+  const checked = checkTestResultEntry(input.value, input.unit)
+  if (!checked.ok) return err("VALIDATION", checked.message)
+
+  const submittedAt = new Date().toISOString()
+  const { data, error } = await client
+    .from("test_results")
+    .upsert(
+      {
+        tenant_id: coachContext.data.tenantId,
+        test_week_id: input.testWeekId,
+        test_definition_id: input.testDefinitionId,
+        athlete_id: input.athleteId,
+        value_text: checked.valueText,
+        value_numeric: Math.round(checked.numeric * 1000) / 1000,
+        submitted_by_user_id: coachContext.data.userId,
+        submitted_at: submittedAt,
+      },
+      { onConflict: "test_week_id,test_definition_id,athlete_id" },
+    )
+    .select("value_text, value_numeric, submitted_at, entered_by_role")
+    .single()
+  if (error) {
+    const mapped = mapPostgrestError(error)
+    // The guard on test_results explains itself ("Publish this test week before entering results.").
+    if (error.code === "42501" && error.message && !/row-level security/i.test(error.message) && !/access is paused/i.test(error.message)) {
+      return { ok: false, error: { ...mapped, message: error.message } }
+    }
+    return { ok: false, error: mapped }
+  }
+  return ok({
+    valueText: data.value_text as string,
+    valueNumeric: Number(data.value_numeric),
+    submittedAt: data.submitted_at as string,
+    enteredByRole: (data.entered_by_role as TestResultEnteredBy | null) ?? null,
+  })
 }
