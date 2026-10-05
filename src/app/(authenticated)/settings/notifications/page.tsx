@@ -1,7 +1,13 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Switch } from "@/components/ui/switch"
+import { Link } from "react-router-dom"
+import { ArrowLeft, CheckCircle, WarningCircle } from "@phosphor-icons/react"
+import { PageHeader, Panel } from "@/components/sk"
+import { cn } from "@/lib/utils"
+import { useRole } from "@/lib/role-context"
+import { getBackendMode } from "@/lib/supabase/config"
+import { tenantStorageKey } from "@/lib/tenant-storage"
 import { NOTIFICATION_PREFERENCE_CATEGORIES } from "@/lib/notification-categories"
 import {
   getCurrentNotificationPreferenceMatrix,
@@ -25,18 +31,119 @@ const defaultState: NotificationPreferenceMatrix = {
   }, {}),
 }
 
+const MOCK_STORAGE_KEY = "pacelab:notification-preferences"
+
+/** Demo mode has no backend, so choices are kept on this device. */
+function loadMockPreferences(): NotificationPreferenceMatrix {
+  try {
+    const stored = window.localStorage.getItem(tenantStorageKey(MOCK_STORAGE_KEY))
+    if (!stored) return defaultState
+    const parsed = JSON.parse(stored) as Partial<NotificationPreferenceMatrix> | null
+    return {
+      global: { ...defaultState.global, ...(parsed?.global ?? {}) },
+      categories: { ...defaultState.categories, ...(parsed?.categories ?? {}) },
+    }
+  } catch {
+    return defaultState
+  }
+}
+
+function saveMockPreferences(next: NotificationPreferenceMatrix) {
+  try {
+    window.localStorage.setItem(tenantStorageKey(MOCK_STORAGE_KEY), JSON.stringify(next))
+  } catch {
+    // Storage can be blocked. The toggle still reflects the choice for this visit.
+  }
+}
+
+type AppRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+
+/** Plain-language wording per category. Athletes and coaches only see the ones that can reach them. */
+const CATEGORY_COPY: Record<string, { title: string; body: (role: AppRole) => string; roles: AppRole[] }> = {
+  "tenant-provisioning": {
+    title: "New club requests",
+    body: () => "When a club asks to join, is reviewed or is set up.",
+    roles: ["club-admin", "platform-admin"],
+  },
+  "coach-invites": {
+    title: "Coach invites",
+    body: () => "When a coach is invited or accepts an invite.",
+    roles: ["coach", "club-admin", "platform-admin"],
+  },
+  "athlete-invites": {
+    title: "Team invites",
+    body: (role) =>
+      role === "athlete" ? "When a coach invites you to a team." : "When an athlete is invited or joins a team.",
+    roles: ["athlete", "coach", "club-admin", "platform-admin"],
+  },
+  "training-plans": {
+    title: "Training plans",
+    body: (role) =>
+      role === "athlete" ? "When your coach publishes a plan for you." : "When a published plan goes live for an athlete.",
+    roles: ["athlete", "coach", "club-admin", "platform-admin"],
+  },
+  "test-weeks": {
+    title: "Test weeks",
+    body: (role) => (role === "athlete" ? "When a test week opens for your team." : "When a published test week opens for a team."),
+    roles: ["athlete", "coach", "club-admin", "platform-admin"],
+  },
+}
+
+function Toggle({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean
+  disabled?: boolean
+  label: string
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative inline-flex h-11 w-[52px] shrink-0 items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue disabled:opacity-50",
+      )}
+    >
+      <span className={cn("h-7 w-[52px] rounded-full transition-colors", checked ? "bg-sk-blue" : "bg-[#c9cedb]")} />
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-[3px] size-[22px] rounded-full bg-white transition-transform",
+          checked ? "translate-x-6" : "translate-x-0",
+        )}
+      />
+    </button>
+  )
+}
+
 export default function NotificationSettingsPage() {
   const [preferences, setPreferences] = useState<NotificationPreferenceMatrix>(defaultState)
   const [loading, setLoading] = useState(true)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const { role } = useRole()
+  const isMockMode = getBackendMode() !== "supabase"
 
   useEffect(() => {
     let cancelled = false
 
     const loadPreferences = async () => {
       setLoading(true)
+      if (isMockMode) {
+        setPreferences(loadMockPreferences())
+        setError(null)
+        setLoading(false)
+        return
+      }
       const result = await getCurrentNotificationPreferenceMatrix()
       if (cancelled) return
 
@@ -55,19 +162,19 @@ export default function NotificationSettingsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isMockMode])
 
   const rows = useMemo(
     () => [
       {
         channel: "in-app" as const,
-        title: "In-app notifications",
-        body: "Unread items in the SKTR Coach notification drawer.",
+        title: "In the app",
+        body: "Shows under the bell when you open SKTR Coach.",
       },
       {
         channel: "email" as const,
-        title: "Email notifications",
-        body: "External delivery for approval updates, invites, and operational alerts.",
+        title: "By email",
+        body: "Sent to the email address you sign in with.",
       },
     ],
     [],
@@ -75,6 +182,15 @@ export default function NotificationSettingsPage() {
 
   const handleToggle = async (channel: NotificationChannel, enabled: boolean) => {
     setSavingKey(`global:${channel}`)
+    if (isMockMode) {
+      const next = { ...preferences, global: { ...preferences.global, [channel]: enabled } }
+      saveMockPreferences(next)
+      setPreferences(next)
+      setError(null)
+      setInfo(`${channel === "email" ? "Email" : "In-app"} notifications turned ${enabled ? "on" : "off"}.`)
+      setSavingKey(null)
+      return
+    }
     const result = await upsertCurrentNotificationPreference({ channel, enabled, eventType: "*" })
 
     if (!result.ok) {
@@ -89,12 +205,29 @@ export default function NotificationSettingsPage() {
       global: { ...current.global, [channel]: enabled },
     }))
     setError(null)
-    setInfo(`${channel === "email" ? "Email" : "In-app"} notifications ${enabled ? "enabled" : "disabled"}.`)
+    setInfo(`${channel === "email" ? "Email" : "In-app"} notifications turned ${enabled ? "on" : "off"}.`)
     setSavingKey(null)
   }
 
   const handleCategoryToggle = async (categoryKey: string, channel: NotificationChannel, enabled: boolean) => {
     setSavingKey(`${categoryKey}:${channel}`)
+    const categoryTitle = CATEGORY_COPY[categoryKey]?.title ?? "Category"
+    const savedMessage = `${categoryTitle}: ${channel === "email" ? "email" : "in-app"} turned ${enabled ? "on" : "off"}.`
+    if (isMockMode) {
+      const next = {
+        ...preferences,
+        categories: {
+          ...preferences.categories,
+          [categoryKey]: { ...preferences.categories[categoryKey], [channel]: enabled },
+        },
+      }
+      saveMockPreferences(next)
+      setPreferences(next)
+      setError(null)
+      setInfo(savedMessage)
+      setSavingKey(null)
+      return
+    }
     const result = await upsertCurrentNotificationCategoryPreference({
       categoryKey,
       channel,
@@ -108,7 +241,6 @@ export default function NotificationSettingsPage() {
       return
     }
 
-    const category = NOTIFICATION_PREFERENCE_CATEGORIES.find((item) => item.key === categoryKey)
     setPreferences((current) => ({
       ...current,
       categories: {
@@ -120,109 +252,109 @@ export default function NotificationSettingsPage() {
       },
     }))
     setError(null)
-    setInfo(`${category?.title ?? "Category"} ${channel} notifications ${enabled ? "enabled" : "disabled"}.`)
+    setInfo(savedMessage)
     setSavingKey(null)
   }
 
+  const appRole = role as AppRole
+  const categories = NOTIFICATION_PREFERENCE_CATEGORIES.filter((category) => {
+    const copy = CATEGORY_COPY[category.key]
+    return copy ? copy.roles.includes(appRole) : true
+  })
+  const channels = [
+    { channel: "in-app" as const, label: "In app" },
+    { channel: "email" as const, label: "Email" },
+  ]
+
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-4 sm:p-6">
-      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(135deg,rgba(7,17,34,0.96)_0%,rgba(10,24,44,0.9)_55%,rgba(20,67,160,0.72)_100%)] px-5 py-6 text-white shadow-[0_24px_80px_rgba(5,12,24,0.28)] sm:px-6 lg:px-8">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6fb6ff]">Settings</p>
-        <h1 className="mt-3 text-[clamp(2.1rem,5vw,4rem)] font-semibold leading-[0.94] tracking-[-0.05em]">
-          Notification controls that actually govern delivery.
-        </h1>
-        <p className="mt-3 max-w-[56ch] text-sm leading-7 text-white/72 sm:text-base">
-          These toggles control whether SKTR Coach should project in-app notifications for you and whether queued email notifications should be dispatched to your inbox.
-        </p>
-      </section>
-
-      {error ? (
-        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </section>
+    <div className="sk-page">
+      {role === "athlete" ? (
+        <Link to="/athlete/profile" className="sk-btn sk-btn-ghost sk-btn-sm -ml-2">
+          <ArrowLeft className="size-4" weight="bold" />
+          Profile
+        </Link>
       ) : null}
-      {info ? (
-        <section className="rounded-[22px] border border-[#cfe2ff] bg-[#f6faff] px-4 py-3 text-sm text-[#1553b7]">
-          {info}
-        </section>
-      ) : null}
+      <PageHeader title="Notifications" lede="Choose what SKTR Coach tells you about and where it reaches you." />
 
-      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="space-y-4">
+      <div aria-live="polite" className="max-w-[860px] empty:hidden">
+        {error ? (
+          <p role="alert" className="flex items-start gap-2 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+            <WarningCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
+            {error}
+          </p>
+        ) : info ? (
+          <p className="flex items-start gap-2 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-bold text-[#07673f]">
+            <CheckCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
+            {info}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="max-w-[860px] space-y-6 lg:space-y-8">
+        <Panel title="How we reach you" hint="Turn a whole channel off here and nothing is sent that way.">
           {loading ? (
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-              Loading notification preferences...
-            </div>
-          ) : null}
-
-          {!loading
-            ? rows.map((row) => (
-                <div
-                  key={row.channel}
-                  className="flex items-center justify-between gap-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4"
-                >
-                  <div className="space-y-1">
-                    <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{row.title}</p>
-                    <p className="text-sm text-slate-500">{row.body}</p>
+            <p className="py-3 text-sm text-sk-mute">Loading your settings...</p>
+          ) : (
+            <div>
+              {rows.map((row) => (
+                <div key={row.channel} className="sk-row">
+                  <div className="min-w-0">
+                    <p className="font-bold text-sk-ink">{row.title}</p>
+                    <p className="text-sm text-sk-mute">{row.body}</p>
                   </div>
-                  <Switch
+                  <Toggle
+                    label={row.title}
                     checked={preferences.global[row.channel]}
                     disabled={savingKey === `global:${row.channel}`}
-                    onCheckedChange={(checked) => {
+                    onChange={(checked) => {
                       void handleToggle(row.channel, checked)
                     }}
                   />
                 </div>
-              ))
-            : null}
-        </div>
-      </section>
-
-      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Category overrides</h2>
-            <p className="text-sm text-slate-500">
-              Keep core channels on, but suppress specific notification classes when they are not useful.
-            </p>
-          </div>
-
-          {NOTIFICATION_PREFERENCE_CATEGORIES.map((category) => (
-            <div
-              key={category.key}
-              className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4"
-            >
-              <div className="space-y-1">
-                <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{category.title}</p>
-                <p className="text-sm text-slate-500">{category.description}</p>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {(["in-app", "email"] as const).map((channel) => (
-                  <div
-                    key={`${category.key}-${channel}`}
-                    className="flex items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-slate-950">{channel === "email" ? "Email" : "In-app"}</p>
-                      <p className="text-xs text-slate-500">
-                        {channel === "email" ? "Dispatch queued emails for this category." : "Project in-app items for this category."}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={preferences.categories[category.key]?.[channel] ?? preferences.global[channel]}
-                      disabled={savingKey === `${category.key}:${channel}`}
-                      onCheckedChange={(checked) => {
-                        void handleCategoryToggle(category.key, channel, checked)
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          )}
+        </Panel>
+
+        <Panel title="What you hear about" hint="Fine tune each kind of update.">
+          <div>
+            {categories.map((category) => {
+              const copy = CATEGORY_COPY[category.key]
+              const title = copy?.title ?? category.title
+              return (
+                <div
+                  key={category.key}
+                  role="group"
+                  aria-label={title}
+                  className="flex flex-col gap-2 border-b border-sk-line py-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold text-sk-ink">{title}</p>
+                    <p className="text-sm text-sk-mute">{copy ? copy.body(appRole) : category.description}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-6">
+                    {channels.map(({ channel, label }) => (
+                      <div key={channel} className="flex items-center gap-2.5">
+                        <Toggle
+                          label={`${title}, ${label.toLowerCase()}`}
+                          checked={preferences.categories[category.key]?.[channel] ?? preferences.global[channel]}
+                          disabled={loading || savingKey === `${category.key}:${channel}`}
+                          onChange={(checked) => {
+                            void handleCategoryToggle(category.key, channel, checked)
+                          }}
+                        />
+                        <span aria-hidden className="text-sm font-semibold text-sk-ink-2">
+                          {label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Panel>
+      </div>
     </div>
   )
 }

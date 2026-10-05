@@ -150,6 +150,19 @@ Required indexes are included for expected query paths:
   - `test_definitions(test_week_id, name)`
   - `test_results(test_week_id, test_definition_id, athlete_id)`
 
+## Session Logging (migration `20261005090000_session_logging.sql`)
+
+Flow: coach publishes a plan, the client creates one `sessions` row (with `session_blocks` and `session_block_rows`) per assigned athlete per planned day from today on, the athlete logs sets into `session_row_logs` and finishes with a `session_completions` row.
+
+- `sessions`: `plan_id -> training_plans.id` (nullable, `on delete set null`), `plan_week_number int`, `plan_day_index int`, `session_type text`, `location text`. The plan slot is used instead of a key to `training_plan_days` because day rows are re-created on every publish.
+  - Unique: `sessions(athlete_id, plan_id, plan_week_number, plan_day_index)`. Sessions without a plan have null slot columns and never collide.
+  - Re-publishing replaces only sessions that are still `scheduled`, have no completion and are not in the past. Started, finished and past sessions are never changed.
+- `session_block_rows`: `log_kind text` (`strength | time | mark | check`, null means infer from `block_type`), `target_sets int`, `target_reps text`, `target_load text`.
+- `session_row_logs` (new): `tenant_id`, `session_id` (cascade), `session_block_row_id` (cascade), `athlete_id`, `set_index` (1-based), `completed`, `reps`, `load_kg`, `time_seconds`, `distance_m`, `mark`, `rpe` (1 to 10), `note`, `logged_by_user_id`, timestamps.
+  - Unique: `session_row_logs(session_block_row_id, athlete_id, set_index)`, so saving is an idempotent upsert.
+- `session_completions`: `rpe smallint` (1 to 10), `athlete_comment text`, `updated_at`.
+- Triggers: `mark_session_in_progress_on_log` (first log sets `sessions.status = 'in-progress'`), `mark_session_completed_on_completion` (sets `completed` and `completed_at`).
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

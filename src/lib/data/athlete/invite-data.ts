@@ -13,7 +13,27 @@ type InvitePreview = {
   teamId: string
   teamName: string
   eventGroup: string | null
+  /** Pending invites past their expiry are reported as expired. */
   status: "pending" | "accepted" | "expired" | "revoked"
+  expiresAt: string | null
+  /** Comma separated coach names for the team. Null when unknown. */
+  coachNames: string | null
+}
+
+/**
+ * Coach names for the team an invite points at. Optional context from a security definer function
+ * (athletes cannot read coach profiles), so any failure resolves to null instead of an error.
+ */
+export async function getAthleteInviteCoachNames(inviteId: string): Promise<string | null> {
+  const clientResult = requireSupabaseClient("getAthleteInviteCoachNames")
+  if (!clientResult.ok) return null
+  try {
+    const { data, error } = await clientResult.client.rpc("get_athlete_invite_coach_names", { p_invite_id: inviteId })
+    if (error || typeof data !== "string") return null
+    return data.trim() || null
+  } catch {
+    return null
+  }
 }
 
 function requireSupabaseClient(operation: string): ClientResolution {
@@ -117,7 +137,7 @@ export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): P
 
   const { data, error } = await clientResult.client
     .from("athlete_invites")
-    .select("id, team_id, status, teams(name, event_group)")
+    .select("id, team_id, status, expires_at, teams(name, event_group)")
     .eq("id", inviteId)
     .eq("tenant_id", profile.tenant_id)
     .maybeSingle()
@@ -126,12 +146,16 @@ export async function getAthleteInvitePreviewForCurrentUser(inviteId: string): P
   if (!data) return err("NOT_FOUND", "Invite not found.")
 
   const team = Array.isArray(data.teams) ? data.teams[0] : data.teams
+  const expiresAt = (data.expires_at as string | null) ?? null
+  const isPastExpiry = data.status === "pending" && expiresAt !== null && new Date(expiresAt).getTime() < Date.now()
   return ok({
     inviteId: data.id,
     teamId: data.team_id,
     teamName: team?.name ?? "Team",
     eventGroup: team?.event_group ?? null,
-    status: data.status,
+    status: isPastExpiry ? "expired" : data.status,
+    expiresAt,
+    coachNames: await getAthleteInviteCoachNames(data.id),
   })
 }
 

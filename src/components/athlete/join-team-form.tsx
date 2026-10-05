@@ -1,15 +1,16 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight01Icon, CheckmarkCircle02Icon, QrCodeIcon, SearchAddIcon } from "@hugeicons/core-free-icons"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { ArrowRight, CheckCircle, UsersThree, WarningCircle } from "@phosphor-icons/react"
+import { Initials, PageHeader, Panel } from "@/components/sk"
 import { acceptAthleteInviteForCurrentUser, getAthleteInvitePreviewForCurrentUser } from "@/lib/data/athlete/invite-data"
+import {
+  MOCK_ATHLETE_ID,
+  MOCK_COACH_NAME,
+  eventGroupLabel,
+  getCurrentAthleteTeam,
+} from "@/lib/data/athlete/profile-data"
 import type { Team } from "@/lib/mock-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
@@ -40,41 +41,93 @@ type JoinState = {
   joinedAt: string | null
 }
 
+const emptyJoinState: JoinState = { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
+
 function loadStoredJoinState(): JoinState {
-  if (typeof window === "undefined") {
-    return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
-  }
+  if (typeof window === "undefined") return emptyJoinState
 
   try {
     const stored = window.localStorage.getItem(tenantStorageKey(JOIN_TEAM_STORAGE_KEY))
-    if (!stored) return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
-    return {
-      joinedTeamId: null,
-      joinedTeamName: null,
-      joinedGroup: null,
-      joinedAt: null,
-      ...(JSON.parse(stored) as Partial<JoinState>),
-    }
+    if (!stored) return emptyJoinState
+    return { ...emptyJoinState, ...(JSON.parse(stored) as Partial<JoinState>) }
   } catch {
-    return { joinedTeamId: null, joinedTeamName: null, joinedGroup: null, joinedAt: null }
+    return emptyJoinState
   }
+}
+
+type InviteStatus = "pending" | "accepted" | "expired" | "revoked"
+
+type ResolvedInvite = {
+  inviteId: string
+  teamId: string
+  name: string
+  group: string | null
+  coachNames: string | null
+  athleteCount: number | null
+  status: InviteStatus
+}
+
+type Problem = { title: string; body: string }
+
+const PROBLEMS = {
+  invalid: {
+    title: "We could not find that invite",
+    body: "Check the code for typos, or open the invite link your coach sent you again.",
+  },
+  expired: {
+    title: "This invite has expired",
+    body: "Invites only last a few days. Ask your coach to send you a new one.",
+  },
+  used: {
+    title: "This invite has already been used",
+    body: "Each invite works once. If that was not you, ask your coach for a new one.",
+  },
+  revoked: {
+    title: "Your coach cancelled this invite",
+    body: "Ask your coach to send you a new one.",
+  },
+  wrongEmail: {
+    title: "This invite is for a different email",
+    body: "Sign in with the email address the invite was sent to, or ask your coach to invite this one.",
+  },
+  wrongClub: {
+    title: "This invite is for a different club",
+    body: "Your account belongs to another club, so it cannot join this team.",
+  },
+} satisfies Record<string, Problem>
+
+function problemForStatus(status: InviteStatus): Problem | null {
+  if (status === "expired") return PROBLEMS.expired
+  if (status === "accepted") return PROBLEMS.used
+  if (status === "revoked") return PROBLEMS.revoked
+  return null
+}
+
+/** Turns the accept_athlete_invite database errors into something an athlete can act on. */
+function problemForAcceptError(message: string): Problem {
+  const text = message.toLowerCase()
+  if (text.includes("expired")) return PROBLEMS.expired
+  if (text.includes("not pending")) return PROBLEMS.used
+  if (text.includes("different email")) return PROBLEMS.wrongEmail
+  if (text.includes("tenant")) return PROBLEMS.wrongClub
+  if (text.includes("not found")) return PROBLEMS.invalid
+  return { title: "We could not add you to this team", body: message }
 }
 
 export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
   const isSupabaseMode = getBackendMode() === "supabase"
+  const formId = useId()
   const [inviteInput, setInviteInput] = useState(initialCode)
   const [joinState, setJoinState] = useState<JoinState>(() => loadStoredJoinState())
-  const [joinError, setJoinError] = useState<string | null>(null)
+  const [joinedNow, setJoinedNow] = useState<{ name: string } | null>(null)
+  const [lookupProblem, setLookupProblem] = useState<Problem | null>(null)
+  const [joinProblem, setJoinProblem] = useState<Problem | null>(null)
   const [resolvingInvite, setResolvingInvite] = useState(false)
-  const [supabaseInvite, setSupabaseInvite] = useState<{
-    inviteId: string
-    teamId: string
-    teamName: string
-    eventGroup: string | null
-    status: "pending" | "accepted" | "expired" | "revoked"
-  } | null>(null)
-  const [mockTeams, setMockTeams] = useState<Team[]>([])
-  const [mockTeamDisciplineLabel, setMockTeamDisciplineLabel] = useState<((team: Team) => string) | null>(null)
+  const [joining, setJoining] = useState(false)
+  const [supabaseInvite, setSupabaseInvite] = useState<ResolvedInvite | null>(null)
+  const [supabaseTeam, setSupabaseTeam] = useState<{ teamId: string | null; teamName: string | null } | null>(null)
+  const [mockTeams, setMockTeams] = useState<Team[] | null>(null)
+  const [mockAthleteTeamId, setMockAthleteTeamId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!initialCode) return
@@ -86,34 +139,61 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
   useEffect(() => {
     if (!isSupabaseMode) return
+    let cancelled = false
+    void getCurrentAthleteTeam().then((result) => {
+      if (!cancelled && result.ok) setSupabaseTeam(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
+
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    setJoinProblem(null)
     if (!normalizedCode) {
       setSupabaseInvite(null)
-      setJoinError(null)
+      setLookupProblem(null)
+      setResolvingInvite(false)
       return
     }
 
     let cancelled = false
+    setResolvingInvite(true)
 
     const loadInvite = async () => {
-      setResolvingInvite(true)
       const result = await getAthleteInvitePreviewForCurrentUser(normalizedCode)
       if (cancelled) return
 
       if (!result.ok) {
         setSupabaseInvite(null)
-        setJoinError(result.error.message)
+        setLookupProblem(
+          result.error.code === "NOT_FOUND" || result.error.code === "VALIDATION"
+            ? PROBLEMS.invalid
+            : { title: "We could not check that invite", body: result.error.message },
+        )
         setResolvingInvite(false)
         return
       }
 
-      setSupabaseInvite(result.data)
-      setJoinError(null)
+      setSupabaseInvite({
+        inviteId: result.data.inviteId,
+        teamId: result.data.teamId,
+        name: result.data.teamName,
+        group: result.data.eventGroup,
+        coachNames: result.data.coachNames,
+        athleteCount: null,
+        status: result.data.status,
+      })
+      setLookupProblem(null)
       setResolvingInvite(false)
     }
 
-    void loadInvite()
+    // Wait for typing to settle before asking the server.
+    const timer = window.setTimeout(() => void loadInvite(), 300)
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
   }, [isSupabaseMode, normalizedCode])
 
@@ -122,10 +202,9 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
     let cancelled = false
 
     void import("@/lib/mock-data").then((module) => {
-      if (!cancelled) {
-        setMockTeams(module.mockTeams)
-        setMockTeamDisciplineLabel(() => module.getTeamDisciplineLabel)
-      }
+      if (cancelled) return
+      setMockTeams(module.mockTeams)
+      setMockAthleteTeamId(module.mockAthletes.find((athlete) => athlete.id === MOCK_ATHLETE_ID)?.teamId ?? null)
     })
 
     return () => {
@@ -133,44 +212,56 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
     }
   }, [isSupabaseMode])
 
-  const mockMatch = useMemo(
-    () => mockTeams.find((team) => team.id.toLowerCase() === normalizedCode) ?? null,
-    [mockTeams, normalizedCode],
-  )
+  useEffect(() => {
+    if (!isSupabaseMode) setJoinProblem(null)
+  }, [isSupabaseMode, normalizedCode])
 
-  const resolvedInvite = useMemo(() => {
-    if (isSupabaseMode) {
-      if (!supabaseInvite) return null
-      return {
-        inviteId: supabaseInvite.inviteId,
-        teamId: supabaseInvite.teamId,
-        name: supabaseInvite.teamName,
-        group: supabaseInvite.eventGroup ?? "Sprint",
-        athleteCount: null as number | null,
-      }
-    }
+  const resolvedInvite = useMemo<ResolvedInvite | null>(() => {
+    if (isSupabaseMode) return supabaseInvite
 
+    const mockMatch = mockTeams?.find((team) => team.id.toLowerCase() === normalizedCode) ?? null
     if (!mockMatch) return null
     return {
       inviteId: mockMatch.id,
       teamId: mockMatch.id,
       name: mockMatch.name,
-      group: mockTeamDisciplineLabel ? mockTeamDisciplineLabel(mockMatch) : "Sprint",
+      group: mockMatch.eventGroup,
+      coachNames: MOCK_COACH_NAME,
       athleteCount: mockMatch.athleteCount,
+      status: "pending",
     }
-  }, [isSupabaseMode, mockMatch, mockTeamDisciplineLabel, supabaseInvite])
+  }, [isSupabaseMode, mockTeams, normalizedCode, supabaseInvite])
 
-  const joinedMockTeam = mockTeams.find((team) => team.id === joinState.joinedTeamId) ?? null
+  const currentTeam = useMemo(() => {
+    if (isSupabaseMode) {
+      return supabaseTeam?.teamId ? { id: supabaseTeam.teamId, name: supabaseTeam.teamName ?? "Your team" } : null
+    }
+    const teamId = joinState.joinedTeamId ?? mockAthleteTeamId
+    const team = mockTeams?.find((item) => item.id === teamId) ?? null
+    return team ? { id: team.id, name: team.name } : null
+  }, [isSupabaseMode, joinState.joinedTeamId, mockAthleteTeamId, mockTeams, supabaseTeam])
 
-  const handleJoin = async () => {
-    if (!resolvedInvite) return
+  const isChecking = hasTypedInvite && (isSupabaseMode ? resolvingInvite : mockTeams === null)
+  const alreadyOnTeam = Boolean(resolvedInvite && currentTeam && resolvedInvite.teamId === currentTeam.id)
+  const statusProblem = resolvedInvite && !alreadyOnTeam ? problemForStatus(resolvedInvite.status) : null
+  const notFoundProblem =
+    hasTypedInvite && !isChecking && !resolvedInvite ? (isSupabaseMode ? lookupProblem ?? PROBLEMS.invalid : PROBLEMS.invalid) : null
+  const problem = joinProblem ?? statusProblem ?? notFoundProblem
+  const canJoin = Boolean(resolvedInvite) && !alreadyOnTeam && !statusProblem && !isChecking
+
+  const handleJoin = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
+    if (!resolvedInvite || !canJoin || joining) return
 
     if (isSupabaseMode) {
+      setJoining(true)
       const acceptResult = await acceptAthleteInviteForCurrentUser(resolvedInvite.inviteId)
+      setJoining(false)
       if (!acceptResult.ok) {
-        setJoinError(acceptResult.error.message)
+        setJoinProblem(problemForAcceptError(acceptResult.error.message))
         return
       }
+      setSupabaseTeam({ teamId: resolvedInvite.teamId, teamName: resolvedInvite.name })
     }
 
     const nextState: JoinState = {
@@ -182,159 +273,164 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
 
     window.localStorage.setItem(tenantStorageKey(JOIN_TEAM_STORAGE_KEY), JSON.stringify(nextState))
     setJoinState(nextState)
-    setJoinError(null)
+    setJoinProblem(null)
+    setJoinedNow({ name: resolvedInvite.name })
+  }
+
+  if (joinedNow) {
+    return (
+      <div className="sk-page">
+        <PageHeader title={`You are on ${joinedNow.name}`} lede="Your plan, test weeks and coach notes for this team show up from now on." />
+        <div className="max-w-[640px]">
+          <Panel>
+            <p className="flex items-center gap-2 font-bold text-[#07673f]" role="status">
+              <CheckCircle className="size-6 shrink-0" weight="fill" aria-hidden />
+              Joined {joinedNow.name}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link to="/athlete/home" className="sk-btn sk-btn-primary">
+                Open today
+                <ArrowRight className="size-5" weight="bold" />
+              </Link>
+              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet">
+                Open plan
+              </Link>
+              <button
+                type="button"
+                className="sk-btn sk-btn-ghost"
+                onClick={() => {
+                  setJoinedNow(null)
+                  setInviteInput("")
+                }}
+              >
+                Use another code
+              </button>
+            </div>
+          </Panel>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-4 sm:space-y-6 sm:p-6">
-      <section className="mobile-hero-surface">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mobile-pill-accent">Team Invite</span>
-            <span className="mobile-pill-muted">Code, link, or deep link</span>
-          </div>
-          <h1 className="mobile-hero-title">Join Team</h1>
-          <p className="mobile-hero-copy">
-            Open an invite link, paste a code, or route in from a mobile deep link and confirm the team before joining.
-          </p>
-        </div>
-      </section>
+    <div className="sk-page">
+      <PageHeader
+        title="Join a team"
+        lede="Paste the invite link or code from your coach. You will see the team before anything changes."
+      />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-        <Card className="mobile-card-primary">
-          <CardContent className="space-y-5 p-4 sm:p-5">
-            <div className="mobile-surface-heading">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Invite Entry</p>
-              <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Paste Link or Code</h2>
-              <p className="mt-1 text-sm text-slate-500">Public athlete invite links now use <code>/athlete/claim/{"{inviteId}"}</code>. Signed-in athletes can still paste a code here to switch teams.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="invite-code" className="text-sm font-medium text-slate-950">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,640px)_minmax(0,1fr)] lg:gap-8">
+        <Panel>
+          <form className="grid gap-5" onSubmit={(event) => void handleJoin(event)} noValidate>
+            <div>
+              <label htmlFor={`${formId}-code`} className="sk-label mb-1.5 block">
                 Invite link or code
-              </Label>
-              <Input
-                id="invite-code"
-                placeholder="https://pacelab.app/athlete/claim/<invite-id>"
+              </label>
+              <input
+                id={`${formId}-code`}
+                className="sk-field"
+                placeholder="Paste it here"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={`${formId}-status`}
                 value={inviteInput}
                 onChange={(event) => setInviteInput(event.target.value)}
-                className="h-12 rounded-[16px] border-slate-200 bg-slate-50 text-slate-950"
               />
             </div>
 
-            {joinError ? <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{joinError}</div> : null}
+            <div id={`${formId}-status`} aria-live="polite" className="grid gap-5">
+              {!hasTypedInvite ? (
+                <p className="text-sm leading-relaxed text-sk-mute">
+                  Opened a link from your coach? The code fills in by itself. Otherwise paste it above.
+                </p>
+              ) : null}
 
-            <div className="mobile-card-utility">
-              {resolvedInvite ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#1f5fd1]">
-                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
-                    Invite recognized
+              {isChecking ? <p className="text-sm font-semibold text-sk-mute">Checking invite...</p> : null}
+
+              {resolvedInvite && !isChecking ? (
+                <div className="sk-well">
+                  <p className="sk-label">{alreadyOnTeam ? "Your team" : "You are about to join"}</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <Initials name={resolvedInvite.name} size="lg" className="rounded-2xl" />
+                    <div className="min-w-0">
+                      <p className="break-words text-xl font-extrabold tracking-[-0.02em] text-sk-ink">{resolvedInvite.name}</p>
+                      <p className="text-sm text-sk-ink-2">
+                        {resolvedInvite.coachNames ? `Coached by ${resolvedInvite.coachNames}` : "Coach not listed yet"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Team</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Group</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.group}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Athletes</p>
-                      <p className="mt-1 text-base font-semibold text-slate-950">{resolvedInvite.athleteCount ?? "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Invite Code</p>
-                      <p className="mt-1 text-base font-semibold uppercase text-slate-950">{resolvedInvite.inviteId}</p>
-                    </div>
+                  {resolvedInvite.group || resolvedInvite.athleteCount !== null ? (
+                    <p className="mt-3 text-sm text-sk-mute">
+                      {[
+                        eventGroupLabel(resolvedInvite.group),
+                        resolvedInvite.athleteCount !== null ? `${resolvedInvite.athleteCount} athletes` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {alreadyOnTeam && !isChecking ? (
+                <p className="flex items-start gap-2 text-sm font-bold text-[#07673f]">
+                  <CheckCircle className="mt-0.5 size-5 shrink-0" weight="fill" aria-hidden />
+                  You are already on this team. There is nothing to do.
+                </p>
+              ) : null}
+
+              {problem && !isChecking ? (
+                <div className="flex items-start gap-3 rounded-2xl bg-sk-coral-tint p-4" role="alert">
+                  <WarningCircle className="mt-0.5 size-5 shrink-0 text-[#b32a0c]" weight="fill" aria-hidden />
+                  <div className="space-y-1 text-sm">
+                    <p className="font-bold text-[#b32a0c]">{problem.title}</p>
+                    <p className="text-sk-ink-2">{problem.body}</p>
                   </div>
                 </div>
-              ) : hasTypedInvite ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-rose-600">
-                    <HugeiconsIcon icon={SearchAddIcon} className="size-4" />
-                    {resolvingInvite ? "Checking invite..." : "Invite not recognized"}
-                  </div>
-                  <p className="text-sm text-slate-500">Check the code or open the full invite link again.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <HugeiconsIcon icon={QrCodeIcon} className="size-4" />
-                    Waiting for invite
-                  </div>
-                  <p className="text-sm text-slate-500">Paste the invite or open the deep link to confirm team access.</p>
-                </div>
-              )}
+              ) : null}
             </div>
 
-            <Button type="button" className="mobile-action-primary h-12 w-full" disabled={!resolvedInvite} onClick={handleJoin}>
-              Confirm and join team
-            </Button>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-5">
-          <Card className="mobile-card-primary">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <div className="mobile-surface-heading">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Deep Link Path</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Mobile Flow</h2>
-              </div>
-              <div className="mobile-card-utility text-sm text-slate-600">
-                Claim links should follow the <code>/athlete/claim/{"{inviteId}"}</code> pattern. Signed-in athletes can also paste the invite id here to confirm the join manually.
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="mobile-card-primary">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <div className="mobile-surface-heading">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Confirmation</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-slate-950">Join State</h2>
-              </div>
-
-              {joinState.joinedAt ? (
-                <div className="status-panel-success">
-                  <div className="status-text-success flex items-center gap-2 text-sm font-semibold">
-                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
-                    Joined {isSupabaseMode ? joinState.joinedTeamName : joinedMockTeam?.name}
-                  </div>
-                  <p className="status-text-success-muted mt-2 text-sm">
-                    Confirmed {joinState.joinedAt}. Your athlete view can now use this team for plan, progress, and testing context.
-                  </p>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {alreadyOnTeam ? (
+                <Link to="/athlete/home" className="sk-btn sk-btn-primary w-full sm:w-auto">
+                  Open today
+                  <ArrowRight className="size-5" weight="bold" />
+                </Link>
               ) : (
-                <EmptyStateCard
-                  eyebrow="Join state"
-                  title="No team has been joined yet."
-                  description="Paste a valid invite link or invite id first, then confirm the team to attach this athlete session."
-                  hint="If you already received an invite by email or message, open that link directly for the fastest path."
-                  icon={<HugeiconsIcon icon={SearchAddIcon} className="size-5" />}
-                  className="rounded-[20px] bg-slate-50 px-4 py-6 text-left shadow-none"
-                  contentClassName="gap-2"
-                />
+                <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={!canJoin || joining}>
+                  {joining ? "Joining..." : resolvedInvite && canJoin ? `Join ${resolvedInvite.name}` : "Join team"}
+                </button>
               )}
+            </div>
+            {canJoin && currentTeam ? (
+              <p className="-mt-2 text-sm text-sk-mute">
+                Joining moves you off {currentTeam.name}. You can only be on one team at a time.
+              </p>
+            ) : null}
+          </form>
+        </Panel>
 
-              <div className="grid gap-3">
-                <Button asChild variant="outline" className="mobile-action-secondary justify-between">
-                  <Link to="/athlete/home">
-                    Open today
-                    <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="mobile-action-secondary justify-between">
-                  <Link to="/athlete/training-plan">
-                    Open plan
-                    <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+        <section aria-labelledby={`${formId}-current`} className="px-1 lg:pt-2">
+          <h2 id={`${formId}-current`} className="sk-h3">
+            Your team right now
+          </h2>
+          {currentTeam ? (
+            <p className="mt-2 flex items-center gap-2 font-bold text-sk-ink">
+              <UsersThree className="size-5 shrink-0 text-sk-blue" weight="fill" aria-hidden />
+              {currentTeam.name}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm leading-relaxed text-sk-mute">
+              You are not on a team yet. Once you join one, your plan and test weeks appear here in the app.
+            </p>
+          )}
+          <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-sk-mute">
+            No code? Ask your coach to invite you from their team page. The invite goes to your email.
+          </p>
+        </section>
+      </div>
     </div>
   )
 }

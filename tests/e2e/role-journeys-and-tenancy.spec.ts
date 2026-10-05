@@ -22,11 +22,18 @@ test("athlete wellness submission returns readiness output", async ({ page }) =>
   await seedMockSession(page, { role: "athlete", tenantId: "tenant-alpha" })
   await page.goto("/athlete/wellness")
 
-  await page.getByLabel("Sleep hours").fill("8")
-  await page.getByRole("button", { name: "Save check-in" }).click()
+  // Sleep starts at 8 hours; the four scales are tap to select.
+  await page.getByRole("button", { name: "Half an hour less sleep" }).click()
+  await page.getByRole("button", { name: "Half an hour more sleep" }).click()
+  await page.getByRole("radio", { name: /^Soreness 2 of 5/ }).click()
+  await page.getByRole("radio", { name: /^Fatigue 2 of 5/ }).click()
+  await page.getByRole("radio", { name: /^Mood 4 of 5/ }).click()
+  await page.getByRole("radio", { name: /^Stress 2 of 5/ }).click()
+  await page.getByRole("button", { name: "Submit check-in" }).click()
 
-  await expect(page.getByRole("heading", { name: "Readiness Output" })).toBeVisible()
-  await expect(page.locator("body")).toContainText(/Ready|Watch|Review/)
+  await expect(page.getByRole("heading", { name: "Today's readiness" })).toBeVisible()
+  await expect(page.locator("main")).toContainText("You are ready to train")
+  await expect(page.locator("main")).toContainText(/Ready|Watch|Review/)
 })
 
 test("tenant storage isolation: invite created in tenant A is not visible in tenant B", async ({ browser }) => {

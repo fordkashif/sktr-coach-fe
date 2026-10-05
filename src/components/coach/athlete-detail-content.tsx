@@ -16,6 +16,8 @@ import {
 import { LineChart } from "@mui/x-charts"
 import { Link } from "react-router-dom"
 import { EmptyState, Initials, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, type TagTone, type Tone } from "@/components/sk"
+import { listMockLoggedSessions } from "@/lib/data/session/session-mock"
+import type { LoggedSessionResults } from "@/lib/data/session/types"
 import {
   type Athlete,
   type LogEntry,
@@ -86,6 +88,8 @@ export type AthleteDetailLog = LogEntry & {
   coachNote?: string | null
   completedOn?: string | null
   durationMinutes?: number | null
+  /** What the athlete logged for this session. */
+  results?: LoggedSessionResults | null
 }
 
 export type AthleteDetailWellness = WellnessEntry & {
@@ -230,7 +234,25 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
   const isBackend = Boolean(data)
   const athletePrs: AthleteDetailPr[] = data?.prs ?? mockData.prs.filter((pr) => pr.athleteId === athlete.id)
   const athleteLogs: AthleteDetailLog[] = useMemo(
-    () => data?.logs ?? mockData.logs.filter((log) => log.athleteId === athlete.id),
+    () =>
+      data?.logs ?? [
+        // Mock mode: what the demo athlete logged in this browser, ahead of the canned history.
+        ...listMockLoggedSessions(athlete.id).map(
+          (logged): AthleteDetailLog => ({
+            id: logged.id,
+            athleteId: athlete.id,
+            type: "Strength",
+            title: logged.title,
+            date: formatDay(logged.date, true),
+            details: "",
+            isoDate: logged.date,
+            status: logged.status,
+            completedOn: logged.completedOn,
+            results: logged.results,
+          }),
+        ),
+        ...mockData.logs.filter((log) => log.athleteId === athlete.id),
+      ],
     [athlete.id, data?.logs, mockData.logs],
   )
 
@@ -597,6 +619,38 @@ export function CoachAthleteDetailContent({ athlete, data, teamName, banner, onS
                           {state ? <Tag tone={state.tone} className="shrink-0">{state.label}</Tag> : null}
                         </div>
                         {!log.status && log.details ? <p className="mt-2 text-sm leading-relaxed text-sk-ink-2">{log.details}</p> : null}
+
+                        {log.results ? (
+                          <div className="sk-well mt-3" data-session-results>
+                            {log.results.exercises.length > 0 ? (
+                              <dl className="space-y-2">
+                                {log.results.exercises.map((exercise) => (
+                                  <div key={exercise.id} className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                                    <dt className="text-sm text-sk-ink-2">
+                                      <span className="font-semibold text-sk-ink">{exercise.label}</span>
+                                      <span className="text-sk-mute"> (target {exercise.target})</span>
+                                    </dt>
+                                    <dd className="text-sm font-bold tabular-nums text-sk-ink sm:text-right">
+                                      {exercise.sets.every((entry) => entry === "Done")
+                                        ? exercise.sets.length > 1
+                                          ? `${exercise.sets.length} done`
+                                          : "Done"
+                                        : exercise.sets.join(", ")}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            ) : (
+                              <p className="text-sm text-sk-ink-2">Finished without logging any sets.</p>
+                            )}
+                            {log.results.rpe || log.results.comment ? (
+                              <p className="mt-3 border-t border-sk-line pt-3 text-sm leading-relaxed text-sk-ink-2">
+                                {log.results.rpe ? <span className="font-bold text-sk-ink">Effort {log.results.rpe}/10. </span> : null}
+                                {log.results.comment ? <span>&ldquo;{log.results.comment}&rdquo;</span> : null}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
 
                         {editing ? (
                           <div className="mt-3">

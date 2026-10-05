@@ -1,506 +1,347 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  CheckmarkCircle02Icon,
-  Clock01Icon,
-  NoteIcon,
-} from "@hugeicons/core-free-icons"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { StandardPageHeader } from "@/components/ui/standard-page-header"
-import {
-  type CurrentSession,
-  type SessionBlock,
-} from "@/lib/mock-data"
-import {
-  blockStatus,
-  dateKeyLocal,
-  defaultSessionProgress,
-  parseSessionCompletions,
-  progressForCurrentSession,
-  SESSION_COMPLETIONS_STORAGE_KEY,
-  SESSION_PROGRESS_STORAGE_KEY,
-  sessionRowKey,
-  type SessionProgress,
-} from "@/lib/athlete-session"
-import {
-  completeLatestSessionForCurrentAthlete,
-  getLatestSessionDetailForCurrentAthlete,
-  type CurrentAthleteLatestSessionDetail,
-} from "@/lib/data/session/session-data"
-import { getLatestBenchmarkSnapshotForCurrentAthlete } from "@/lib/data/test-week/test-week-data"
-import { getBackendMode } from "@/lib/supabase/config"
-import { tenantStorageKey } from "@/lib/tenant-storage"
+import { useEffect, useId, useRef, useState } from "react"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { ArrowRight, CalendarBlank, ChatText, CheckCircle, Moon, PencilSimple } from "@phosphor-icons/react"
+import { ExerciseRow, formatLongDay, LoggedSummary, SyncStatus, WeekStrip } from "@/components/athlete/log/log-parts"
+import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
+import { EmptyState, Meter, PageHeader, Panel, Stat } from "@/components/sk"
+import { MAX_SETS } from "@/lib/data/session/session-from-plan"
+import { todayIso } from "@/lib/data/training-plan/plan-builder-model"
 import { cn } from "@/lib/utils"
 
-const fallbackAthlete = {
-  id: "fallback-athlete",
-  name: "Athlete",
-}
+const EFFORT_WORDS = ["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Very hard", "Max effort"]
+const HOME_REDIRECT_MS = 1800
 
-const fallbackCurrentSession: CurrentSession = {
-  id: "fallback-session",
-  title: "Today's Workout",
-  status: "not-started",
-  scheduledFor: "Today",
-  estimatedDuration: "75 min",
-  coachNote: "",
-  blocks: [
-    {
-      id: "fallback-block-1",
-      type: "Sprint",
-      name: "Acceleration",
-      focus: "Programmed work",
-      coachNote: "",
-      rows: [{ label: "Rep 1", target: "Programmed work" }],
-    },
-  ],
-}
-
-const blockToneMap: Record<SessionBlock["type"], string> = {
-  Sprint: "bg-[#dbeafe] text-[#1d4ed8]",
-  Run: "bg-[#fef3c7] text-[#b45309]",
-  Strength: "bg-[#ede9fe] text-[#6d28d9]",
-  Jumps: "bg-[#e0f2fe] text-[#0369a1]",
-  Throws: "bg-[#fee2e2] text-[#be123c]",
+function isIsoDay(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime()))
 }
 
 export default function AthleteLogPage() {
   const navigate = useNavigate()
-  const athlete = fallbackAthlete
-  const backendMode = getBackendMode()
-  const [backendSessionDetail, setBackendSessionDetail] = useState<CurrentAthleteLatestSessionDetail | null>(null)
-  const [backendSessionError, setBackendSessionError] = useState<string | null>(null)
-  const [hasBackendTestWeekResult, setHasBackendTestWeekResult] = useState<boolean | null>(null)
-  const hasTestWeekResult =
-    backendMode === "supabase"
-      ? (hasBackendTestWeekResult ?? true)
-      : true
-  const requiresGymLoadInput = !hasTestWeekResult
-  const [progress, setProgress] = useState<SessionProgress>(() => {
-    if (typeof window === "undefined") return defaultSessionProgress()
-    return progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)))
-  })
-
-  const currentSession: CurrentSession = useMemo(() => {
-    if (!(backendMode === "supabase" && backendSessionDetail)) return fallbackCurrentSession
-
-    return {
-      id: backendSessionDetail.session.id,
-      title: backendSessionDetail.session.title,
-      status:
-        backendSessionDetail.session.status === "completed"
-          ? "completed"
-          : backendSessionDetail.session.status === "in-progress"
-            ? "in-progress"
-            : "not-started",
-      scheduledFor: backendSessionDetail.session.scheduledFor,
-      estimatedDuration: backendSessionDetail.session.estimatedDurationMinutes
-        ? `${backendSessionDetail.session.estimatedDurationMinutes} min`
-        : "N/A",
-      coachNote: backendSessionDetail.session.coachNote ?? "",
-      blocks: backendSessionDetail.blocks
-        .slice()
-        .sort((left, right) => left.sortOrder - right.sortOrder)
-        .map((block) => ({
-          id: block.id,
-          type: block.blockType,
-          name: block.name,
-          focus: block.focus ?? "",
-          coachNote: block.coachNote ?? "",
-          previousResult: block.previousResult ?? undefined,
-          rest: block.restLabel ?? undefined,
-          rows: block.rows
-            .slice()
-            .sort((left, right) => left.sortOrder - right.sortOrder)
-            .map((row) => ({
-              label: row.label,
-              target: row.target,
-              helper: row.helper ?? undefined,
-            })),
-        })),
-    }
-  }, [backendMode, backendSessionDetail])
-
-  const currentAthleteFirstName = useMemo(() => {
-    if (backendMode === "supabase") return backendSessionDetail?.athleteFirstName ?? "Athlete"
-    return athlete.name.split(" ")[0]
-  }, [athlete.name, backendMode, backendSessionDetail?.athleteFirstName])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const today = todayIso()
+  const dateParam = searchParams.get("date")
+  const date = isIsoDay(dateParam) ? dateParam : today
+  const log = useSessionLog(date)
+  const { day, session, sync, totals } = log
+  const [editing, setEditing] = useState(false)
+  const [justFinished, setJustFinished] = useState(false)
+  const [finishing, setFinishing] = useState(false)
+  const commentId = useId()
+  const topRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    window.localStorage.setItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY), JSON.stringify(progress))
-  }, [progress])
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    ;(window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }).__PACELAB_MOBILE_DETAIL_MODE = true
+    const flagged = window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }
+    flagged.__PACELAB_MOBILE_DETAIL_MODE = true
     window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: true } }))
     const handleBack = () => window.history.back()
     window.addEventListener("pacelab:mobile-detail-back", handleBack)
-
     return () => {
-      ;(window as typeof window & { __PACELAB_MOBILE_DETAIL_MODE?: boolean }).__PACELAB_MOBILE_DETAIL_MODE = false
+      flagged.__PACELAB_MOBILE_DETAIL_MODE = false
       window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-mode", { detail: { active: false } }))
       window.removeEventListener("pacelab:mobile-detail-back", handleBack)
     }
   }, [])
 
   useEffect(() => {
-    if (backendMode !== "supabase") return
-    let cancelled = false
+    setEditing(false)
+    setJustFinished(false)
+  }, [date])
 
-    const loadSessionDetail = async () => {
-      const result = await getLatestSessionDetailForCurrentAthlete()
-      if (cancelled) return
-      if (!result.ok) {
-        setBackendSessionError(result.error.message)
-        return
-      }
-
-      setBackendSessionError(null)
-      setBackendSessionDetail(result.data)
-    }
-
-    void loadSessionDetail()
-    return () => {
-      cancelled = true
-    }
-  }, [backendMode])
-
+  // After finishing, the athlete lands back on home once everything is safely saved.
   useEffect(() => {
-    if (typeof window === "undefined") return
-    setProgress(
-      progressForCurrentSession(window.localStorage.getItem(tenantStorageKey(SESSION_PROGRESS_STORAGE_KEY)), {
-        sessionId: currentSession.id,
-        blockCount: currentSession.blocks.length,
-      }),
-    )
-  }, [currentSession.id, currentSession.blocks.length])
+    if (!justFinished || sync.status !== "saved") return
+    const timer = window.setTimeout(() => navigate("/athlete/home"), HOME_REDIRECT_MS)
+    return () => window.clearTimeout(timer)
+  }, [justFinished, navigate, sync.status])
 
-  useEffect(() => {
-    if (backendMode !== "supabase") return
-
-    let cancelled = false
-    const loadBaseline = async () => {
-      const snapshot = await getLatestBenchmarkSnapshotForCurrentAthlete()
-      if (!snapshot.ok) {
-        console.warn("[test-week] failed to resolve backend baseline", snapshot.error)
-        if (!cancelled) setHasBackendTestWeekResult(false)
-        return
-      }
-
-      if (!cancelled) {
-        setHasBackendTestWeekResult(Boolean(snapshot.data && snapshot.data.results.length > 0))
-      }
-    }
-
-    void loadBaseline()
-    return () => {
-      cancelled = true
-    }
-  }, [backendMode])
-
-  const currentBlock = currentSession.blocks[progress.currentBlockIndex] ?? currentSession.blocks[0]
-  const completedCount = progress.completedBlockIds.length
-  const totalBlocks = currentSession.blocks.length
-  const progressPercent = totalBlocks > 0 ? Math.round((completedCount / totalBlocks) * 100) : 0
-  const allComplete = completedCount === totalBlocks
-
-  const sessionState = useMemo(() => {
-    if (allComplete) return { label: "Completed", tone: "status-chip-success" }
-    if (completedCount > 0 || currentSession.status === "in-progress") {
-      return { label: "In Progress", tone: "status-chip-warning" }
-    }
-    return { label: "Not Started", tone: "status-chip-neutral" }
-  }, [allComplete, completedCount, currentSession.status])
-
-  if (!currentBlock) return null
-
-  const handleValueChange = (key: string, value: string) => {
-    setProgress((current) => ({
-      ...current,
-      values: {
-        ...current.values,
-        [key]: value,
-      },
-    }))
+  const selectDate = (next: string) => {
+    setSearchParams(next === today ? {} : { date: next }, { replace: true })
   }
 
-  const handleCompleteBlock = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const isFinalBlock = progress.currentBlockIndex === totalBlocks - 1
+  const completed = session?.status === "completed"
+  const showForm = Boolean(session) && (!completed || editing)
+  const dayLabel = date === today ? "Today" : formatLongDay(date)
+  const meta = session
+    ? [
+        date === today ? "Today" : formatLongDay(date),
+        session.estimatedDurationMinutes ? `${session.estimatedDurationMinutes} min` : null,
+        session.location,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : null
 
-    setProgress((current) => {
-      const completedBlockIds = current.completedBlockIds.includes(currentBlock.id)
-        ? current.completedBlockIds
-        : [...current.completedBlockIds, currentBlock.id]
-
-      return {
-        ...current,
-        completedBlockIds,
-        currentBlockIndex: Math.min(current.currentBlockIndex + 1, totalBlocks - 1),
-      }
-    })
-
-    if (isFinalBlock && typeof window !== "undefined") {
-      const completionDate = dateKeyLocal(new Date())
-
-      if (getBackendMode() === "supabase") {
-        const result = await completeLatestSessionForCurrentAthlete(completionDate)
-        if (!result.ok) {
-          console.warn("[session] failed to persist completion in supabase mode", result.error)
-        }
-      } else {
-        const completionStorageKey = tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)
-        const completionDates = parseSessionCompletions(window.localStorage.getItem(completionStorageKey))
-        const updated = completionDates.includes(completionDate) ? completionDates : [...completionDates, completionDate]
-        window.localStorage.setItem(completionStorageKey, JSON.stringify(updated))
-      }
-
-      navigate("/athlete/home")
-    }
+  const handleFinish = async () => {
+    setFinishing(true)
+    const wasEditing = editing
+    await log.finish()
+    setFinishing(false)
+    setEditing(false)
+    if (!wasEditing) setJustFinished(true)
+    topRef.current?.scrollIntoView({ block: "start" })
   }
 
-  const jumpToBlock = (blockIndex: number) => {
-    setProgress((current) => ({
-      ...current,
-      currentBlockIndex: blockIndex,
-    }))
-  }
-
-  const resetSession = () => {
-    setProgress(defaultSessionProgress({ sessionId: currentSession.id }))
-  }
+  const title = !day
+    ? log.loadError
+      ? "Session log"
+      : "Loading"
+    : session
+      ? session.title
+      : day.inPlan
+        ? "Rest day"
+        : date === today
+          ? "No session today"
+          : "No session"
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 px-4 pb-6 pt-4 sm:px-6 sm:pt-6">
-      <section className="space-y-4">
-        {backendSessionError ? (
-          <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Backend sync issue: {backendSessionError}
-          </div>
-        ) : null}
-        <StandardPageHeader
-          eyebrow="Athlete workout"
-          title={currentSession.title}
-          description={`${currentSession.scheduledFor}. Programmed for ${currentAthleteFirstName} and ready to log live.`}
-          meta={
-            <div className="flex items-center gap-2">
-              <span className="inline-flex rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-medium text-slate-700">
-                {currentSession.estimatedDuration}
-              </span>
-              <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-medium", sessionState.tone)}>
-                {sessionState.label}
-              </span>
-            </div>
+    <div className="sk-page max-w-[860px]" ref={topRef}>
+      <PageHeader
+        title={title}
+        lede={
+          !day
+            ? log.loadError
+              ? null
+              : "Getting your session."
+            : session
+              ? meta
+              : day.inPlan
+                ? `${dayLabel} is a rest day in your plan. Recover well.`
+                : date === today
+                  ? "Nothing is planned for you today."
+                  : `Nothing is planned for ${formatLongDay(date)}.`
+        }
+      />
+
+      {day ? <WeekStrip week={day.week} selected={date} today={today} onSelect={selectDate} /> : null}
+
+      {log.loadError ? (
+        <div role="alert" className="flex flex-col items-start gap-3 rounded-2xl bg-sk-coral-tint px-4 py-4">
+          <p className="text-sm font-semibold text-[#b32a0c]">Could not load this session: {log.loadError}</p>
+          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={log.reload}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+
+      {log.fromCache ? (
+        <p role="status" className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">
+          You are offline, so this is the copy saved on this phone. Keep logging. It sends when you are back online.
+        </p>
+      ) : null}
+
+      {day && !session ? (
+        <EmptyState
+          icon={day.inPlan ? <Moon className="size-6" weight="fill" /> : <CalendarBlank className="size-6" weight="fill" />}
+          title={
+            day.next
+              ? `Next up: ${day.next.title}`
+              : day.inPlan
+                ? "No more sessions in your plan"
+                : "No plan yet"
           }
-          stats={[
-            { label: "Blocks", value: totalBlocks },
-            { label: "Done", value: completedCount },
-            { label: "Progress", value: `${progressPercent}%` },
-          ]}
-        />
-
-        <div className="rounded-[22px] border border-slate-200 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-slate-950">Session progress</span>
-            <span className="text-slate-500">{progressPercent}%</span>
-          </div>
-          <div className="mt-2 h-2 rounded-full bg-slate-200">
-            <div className="h-2 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)]" style={{ width: `${progressPercent}%` }} />
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-            {[
-              { label: "Block", value: `${progress.currentBlockIndex + 1}/${totalBlocks}` },
-              { label: "Done", value: `${completedCount}` },
-              { label: "Date", value: "Today" },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[18px] bg-[#f8fafc] px-3 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
-                <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-slate-950">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Workout Order</p>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Session Blocks</h2>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 rounded-full border-slate-200 px-4 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-            onClick={resetSession}
-          >
-            Reset
-          </Button>
-        </div>
-
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {currentSession.blocks.map((block, index) => {
-            const status = blockStatus(progress, block)
-            const isActive = index === progress.currentBlockIndex
-            return (
-              <button
-                key={block.id}
-                type="button"
-                onClick={() => jumpToBlock(index)}
-                className={cn(
-                  "min-w-[220px] rounded-[22px] border px-4 py-4 text-left transition",
-                  isActive ? "border-[#1f8cff] bg-[#eef5ff]" : "border-slate-200 bg-white",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">
-                      {index + 1}. {block.name}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">{block.focus}</p>
-                  </div>
-                  <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", blockToneMap[block.type])}>
-                    {block.type}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">{block.rest ? `Rest ${block.rest}` : "No rest target"}</span>
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      status === "completed" ? "text-[#1f5fd1]" : status === "in-progress" ? "text-[#1368ff]" : "text-slate-400",
-                    )}
-                  >
-                    {status === "completed" ? "Done" : status === "in-progress" ? "Active" : "Up next"}
-                  </span>
-                </div>
+          body={
+            day.next
+              ? `Planned for ${formatLongDay(day.next.date)}.`
+              : day.inPlan
+                ? "You have reached the end of the sessions your coach has planned."
+                : "Sessions show up here as soon as your coach publishes a training plan for you."
+          }
+          action={
+            day.next ? (
+              <button type="button" className="sk-btn sk-btn-quiet" onClick={() => selectDate(day.next?.date ?? today)}>
+                See that session
+                <ArrowRight className="size-4" weight="bold" aria-hidden />
               </button>
+            ) : (
+              <Link to="/athlete/training-plan" className="sk-btn sk-btn-quiet">
+                Open training plan
+              </Link>
             )
-          })}
-        </div>
-      </section>
+          }
+        />
+      ) : null}
 
-      <form onSubmit={handleCompleteBlock} className="space-y-4">
-        <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", blockToneMap[currentBlock.type])}>
-                  {currentBlock.type}
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                  <HugeiconsIcon icon={Clock01Icon} className="size-4" />
-                  {currentBlock.rest ? `Rest ${currentBlock.rest}` : "No rest target"}
-                </span>
-              </div>
-              <h2 className="text-[1.8rem] leading-[1] font-semibold tracking-[-0.05em] text-slate-950">{currentBlock.name}</h2>
-              <p className="text-sm leading-6 text-slate-600">{currentBlock.focus}</p>
-            </div>
-            <Button
-              asChild
-              variant="outline"
-              className="h-11 rounded-full border-slate-200 px-4 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-            >
-              <Link to="/athlete/training-plan">Open plan</Link>
-            </Button>
+      {session && completed && !editing ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat
+              tone="green"
+              label="Session done"
+              value={totals.done}
+              unit={`/${totals.total}`}
+              hint={totals.total === 1 ? "item ticked" : "sets ticked"}
+            />
+            <Stat
+              tone="plain"
+              label="Effort"
+              value={session.overallRpe ?? "None"}
+              unit={session.overallRpe ? "/10" : undefined}
+              hint={session.overallRpe ? EFFORT_WORDS[session.overallRpe] : "Not rated"}
+            />
           </div>
 
-          <div className="mt-4 space-y-3">
-            <div className="rounded-[20px] bg-[#031733] px-4 py-4 text-white">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8db8ff]">
-                <HugeiconsIcon icon={NoteIcon} className="size-4" />
-                Coach note
+          {justFinished ? (
+            <div className="flex flex-col gap-3 rounded-[20px] bg-sk-green-tint p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="mt-0.5 size-7 shrink-0 text-sk-green" weight="fill" aria-hidden />
+                <div>
+                  <p className="sk-h3">Nice work. That is logged.</p>
+                  <p className="text-sm text-sk-ink-2">
+                    {sync.status === "saved"
+                      ? "Your coach can see it now. Taking you home."
+                      : "It is safe on this phone and will reach your coach when it sends."}
+                  </p>
+                </div>
               </div>
-              <p className="mt-2 text-sm text-white/80">{currentBlock.coachNote}</p>
+              <Link to="/athlete/home" className="sk-btn sk-btn-primary shrink-0">
+                Back to home
+              </Link>
             </div>
+          ) : null}
 
-            {currentBlock.previousResult ? (
-              <div className="rounded-[20px] border border-slate-200 bg-[#f8fafc] px-4 py-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Last result</p>
-                <p className="mt-1.5 text-sm font-medium text-slate-950">{currentBlock.previousResult}</p>
+          <Panel
+            title="What you logged"
+            hint={session.completedOn ? `Finished ${formatLongDay(session.completedOn)}` : undefined}
+            action={
+              <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={() => setEditing(true)}>
+                <PencilSimple className="size-4" weight="bold" aria-hidden />
+                Edit
+              </button>
+            }
+          >
+            <LoggedSummary blocks={session.blocks} logs={log.logs} />
+            {session.athleteComment ? (
+              <div className="sk-well mt-5">
+                <p className="sk-label">Your comment</p>
+                <p className="mt-1 text-[0.95rem] leading-relaxed text-sk-ink">{session.athleteComment}</p>
               </div>
             ) : null}
-          </div>
-        </section>
+          </Panel>
+          <SyncStatus sync={sync} onRetry={log.retrySync} />
+        </>
+      ) : null}
 
-        <section className="space-y-3">
-          {currentBlock.rows.map((row, rowIndex) => (
-            <div key={`${currentBlock.id}-${row.label}`} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-semibold text-slate-950">{row.label}</p>
-                  <p className="mt-1 text-sm text-slate-600">{row.target}</p>
-                  {row.helper ? <p className="mt-1 text-xs text-slate-400">{row.helper}</p> : null}
-                </div>
-                <span className="inline-flex rounded-full bg-[#eef5ff] px-2.5 py-1 text-xs font-semibold text-slate-700">Programmed</span>
+      {session && showForm ? (
+        <>
+          {date !== today && !completed ? (
+            <p className="rounded-2xl bg-sk-blue-tint px-4 py-3 text-sm font-semibold text-[#1638b8]">
+              {date < today
+                ? `This was planned for ${formatLongDay(date)}. You can still log it.`
+                : `This is planned for ${formatLongDay(date)}. Log it now if you are doing it early.`}
+            </p>
+          ) : null}
+
+          {session.coachNote ? (
+            <div className="sk-card flex items-start gap-3">
+              <ChatText className="mt-0.5 size-5 shrink-0 text-sk-blue" weight="fill" aria-hidden />
+              <div className="min-w-0">
+                <p className="sk-label">From your coach</p>
+                <p className="mt-0.5 text-base leading-relaxed text-sk-ink">{session.coachNote}</p>
               </div>
-
-              {requiresGymLoadInput && currentBlock.type === "Strength" ? (
-                <div className="mt-4 max-w-sm space-y-2">
-                  <Label htmlFor={sessionRowKey(currentBlock.id, rowIndex, "load")} className="text-sm font-medium text-slate-950">
-                    Load Used
-                  </Label>
-                  <Input
-                    id={sessionRowKey(currentBlock.id, rowIndex, "load")}
-                    value={progress.values[sessionRowKey(currentBlock.id, rowIndex, "load")] ?? ""}
-                    placeholder="e.g. 100kg"
-                    onChange={(event) => handleValueChange(sessionRowKey(currentBlock.id, rowIndex, "load"), event.target.value)}
-                    className="h-12 rounded-[16px] border-slate-200 bg-[#f8fafc] text-slate-950"
-                  />
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-slate-500">No athlete input required for this block.</p>
-              )}
             </div>
+          ) : null}
+
+          {session.blocks.length === 0 ? (
+            <p className="sk-well text-sm text-sk-ink-2">Your coach has not added any detail to this session. You can still finish it below.</p>
+          ) : null}
+
+          {session.blocks.map((block) => (
+            <Panel key={block.id} title={block.name} hint={[block.focus, block.coachNote].filter(Boolean).join(" ") || undefined}>
+              <ul>
+                {block.rows.map((row) => {
+                  const count = Math.min(setCount(row, log.logs) + (log.extraSets[row.id] ?? 0), MAX_SETS)
+                  return (
+                    <ExerciseRow
+                      key={row.id}
+                      row={row}
+                      logs={log.logs}
+                      count={count}
+                      canAddSet={row.kind !== "check" && count < MAX_SETS}
+                      onToggle={(setIndex) => log.toggleSet(row, setIndex)}
+                      onValue={(setIndex, field, value) => log.setValue(row, setIndex, field, value)}
+                      onFill={() => log.fillRowFromTarget(row)}
+                      onAddSet={() => log.addSet(row)}
+                      hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
+                    />
+                  )
+                })}
+              </ul>
+            </Panel>
           ))}
-        </section>
 
-        <section className="grid gap-3 sm:grid-cols-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-12 rounded-full border-slate-200 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-            disabled={progress.currentBlockIndex === 0}
-            onClick={() => jumpToBlock(progress.currentBlockIndex - 1)}
-          >
-            <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
-            Previous
-          </Button>
-          <Button
-            type="submit"
-            className="h-12 rounded-full bg-[linear-gradient(135deg,#1f8cff_0%,#4759ff_100%)] text-white shadow-[0_12px_28px_rgba(31,140,255,0.22)] hover:opacity-95"
-          >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-4" />
-            {progress.currentBlockIndex === totalBlocks - 1 ? "Complete Session" : "Complete Block"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-12 rounded-full border-slate-200 text-slate-950 hover:border-[#1f8cff] hover:bg-[#eef5ff] hover:text-slate-950"
-            disabled={progress.currentBlockIndex === totalBlocks - 1}
-            onClick={() => jumpToBlock(progress.currentBlockIndex + 1)}
-          >
-            Next
-            <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-          </Button>
-        </section>
+          <Panel title="How hard was it?" hint="1 is very easy, 10 is everything you had.">
+            <div role="radiogroup" aria-label="Effort from 1 to 10" className="grid grid-cols-5 gap-2">
+              {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => {
+                const active = log.wrapUp.rpe === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={`${value}, ${EFFORT_WORDS[value]}`}
+                    onClick={() => log.updateWrapUp({ rpe: active ? null : value })}
+                    className={cn(
+                      "h-14 rounded-[14px] border-2 text-xl font-extrabold tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
+                      active ? "border-sk-blue bg-sk-blue text-white" : "border-sk-line bg-white text-sk-ink hover:border-sk-ink",
+                    )}
+                  >
+                    {value}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 min-h-5 text-sm font-semibold text-sk-ink-2" aria-live="polite">
+              {log.wrapUp.rpe ? `${log.wrapUp.rpe} out of 10: ${EFFORT_WORDS[log.wrapUp.rpe]}` : ""}
+            </p>
 
-        {allComplete ? (
-          <section className="status-panel-success">
-            <p className="status-text-success text-sm font-semibold">Session complete</p>
-            <p className="status-text-success-muted mt-1 text-sm">All programmed blocks are logged. You can review the session or return home.</p>
-          </section>
-        ) : null}
-      </form>
+            <label htmlFor={commentId} className="sk-label mb-1.5 mt-3 block">
+              Anything your coach should know? (optional)
+            </label>
+            <textarea
+              id={commentId}
+              rows={3}
+              maxLength={1000}
+              value={log.wrapUp.comment}
+              onChange={(event) => log.updateWrapUp({ comment: event.target.value })}
+              placeholder="How it felt, niggles, what you changed"
+              className="sk-field h-auto min-h-[96px] py-3 text-base"
+            />
+
+            <button type="button" className="sk-btn sk-btn-primary mt-5 h-14 w-full text-base" disabled={finishing} onClick={() => void handleFinish()}>
+              <CheckCircle className="size-5" weight="fill" aria-hidden />
+              {completed ? "Save changes" : "Finish session"}
+            </button>
+            {!completed && totals.total > 0 && totals.done < totals.total ? (
+              <p className="mt-2 text-center text-sm text-sk-mute">
+                {totals.done} of {totals.total} ticked. You can finish with some left.
+              </p>
+            ) : null}
+            {completed ? (
+              <button type="button" className="sk-btn sk-btn-ghost mt-2 w-full" onClick={() => setEditing(false)}>
+                Back to summary
+              </button>
+            ) : null}
+          </Panel>
+
+          <div className="sticky bottom-0 z-20 -mx-4 -mb-10 border-t border-sk-line bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-sk-ink">
+                  <span className="tabular-nums">
+                    {totals.done} of {totals.total}
+                  </span>{" "}
+                  done
+                </p>
+                <Meter value={totals.total > 0 ? (totals.done / totals.total) * 100 : 0} tone="green" className="mt-1.5" />
+              </div>
+              <SyncStatus sync={sync} onRetry={log.retrySync} className="shrink-0" />
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

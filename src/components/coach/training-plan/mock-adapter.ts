@@ -17,6 +17,11 @@ const STORAGE_KEY = "pacelab:coach-training-plans:v1"
 type StoredPlan = PlanDraft & { id: string; updatedAt: string | null }
 type StoredState = { plans: StoredPlan[]; removedSeedIds: string[] }
 
+/** Plans a coach saved in this browser. Mock athlete screens read published ones from here. */
+export function readStoredMockPlans(): Array<PlanDraft & { id: string }> {
+  return readState().plans
+}
+
 function readState(): StoredState {
   try {
     const raw = window.localStorage.getItem(tenantStorageKey(STORAGE_KEY))

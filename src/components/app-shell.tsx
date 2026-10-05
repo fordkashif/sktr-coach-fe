@@ -43,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Initials } from "@/components/sk"
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 type ShellLink = { href: string; label: string; icon: Icon }
@@ -87,13 +88,6 @@ function getRoleLabel(role: string) {
   if (role === "club-admin") return "Club Admin"
   if (role === "coach") return "Coach"
   return "Athlete"
-}
-
-function getProfileImage(role: string) {
-  if (role === "platform-admin") return "/avatar-placeholder.svg"
-  if (role === "coach") return "/coach-avatar.png"
-  if (role === "athlete") return "/coach-avatar.png"
-  return "/avatar-placeholder.svg"
 }
 
 function formatNotificationTime(value: string) {
@@ -425,7 +419,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex w-full items-center gap-3 rounded-[14px] p-2.5 text-left transition-colors hover:bg-sk-canvas focus-visible:outline-2 focus-visible:outline-sk-blue"
                   aria-label="Open profile menu"
                 >
-                  <img src={getProfileImage(role)} alt="" className="size-10 rounded-full object-cover" />
+                  <Initials name={displayName} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-bold text-sk-ink">{displayName}</span>
                     <span className="block truncate text-xs text-sk-mute">{userEmail}</span>
@@ -449,14 +443,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             ) : role === "athlete" ? (
               <Link to="/athlete/profile" className="flex items-center gap-3">
-                <img src={getProfileImage(role)} alt="" className="size-11 rounded-full object-cover" />
+                <Initials name={displayName} className="size-11" />
                 <span className="truncate text-base font-bold text-sk-ink">{displayName}</span>
               </Link>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className="flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-sk-blue" aria-label="Open profile menu">
-                    <img src={getProfileImage(role)} alt="" className="size-11 rounded-full object-cover" />
+                    <Initials name={displayName} className="size-11" />
                     <span className="min-w-0 text-left leading-tight">
                       <span className="block truncate text-base font-bold text-sk-ink">{displayName}</span>
                       {displayName !== getRoleLabel(role) ? <span className="block text-sm text-sk-mute">{getRoleLabel(role)}</span> : null}
@@ -489,7 +483,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       </SheetHeader>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
-                          <img src={getProfileImage(role)} alt="" className="size-12 rounded-full object-cover" />
+                          <Initials name={displayName} className="size-11" />
                           <div className="min-w-0">
                             <p className="truncate text-lg font-bold tracking-[-0.02em] text-sk-ink">{displayName}</p>
                             <p className="truncate text-sm text-sk-mute">{getRoleLabel(role)}</p>

@@ -59,6 +59,52 @@ async function getCurrentAthleteContext(client: SupabaseClient): Promise<Result<
   })
 }
 
+/** Today's date in the athlete's own timezone (a UTC date would roll over in the evening in Jamaica). */
+export function localWellnessDate(date = new Date()): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+export const WELLNESS_SLEEP_MAX_HOURS = 16
+export const WELLNESS_NOTE_MAX_LENGTH = 500
+
+/** Mirrors the wellness_entries check constraints so bad input is caught before the round trip. */
+export function validateWellnessInput(input: WellnessSubmissionInput): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.entryDate)) return "The check-in date is not valid."
+  if (!Number.isFinite(input.sleepHours) || input.sleepHours < 0 || input.sleepHours > WELLNESS_SLEEP_MAX_HOURS) {
+    return `Sleep must be between 0 and ${WELLNESS_SLEEP_MAX_HOURS} hours.`
+  }
+  const scales: Array<[string, number]> = [
+    ["Soreness", input.soreness],
+    ["Fatigue", input.fatigue],
+    ["Mood", input.mood],
+    ["Stress", input.stress],
+  ]
+  for (const [label, value] of scales) {
+    if (!Number.isInteger(value) || value < 1 || value > 5) return `${label} needs an answer from 1 to 5.`
+  }
+  if (input.notes && input.notes.length > WELLNESS_NOTE_MAX_LENGTH) {
+    return `Keep the note under ${WELLNESS_NOTE_MAX_LENGTH} characters.`
+  }
+  return null
+}
+
+/** The readiness numbers stored with an entry. Shared by supabase and mock mode so both score the same way. */
+export function scoreWellnessInput(input: WellnessSubmissionInput): {
+  readiness: WellnessReadiness
+  readinessScore: number
+  trainingLoad: number
+} {
+  const readiness = readinessFromInputs(input)
+  return {
+    readiness,
+    readinessScore: readinessScoreFromInputs(input, readiness),
+    trainingLoad: trainingLoadFromInputs(input),
+  }
+}
+
 function readinessFromInputs(input: WellnessSubmissionInput): WellnessReadiness {
   const loadScore = (input.soreness + input.fatigue + input.stress) / 3
   if (loadScore <= 2.5 && input.sleepHours >= 7 && input.mood >= 3) return "green"
@@ -122,6 +168,9 @@ export async function submitCurrentAthleteWellnessEntry(input: WellnessSubmissio
   const clientResult = requireSupabaseClient("submitCurrentAthleteWellnessEntry")
   if (!clientResult.ok) return clientResult
 
+  const validationError = validateWellnessInput(input)
+  if (validationError) return err("VALIDATION", validationError)
+
   const athleteContext = await getCurrentAthleteContext(clientResult.client)
   if (!athleteContext.ok) return athleteContext
 
@@ -166,11 +215,12 @@ export async function getCurrentAthleteWellnessEntries(limit = 28): Promise<Resu
     .from("wellness_entries")
     .select("id, athlete_id, entry_date, sleep_hours, soreness, fatigue, mood, stress, training_load, readiness, readiness_score, notes, created_at")
     .eq("athlete_id", athleteContext.data.athleteId)
-    .order("entry_date", { ascending: true })
+    // Newest first so the limit keeps the most recent entries, then flipped back to oldest first for callers.
+    .order("entry_date", { ascending: false })
     .limit(limit)
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
-  return ok(((data as WellnessRow[] | null) ?? []).map(mapWellnessRow))
+  return ok(((data as WellnessRow[] | null) ?? []).map(mapWellnessRow).reverse())
 }
 
 export async function getCurrentAthleteWellnessTrend(limit = 28): Promise<Result<WellnessTrendPoint[]>> {

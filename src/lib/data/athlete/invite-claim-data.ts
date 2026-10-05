@@ -1,6 +1,7 @@
 import { err, mapPostgrestError, ok, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { getAthleteInviteCoachNames } from "@/lib/data/athlete/invite-data"
 
 export type AthleteInvitePreview = {
   inviteId: string
@@ -12,6 +13,8 @@ export type AthleteInvitePreview = {
   status: "pending" | "accepted" | "expired" | "revoked"
   email: string | null
   hasExistingAccount: boolean
+  /** Comma separated coach names for the team. Null when unknown. */
+  coachNames: string | null
 }
 
 export type AthleteOnboardingState = {
@@ -57,6 +60,7 @@ export async function getPublicAthleteInvitePreview(inviteId: string): Promise<R
     status: row.status,
     email: row.email ?? null,
     hasExistingAccount: Boolean(row.has_existing_account),
+    coachNames: await getAthleteInviteCoachNames(row.invite_id),
   })
 }
 
