@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Copy, EnvelopeSimple, MagnifyingGlass, Tray, UserPlus, UsersThree, X } from "@phosphor-icons/react"
+import { Check, Copy, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, Tray, UserPlus, UsersThree, X } from "@phosphor-icons/react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { EmptyState, Initials, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -20,6 +20,17 @@ import {
 } from "@/lib/data/club-admin/ops-data"
 import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
+import {
+  applyInviteEmailResult,
+  canResendInviteEmail,
+  InviteCreatedResult,
+  inviteEmailSummary,
+  resendInviteEmailLabel,
+  toInviteEmailOutcome,
+  type InviteEmailOutcome,
+} from "@/components/invites/invite-email-ui"
+import { sendInviteEmail, type InviteEmailSent } from "@/lib/data/invites/invite-email-data"
+import type { Result } from "@/lib/data/result"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
   loadAccountRequestsSafe,
@@ -82,7 +93,9 @@ async function copyText(text: string) {
 
 function shortDate(value: string | null | undefined) {
   if (!value) return null
-  const parsed = new Date(value)
+  // A bare date ("2026-10-05") is a calendar day, not midnight UTC, so it must not shift a day in local time.
+  const dayOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const parsed = dayOnly ? new Date(Number(dayOnly[1]), Number(dayOnly[2]) - 1, Number(dayOnly[3])) : new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" })
 }
 
@@ -130,8 +143,7 @@ export default function ClubAdminUsersPage() {
   const [inviteTeamId, setInviteTeamId] = useState("none")
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
-  const [createdInvite, setCreatedInvite] = useState<{ email: string; link: string } | null>(null)
-  const [createdCopied, setCreatedCopied] = useState(false)
+  const [createdInvite, setCreatedInvite] = useState<{ email: string; link: string; outcome: InviteEmailOutcome } | null>(null)
 
   const [requestedPlan, setRequestedPlan] = useState<PackageId | null>(null)
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
@@ -191,6 +203,9 @@ export default function ClubAdminUsersPage() {
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,
         inviteUrl: row.inviteUrl ?? `/invite/coach/${row.id}`,
+        emailSentAt: row.emailSentAt,
+        emailSendCount: row.emailSendCount,
+        emailError: row.emailError,
       })),
     )
     setRequests(opsSnapshot.accountRequests ?? [])
@@ -350,7 +365,7 @@ export default function ClubAdminUsersPage() {
   const createInvite = async (email: string, teamId: string | undefined): Promise<{ invite: CoachInvite } | { error: string }> => {
     if (coachLimitReached) return { error: coachLimitMessage }
     if (invites.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)) {
-      return { error: `${email} already has an invite waiting. Copy its link from Invites, or cancel it first.` }
+      return { error: `${email} already has an invite waiting. Resend its email from Invites, or cancel it first.` }
     }
     if (users.some((user) => emailOf(user).toLowerCase() === email && user.status === "active" && user.role !== "athlete")) {
       return { error: `${email} is already on the staff of this club.` }
@@ -386,12 +401,27 @@ export default function ClubAdminUsersPage() {
     }
   }
 
+  /**
+   * Creates a coach invite and emails it straight away. The invite stands even when the email fails:
+   * the returned invite then carries the failure so the list and the dialog can say so.
+   */
+  const createAndEmailInvite = async (
+    email: string,
+    teamId: string | undefined,
+  ): Promise<{ invite: CoachInvite; emailResult: Result<InviteEmailSent> } | { error: string }> => {
+    const created = await createInvite(email, teamId)
+    if ("error" in created) return created
+    const emailResult = await sendInviteEmail({ kind: "coach", inviteId: created.invite.id })
+    // With a real backend the email function writes the audit entry itself.
+    if (!isSupabaseMode && emailResult.ok) await emitAudit("coach_invite_email_sent", email, `coach invite ${created.invite.id}`)
+    return { invite: applyInviteEmailResult(created.invite, emailResult), emailResult }
+  }
+
   const resetInviteDialog = () => {
     setInviteEmail("")
     setInviteTeamId("none")
     setInviteError(null)
     setCreatedInvite(null)
-    setCreatedCopied(false)
   }
 
   const handleSendCoachInvite = async () => {
@@ -405,7 +435,7 @@ export default function ClubAdminUsersPage() {
 
     setInviteBusy(true)
     setInviteError(null)
-    const result = await createInvite(email, teamId)
+    const result = await createAndEmailInvite(email, teamId)
     if ("error" in result) {
       setInviteBusy(false)
       setInviteError(result.error)
@@ -415,8 +445,11 @@ export default function ClubAdminUsersPage() {
     saveInvites([result.invite, ...invites])
     await emitAudit("coach_invite_send", email, teamId ? `team ${teamId}` : "no team")
     setInviteBusy(false)
-    setCreatedInvite({ email, link: toAbsoluteLink(result.invite.inviteUrl ?? `/invite/coach/${result.invite.id}`) })
-    setCreatedCopied(false)
+    setCreatedInvite({
+      email,
+      link: toAbsoluteLink(result.invite.inviteUrl ?? `/invite/coach/${result.invite.id}`),
+      outcome: toInviteEmailOutcome(result.emailResult),
+    })
     setSection("invites")
     syncBackend()
   }
@@ -445,15 +478,38 @@ export default function ClubAdminUsersPage() {
     setBackendError(null)
     setNotice(null)
     setBusyKey(`invite:${invite.id}`)
-    const result = await createInvite(invite.email.toLowerCase(), invite.teamId)
+    const result = await createAndEmailInvite(invite.email.toLowerCase(), invite.teamId)
     setBusyKey(null)
     if ("error" in result) {
-      setBackendError(`Could not create a new link for ${invite.email}: ${result.error}`)
+      setBackendError(`Could not create a new invite for ${invite.email}: ${result.error}`)
       return
     }
     saveInvites([result.invite, ...invites])
     await emitAudit("coach_invite_resend", invite.email, invite.teamId ? `team ${invite.teamId}` : "no team")
-    setNotice(`New invite link ready for ${invite.email}. Copy it and send it to them.`)
+    if (result.emailResult.ok) {
+      setNotice(`New invite emailed to ${invite.email}.`)
+    } else {
+      setBackendError(
+        `A new invite was created for ${invite.email}, but the email was not sent. ${result.emailResult.error.message} Copy its link below and send it to them yourself.`,
+      )
+    }
+    syncBackend()
+  }
+
+  /** Emails a waiting invite again. The link stays the same. */
+  const handleResendInviteEmail = async (invite: CoachInvite) => {
+    setBackendError(null)
+    setNotice(null)
+    setBusyKey(`invite-email:${invite.id}`)
+    const result = await sendInviteEmail({ kind: "coach", inviteId: invite.id })
+    setBusyKey(null)
+    saveInvites(invites.map((item) => (item.id === invite.id ? applyInviteEmailResult(item, result) : item)))
+    if (result.ok) {
+      if (!isSupabaseMode) await emitAudit("coach_invite_email_resent", invite.email, `coach invite ${invite.id}`)
+      setNotice(`Invite emailed to ${invite.email}.`)
+    } else {
+      setBackendError(`The invite email to ${invite.email} was not sent. ${result.error.message} You can still copy the link and send it yourself.`)
+    }
     syncBackend()
   }
 
@@ -520,12 +576,13 @@ export default function ClubAdminUsersPage() {
     const email = request.email.trim().toLowerCase()
     let nextInvites = invites
     let createdCoachInvite = false
+    let inviteEmailResult: Result<InviteEmailSent> | null = null
 
     // Approving a coach request only means something if they can then join, so create their invite first.
     if (status === "approved" && request.role === "coach") {
       const alreadyInvited = invites.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)
       if (!alreadyInvited) {
-        const inviteResult = await createInvite(email, undefined)
+        const inviteResult = await createAndEmailInvite(email, undefined)
         if ("error" in inviteResult) {
           setBusyKey(null)
           setBackendError(`Could not approve ${request.fullName}: ${inviteResult.error}`)
@@ -533,6 +590,7 @@ export default function ClubAdminUsersPage() {
         }
         nextInvites = [inviteResult.invite, ...invites]
         createdCoachInvite = true
+        inviteEmailResult = inviteResult.emailResult
       }
     }
 
@@ -560,7 +618,15 @@ export default function ClubAdminUsersPage() {
     if (status === "declined") {
       setNotice(`Request from ${request.fullName} declined.`)
     } else if (request.role === "coach") {
-      setNotice(`${request.fullName} approved. Their coach invite link is under Invites, ready to copy and send.`)
+      if (inviteEmailResult && !inviteEmailResult.ok) {
+        setBackendError(
+          `${request.fullName} approved, but their invite email was not sent. ${inviteEmailResult.error.message} Copy the link from Invites and send it to them yourself.`,
+        )
+      } else if (inviteEmailResult) {
+        setNotice(`${request.fullName} approved. Their coach invite was emailed to ${email}.`)
+      } else {
+        setNotice(`${request.fullName} approved. They already have a coach invite waiting under Invites.`)
+      }
     } else if (request.role === "athlete") {
       setNotice(`${request.fullName} approved. Athletes join through a team, so invite them from the Teams screen.`)
     } else {
@@ -853,14 +919,14 @@ export default function ClubAdminUsersPage() {
       ) : null}
 
       {section === "invites" ? (
-        <Panel title="Coach invites" hint={`Each invite is a personal link that works for ${COACH_INVITE_VALID_DAYS} days. Copy it and send it to the coach yourself.`}>
+        <Panel title="Coach invites" hint={`Each invite is emailed to the coach with a personal link that works for ${COACH_INVITE_VALID_DAYS} days. You can resend the email or copy the link.`}>
           {backendLoading ? (
             <p className="py-6 text-sm text-sk-mute">Loading invites...</p>
           ) : sortedInvites.length === 0 ? (
             <EmptyState
               icon={<EnvelopeSimple className="size-6" weight="fill" />}
               title="No coach invites yet"
-              body="Invite a coach and their link appears here, so you can see who has joined and who is still waiting."
+              body="Invite a coach and we email them a link to join. The invite appears here, so you can see who has joined and who is still waiting."
               action={
                 <button
                   type="button"
@@ -886,6 +952,8 @@ export default function ClubAdminUsersPage() {
                 const canRenew = invite.status === "expired" || invite.status === "revoked"
                 const hasNewerPending = canRenew && pendingInvites.some((item) => item.email.toLowerCase() === invite.email.toLowerCase())
                 const busy = busyKey === `invite:${invite.id}`
+                const emailBusy = busyKey === `invite-email:${invite.id}`
+                const emailInfo = inviteEmailSummary(invite)
                 const confirming = confirm?.kind === "cancel-invite" && confirm.inviteId === invite.id
                 const teamName = invite.teamId ? teamNameById.get(invite.teamId) : null
                 return (
@@ -896,15 +964,30 @@ export default function ClubAdminUsersPage() {
                           <p className="break-all font-bold text-sk-ink">{invite.email}</p>
                           <p className="text-sm text-sk-mute">
                             {teamName ? `Coach for ${teamName}` : "Coach, no team yet"}
-                            {sent ? `. Sent ${sent}` : ""}
-                            {isPending && expires ? `, works until ${expires}` : ""}
+                            {sent ? `. Invited ${sent}` : ""}
+                            {isPending && expires ? `, link works until ${expires}` : ""}
                             {invite.status === "expired" && expires ? `, expired ${expires}` : ""}
                           </p>
+                          {isPending ? (
+                            <p data-invite-email-status className={`text-sm ${emailInfo.problem ? "font-semibold text-[#b32a0c]" : "text-sk-mute"}`}>
+                              {emailInfo.text}
+                            </p>
+                          ) : null}
                         </div>
                         <Tag tone={status.tone} className="shrink-0">{status.label}</Tag>
                       </div>
                       {isPending ? (
                         <div className="flex shrink-0 flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
+                            disabled={emailBusy || !canResendInviteEmail(invite)}
+                            title={canResendInviteEmail(invite) ? undefined : "This invite has been emailed the maximum number of times"}
+                            onClick={() => void handleResendInviteEmail(invite)}
+                          >
+                            <PaperPlaneTilt className="size-4" weight="bold" />
+                            {resendInviteEmailLabel(invite, emailBusy)}
+                          </button>
                           <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1" onClick={() => void handleCopyInvite(invite)}>
                             {copiedInviteId === invite.id ? <Check className="size-4" weight="bold" /> : <Copy className="size-4" weight="bold" />}
                             {copiedInviteId === invite.id ? "Copied" : "Copy link"}
@@ -937,7 +1020,7 @@ export default function ClubAdminUsersPage() {
                             disabled={busy}
                             onClick={() => void handleRenewInvite(invite)}
                           >
-                            {busy ? "Creating..." : "Create new link"}
+                            {busy ? "Sending..." : "Send new invite"}
                           </button>
                         </div>
                       ) : null}
@@ -971,7 +1054,7 @@ export default function ClubAdminUsersPage() {
       ) : null}
 
       {section === "requests" ? (
-        <Panel title="Account requests" hint="People who asked to join your club. Approving a coach creates their invite link.">
+        <Panel title="Account requests" hint="People who asked to join your club. Approving a coach emails them an invite.">
           {backendLoading ? (
             <p className="py-6 text-sm text-sk-mute">Loading requests...</p>
           ) : sortedRequests.length === 0 ? (
@@ -1071,7 +1154,7 @@ export default function ClubAdminUsersPage() {
             <div className="min-w-0 space-y-1">
               <DialogTitle className="sk-h2">Invite a coach</DialogTitle>
               <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-                They get a personal link to join your club. It works once, for the email you enter, for {COACH_INVITE_VALID_DAYS} days.
+                We email them a personal link to join your club. It works once, for the email you enter, for {COACH_INVITE_VALID_DAYS} days.
               </DialogDescription>
             </div>
             <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
@@ -1080,29 +1163,12 @@ export default function ClubAdminUsersPage() {
           </div>
 
           {createdInvite ? (
-            <div className="space-y-4">
-              <div className="sk-well space-y-3">
-                <p className="text-sm text-sk-ink-2">
-                  Invite ready for <span className="break-all font-bold text-sk-ink">{createdInvite.email}</span>. Send them this link.
-                </p>
-                <input
-                  readOnly
-                  aria-label="Invite link"
-                  value={createdInvite.link}
-                  className="sk-field text-sm"
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <button type="button" className="sk-btn sk-btn-quiet" onClick={resetInviteDialog}>
-                  Invite another
-                </button>
-                <button type="button" className="sk-btn sk-btn-primary" onClick={async () => setCreatedCopied(await copyText(createdInvite.link))}>
-                  {createdCopied ? <Check className="size-5" weight="bold" /> : <Copy className="size-5" weight="bold" />}
-                  {createdCopied ? "Link copied" : "Copy link"}
-                </button>
-              </div>
-            </div>
+            <InviteCreatedResult
+              email={createdInvite.email}
+              link={createdInvite.link}
+              outcome={createdInvite.outcome}
+              onInviteAnother={resetInviteDialog}
+            />
           ) : (
             <form
               className="space-y-4"
@@ -1150,8 +1216,8 @@ export default function ClubAdminUsersPage() {
               ) : null}
               <div className="flex justify-end">
                 <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={inviteBusy || !inviteEmail.trim() || coachLimitReached}>
-                  <UserPlus className="size-5" weight="bold" />
-                  {inviteBusy ? "Creating..." : "Create invite link"}
+                  <PaperPlaneTilt className="size-5" weight="bold" />
+                  {inviteBusy ? "Sending..." : "Send invite"}
                 </button>
               </div>
             </form>

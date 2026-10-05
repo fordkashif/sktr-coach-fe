@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { INVITE_EMAIL_COLUMNS, isMissingInviteEmailColumns } from "@/lib/data/invites/invite-email-data"
 import { buildPackageLimitError, getTenantPackageUsage } from "@/lib/tenant/package-enforcement"
 
 type ClientResolution =
@@ -161,6 +162,11 @@ export type TeamAthleteInvite = {
   createdAt: string
   expiresAt: string | null
   invitePath: string
+  /** When the invite email last went out. Null or missing means it has not been emailed. */
+  emailSentAt?: string | null
+  emailSendCount?: number
+  /** Machine code of the last failed email attempt. */
+  emailError?: string | null
 }
 
 /** Invites issued for one team, newest first. Pending invites past their expiry are reported as expired. */
@@ -168,22 +174,27 @@ export async function getAthleteInvitesForTeam(teamId: string): Promise<Result<T
   const clientResult = requireSupabaseClient("getAthleteInvitesForTeam")
   if (!clientResult.ok) return clientResult
 
-  const { data, error } = await clientResult.client
-    .from("athlete_invites")
-    .select("id, email, status, created_at, expires_at")
-    .eq("team_id", teamId)
-    .order("created_at", { ascending: false })
+  const selectInvites = (columns: string) =>
+    clientResult.client.from("athlete_invites").select(columns).eq("team_id", teamId).order("created_at", { ascending: false })
+  const baseColumns = "id, email, status, created_at, expires_at"
+
+  // The email columns arrive with a migration. Until it has run, still show the invites.
+  const withEmail = await selectInvites(`${baseColumns}, ${INVITE_EMAIL_COLUMNS}`)
+  const { data, error } = isMissingInviteEmailColumns(withEmail.error) ? await selectInvites(baseColumns) : withEmail
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
 
   const now = Date.now()
   return ok(
-    ((data as Array<{
+    ((data as unknown as Array<{
       id: string
       email: string | null
       status: AthleteInviteStatus
       created_at: string
       expires_at: string | null
+      last_email_sent_at?: string | null
+      email_send_count?: number | null
+      last_email_error?: string | null
     }> | null) ?? []).map((row) => ({
       id: row.id,
       email: row.email ?? "",
@@ -192,6 +203,9 @@ export async function getAthleteInvitesForTeam(teamId: string): Promise<Result<T
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       invitePath: `/athlete/claim/${row.id}`,
+      emailSentAt: row.last_email_sent_at ?? null,
+      emailSendCount: row.email_send_count ?? 0,
+      emailError: row.last_email_error ?? null,
     })),
   )
 }
