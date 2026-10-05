@@ -45,7 +45,7 @@ test("tenant storage isolation: invite created in tenant A is not visible in ten
   await tenantAPage.goto("/club-admin/users")
   await tenantAPage.getByRole("button", { name: "Invite coach" }).first().click()
   await tenantAPage.getByPlaceholder("coach@email.com").fill(email)
-  await tenantAPage.getByRole("button", { name: "Create invite link" }).click()
+  await tenantAPage.getByRole("button", { name: "Send invite" }).click()
   await tenantAPage.getByRole("dialog").getByRole("button", { name: "Close" }).click()
   await expect(tenantAPage.locator(`[data-invite="${email}"]`)).toBeVisible()
   await tenantAContext.close()

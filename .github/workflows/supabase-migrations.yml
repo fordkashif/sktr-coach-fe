@@ -55,6 +55,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFICATION_FROM_EMAIL: ${{ secrets.NOTIFICATION_FROM_EMAIL }}
+          # Where the app is hosted for this environment, for example https://app.example.com.
+          # Not a secret: set it as an environment variable (or as a secret, either works).
+          PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \
@@ -63,6 +66,13 @@ jobs:
             RESEND_API_KEY="$RESEND_API_KEY" \
             NOTIFICATION_FROM_EMAIL="$NOTIFICATION_FROM_EMAIL" \
             --project-ref "$SUPABASE_PROJECT_REF"
+          # Invite emails build their links from PUBLIC_APP_URL. Only sync it when it is configured here,
+          # so a value set by hand in the Supabase dashboard is never overwritten with nothing.
+          if [ -n "$PUBLIC_APP_URL" ]; then
+            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF"
+          else
+            echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
+          fi
 
       - name: Deploy Edge Functions (dev)
         env:
@@ -75,6 +85,7 @@ jobs:
           supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
 
   migrate-prod:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'prod')
@@ -113,6 +124,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFICATION_FROM_EMAIL: ${{ secrets.NOTIFICATION_FROM_EMAIL }}
+          # Where the app is hosted for this environment, for example https://app.example.com.
+          # Not a secret: set it as an environment variable (or as a secret, either works).
+          PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \
@@ -121,6 +135,13 @@ jobs:
             RESEND_API_KEY="$RESEND_API_KEY" \
             NOTIFICATION_FROM_EMAIL="$NOTIFICATION_FROM_EMAIL" \
             --project-ref "$SUPABASE_PROJECT_REF"
+          # Invite emails build their links from PUBLIC_APP_URL. Only sync it when it is configured here,
+          # so a value set by hand in the Supabase dashboard is never overwritten with nothing.
+          if [ -n "$PUBLIC_APP_URL" ]; then
+            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF"
+          else
+            echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
+          fi
 
       - name: Deploy Edge Functions (prod)
         env:
@@ -133,4 +154,5 @@ jobs:
           supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
 

@@ -246,6 +246,25 @@ Edge functions changed alongside (not part of the migration, they deploy separat
 
 Still open: `is_platform_admin()` and `bootstrap_current_profile()` trust the account's email. If public sign-up is enabled without email confirmation in the project's Auth settings, a stranger can register somebody else's email before they do. Keep "Confirm email" on, or turn public sign-ups off.
 
+### Invite email delivery (migration `20261006090000_invite_email_delivery.sql`)
+
+Coach and athlete invites are emailed by the `send-invite-email` edge function. The migration adds four columns to both `coach_invites` and `athlete_invites`: `last_email_attempt_at`, `last_email_sent_at`, `email_send_count`, `last_email_error` (a short machine code, never the provider's message).
+
+No policy is added or changed.
+
+| | Read the four columns | Write the four columns |
+|---|---|---|
+| `coach_invites` | club admins of the club (`coach_invites_staff_all`), as before | service role only |
+| `athlete_invites` | members of the club (`athlete_invites_select_tenant`), as before | service role only |
+| anon, other clubs | no rows | no |
+
+- The existing "staff all" policies would let a club admin or coach update any column, including the send counter. The trigger `protect_invite_email_delivery_columns` (before insert or update, security invoker) keeps the four columns unchanged whenever the statement runs as `authenticated` or `anon`, so the resend limit cannot be reset from the API. Every other column behaves as before (revoke still works).
+- `get_public_coach_invite` / `get_public_athlete_invite` list their columns explicitly, so someone holding an invite link does not see delivery state.
+- Who may send: the function asks the database, as the caller, `current_tenant_id()`, `is_club_admin()` and `is_coach_or_admin()`, which are the checks in the insert policies. Coach invite: club admin of the invite's club. Athlete invite: coach or club admin of the invite's club. A deactivated member or a member of a suspended club is refused. A missing invite and another club's invite get the same `not_allowed` answer.
+- Limits: one email per invite per 60 seconds, at most 5 per invite, taken with one conditional update so two simultaneous requests send one email.
+- Each send writes a tenant `audit_events` row (`coach_invite_email_sent`, `coach_invite_email_resent`, `coach_invite_email_failed` and the `athlete_` equivalents) with the inviter as actor and the invited email as target.
+- No double emails: the invite triggers queue only `in-app` notification events when an invite is created, so `dispatch-notification-emails` has nothing to send for it.
+
 ## Service-Role Only Operations (Documented)
 
 These are intentionally not available to regular authenticated users:

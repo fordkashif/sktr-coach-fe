@@ -197,6 +197,19 @@ No table or column changes. Policies `profiles_insert_self_bootstrap` and `athle
 - `provision_club_admin_tenant(...)`: `service_role` only.
 - The app no longer reads `tenant_id`, `role` or `team_id` from auth user metadata anywhere. Only `display_name` is read from it (as a default name).
 
+## Invite Email Delivery (migration `20261006090000_invite_email_delivery.sql`)
+
+Added to both `coach_invites` and `athlete_invites`. Written only by the `send-invite-email` edge function (service role); a trigger ignores API writes to them.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `last_email_attempt_at` | `timestamptz null` | last time a send was started (drives the 60 second resend wait) |
+| `last_email_sent_at` | `timestamptz null` | last time the email provider accepted the invite email |
+| `email_send_count` | `int not null default 0` | accepted sends for this invite (maximum 5) |
+| `last_email_error` | `text null` | code of the last failure: `email_not_configured`, `provider_failure`, `recipient_opted_out`. Null after a successful send |
+
+`protect_invite_email_delivery_columns()` trigger function, attached to both tables before insert or update.
+
 ## Out of Scope for BEM-01
 
 - RLS policies (tracked in `BEM-02`)

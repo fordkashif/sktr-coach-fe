@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, ArrowRight, CheckCircle } from "@phosphor-icons/react"
+import { ArrowLeft, ArrowRight, CheckCircle, WarningCircle } from "@phosphor-icons/react"
+import { describeInviteEmailError, sendInviteEmail } from "@/lib/data/invites/invite-email-data"
 import {
   Field,
   FirstAccessFrame,
@@ -88,6 +89,8 @@ export default function ClubAdminGetStartedPage() {
   const [coachInviteEmail, setCoachInviteEmail] = useState("")
   /** Email of a coach invite that already exists, so going back never sends it twice. */
   const [sentInviteEmail, setSentInviteEmail] = useState<string | null>(null)
+  /** Why the invite email did not go out, when the invite exists but was not emailed. */
+  const [inviteEmailProblem, setInviteEmailProblem] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isSupabaseMode) return
@@ -146,6 +149,9 @@ export default function ClubAdminGetStartedPage() {
       const existingInvite = opsResult.ok ? opsResult.data.invites.find((invite) => invite.status === "pending" || invite.status === "accepted") : null
       if (existingInvite) {
         setSentInviteEmail(existingInvite.email)
+        if (existingInvite.status === "pending" && !existingInvite.emailSentAt) {
+          setInviteEmailProblem(describeInviteEmailError(existingInvite.emailError) ?? "The invite has not been emailed yet.")
+        }
         setCoachInviteEmail(existingInvite.email)
       }
 
@@ -251,15 +257,25 @@ export default function ClubAdminGetStartedPage() {
     if (!skip && !alreadySent) {
       if (!createdTeamId) return setError("Create your first team before inviting a coach.")
       if (!EMAIL_PATTERN.test(email)) return setError("Enter the coach's email address, or skip this for now.")
+      let inviteId = "mock-first-coach-invite"
+      setSaving(true)
       if (isSupabaseMode) {
-        setSaving(true)
         const result = await createCoachInvite({ email, teamId: createdTeamId })
         if (!result.ok) {
           setSaving(false)
           return setError(result.error.message)
         }
+        inviteId = result.data.id
       }
       setSentInviteEmail(email)
+      const emailResult = await sendInviteEmail({ kind: "coach", inviteId })
+      if (!emailResult.ok) {
+        // The invite exists, so setup can go on. Stay on this step once so the admin sees the email did not go out.
+        setSaving(false)
+        setInviteEmailProblem(emailResult.error.message)
+        return
+      }
+      setInviteEmailProblem(null)
     }
     setSaving(true)
     const saved = await saveProgress("review")
@@ -505,11 +521,19 @@ export default function ClubAdminGetStartedPage() {
 
         {step === "coach" ? (
           <>
-            {sentInviteEmail ? (
-              <div className="flex items-start gap-3 rounded-2xl bg-sk-green-tint p-4">
+            {sentInviteEmail && inviteEmailProblem ? (
+              <div role="alert" className="flex items-start gap-3 rounded-2xl bg-sk-yellow-tint p-4">
+                <WarningCircle className="mt-0.5 size-6 shrink-0 text-[#7a5600]" weight="fill" aria-hidden />
+                <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
+                  <span className="block break-all font-bold text-sk-ink">Invite created, but the email to {sentInviteEmail} was not sent</span>
+                  {inviteEmailProblem} You can continue: after setup, open People, then Invites, to resend the email or copy the link.
+                </p>
+              </div>
+            ) : sentInviteEmail ? (
+              <div role="status" className="flex items-start gap-3 rounded-2xl bg-sk-green-tint p-4">
                 <CheckCircle className="mt-0.5 size-6 shrink-0 text-sk-green" weight="fill" aria-hidden />
                 <p className="min-w-0 text-sm leading-relaxed text-sk-ink-2">
-                  <span className="block break-all font-bold text-sk-ink">Invite sent to {sentInviteEmail}</span>
+                  <span className="block break-all font-bold text-sk-ink">Invite emailed to {sentInviteEmail}</span>
                   Continue, or enter a different email to invite another coach.
                 </p>
               </div>
@@ -517,7 +541,7 @@ export default function ClubAdminGetStartedPage() {
             <Field
               label="Coach email"
               htmlFor={`${formId}-coach-email`}
-              hint={`They get an invite to join ${teamLabel} as a coach.`}
+              hint={`We email them an invite to join ${teamLabel} as a coach.`}
             >
               <input
                 id={`${formId}-coach-email`}

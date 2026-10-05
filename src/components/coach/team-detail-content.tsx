@@ -1,6 +1,6 @@
 "use client"
 
-import { CaretRight, Check, Copy, EnvelopeSimple, LinkSimple, Trash, UserPlus, UsersThree, X } from "@phosphor-icons/react"
+import { CaretRight, Check, Copy, EnvelopeSimple, PaperPlaneTilt, Trash, UserPlus, UsersThree, X } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { EmptyState, Initials, Meter, PageHeader, Panel, ReadinessTag, Segmented, Stat, Tag, scoreTone, type TagTone } from "@/components/sk"
@@ -12,6 +12,16 @@ import {
   type AthleteInviteStatus,
   type TeamAthleteInvite,
 } from "@/lib/data/athlete/invite-data"
+import {
+  applyInviteEmailResult,
+  canResendInviteEmail,
+  InviteCreatedResult,
+  inviteEmailSummary,
+  resendInviteEmailLabel,
+  toInviteEmailOutcome,
+  type InviteEmailOutcome,
+} from "@/components/invites/invite-email-ui"
+import { sendInviteEmail } from "@/lib/data/invites/invite-email-data"
 import { removeAthleteFromTeamForCurrentCoach } from "@/lib/data/coach/teams-data"
 import { getBackendMode } from "@/lib/supabase/config"
 import type { Athlete, PR, Team } from "@/lib/mock-data"
@@ -69,16 +79,14 @@ export function InviteAthleteDialog({
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState("")
   const [expiryDays, setExpiryDays] = useState("7")
-  const [created, setCreated] = useState<{ email: string; link: string } | null>(null)
+  const [created, setCreated] = useState<{ email: string; link: string; outcome: InviteEmailOutcome } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   const reset = () => {
     setEmail("")
     setCreated(null)
     setError(null)
-    setCopied(false)
   }
 
   const createInvite = async () => {
@@ -106,10 +114,13 @@ export function InviteAthleteDialog({
       invitePath = `/athlete/claim/${teamId}?token=${inviteId}`
     }
 
+    // The invite exists from here on. Email it, and if that fails say so and keep the link to hand.
+    const emailResult = await sendInviteEmail({ kind: "athlete", inviteId })
     setBusy(false)
-    setCopied(false)
-    setCreated({ email: cleanEmail, link: toAbsoluteLink(invitePath) })
-    onCreated?.({ id: inviteId, email: cleanEmail, status: "pending", createdAt, expiresAt, invitePath })
+    setCreated({ email: cleanEmail, link: toAbsoluteLink(invitePath), outcome: toInviteEmailOutcome(emailResult) })
+    onCreated?.(
+      applyInviteEmailResult<TeamAthleteInvite>({ id: inviteId, email: cleanEmail, status: "pending", createdAt, expiresAt, invitePath }, emailResult),
+    )
   }
 
   return (
@@ -126,7 +137,7 @@ export function InviteAthleteDialog({
           <div className="min-w-0 space-y-1">
             <DialogTitle className="sk-h2">Invite an athlete</DialogTitle>
             <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-              They get a personal link to join {teamName}. It works once, for the email you enter.
+              We email them a personal link to join {teamName}. It works once, for the email you enter.
             </DialogDescription>
           </div>
           <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
@@ -135,33 +146,7 @@ export function InviteAthleteDialog({
         </div>
 
         {created ? (
-          <div className="space-y-4">
-            <div className="sk-well space-y-3">
-              <p className="text-sm text-sk-ink-2">
-                Invite ready for <span className="font-bold text-sk-ink">{created.email}</span>. Send them this link.
-              </p>
-              <input
-                readOnly
-                aria-label="Invite link"
-                value={created.link}
-                className="sk-field text-sm"
-                onFocus={(event) => event.currentTarget.select()}
-              />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button type="button" className="sk-btn sk-btn-quiet" onClick={reset}>
-                Invite another
-              </button>
-              <button
-                type="button"
-                className="sk-btn sk-btn-primary"
-                onClick={async () => setCopied(await copyText(created.link))}
-              >
-                {copied ? <Check className="size-5" weight="bold" /> : <Copy className="size-5" weight="bold" />}
-                {copied ? "Link copied" : "Copy link"}
-              </button>
-            </div>
-          </div>
+          <InviteCreatedResult email={created.email} link={created.link} outcome={created.outcome} onInviteAnother={reset} />
         ) : (
           <form
             className="space-y-4"
@@ -207,8 +192,8 @@ export function InviteAthleteDialog({
             ) : null}
             <div className="flex justify-end">
               <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={busy || !email.trim()}>
-                <LinkSimple className="size-5" weight="bold" />
-                {busy ? "Creating..." : "Create invite link"}
+                <PaperPlaneTilt className="size-5" weight="bold" />
+                {busy ? "Sending..." : "Send invite"}
               </button>
             </div>
           </form>
@@ -249,6 +234,8 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
   const [invitesError, setInvitesError] = useState<string | null>(null)
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
   const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
+  const [emailingInviteId, setEmailingInviteId] = useState<string | null>(null)
+  const [invitesNotice, setInvitesNotice] = useState<string | null>(null)
   const team = teamsSource.find((item) => item.id === teamId)
 
   useEffect(() => {
@@ -283,7 +270,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
     const result = await getAthleteInvitesForTeam(teamId)
     setInvitesLoading(false)
     if (!result.ok) {
-      setInvitesError(result.error.message)
+      setInvitesError(`Could not load invites: ${result.error.message}`)
       return
     }
     setInvitesError(null)
@@ -333,14 +320,30 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
     setRosterIds((current) => current.filter((id) => id !== athlete.id))
   }
 
+  /** Emails a waiting invite again. The link stays the same. */
+  const resendInviteEmail = async (invite: TeamAthleteInvite) => {
+    setInvitesError(null)
+    setInvitesNotice(null)
+    setEmailingInviteId(invite.id)
+    const result = await sendInviteEmail({ kind: "athlete", inviteId: invite.id })
+    setEmailingInviteId(null)
+    setInvites((current) => current.map((item) => (item.id === invite.id ? applyInviteEmailResult(item, result) : item)))
+    if (result.ok) {
+      setInvitesNotice(`Invite emailed to ${invite.email}.`)
+    } else {
+      setInvitesError(`The invite email to ${invite.email} was not sent. ${result.error.message} You can still copy the link and send it yourself.`)
+    }
+  }
+
   const revokeInvite = async (invite: TeamAthleteInvite) => {
     setInvitesError(null)
+    setInvitesNotice(null)
     if (isSupabaseMode) {
       setRevokingInviteId(invite.id)
       const result = await revokeAthleteInviteForCurrentCoach(invite.id)
       setRevokingInviteId(null)
       if (!result.ok) {
-        setInvitesError(result.error.message)
+        setInvitesError(`Could not cancel the invite: ${result.error.message}`)
         void loadInvites()
         return
       }
@@ -516,11 +519,16 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
       ) : (
         <Panel
           title="Invites"
-          hint="Every invite link you have created for this team, newest first."
+          hint="Every invite for this team, newest first. Each one is emailed to the athlete, and you can resend it or copy the link."
         >
           {invitesError ? (
             <p role="alert" className="mb-3 rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-              Could not update invites: {invitesError}
+              {invitesError}
+            </p>
+          ) : null}
+          {invitesNotice ? (
+            <p role="status" className="mb-3 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-sk-ink">
+              {invitesNotice}
             </p>
           ) : null}
           {invitesLoading ? (
@@ -529,7 +537,7 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
             <EmptyState
               icon={<EnvelopeSimple className="size-6" weight="fill" />}
               title="No invites sent yet"
-              body="Create an invite link for an athlete and it appears here, so you can see who has joined and who is still waiting."
+              body="Invite an athlete and we email them a link to join. The invite appears here, so you can see who has joined and who is still waiting."
               action={inviteButton("Invite athlete", "sk-btn sk-btn-ink sk-btn-sm")}
               className="border-0 bg-sk-canvas"
             />
@@ -540,30 +548,50 @@ export function CoachTeamDetailContent({ teamId, data }: CoachTeamDetailContentP
                 const sent = shortDate(invite.createdAt)
                 const expires = shortDate(invite.expiresAt)
                 const isPending = invite.status === "pending"
+                const emailInfo = inviteEmailSummary(invite)
+                const emailBusy = emailingInviteId === invite.id
                 return (
                   <li
                     key={invite.id}
-                    className="flex flex-col gap-3 border-b border-sk-line py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                    data-invite={invite.email}
+                    className="flex flex-col gap-3 border-b border-sk-line py-4 last:border-b-0 md:flex-row md:items-center md:justify-between"
                   >
-                    <div className="flex min-w-0 items-center justify-between gap-3 sm:flex-1">
+                    <div className="flex min-w-0 items-start justify-between gap-3 md:flex-1 md:items-center">
                       <div className="min-w-0">
-                        <p className="truncate font-bold text-sk-ink">{invite.email || "No email on this invite"}</p>
-                        <p className="truncate text-sm text-sk-mute">
-                          {sent ? `Sent ${sent}` : "Sent"}
+                        <p className="break-all font-bold text-sk-ink">{invite.email || "No email on this invite"}</p>
+                        <p className="text-sm text-sk-mute">
+                          {sent ? `Invited ${sent}` : "Invited"}
                           {isPending && expires ? `, link works until ${expires}` : ""}
                         </p>
+                        {isPending ? (
+                          <p data-invite-email-status className={`text-sm ${emailInfo.problem ? "font-semibold text-[#b32a0c]" : "text-sk-mute"}`}>
+                            {emailInfo.text}
+                          </p>
+                        ) : null}
                       </div>
                       <Tag tone={status.tone} className="shrink-0">{status.label}</Tag>
                     </div>
                     {isPending ? (
-                      <div className="flex shrink-0 gap-2">
-                        <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => void copyInvite(invite)}>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {invite.email ? (
+                          <button
+                            type="button"
+                            className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
+                            disabled={emailBusy || !canResendInviteEmail(invite)}
+                            title={canResendInviteEmail(invite) ? undefined : "This invite has been emailed the maximum number of times"}
+                            onClick={() => void resendInviteEmail(invite)}
+                          >
+                            <PaperPlaneTilt className="size-4" weight="bold" />
+                            {resendInviteEmailLabel(invite, emailBusy)}
+                          </button>
+                        ) : null}
+                        <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1" onClick={() => void copyInvite(invite)}>
                           {copiedInviteId === invite.id ? <Check className="size-4" weight="bold" /> : <Copy className="size-4" weight="bold" />}
                           {copiedInviteId === invite.id ? "Copied" : "Copy link"}
                         </button>
                         <button
                           type="button"
-                          className="sk-btn sk-btn-ghost sk-btn-sm max-sm:h-11 max-sm:flex-1"
+                          className="sk-btn sk-btn-ghost sk-btn-sm max-md:h-11 max-md:flex-1"
                           disabled={revokingInviteId === invite.id}
                           onClick={() => void revokeInvite(invite)}
                         >

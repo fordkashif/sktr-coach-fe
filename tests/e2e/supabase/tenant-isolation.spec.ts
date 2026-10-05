@@ -30,7 +30,7 @@ test("club-admin tenant isolation: invite from tenant A is not visible in tenant
   await tenantAPage.goto("/club-admin/users")
   await tenantAPage.getByRole("button", { name: "Invite coach" }).first().click()
   await tenantAPage.getByPlaceholder("coach@email.com").fill(inviteEmail)
-  await tenantAPage.getByRole("button", { name: "Create invite link" }).click()
+  await tenantAPage.getByRole("button", { name: "Send invite" }).click()
   await tenantAPage.getByRole("dialog").getByRole("button", { name: "Close" }).click()
   await expect(tenantAPage.locator(`[data-invite="${inviteEmail}"]`)).toBeVisible()
   await tenantAContext.close()

@@ -42,6 +42,11 @@ export interface CoachInvite {
   createdAt: string
   expiresAt?: string
   inviteUrl?: string
+  /** When the invite email last went out. Missing means it has not been emailed. */
+  emailSentAt?: string
+  emailSendCount?: number
+  /** Machine code of the last failed email attempt. */
+  emailError?: string
 }
 
 export interface AccountRequest {

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { INVITE_EMAIL_COLUMNS, isMissingInviteEmailColumns } from "@/lib/data/invites/invite-email-data"
 import { buildPackageLimitError, getTenantPackageUsage } from "@/lib/tenant/package-enforcement"
 
 export type ClubAdminUser = {
@@ -21,6 +22,11 @@ export type ClubAdminInvite = {
   createdAt: string
   expiresAt?: string
   inviteUrl?: string
+  /** When the invite email last went out. Missing means it has not been emailed. */
+  emailSentAt?: string
+  emailSendCount?: number
+  /** Machine code of the last failed email attempt. */
+  emailError?: string
 }
 
 export type ClubAdminAccountRequest = {
@@ -195,7 +201,15 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
   const contextResult = await getCurrentClubAdminContext(clientResult.client)
   if (!contextResult.ok) return contextResult
 
-  const [profilesResult, teamsResult, invitesResult, requestsResult] = await Promise.all([
+  const selectInvites = (columns: string) =>
+    clientResult.client
+      .from("coach_invites")
+      .select(columns)
+      .eq("tenant_id", contextResult.data.tenantId)
+      .order("created_at", { ascending: false })
+  const inviteColumns = "id, email, team_id, status, created_at, expires_at"
+
+  const [profilesResult, teamsResult, invitesWithEmailResult, requestsResult] = await Promise.all([
     clientResult.client
       .from("profiles")
       .select("user_id, role, display_name, is_active")
@@ -206,17 +220,18 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
       .select("id, name")
       .eq("tenant_id", contextResult.data.tenantId)
       .eq("status", "active"),
-    clientResult.client
-      .from("coach_invites")
-      .select("id, email, team_id, status, created_at, expires_at")
-      .eq("tenant_id", contextResult.data.tenantId)
-      .order("created_at", { ascending: false }),
+    selectInvites(`${inviteColumns}, ${INVITE_EMAIL_COLUMNS}`),
     clientResult.client
       .from("account_requests")
       .select("id, full_name, email, organization, desired_role, notes, status, created_at, reviewed_at")
       .eq("tenant_id", contextResult.data.tenantId)
       .order("created_at", { ascending: false }),
   ])
+
+  // The email columns arrive with a migration. Until it has run, still show the invites.
+  const invitesResult = isMissingInviteEmailColumns(invitesWithEmailResult.error)
+    ? await selectInvites(inviteColumns)
+    : invitesWithEmailResult
 
   if (profilesResult.error) return { ok: false, error: mapPostgrestError(profilesResult.error) }
   if (teamsResult.error) return { ok: false, error: mapPostgrestError(teamsResult.error) }
@@ -241,13 +256,16 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
     name: row.name,
   }))
 
-  const invites: ClubAdminInvite[] = ((invitesResult.data as Array<{
+  const invites: ClubAdminInvite[] = ((invitesResult.data as unknown as Array<{
     id: string
     email: string
     team_id: string | null
     status: ClubAdminInvite["status"]
     created_at: string
     expires_at: string | null
+    last_email_sent_at?: string | null
+    email_send_count?: number | null
+    last_email_error?: string | null
   }> | null) ?? []).map((row) => ({
     id: row.id,
     email: row.email,
@@ -260,6 +278,9 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
     createdAt: row.created_at.slice(0, 10),
     expiresAt: row.expires_at ?? undefined,
     inviteUrl: `/invite/coach/${row.id}`,
+    emailSentAt: row.last_email_sent_at ?? undefined,
+    emailSendCount: row.email_send_count ?? 0,
+    emailError: row.last_email_error ?? undefined,
   }))
 
   const accountRequests: ClubAdminAccountRequest[] = ((requestsResult.data as Array<{

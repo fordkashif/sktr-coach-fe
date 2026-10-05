@@ -29,7 +29,8 @@ test("club-admin can send coach invite and manage user access", async ({ page })
   const inviteEmail = `coach-wave4-${Date.now()}@pacelab.local`
   await page.getByRole("button", { name: "Invite coach" }).first().click()
   await page.getByPlaceholder("coach@email.com").fill(inviteEmail)
-  await page.getByRole("button", { name: "Create invite link" }).click()
+  await page.getByRole("button", { name: "Send invite" }).click()
+  await expect(page.getByRole("dialog")).toContainText(`Invite emailed to ${inviteEmail}`)
   await expect(page.getByRole("dialog").getByLabel("Invite link")).toHaveValue(/\/invite\/coach\//)
   await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
   await expect(page.locator(`[data-invite="${inviteEmail}"]`)).toContainText("Waiting")
@@ -59,7 +60,8 @@ test("club-admin can create, update, archive, restore, and invite athletes for t
 
   await teamRow.getByRole("button", { name: "Invite athlete" }).click()
   await page.getByRole("dialog").getByPlaceholder("athlete@email.com").fill(`athlete-wave4-${Date.now()}@pacelab.local`)
-  await page.getByRole("dialog").getByRole("button", { name: "Create invite link" }).click()
+  await page.getByRole("dialog").getByRole("button", { name: "Send invite" }).click()
+  await expect(page.getByRole("dialog")).toContainText("Invite emailed to")
   await expect(page.getByRole("dialog").getByLabel("Invite link")).toHaveValue(/\/athlete\/claim\//)
   await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
 
