@@ -1,5 +1,5 @@
 import { CaretRight, Check } from "@phosphor-icons/react"
-import type { ReactNode } from "react"
+import { Fragment, type HTMLAttributes, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 
@@ -166,6 +166,8 @@ export function DataTable<Row>({
   columns,
   rows,
   rowKey,
+  rowProps,
+  rowBelow,
   className,
 }: {
   /** Read by screen readers; say what the table lists. */
@@ -173,6 +175,17 @@ export function DataTable<Row>({
   columns: Array<DataTableColumn<Row>>
   rows: Row[]
   rowKey: (row: Row) => string
+  /**
+   * Attributes for one row: data attributes, or `onClick` to open the row's detail from anywhere on
+   * the row (the row then shows a pointer). Keep a real button or link in the first column too, so
+   * the keyboard can open it.
+   */
+  rowProps?: (row: Row) => HTMLAttributes<HTMLTableRowElement> & Record<`data-${string}`, string | boolean | undefined>
+  /**
+   * Something that opens under one row, across the full width: an InlineConfirm for that row's
+   * remove or deactivate action. Return null for every other row.
+   */
+  rowBelow?: (row: Row) => ReactNode
   className?: string
 }) {
   const [first, ...others] = columns
@@ -189,8 +202,12 @@ export function DataTable<Row>({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={rowKey(row)}>
+        {rows.map((row) => {
+          const extra = rowProps?.(row)
+          const below = rowBelow?.(row)
+          return (
+          <Fragment key={rowKey(row)}>
+          <tr {...extra} className={cn(extra?.onClick && "cursor-pointer", extra?.className)}>
             <th scope="row" className={first.className}>
               {first.cell(row)}
             </th>
@@ -207,7 +224,14 @@ export function DataTable<Row>({
               </td>
             ))}
           </tr>
-        ))}
+          {below ? (
+            <tr data-below>
+              <td colSpan={columns.length}>{below}</td>
+            </tr>
+          ) : null}
+          </Fragment>
+          )
+        })}
       </tbody>
     </table>
   )

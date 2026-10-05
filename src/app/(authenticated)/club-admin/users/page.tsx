@@ -1,10 +1,39 @@
 "use client"
 
-import { Check, Copy, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, Tray, UserPlus, UsersThree, X } from "@phosphor-icons/react"
-import { Fragment, useEffect, useMemo, useState } from "react"
-import { EmptyState, Initials, PageHeader, Panel, Segmented, Tag, type TagTone } from "@/components/sk"
+import { UserPlus } from "@phosphor-icons/react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { AddAthletesToTeam, ClubAthletesView } from "@/components/club-admin/athletes-view"
+import { InviteStaffDialog, type InviteStaffView, type StaffInviteCheck, type StaffInviteCreated } from "@/components/club-admin/invite-staff-dialog"
+import { UpgradeRequestDialog } from "@/components/club-admin/upgrade-request-dialog"
+import { applyInviteEmailResult, canResendInviteEmail, inviteEmailSummary, resendInviteEmailLabel } from "@/components/invites/invite-email-ui"
+import {
+  ActionRow,
+  Avatar,
+  Button,
+  DataTable,
+  EmptyState,
+  FilterBar,
+  FilterChips,
+  InlineConfirm,
+  List,
+  Notice,
+  RowMenu,
+  Screen,
+  ScreenHeader,
+  SearchInput,
+  Section,
+  SkeletonRows,
+  StatusText,
+  TableSub,
+  Tabs,
+  notify,
+  type DataTableColumn,
+  type RowMenuItem,
+  type StateTone,
+} from "@/components/sk"
+import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
 import { useClubAdmin } from "@/lib/club-admin-context"
 import {
   COACH_INVITE_VALID_DAYS,
@@ -15,23 +44,14 @@ import {
   insertAuditEvent,
   reviewAccountRequest,
   revokeCoachInvite,
-  submitClubAdminPackageUpgradeRequest,
   updateProfileRoleAndStatus,
   type ClubAdminPeopleDirectory,
 } from "@/lib/data/club-admin/ops-data"
-import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
-import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
-import {
-  applyInviteEmailResult,
-  canResendInviteEmail,
-  InviteCreatedResult,
-  inviteEmailSummary,
-  resendInviteEmailLabel,
-  toInviteEmailOutcome,
-  type InviteEmailOutcome,
-} from "@/components/invites/invite-email-ui"
+import { createStaffInvites, getClubAthletes, removeClubMember, type ClubAthlete, type StaffInviteRole } from "@/lib/data/club-admin/people-data"
+import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { sendInviteEmail, type InviteEmailSent } from "@/lib/data/invites/invite-email-data"
 import type { Result } from "@/lib/data/result"
+import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
   loadAccountRequestsSafe,
@@ -40,16 +60,21 @@ import {
   loadUsersSafe,
   persistAccountRequests,
   persistInvites,
+  persistTeams,
   persistUsers,
 } from "../state"
 
-type Section = "people" | "invites" | "requests"
+type View = "staff" | "athletes" | "invites" | "requests"
+const VIEWS: View[] = ["staff", "athletes", "invites", "requests"]
 
 type Confirm =
   | { kind: "role"; userId: string; role: UserRole }
   | { kind: "deactivate"; userId: string }
+  | { kind: "remove"; userId: string }
   | { kind: "cancel-invite"; inviteId: string }
   | { kind: "decline"; requestId: string }
+
+type InviteFilter = "all" | CoachInvite["status"]
 
 const ROLE_LABEL: Record<UserRole, string> = {
   "club-admin": "Club admin",
@@ -63,33 +88,23 @@ const ROLE_CHANGE_EFFECT: Record<UserRole, string> = {
   athlete: "They lose staff access to teams, plans and reports.",
 }
 
-const INVITE_STATUS: Record<CoachInvite["status"], { label: string; tone: TagTone }> = {
-  pending: { label: "Waiting", tone: "yellow" },
+const INVITE_STATUS: Record<CoachInvite["status"], { label: string; tone: StateTone }> = {
+  pending: { label: "Waiting", tone: "amber" },
   accepted: { label: "Joined", tone: "green" },
   expired: { label: "Expired", tone: "coral" },
-  revoked: { label: "Cancelled", tone: "plain" },
+  revoked: { label: "Cancelled", tone: "neutral" },
 }
 
-const REQUEST_STATUS: Record<AccountRequest["status"], { label: string; tone: TagTone }> = {
-  pending: { label: "Waiting", tone: "yellow" },
+const REQUEST_STATUS: Record<AccountRequest["status"], { label: string; tone: StateTone }> = {
+  pending: { label: "Waiting", tone: "amber" },
   approved: { label: "Approved", tone: "green" },
-  declined: { label: "Declined", tone: "plain" },
+  declined: { label: "Declined", tone: "neutral" },
 }
 
 const MOCK_USER_EMAIL_STORAGE_KEY = "pacelab:mock-user-email"
-const alertClass = "rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]"
 
 function toAbsoluteLink(path: string) {
   return typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path
-}
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function shortDate(value: string | null | undefined) {
@@ -100,10 +115,6 @@ function shortDate(value: string | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" })
 }
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-}
-
 function withExpiry(invite: CoachInvite): CoachInvite {
   if (invite.status === "pending" && invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
     return { ...invite, status: "expired" }
@@ -111,56 +122,59 @@ function withExpiry(invite: CoachInvite): CoachInvite {
   return invite
 }
 
+function article(role: UserRole) {
+  return role === "athlete" ? "an" : "a"
+}
+
 export default function ClubAdminUsersPage() {
   const backendMode = getBackendMode()
   const isSupabaseMode = backendMode === "supabase"
   const clubAdmin = useClubAdmin()
-  const isLocalPreviewEnabled =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  const [searchParams, setSearchParams] = useSearchParams()
+  const isLocalPreviewEnabled = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
 
   const [users, setUsers] = useState<ClubUser[]>(() => (isSupabaseMode ? [] : loadUsersSafe()))
   const [invites, setInvites] = useState<CoachInvite[]>(() => (isSupabaseMode ? [] : loadInvitesSafe().map(withExpiry)))
   const [requests, setRequests] = useState<AccountRequest[]>(() => (isSupabaseMode ? [] : loadAccountRequestsSafe()))
   const [teams, setTeams] = useState<Array<Pick<ClubTeam, "id" | "name" | "coachUserId" | "coachUserIds">>>(() =>
-    isSupabaseMode ? [] : loadTeamsSafe().filter((team) => team.status !== "archived"),
+    isSupabaseMode ? [] : loadTeamsSafe().filter((team) => team.status === "active"),
   )
   const [directory, setDirectory] = useState<ClubAdminPeopleDirectory | null>(null)
-  const [mockUserEmail] = useState(() =>
-    isSupabaseMode || typeof window === "undefined" ? null : window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY),
-  )
+  const [athletes, setAthletes] = useState<ClubAthlete[] | null>(null)
+  const [athletesError, setAthletesError] = useState<string | null>(null)
+  const [mockUserEmail] = useState(() => (isSupabaseMode || typeof window === "undefined" ? null : window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY)))
 
-  const [section, setSection] = useState<Section>("people")
+  // The newest lists, for handlers that finish after other changes were made (a bulk invite emailing).
+  const invitesRef = useRef(invites)
+  invitesRef.current = invites
+  const usersRef = useRef(users)
+  usersRef.current = users
+
+  const requestedView = searchParams.get("view") as View | null
+  const view: View = requestedView && VIEWS.includes(requestedView) ? requestedView : "staff"
+  const setView = (next: View) => {
+    setConfirm(null)
+    setSearchParams(next === "staff" ? {} : { view: next }, { replace: true })
+  }
+
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all")
   const [statusFilter, setStatusFilter] = useState<"all" | ClubUser["status"]>("all")
+  const [inviteFilter, setInviteFilter] = useState<InviteFilter>("all")
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
 
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteTeamId, setInviteTeamId] = useState("none")
-  const [inviteBusy, setInviteBusy] = useState(false)
-  const [inviteError, setInviteError] = useState<string | null>(null)
-  const [createdInvite, setCreatedInvite] = useState<{ email: string; link: string; outcome: InviteEmailOutcome } | null>(null)
+  const [inviteStart, setInviteStart] = useState<{ view: InviteStaffView; role: StaffInviteRole }>({ view: "one", role: "coach" })
+  const [addAthletesOpen, setAddAthletesOpen] = useState(false)
 
   const [requestedPlan, setRequestedPlan] = useState<PackageId | null>(null)
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
-  const [upgradeReason, setUpgradeReason] = useState("")
-  const [upgradeSaving, setUpgradeSaving] = useState(false)
-  const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const [pendingUpgradeRequest, setPendingUpgradeRequest] = useState<{ requestedPackage: PackageId; createdAt: string } | null>(null)
 
   const [backendLoading, setBackendLoading] = useState(isSupabaseMode && !clubAdmin.opsSnapshot)
   const [backendError, setBackendError] = useState<string | null>(clubAdmin.opsError)
-  const [mockAuditLogger, setMockAuditLogger] = useState<((event: {
-    actor: string
-    action: string
-    target: string
-    detail?: string
-  }) => void) | null>(null)
+  const [mockAuditLogger, setMockAuditLogger] = useState<((event: { actor: string; action: string; target: string; detail?: string }) => void) | null>(null)
 
   const { opsSnapshot, opsLoading, opsError, refreshOpsSnapshot } = clubAdmin
 
@@ -177,6 +191,24 @@ export default function ClubAdminUsersPage() {
   const syncBackend = () => {
     if (isSupabaseMode) void refreshOpsSnapshot()
   }
+
+  const reloadAthletes = useCallback(async () => {
+    const result = await getClubAthletes()
+    if (!result.ok) {
+      setAthletesError(result.error.message)
+      return
+    }
+    setAthletesError(null)
+    setAthletes(result.data)
+  }, [])
+
+  useEffect(() => {
+    void reloadAthletes()
+    // The Add athletes dialog and the coach screens change the demo roster in this browser.
+    const refresh = () => void reloadAthletes()
+    window.addEventListener(ROSTER_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(ROSTER_CHANGED_EVENT, refresh)
+  }, [reloadAthletes])
 
   useEffect(() => {
     if (!isSupabaseMode) return
@@ -199,6 +231,7 @@ export default function ClubAdminUsersPage() {
       opsSnapshot.invites.map((row) => ({
         id: row.id,
         email: row.email,
+        role: row.role,
         teamId: row.teamId,
         status: row.status,
         createdAt: row.createdAt,
@@ -235,13 +268,9 @@ export default function ClubAdminUsersPage() {
   useEffect(() => {
     if (isSupabaseMode) return
     let cancelled = false
-
     void import("@/lib/mock-audit").then((module) => {
-      if (!cancelled) {
-        setMockAuditLogger(() => module.logAuditEvent)
-      }
+      if (!cancelled) setMockAuditLogger(() => module.logAuditEvent)
     })
-
     return () => {
       cancelled = true
     }
@@ -256,11 +285,7 @@ export default function ClubAdminUsersPage() {
       if (activationResult.ok) setRequestedPlan(activationResult.data.requestedPlan)
       if (upgradeResult.ok) {
         const firstPendingUpgrade = upgradeResult.data.find((item) => item.status === "pending") ?? null
-        setPendingUpgradeRequest(
-          firstPendingUpgrade
-            ? { requestedPackage: firstPendingUpgrade.requestedPackage, createdAt: firstPendingUpgrade.createdAt }
-            : null,
-        )
+        setPendingUpgradeRequest(firstPendingUpgrade ? { requestedPackage: firstPendingUpgrade.requestedPackage, createdAt: firstPendingUpgrade.createdAt } : null)
       }
     })
 
@@ -270,11 +295,13 @@ export default function ClubAdminUsersPage() {
   }, [isSupabaseMode])
 
   const saveUsers = (next: ClubUser[]) => {
+    usersRef.current = next
     setUsers(next)
     if (!isSupabaseMode) persistUsers(next)
   }
 
   const saveInvites = (next: CoachInvite[]) => {
+    invitesRef.current = next
     setInvites(next)
     if (!isSupabaseMode) persistInvites(next)
   }
@@ -287,11 +314,14 @@ export default function ClubAdminUsersPage() {
   const teamNameById = useMemo(() => {
     const map = new Map<string, string>()
     for (const team of directory?.teams ?? []) map.set(team.id, team.name)
+    if (!isSupabaseMode) for (const team of loadTeamsSafe()) map.set(team.id, team.name)
     for (const team of teams) map.set(team.id, team.name)
     return map
-  }, [directory, teams])
+  }, [directory, isSupabaseMode, teams])
+  const teamName = useCallback((teamId: string | null) => (teamId ? (teamNameById.get(teamId) ?? null) : null), [teamNameById])
+  const teamOptions = useMemo(() => teams.map((team) => ({ id: team.id, name: team.name })), [teams])
 
-  const emailOf = (user: ClubUser) => (isSupabaseMode ? directory?.members[user.id]?.email ?? "" : user.email)
+  const emailOf = (user: ClubUser) => (isSupabaseMode ? (directory?.members[user.id]?.email ?? "") : user.email)
   const labelOf = (user: ClubUser) => emailOf(user) || user.name
 
   const teamNamesOf = (user: ClubUser) => {
@@ -309,12 +339,18 @@ export default function ClubAdminUsersPage() {
       .filter((name): name is string => Boolean(name))
   }
 
-  const isSelf = (user: ClubUser) =>
-    isSupabaseMode ? directory?.currentUserId === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail
+  const isSelf = (user: ClubUser) => (isSupabaseMode ? directory?.currentUserId === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail)
+
+  // Staff: coaches and club admins, plus anyone whose account says athlete but who has no athlete
+  // record (a staff member whose role was changed), so nobody is invisible on both lists.
+  const athleteUserIds = useMemo(() => new Set((athletes ?? []).flatMap((athlete) => (athlete.userId ? [athlete.userId] : []))), [athletes])
+  const staff = users.filter((user) => user.role !== "athlete" || (athletes !== null && !athleteUserIds.has(user.id)))
+  const currentAthletes = (athletes ?? []).filter((athlete) => athlete.status !== "left")
 
   const packageDefinition = getPackageById(requestedPlan)
   const activeCoachCount = users.filter((user) => user.role === "coach" && user.status === "active").length
-  const coachLimitReached = Boolean(packageDefinition && activeCoachCount >= packageDefinition.limits.coaches)
+  const coachLimit = packageDefinition && Number.isFinite(packageDefinition.limits.coaches) ? packageDefinition.limits.coaches : null
+  const coachLimitReached = coachLimit !== null && activeCoachCount >= coachLimit
   const suggestedUpgradePackage = getNextPackageTier(requestedPlan)
   const coachLimitMessage = packageDefinition
     ? `${packageDefinition.label} allows up to ${packageDefinition.limits.coaches} coach${packageDefinition.limits.coaches === 1 ? "" : "es"}. Upgrade the package before adding another coach.`
@@ -323,62 +359,58 @@ export default function ClubAdminUsersPage() {
   const pendingInvites = invites.filter((invite) => invite.status === "pending")
   const pendingRequests = requests.filter((request) => request.status === "pending")
   const sortedInvites = [...pendingInvites, ...invites.filter((invite) => invite.status !== "pending")]
+  const shownInvites = sortedInvites.filter((invite) => inviteFilter === "all" || invite.status === inviteFilter)
   const sortedRequests = [...pendingRequests, ...requests.filter((request) => request.status !== "pending")]
 
   const query = search.trim().toLowerCase()
-  const visibleUsers = users.filter((user) => {
+  const visibleStaff = staff.filter((user) => {
     if (roleFilter !== "all" && user.role !== roleFilter) return false
     if (statusFilter !== "all" && user.status !== statusFilter) return false
     if (!query) return true
-    return (
-      user.name.toLowerCase().includes(query) ||
-      emailOf(user).toLowerCase().includes(query) ||
-      teamNamesOf(user).some((name) => name.toLowerCase().includes(query))
-    )
+    return user.name.toLowerCase().includes(query) || emailOf(user).toLowerCase().includes(query) || teamNamesOf(user).some((name) => name.toLowerCase().includes(query))
   })
-  const filtersActive = Boolean(query) || roleFilter !== "all" || statusFilter !== "all"
-
-  const handleSubmitUpgradeRequest = async () => {
-    if (!isSupabaseMode || !suggestedUpgradePackage || pendingUpgradeRequest) return
-    setUpgradeSaving(true)
-    setUpgradeError(null)
-    const result = await submitClubAdminPackageUpgradeRequest({
-      requestedPackage: suggestedUpgradePackage,
-      reason: upgradeReason,
-    })
-    setUpgradeSaving(false)
-
-    if (!result.ok) {
-      setUpgradeError(result.error.message)
-      return
-    }
-
-    setPendingUpgradeRequest({
-      requestedPackage: suggestedUpgradePackage,
-      createdAt: new Date().toISOString(),
-    })
-    setUpgradeReason("")
-    setUpgradeDialogOpen(false)
-    setBackendError(null)
+  const activeFilters = (roleFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0)
+  const clearFilters = () => {
+    setRoleFilter("all")
+    setStatusFilter("all")
   }
 
-  /** Creates one coach invite in the current backend. Returns the invite or a message explaining why not. */
-  const createInvite = async (email: string, teamId: string | undefined): Promise<{ invite: CoachInvite } | { error: string }> => {
-    if (coachLimitReached) return { error: coachLimitMessage }
-    if (invites.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)) {
-      return { error: `${email} already has an invite waiting. Resend its email from Invites, or cancel it first.` }
-    }
-    if (users.some((user) => emailOf(user).toLowerCase() === email && user.status === "active" && user.role !== "athlete")) {
-      return { error: `${email} is already on the staff of this club.` }
-    }
+  const openInvite = (start: { view: InviteStaffView; role: StaffInviteRole } = { view: "one", role: "coach" }) => {
+    setInviteStart(start)
+    setInviteOpen(true)
+  }
+
+  // "Invite a coach" on the dashboard lands here with the dialog open.
+  useEffect(() => {
+    if (searchParams.get("invite") !== "1") return
+    setInviteStart({ view: "one", role: "coach" })
+    setInviteOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete("invite")
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  const checkEmail = (email: string): StaffInviteCheck => {
+    if (invitesRef.current.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)) return "invited"
+    if (usersRef.current.some((user) => emailOf(user).toLowerCase() === email && user.status === "active" && user.role !== "athlete")) return "staff"
+    return "ok"
+  }
+
+  /** Creates one staff invite in the current backend. Returns the invite or a message explaining why not. */
+  const createInvite = async (email: string, teamId: string | undefined, role: StaffInviteRole): Promise<{ invite: CoachInvite } | { error: string }> => {
+    if (role === "coach" && coachLimitReached) return { error: coachLimitMessage }
+    const check = checkEmail(email)
+    if (check === "invited") return { error: `${email} already has an invite waiting. Resend its email from Invites, or cancel it first.` }
+    if (check === "staff") return { error: `${email} is already on the staff of this club.` }
 
     if (isSupabaseMode) {
-      const result = await createCoachInvite({ email, teamId })
+      const result = await createCoachInvite({ email, teamId, role })
       if (!result.ok) return { error: result.error.message }
       return {
         invite: {
           id: result.data.id,
           email: result.data.email,
+          role,
           teamId: result.data.teamId,
           status: result.data.status,
           createdAt: result.data.createdAt,
@@ -388,11 +420,12 @@ export default function ClubAdminUsersPage() {
       }
     }
 
-    const id = `invite-${Date.now()}`
+    const id = `invite-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     return {
       invite: {
         id,
         email,
+        role,
         teamId,
         status: "pending",
         createdAt: new Date().toISOString().slice(0, 10),
@@ -403,14 +436,11 @@ export default function ClubAdminUsersPage() {
   }
 
   /**
-   * Creates a coach invite and emails it straight away. The invite stands even when the email fails:
+   * Creates a staff invite and emails it straight away. The invite stands even when the email fails:
    * the returned invite then carries the failure so the list and the dialog can say so.
    */
-  const createAndEmailInvite = async (
-    email: string,
-    teamId: string | undefined,
-  ): Promise<{ invite: CoachInvite; emailResult: Result<InviteEmailSent> } | { error: string }> => {
-    const created = await createInvite(email, teamId)
+  const createAndEmailInvite = async (email: string, teamId: string | undefined, role: StaffInviteRole): Promise<StaffInviteCreated | { error: string }> => {
+    const created = await createInvite(email, teamId, role)
     if ("error" in created) return created
     const emailResult = await sendInviteEmail({ kind: "coach", inviteId: created.invite.id })
     // With a real backend the email function writes the audit entry itself.
@@ -418,46 +448,61 @@ export default function ClubAdminUsersPage() {
     return { invite: applyInviteEmailResult(created.invite, emailResult), emailResult }
   }
 
-  const resetInviteDialog = () => {
-    setInviteEmail("")
-    setInviteTeamId("none")
-    setInviteError(null)
-    setCreatedInvite(null)
+  const inviteAuditDetail = (role: StaffInviteRole, teamId: string | undefined) => `${role === "club-admin" ? "club admin, " : ""}${teamId ? `team ${teamId}` : "no team"}`
+
+  const handleInviteOne = async (email: string, role: StaffInviteRole, teamId: string | undefined) => {
+    const result = await createAndEmailInvite(email, teamId, role)
+    if ("error" in result) return result
+    saveInvites([result.invite, ...invitesRef.current])
+    await emitAudit("coach_invite_send", email, inviteAuditDetail(role, teamId))
+    // The new invite is on the Invites list behind the dialog.
+    setView("invites")
+    syncBackend()
+    return result
   }
 
-  const handleSendCoachInvite = async () => {
-    const email = inviteEmail.trim().toLowerCase()
-    if (!email) return
-    if (!isValidEmail(email)) {
-      setInviteError("Enter a full email address, like coach@club.com.")
-      return
+  /** Creates the invites of a pasted list. They are emailed by the dialog, one at a time. */
+  const handleInviteMany = async (emails: string[], role: StaffInviteRole): Promise<{ invites: CoachInvite[] } | { error: string }> => {
+    let created: CoachInvite[]
+    if (isSupabaseMode) {
+      const result = await createStaffInvites(emails, role)
+      if (!result.ok) return { error: result.error.message }
+      created = result.data.map((row) => ({
+        id: row.id,
+        email: row.email,
+        role,
+        status: row.status,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        inviteUrl: row.inviteUrl ?? `/invite/coach/${row.id}`,
+      }))
+    } else {
+      const stamp = Date.now()
+      created = emails.map((email, index) => ({
+        id: `invite-${stamp}-${index}`,
+        email,
+        role,
+        status: "pending",
+        createdAt: new Date().toISOString().slice(0, 10),
+        expiresAt: new Date(stamp + COACH_INVITE_VALID_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+        inviteUrl: `/invite/coach/invite-${stamp}-${index}`,
+      }))
     }
-    const teamId = inviteTeamId !== "none" ? inviteTeamId : undefined
-
-    setInviteBusy(true)
-    setInviteError(null)
-    const result = await createAndEmailInvite(email, teamId)
-    if ("error" in result) {
-      setInviteBusy(false)
-      setInviteError(result.error)
-      return
-    }
-
-    saveInvites([result.invite, ...invites])
-    await emitAudit("coach_invite_send", email, teamId ? `team ${teamId}` : "no team")
-    setInviteBusy(false)
-    setCreatedInvite({
-      email,
-      link: toAbsoluteLink(result.invite.inviteUrl ?? `/invite/coach/${result.invite.id}`),
-      outcome: toInviteEmailOutcome(result.emailResult),
-    })
-    setSection("invites")
+    saveInvites([...created, ...invitesRef.current])
+    await emitAudit("coach_invite_bulk_send", `${created.length} ${created.length === 1 ? "invite" : "invites"}`, role === "club-admin" ? "club admin, from a list" : "coach, from a list")
+    setView("invites")
     syncBackend()
+    return { invites: created }
+  }
+
+  const handleInviteEmailed = (inviteId: string, result: Result<InviteEmailSent>) => {
+    saveInvites(invitesRef.current.map((item) => (item.id === inviteId ? applyInviteEmailResult(item, result) : item)))
+    const invite = invitesRef.current.find((item) => item.id === inviteId)
+    if (!isSupabaseMode && result.ok && invite) void emitAudit("coach_invite_email_sent", invite.email, `coach invite ${inviteId}`)
   }
 
   const handleCancelInvite = async (invite: CoachInvite) => {
     setBackendError(null)
-    setNotice(null)
     if (isSupabaseMode) {
       setBusyKey(`invite:${invite.id}`)
       const result = await revokeCoachInvite(invite.id)
@@ -468,46 +513,40 @@ export default function ClubAdminUsersPage() {
         return
       }
     }
-    saveInvites(invites.map((item) => (item.id === invite.id ? { ...item, status: "revoked" } : item)))
+    saveInvites(invitesRef.current.map((item) => (item.id === invite.id ? { ...item, status: "revoked" } : item)))
     setConfirm(null)
     await emitAudit("coach_invite_revoke", invite.email)
-    setNotice(`Invite for ${invite.email} cancelled. Its link no longer works.`)
+    notify(`Invite for ${invite.email} cancelled`, "Its link no longer works.")
     syncBackend()
   }
 
   const handleRenewInvite = async (invite: CoachInvite) => {
     setBackendError(null)
-    setNotice(null)
     setBusyKey(`invite:${invite.id}`)
-    const result = await createAndEmailInvite(invite.email.toLowerCase(), invite.teamId)
+    const role = invite.role ?? "coach"
+    const result = await createAndEmailInvite(invite.email.toLowerCase(), invite.teamId, role)
     setBusyKey(null)
     if ("error" in result) {
       setBackendError(`Could not create a new invite for ${invite.email}: ${result.error}`)
       return
     }
-    saveInvites([result.invite, ...invites])
-    await emitAudit("coach_invite_resend", invite.email, invite.teamId ? `team ${invite.teamId}` : "no team")
-    if (result.emailResult.ok) {
-      setNotice(`New invite emailed to ${invite.email}.`)
-    } else {
-      setBackendError(
-        `A new invite was created for ${invite.email}, but the email was not sent. ${result.emailResult.error.message} Copy its link below and send it to them yourself.`,
-      )
-    }
+    saveInvites([result.invite, ...invitesRef.current])
+    await emitAudit("coach_invite_resend", invite.email, inviteAuditDetail(role, invite.teamId))
+    if (result.emailResult.ok) notify(`New invite emailed to ${invite.email}`)
+    else setBackendError(`A new invite was created for ${invite.email}, but the email was not sent. ${result.emailResult.error.message} Copy its link from the list and send it to them yourself.`)
     syncBackend()
   }
 
   /** Emails a waiting invite again. The link stays the same. */
   const handleResendInviteEmail = async (invite: CoachInvite) => {
     setBackendError(null)
-    setNotice(null)
     setBusyKey(`invite-email:${invite.id}`)
     const result = await sendInviteEmail({ kind: "coach", inviteId: invite.id })
     setBusyKey(null)
-    saveInvites(invites.map((item) => (item.id === invite.id ? applyInviteEmailResult(item, result) : item)))
+    saveInvites(invitesRef.current.map((item) => (item.id === invite.id ? applyInviteEmailResult(item, result) : item)))
     if (result.ok) {
       if (!isSupabaseMode) await emitAudit("coach_invite_email_resent", invite.email, `coach invite ${invite.id}`)
-      setNotice(`Invite emailed to ${invite.email}.`)
+      notify(`Invite emailed to ${invite.email}`)
     } else {
       setBackendError(`The invite email to ${invite.email} was not sent. ${result.error.message} You can still copy the link and send it yourself.`)
     }
@@ -516,18 +555,18 @@ export default function ClubAdminUsersPage() {
 
   const handleCopyInvite = async (invite: CoachInvite) => {
     const link = toAbsoluteLink(invite.inviteUrl ?? `/invite/coach/${invite.id}`)
-    if (await copyText(link)) {
-      setCopiedInviteId(invite.id)
-      window.setTimeout(() => setCopiedInviteId((current) => (current === invite.id ? null : current)), 2000)
-    } else {
+    try {
+      await navigator.clipboard.writeText(link)
+      notify("Invite link copied")
+    } catch {
       setBackendError(`Could not copy automatically. The link is ${link}`)
     }
   }
 
   const handleChangeRole = async (user: ClubUser, role: UserRole) => {
     setBackendError(null)
-    setNotice(null)
     if (role === "coach" && user.status === "active" && coachLimitReached) {
+      setConfirm(null)
       setBackendError(coachLimitMessage)
       return
     }
@@ -536,20 +575,20 @@ export default function ClubAdminUsersPage() {
       const result = await updateProfileRoleAndStatus({ userId: user.id, role, status: user.status })
       setBusyKey(null)
       if (!result.ok) {
+        setConfirm(null)
         setBackendError(`Could not change the role for ${user.name}: ${result.error.message}`)
         return
       }
     }
-    saveUsers(users.map((item) => (item.id === user.id ? { ...item, role } : item)))
+    saveUsers(usersRef.current.map((item) => (item.id === user.id ? { ...item, role } : item)))
     setConfirm(null)
     await emitAudit("role_assign", labelOf(user), `role ${role}`)
-    setNotice(`${user.name} is now ${role === "athlete" ? "an" : "a"} ${ROLE_LABEL[role].toLowerCase()}.`)
+    notify(`${user.name} is now ${article(role)} ${ROLE_LABEL[role].toLowerCase()}`)
     syncBackend()
   }
 
   const handleSetStatus = async (user: ClubUser, nextStatus: ClubUser["status"]) => {
     setBackendError(null)
-    setNotice(null)
     if (nextStatus === "active" && user.role === "coach" && coachLimitReached) {
       setBackendError(coachLimitMessage)
       return
@@ -559,38 +598,97 @@ export default function ClubAdminUsersPage() {
       const result = await updateProfileRoleAndStatus({ userId: user.id, role: user.role, status: nextStatus })
       setBusyKey(null)
       if (!result.ok) {
+        setConfirm(null)
         setBackendError(`Could not ${nextStatus === "active" ? "reactivate" : "deactivate"} ${user.name}: ${result.error.message}`)
         return
       }
     }
-    saveUsers(users.map((item) => (item.id === user.id ? { ...item, status: nextStatus } : item)))
+    saveUsers(usersRef.current.map((item) => (item.id === user.id ? { ...item, status: nextStatus } : item)))
     setConfirm(null)
     await emitAudit(nextStatus === "disabled" ? "user_disable" : "user_enable", labelOf(user))
-    setNotice(nextStatus === "disabled" ? `${user.name} no longer has access.` : `${user.name} has access again.`)
+    notify(nextStatus === "disabled" ? `${user.name} no longer has access` : `${user.name} has access again`)
     syncBackend()
+  }
+
+  /** Removes a coach or club admin from the club for good. What they wrote stays, with their name. */
+  const handleRemoveMember = async (user: ClubUser) => {
+    setBackendError(null)
+    const otherActiveAdmins = usersRef.current.filter((item) => item.role === "club-admin" && item.status === "active" && item.id !== user.id).length
+    if (user.role === "club-admin" && user.status === "active" && otherActiveAdmins === 0) {
+      setConfirm(null)
+      setBackendError("Your club needs at least one active club admin. Make someone else a club admin first.")
+      return
+    }
+    if (isSupabaseMode) {
+      setBusyKey(`user:${user.id}`)
+      const result = await removeClubMember(user.id)
+      setBusyKey(null)
+      if (!result.ok) {
+        setConfirm(null)
+        setBackendError(`Could not remove ${user.name}: ${result.error.message}`)
+        return
+      }
+    } else {
+      // The demo keeps coaches on teams in the team list: take them off there too.
+      persistTeams(
+        loadTeamsSafe().map((team) => ({
+          ...team,
+          coachUserId: team.coachUserId === user.id ? undefined : team.coachUserId,
+          coachEmail: team.coachUserId === user.id ? undefined : team.coachEmail,
+          coachUserIds: (team.coachUserIds ?? []).filter((id) => id !== user.id),
+        })),
+      )
+      setTeams(loadTeamsSafe().filter((team) => team.status === "active"))
+      const email = user.email.toLowerCase()
+      saveInvites(invitesRef.current.map((invite) => (invite.status === "pending" && invite.email.toLowerCase() === email ? { ...invite, status: "revoked" } : invite)))
+      await emitAudit("member_removed", labelOf(user), `${user.name} removed from the club (${ROLE_LABEL[user.role].toLowerCase()})`)
+    }
+    saveUsers(usersRef.current.filter((item) => item.id !== user.id))
+    setConfirm(null)
+    notify(`${user.name} removed from the club`, "Their plans, notes and messages are kept.")
+    syncBackend()
+  }
+
+  /** Switches an athlete's login for the club off or on. Returns a message when it did not work. */
+  const handleSetAthleteLogin = async (athlete: ClubAthlete, active: boolean): Promise<string | null> => {
+    if (!athlete.userId) return "This athlete has no login."
+    const status: ClubUser["status"] = active ? "active" : "disabled"
+    if (isSupabaseMode) {
+      const result = await updateProfileRoleAndStatus({ userId: athlete.userId, role: "athlete", status })
+      if (!result.ok) return result.error.message
+      await emitAudit(active ? "user_enable" : "user_disable", athlete.email ?? athlete.name)
+      syncBackend()
+      return null
+    }
+    const existing = usersRef.current.find((user) => user.id === athlete.userId)
+    saveUsers(
+      existing
+        ? usersRef.current.map((user) => (user.id === athlete.userId ? { ...user, status } : user))
+        : [...usersRef.current, { id: athlete.userId, name: athlete.name, email: athlete.email ?? "", role: "athlete", status, teamId: athlete.teamId ?? undefined }],
+    )
+    await emitAudit(active ? "user_enable" : "user_disable", athlete.email ?? athlete.name)
+    return null
   }
 
   const handleReviewRequest = async (request: AccountRequest, status: "approved" | "declined") => {
     setBackendError(null)
-    setNotice(null)
     setBusyKey(`request:${request.id}`)
     const email = request.email.trim().toLowerCase()
-    let nextInvites = invites
-    let createdCoachInvite = false
+    let createdInvite: CoachInvite | null = null
     let inviteEmailResult: Result<InviteEmailSent> | null = null
+    const staffRole: StaffInviteRole | null = request.role === "coach" ? "coach" : request.role === "club-admin" ? "club-admin" : null
 
-    // Approving a coach request only means something if they can then join, so create their invite first.
-    if (status === "approved" && request.role === "coach") {
-      const alreadyInvited = invites.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)
+    // Approving a coach or club admin request only means something if they can then join, so create their invite first.
+    if (status === "approved" && staffRole) {
+      const alreadyInvited = invitesRef.current.some((invite) => invite.status === "pending" && invite.email.toLowerCase() === email)
       if (!alreadyInvited) {
-        const inviteResult = await createAndEmailInvite(email, undefined)
+        const inviteResult = await createAndEmailInvite(email, undefined, staffRole)
         if ("error" in inviteResult) {
           setBusyKey(null)
           setBackendError(`Could not approve ${request.fullName}: ${inviteResult.error}`)
           return
         }
-        nextInvites = [inviteResult.invite, ...invites]
-        createdCoachInvite = true
+        createdInvite = inviteResult.invite
         inviteEmailResult = inviteResult.emailResult
       }
     }
@@ -599,7 +697,7 @@ export default function ClubAdminUsersPage() {
       const result = await reviewAccountRequest({ requestId: request.id, status })
       if (!result.ok) {
         setBusyKey(null)
-        if (createdCoachInvite) saveInvites(nextInvites)
+        if (createdInvite) saveInvites([createdInvite, ...invitesRef.current])
         setBackendError(`Could not ${status === "approved" ? "approve" : "decline"} ${request.fullName}: ${result.error.message}`)
         syncBackend()
         return
@@ -607,466 +705,413 @@ export default function ClubAdminUsersPage() {
     }
 
     setBusyKey(null)
-    if (createdCoachInvite) {
-      saveInvites(nextInvites)
-      await emitAudit("coach_invite_send", email, "no team")
+    if (createdInvite && staffRole) {
+      saveInvites([createdInvite, ...invitesRef.current])
+      await emitAudit("coach_invite_send", email, inviteAuditDetail(staffRole, undefined))
     }
-    saveRequests(
-      requests.map((item) => (item.id === request.id ? { ...item, status, reviewedAt: new Date().toISOString() } : item)),
-    )
+    saveRequests(requests.map((item) => (item.id === request.id ? { ...item, status, reviewedAt: new Date().toISOString() } : item)))
     setConfirm(null)
     await emitAudit(status === "approved" ? "account_request_approve" : "account_request_decline", email, `role ${request.role}`)
     if (status === "declined") {
-      setNotice(`Request from ${request.fullName} declined.`)
-    } else if (request.role === "coach") {
+      notify(`Request from ${request.fullName} declined`)
+    } else if (staffRole) {
+      const what = staffRole === "coach" ? "coach" : "club admin"
       if (inviteEmailResult && !inviteEmailResult.ok) {
-        setBackendError(
-          `${request.fullName} approved, but their invite email was not sent. ${inviteEmailResult.error.message} Copy the link from Invites and send it to them yourself.`,
-        )
+        setBackendError(`${request.fullName} approved, but their invite email was not sent. ${inviteEmailResult.error.message} Copy the link from Invites and send it to them yourself.`)
       } else if (inviteEmailResult) {
-        setNotice(`${request.fullName} approved. Their coach invite was emailed to ${email}.`)
+        notify(`${request.fullName} approved`, `Their ${what} invite was emailed to ${email}.`)
       } else {
-        setNotice(`${request.fullName} approved. They already have a coach invite waiting under Invites.`)
+        notify(`${request.fullName} approved`, "They already have an invite waiting under Invites.")
       }
-    } else if (request.role === "athlete") {
-      setNotice(`${request.fullName} approved. Athletes join through a team, so invite them from the Teams screen.`)
     } else {
-      setNotice(`${request.fullName} approved. Invite them as a coach, then change their role to club admin once they join.`)
+      notify(`${request.fullName} approved`, "Athletes join through a team. Use Add athletes to invite them.")
     }
     syncBackend()
   }
 
-  const peopleCount = users.length
+  const staffCount = staff.length
   const lede = backendLoading
-    ? "Loading people..."
+    ? "Getting your people..."
     : [
-        `${peopleCount} ${peopleCount === 1 ? "person" : "people"} in your club.`,
-        pendingInvites.length > 0
-          ? `${pendingInvites.length} ${pendingInvites.length === 1 ? "invite is" : "invites are"} waiting to be accepted.`
-          : null,
-        packageDefinition && Number.isFinite(packageDefinition.limits.coaches)
-          ? `${packageDefinition.label} plan: ${activeCoachCount} of ${packageDefinition.limits.coaches} coaches.`
-          : null,
+        `${staffCount} staff and ${currentAthletes.length} ${currentAthletes.length === 1 ? "athlete" : "athletes"} in your club.`,
+        pendingInvites.length > 0 ? `${pendingInvites.length} ${pendingInvites.length === 1 ? "invite is" : "invites are"} waiting to be accepted.` : null,
+        packageDefinition && coachLimit !== null ? `${packageDefinition.label} plan: ${activeCoachCount} of ${coachLimit} coaches.` : null,
       ]
         .filter(Boolean)
         .join(" ")
 
-  const count = (value: number) => <span className="ml-1.5 tabular-nums text-sk-mute">{value}</span>
-  const th = "px-3 py-3 font-semibold"
+  const staffMenu = (user: ClubUser): RowMenuItem[] => {
+    const busy = busyKey === `user:${user.id}`
+    const roles = (["club-admin", "coach", "athlete"] as UserRole[]).filter((role) => role !== user.role)
+    return [
+      ...roles.map((role) => ({ label: `Make ${ROLE_LABEL[role].toLowerCase()}`, onSelect: () => setConfirm({ kind: "role" as const, userId: user.id, role }), disabled: busy })),
+      user.status === "active"
+        ? { label: "Deactivate", onSelect: () => setConfirm({ kind: "deactivate", userId: user.id }), disabled: busy }
+        : { label: "Reactivate", onSelect: () => void handleSetStatus(user, "active"), disabled: busy },
+      ...(user.role === "athlete" ? [] : [{ label: "Remove from club", onSelect: () => setConfirm({ kind: "remove" as const, userId: user.id }), danger: true, disabled: busy }]),
+    ]
+  }
+
+  const staffColumns: Array<DataTableColumn<ClubUser>> = [
+    {
+      key: "person",
+      header: "Person",
+      cell: (user) => {
+        const email = emailOf(user)
+        return (
+          <span className="flex items-center gap-3">
+            <PersonAvatar name={user.name} userId={user.id} email={email} size="sm" />
+            <span className="min-w-0">
+              {user.name}
+              {isSelf(user) ? <span className="font-normal text-sk-mute"> (you)</span> : null}
+              <TableSub>
+                <span className="block max-sm:truncate sm:break-all">{email || "No email on file"}</span>
+              </TableSub>
+            </span>
+          </span>
+        )
+      },
+    },
+    { key: "role", header: "Role", cell: (user) => (user.role === "athlete" ? "Athlete, no athlete record" : ROLE_LABEL[user.role]) },
+    {
+      key: "teams",
+      header: "Teams",
+      cell: (user) => {
+        const names = teamNamesOf(user)
+        return names.length > 0 ? names.join(", ") : <span className="text-sk-mute">No team</span>
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      phone: "trailing",
+      cell: (user) => (
+        <span className="flex min-h-11 items-center justify-between gap-2">
+          <StatusText tone={user.status === "active" ? "green" : "neutral"}>{user.status === "active" ? "Active" : "Deactivated"}</StatusText>
+          {isSelf(user) ? null : <RowMenu label={`More for ${user.name}`} items={staffMenu(user)} />}
+        </span>
+      ),
+    },
+  ]
+
+  const staffConfirm = (user: ClubUser) => {
+    if (!confirm || !("userId" in confirm) || confirm.userId !== user.id) return null
+    const busy = busyKey === `user:${user.id}`
+    if (confirm.kind === "role") {
+      const role = confirm.role
+      return (
+        <InlineConfirm
+          question={`Make ${user.name} ${article(role)} ${ROLE_LABEL[role].toLowerCase()}? ${ROLE_CHANGE_EFFECT[role]}`}
+          confirmLabel="Change role"
+          cancelLabel={`Keep as ${ROLE_LABEL[user.role].toLowerCase()}`}
+          busy={busy}
+          onConfirm={() => void handleChangeRole(user, role)}
+          onCancel={() => setConfirm(null)}
+        />
+      )
+    }
+    if (confirm.kind === "deactivate") {
+      return (
+        <InlineConfirm
+          question={`Deactivate ${user.name}? They lose access to the club until you reactivate them. Their teams and history are kept.`}
+          confirmLabel="Deactivate"
+          cancelLabel="Keep active"
+          busy={busy}
+          onConfirm={() => void handleSetStatus(user, "disabled")}
+          onCancel={() => setConfirm(null)}
+        />
+      )
+    }
+    if (confirm.kind === "remove") {
+      return (
+        <InlineConfirm
+          question={`Remove ${user.name} from the club for good? They lose access and come off their teams. The plans, notes and messages they wrote stay, with their name. To switch access off for a while, deactivate them instead.`}
+          confirmLabel="Remove from club"
+          cancelLabel="Keep in club"
+          busy={busy}
+          onConfirm={() => void handleRemoveMember(user)}
+          onCancel={() => setConfirm(null)}
+        />
+      )
+    }
+    return null
+  }
+
+  const inviteCount = (status: InviteFilter) => (status === "all" ? invites.length : invites.filter((invite) => invite.status === status).length)
 
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="People"
         lede={lede}
         actions={
-          <button
-            type="button"
-            className="sk-btn sk-btn-primary w-full sm:w-auto"
-            onClick={() => {
-              resetInviteDialog()
-              setInviteOpen(true)
-            }}
-          >
-            <UserPlus className="size-5" weight="bold" />
-            Invite coach
-          </button>
+          <>
+            <Button onClick={() => setAddAthletesOpen(true)}>Add athletes</Button>
+            <Button variant="primary" onClick={() => openInvite()}>
+              <UserPlus className="size-5" weight="bold" aria-hidden />
+              Invite staff
+            </Button>
+          </>
         }
       />
 
       {backendError ? (
-        <div role="alert" className={`${alertClass} flex items-start justify-between gap-3`}>
-          <p className="min-w-0 break-words">{backendError}</p>
-          <button type="button" className="-my-1 shrink-0 rounded-lg p-1 hover:bg-white/60" aria-label="Dismiss message" onClick={() => setBackendError(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
-      ) : null}
-
-      {notice ? (
-        <div role="status" className="flex items-start justify-between gap-3 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-[#07673f]">
-          <p className="min-w-0 break-words">{notice}</p>
-          <button type="button" className="-my-1 shrink-0 rounded-lg p-1 hover:bg-white/60" aria-label="Dismiss message" onClick={() => setNotice(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
+        <Notice
+          tone="error"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setBackendError(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          <span className="break-words">{backendError}</span>
+        </Notice>
       ) : null}
 
       {coachLimitReached && packageDefinition ? (
-        <div className="flex flex-col gap-3 rounded-2xl bg-sk-yellow-tint px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-sk-ink">
-            <span className="font-bold">Your club is at its coach limit.</span> {packageDefinition.label} covers{" "}
-            {packageDefinition.limits.coaches} coach{packageDefinition.limits.coaches === 1 ? "" : "es"}, so new coach invites are paused.
-            {pendingUpgradeRequest
-              ? ` Your upgrade request to ${getPackageById(pendingUpgradeRequest.requestedPackage)?.label ?? pendingUpgradeRequest.requestedPackage} is being reviewed.`
-              : ""}
-          </p>
-          {!pendingUpgradeRequest && suggestedUpgradePackage ? (
-            <button type="button" className="sk-btn sk-btn-ink sk-btn-sm shrink-0 max-sm:h-11" onClick={() => setUpgradeDialogOpen(true)}>
-              Request upgrade to {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage}
-            </button>
-          ) : null}
-        </div>
+        <Notice
+          tone="warning"
+          action={
+            !pendingUpgradeRequest && suggestedUpgradePackage ? (
+              <Button size="sm" onClick={() => setUpgradeDialogOpen(true)}>
+                Request upgrade to {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage}
+              </Button>
+            ) : undefined
+          }
+        >
+          Your club is at its coach limit
+          <span className="mt-0.5 block font-normal">
+            {packageDefinition.label} covers {packageDefinition.limits.coaches} coach{packageDefinition.limits.coaches === 1 ? "" : "es"}, so new coach invites are paused.
+            {pendingUpgradeRequest ? ` Your upgrade request to ${getPackageById(pendingUpgradeRequest.requestedPackage)?.label ?? pendingUpgradeRequest.requestedPackage} is being reviewed.` : ""}
+          </span>
+        </Notice>
       ) : null}
 
-      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        <Segmented
-          label="People sections"
-          value={section}
-          onChange={(next) => {
-            setSection(next)
-            setConfirm(null)
-          }}
-          options={[
-            { value: "people", label: <>People{count(users.length)}</> },
-            { value: "invites", label: <>Invites{count(pendingInvites.length)}</> },
-            { value: "requests", label: <>Requests{count(pendingRequests.length)}</> },
-          ]}
-        />
-      </div>
+      <Tabs
+        label="People views"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "staff", label: "Staff", count: backendLoading ? undefined : staffCount },
+          { value: "athletes", label: "Athletes", count: athletes ? currentAthletes.length : undefined },
+          { value: "invites", label: "Invites", count: pendingInvites.length > 0 ? pendingInvites.length : undefined },
+          { value: "requests", label: "Requests", count: pendingRequests.length > 0 ? pendingRequests.length : undefined },
+        ]}
+      />
 
-      {section === "people" ? (
-        <Panel flush>
-          <div className="flex flex-col gap-3 border-b border-sk-line p-5 sm:p-6 md:flex-row md:items-center">
-            <div className="relative min-w-0 flex-1">
-              <MagnifyingGlass className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-sk-mute" weight="bold" />
-              <input
-                type="search"
-                aria-label="Search people"
-                placeholder="Search by name, email or team"
-                className="sk-field pl-11"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3 md:flex">
-              <select
-                aria-label="Filter by role"
-                className="sk-field md:w-40"
-                value={roleFilter}
-                onChange={(event) => setRoleFilter(event.target.value as typeof roleFilter)}
-              >
-                <option value="all">All roles</option>
-                <option value="club-admin">Club admins</option>
-                <option value="coach">Coaches</option>
-                <option value="athlete">Athletes</option>
-              </select>
-              <select
-                aria-label="Filter by status"
-                className="sk-field md:w-40"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-              >
-                <option value="all">Any status</option>
-                <option value="active">Active</option>
-                <option value="disabled">Deactivated</option>
-              </select>
-            </div>
-          </div>
-
+      {view === "staff" ? (
+        <Section aria-label="Staff">
           {backendLoading ? (
-            <p className="p-6 text-sm text-sk-mute">Loading people...</p>
-          ) : users.length === 0 ? (
-            <div className="p-5 sm:p-6">
-              <EmptyState
-                icon={<UsersThree className="size-6" weight="fill" />}
-                title="Nobody here yet"
-                body="Coaches and athletes appear here once they accept an invite. Start by inviting your first coach."
-                className="border-0 bg-sk-canvas"
-              />
-            </div>
-          ) : visibleUsers.length === 0 ? (
-            <div className="flex flex-col items-start gap-3 p-5 sm:p-6">
-              <p className="text-sm text-sk-mute">Nobody matches that search or filter.</p>
-              <button
-                type="button"
-                className="sk-btn sk-btn-quiet sk-btn-sm"
-                onClick={() => {
-                  setSearch("")
-                  setRoleFilter("all")
-                  setStatusFilter("all")
-                }}
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : (
-            <table className="relative block w-full text-left md:table">
-              <caption className="sr-only">People in your club{filtersActive ? ", filtered" : ""}</caption>
-              <thead className="hidden md:table-header-group">
-                <tr className="border-b border-sk-line text-sm text-sk-mute">
-                  <th scope="col" className={`${th} pl-6`}>Name</th>
-                  <th scope="col" className={th}>Email</th>
-                  <th scope="col" className={th}>Role</th>
-                  <th scope="col" className={th}>Teams</th>
-                  <th scope="col" className={th}>Status</th>
-                  <th scope="col" className={`${th} pr-6 text-right`}>
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="block md:table-row-group">
-                {visibleUsers.map((user) => {
-                  const self = isSelf(user)
-                  const email = emailOf(user)
-                  const teamNames = teamNamesOf(user)
-                  const busy = busyKey === `user:${user.id}`
-                  const roleConfirm = confirm?.kind === "role" && confirm.userId === user.id ? confirm : null
-                  const deactivateConfirm = confirm?.kind === "deactivate" && confirm.userId === user.id
-                  return (
-                    <Fragment key={user.id}>
-                      <tr
-                        data-person={email || user.name}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-sk-line px-5 py-4 first:border-t-0 md:table-row md:px-0 md:py-0"
-                      >
-                        <th scope="row" className="min-w-0 font-normal md:py-3.5 md:pl-6 md:pr-3">
-                          <span className="flex min-w-0 items-center gap-3">
-                            <PersonAvatar name={user.name} userId={user.id} email={emailOf(user)} />
-                            <span className="min-w-0 truncate font-bold text-sk-ink">
-                              {user.name}
-                              {self ? <span className="font-normal text-sk-mute"> (you)</span> : null}
-                            </span>
-                          </span>
-                        </th>
-                        <td className="max-md:col-span-2 max-md:row-start-2 max-md:pl-[52px] min-w-0 break-all text-sm text-sk-ink-2 md:px-3 md:py-3.5">
-                          {email || <span className="text-sk-mute">No email on file</span>}
-                        </td>
-                        <td className="max-md:row-start-4 max-md:pl-[52px] md:px-3 md:py-3.5">
-                          <select
-                            aria-label={`Role for ${user.name}`}
-                            className="sk-field h-11 w-full min-w-[9rem] md:h-9 md:w-36 md:rounded-xl md:text-sm"
-                            value={roleConfirm?.role ?? user.role}
-                            disabled={self || busy}
-                            title={self ? "You cannot change your own role" : undefined}
-                            onChange={(event) => {
-                              const role = event.target.value as UserRole
-                              setConfirm(role === user.role ? null : { kind: "role", userId: user.id, role })
-                            }}
-                          >
-                            <option value="club-admin">Club admin</option>
-                            <option value="coach">Coach</option>
-                            <option value="athlete">Athlete</option>
-                          </select>
-                        </td>
-                        <td className="max-md:col-span-2 max-md:row-start-3 max-md:pl-[52px] text-sm text-sk-ink-2 md:px-3 md:py-3.5">
-                          {teamNames.length > 0 ? teamNames.join(", ") : <span className="text-sk-mute">No team</span>}
-                        </td>
-                        <td className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-end md:px-3 md:py-3.5">
-                          <Tag tone={user.status === "active" ? "green" : "plain"}>{user.status === "active" ? "Active" : "Deactivated"}</Tag>
-                        </td>
-                        <td className="max-md:row-start-4 max-md:justify-self-end text-right md:py-3.5 md:pl-3 md:pr-6">
-                          {self ? null : user.status === "active" ? (
-                            <button
-                              type="button"
-                              className="sk-btn sk-btn-ghost sk-btn-sm max-md:h-11 hover:bg-sk-coral-tint hover:text-[#c7300f]"
-                              aria-expanded={deactivateConfirm}
-                              disabled={busy}
-                              onClick={() => setConfirm(deactivateConfirm ? null : { kind: "deactivate", userId: user.id })}
-                            >
-                              Deactivate
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11"
-                              disabled={busy}
-                              onClick={() => void handleSetStatus(user, "active")}
-                            >
-                              {busy ? "Saving..." : "Reactivate"}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {roleConfirm || deactivateConfirm ? (
-                        <tr className="block md:table-row">
-                          <td colSpan={6} className="block px-5 pb-4 md:table-cell md:px-6">
-                            <div role="group" aria-label="Confirm" className="flex flex-col gap-3 rounded-2xl bg-sk-coral-tint p-4 sm:flex-row sm:items-center sm:justify-between">
-                              {roleConfirm ? (
-                                <p className="text-sm text-sk-ink">
-                                  <span className="font-bold">
-                                    Make {user.name} {roleConfirm.role === "athlete" ? "an" : "a"} {ROLE_LABEL[roleConfirm.role].toLowerCase()}?
-                                  </span>{" "}
-                                  {ROLE_CHANGE_EFFECT[roleConfirm.role]}
-                                </p>
-                              ) : (
-                                <p className="text-sm text-sk-ink">
-                                  <span className="font-bold">Deactivate {user.name}?</span> They lose access to the club until you reactivate them. Their history is kept.
-                                </p>
-                              )}
-                              <div className="flex shrink-0 gap-2">
-                                <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => setConfirm(null)}>
-                                  {roleConfirm ? `Keep as ${ROLE_LABEL[user.role].toLowerCase()}` : "Keep active"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="sk-btn sk-btn-danger sk-btn-sm max-sm:h-11 max-sm:flex-1"
-                                  disabled={busy}
-                                  onClick={() => void (roleConfirm ? handleChangeRole(user, roleConfirm.role) : handleSetStatus(user, "disabled"))}
-                                >
-                                  {busy ? "Saving..." : roleConfirm ? "Change role" : "Deactivate"}
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </Panel>
-      ) : null}
-
-      {section === "invites" ? (
-        <Panel title="Coach invites" hint={`Each invite is emailed to the coach with a personal link that works for ${COACH_INVITE_VALID_DAYS} days. You can resend the email or copy the link.`}>
-          {backendLoading ? (
-            <p className="py-6 text-sm text-sk-mute">Loading invites...</p>
-          ) : sortedInvites.length === 0 ? (
+            <SkeletonRows rows={5} leading label="Loading staff" />
+          ) : staff.length === 0 ? (
             <EmptyState
-              icon={<EnvelopeSimple className="size-6" weight="fill" />}
-              title="No coach invites yet"
-              body="Invite a coach and we email them a link to join. The invite appears here, so you can see who has joined and who is still waiting."
+              title="Nobody here yet"
+              body="Coaches and club admins appear here once they accept an invite. Start by inviting your first coach."
               action={
-                <button
-                  type="button"
-                  className="sk-btn sk-btn-ink sk-btn-sm"
-                  onClick={() => {
-                    resetInviteDialog()
-                    setInviteOpen(true)
-                  }}
-                >
-                  <UserPlus className="size-4" weight="bold" />
-                  Invite coach
-                </button>
+                <Button size="sm" onClick={() => openInvite()}>
+                  Invite staff
+                </Button>
               }
-              className="border-0 bg-sk-canvas"
             />
           ) : (
-            <ul>
-              {sortedInvites.map((invite) => {
-                const status = INVITE_STATUS[invite.status]
-                const sent = shortDate(invite.createdAt)
-                const expires = shortDate(invite.expiresAt)
-                const isPending = invite.status === "pending"
-                const canRenew = invite.status === "expired" || invite.status === "revoked"
-                const hasNewerPending = canRenew && pendingInvites.some((item) => item.email.toLowerCase() === invite.email.toLowerCase())
-                const busy = busyKey === `invite:${invite.id}`
-                const emailBusy = busyKey === `invite-email:${invite.id}`
-                const emailInfo = inviteEmailSummary(invite)
-                const confirming = confirm?.kind === "cancel-invite" && confirm.inviteId === invite.id
-                const teamName = invite.teamId ? teamNameById.get(invite.teamId) : null
-                return (
-                  <li key={invite.id} data-invite={invite.email} className="border-b border-sk-line py-4 last:border-b-0">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-start justify-between gap-3 md:flex-1 md:items-center">
-                        <div className="min-w-0">
-                          <p className="break-all font-bold text-sk-ink">{invite.email}</p>
-                          <p className="text-sm text-sk-mute">
-                            {teamName ? `Coach for ${teamName}` : "Coach, no team yet"}
+            <div className="flex flex-col gap-4">
+              <FilterBar
+                search={<SearchInput aria-label="Search staff" placeholder="Search by name, email or team" value={search} onChange={(event) => setSearch(event.target.value)} />}
+                activeCount={activeFilters}
+                onClear={clearFilters}
+              >
+                <FilterChips
+                  label="Role"
+                  value={roleFilter}
+                  onChange={setRoleFilter}
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "club-admin", label: "Club admins" },
+                    { value: "coach", label: "Coaches" },
+                  ]}
+                />
+                <FilterChips
+                  label="Status"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "active", label: "Active" },
+                    { value: "disabled", label: "Deactivated" },
+                  ]}
+                />
+              </FilterBar>
+              {visibleStaff.length > 0 ? (
+                <DataTable
+                  caption="Coaches and club admins of your club"
+                  columns={staffColumns}
+                  rows={visibleStaff}
+                  rowKey={(user) => user.id}
+                  rowProps={(user) => ({ "data-person": emailOf(user) || user.name })}
+                  rowBelow={staffConfirm}
+                />
+              ) : (
+                <EmptyState
+                  title="Nobody matches"
+                  body="No coach or club admin fits that search and those filters."
+                  action={
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSearch("")
+                        clearFilters()
+                      }}
+                    >
+                      Show everyone
+                    </Button>
+                  }
+                />
+              )}
+              {visibleStaff.length > 0 && visibleStaff.length < staff.length ? (
+                <p className="text-sm text-sk-mute" aria-live="polite">
+                  Showing {visibleStaff.length} of {staff.length}.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </Section>
+      ) : null}
+
+      {view === "athletes" ? (
+        <ClubAthletesView
+          athletes={athletes}
+          loadError={athletesError}
+          teams={teamOptions}
+          teamName={teamName}
+          onChanged={() => {
+            void reloadAthletes()
+            syncBackend()
+          }}
+          onSetLogin={handleSetAthleteLogin}
+          onAudit={(action, target, detail) => {
+            // The database functions write their own audit entries.
+            if (!isSupabaseMode) void emitAudit(action, target, detail)
+          }}
+          onAddAthletes={() => setAddAthletesOpen(true)}
+        />
+      ) : null}
+
+      {view === "invites" ? (
+        <Section
+          aria-label="Invites"
+          title="Staff invites"
+          hint={`Each invite is emailed with a personal link that works for ${COACH_INVITE_VALID_DAYS} days. Open the menu on a waiting invite to email it again, copy its link or cancel it. Athlete invites are on each team.`}
+        >
+          {backendLoading ? (
+            <SkeletonRows rows={3} label="Loading invites" />
+          ) : sortedInvites.length === 0 ? (
+            <EmptyState
+              title="No staff invites yet"
+              body="Invite a coach or a club admin and we email them a link to join. The invite appears here, so you can see who has joined and who is still waiting."
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => openInvite()}>
+                    Invite staff
+                  </Button>
+                  <Button size="sm" onClick={() => openInvite({ view: "list", role: "coach" })}>
+                    Invite a list
+                  </Button>
+                </div>
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              <FilterChips
+                label="Show"
+                value={inviteFilter}
+                onChange={setInviteFilter}
+                options={[
+                  { value: "all", label: "All", count: inviteCount("all") },
+                  { value: "pending", label: "Waiting", count: inviteCount("pending") },
+                  { value: "accepted", label: "Joined", count: inviteCount("accepted") },
+                  { value: "expired", label: "Expired", count: inviteCount("expired") },
+                ]}
+              />
+              {shownInvites.length === 0 ? (
+                <EmptyState title="None like that" body="No staff invite is in that state right now." />
+              ) : (
+                <List aria-label="Staff invites">
+                  {shownInvites.map((invite) => {
+                    const status = INVITE_STATUS[invite.status]
+                    const sent = shortDate(invite.createdAt)
+                    const expires = shortDate(invite.expiresAt)
+                    const isPending = invite.status === "pending"
+                    const canRenew = invite.status === "expired" || invite.status === "revoked"
+                    const hasNewerPending = canRenew && pendingInvites.some((item) => item.email.toLowerCase() === invite.email.toLowerCase())
+                    const busy = busyKey === `invite:${invite.id}`
+                    const emailBusy = busyKey === `invite-email:${invite.id}`
+                    const emailInfo = inviteEmailSummary(invite)
+                    const invitedTeam = invite.teamId ? teamNameById.get(invite.teamId) : null
+                    const roleText = invite.role === "club-admin" ? (invitedTeam ? `Club admin, coaching ${invitedTeam}` : "Club admin") : invitedTeam ? `Coach for ${invitedTeam}` : "Coach, no team yet"
+                    const items: RowMenuItem[] = isPending
+                      ? [
+                          { label: resendInviteEmailLabel(invite, emailBusy), onSelect: () => void handleResendInviteEmail(invite), disabled: emailBusy || !canResendInviteEmail(invite) },
+                          { label: "Copy link", onSelect: () => void handleCopyInvite(invite) },
+                          ...(isLocalPreviewEnabled
+                            ? [{ label: "Open invite", onSelect: () => window.open(toAbsoluteLink(invite.inviteUrl ?? `/invite/coach/${invite.id}`), "_blank", "noopener,noreferrer") }]
+                            : []),
+                          { label: "Cancel invite", onSelect: () => setConfirm({ kind: "cancel-invite", inviteId: invite.id }), danger: true },
+                        ]
+                      : canRenew && !hasNewerPending
+                        ? [{ label: busy ? "Sending..." : "Send new invite", onSelect: () => void handleRenewInvite(invite), disabled: busy }]
+                        : []
+                    return (
+                      <ActionRow
+                        key={invite.id}
+                        data-invite={invite.email}
+                        data-invite-status={invite.status}
+                        data-invite-role={invite.role ?? "coach"}
+                        title={<span className="break-all">{invite.email}</span>}
+                        subtitle={
+                          <>
+                            {roleText}
                             {sent ? `. Invited ${sent}` : ""}
                             {isPending && expires ? `, link works until ${expires}` : ""}
                             {invite.status === "expired" && expires ? `, expired ${expires}` : ""}
-                          </p>
-                          {isPending ? (
-                            <p data-invite-email-status className={`text-sm ${emailInfo.problem ? "font-semibold text-[#b32a0c]" : "text-sk-mute"}`}>
-                              {emailInfo.text}
-                            </p>
-                          ) : null}
-                        </div>
-                        <Tag tone={status.tone} className="shrink-0">{status.label}</Tag>
-                      </div>
-                      {isPending ? (
-                        <div className="flex shrink-0 flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
-                            disabled={emailBusy || !canResendInviteEmail(invite)}
-                            title={canResendInviteEmail(invite) ? undefined : "This invite has been emailed the maximum number of times"}
-                            onClick={() => void handleResendInviteEmail(invite)}
-                          >
-                            <PaperPlaneTilt className="size-4" weight="bold" />
-                            {resendInviteEmailLabel(invite, emailBusy)}
-                          </button>
-                          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1" onClick={() => void handleCopyInvite(invite)}>
-                            {copiedInviteId === invite.id ? <Check className="size-4" weight="bold" /> : <Copy className="size-4" weight="bold" />}
-                            {copiedInviteId === invite.id ? "Copied" : "Copy link"}
-                          </button>
-                          {isLocalPreviewEnabled ? (
-                            <a
-                              className="sk-btn sk-btn-ghost sk-btn-sm max-md:hidden"
-                              href={toAbsoluteLink(invite.inviteUrl ?? `/invite/coach/${invite.id}`)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              Open invite
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-ghost sk-btn-sm max-md:h-11 max-md:flex-1"
-                            aria-expanded={confirming}
-                            disabled={busy}
-                            onClick={() => setConfirm(confirming ? null : { kind: "cancel-invite", inviteId: invite.id })}
-                          >
-                            Cancel invite
-                          </button>
-                        </div>
-                      ) : canRenew && !hasNewerPending ? (
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-quiet sk-btn-sm max-md:h-11 max-md:flex-1"
-                            disabled={busy}
-                            onClick={() => void handleRenewInvite(invite)}
-                          >
-                            {busy ? "Sending..." : "Send new invite"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                    {confirming ? (
-                      <div role="group" aria-label="Confirm" className="mt-3 flex flex-col gap-3 rounded-2xl bg-sk-coral-tint p-4 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-sk-ink">
-                          <span className="font-bold">Cancel the invite for {invite.email}?</span> The link stops working straight away.
-                        </p>
-                        <div className="flex shrink-0 gap-2">
-                          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => setConfirm(null)}>
-                            Keep invite
-                          </button>
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-danger sk-btn-sm max-sm:h-11 max-sm:flex-1"
-                            disabled={busy}
-                            onClick={() => void handleCancelInvite(invite)}
-                          >
-                            {busy ? "Cancelling..." : "Yes, cancel it"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </li>
-                )
-              })}
-            </ul>
+                            {isPending ? (
+                              <span data-invite-email-status className={emailInfo.problem ? "block font-semibold text-sk-coral-ink" : "block"}>
+                                {emailInfo.text}
+                              </span>
+                            ) : null}
+                          </>
+                        }
+                        trailing={<StatusText tone={status.tone}>{status.label}</StatusText>}
+                        actions={items.length > 0 ? <RowMenu label={`More for the invite to ${invite.email}`} items={items} /> : undefined}
+                        below={
+                          confirm?.kind === "cancel-invite" && confirm.inviteId === invite.id ? (
+                            <InlineConfirm
+                              question={`Cancel the invite to ${invite.email}? Its link stops working straight away.`}
+                              confirmLabel="Cancel invite"
+                              cancelLabel="Keep it"
+                              busy={busy}
+                              onConfirm={() => void handleCancelInvite(invite)}
+                              onCancel={() => setConfirm(null)}
+                            />
+                          ) : undefined
+                        }
+                      />
+                    )
+                  })}
+                </List>
+              )}
+            </div>
           )}
-        </Panel>
+        </Section>
       ) : null}
 
-      {section === "requests" ? (
-        <Panel title="Account requests" hint="People who asked to join your club. Approving a coach emails them an invite.">
+      {view === "requests" ? (
+        <Section aria-label="Requests" title="Account requests" hint="People who asked to join your club. Approving a coach or a club admin emails them an invite.">
           {backendLoading ? (
-            <p className="py-6 text-sm text-sk-mute">Loading requests...</p>
+            <SkeletonRows rows={3} leading label="Loading requests" />
           ) : sortedRequests.length === 0 ? (
-            <EmptyState
-              icon={<Tray className="size-6" weight="fill" />}
-              title="No requests waiting"
-              body="When someone asks to join your club, their request shows up here for you to approve or decline."
-              className="border-0 bg-sk-canvas"
-            />
+            <EmptyState title="No requests waiting" body="When someone asks to join your club, their request shows up here for you to approve or decline." />
           ) : (
-            <ul>
+            <List aria-label="Account requests">
               {sortedRequests.map((request) => {
                 const isPending = request.status === "pending"
                 const status = REQUEST_STATUS[request.status]
@@ -1074,214 +1119,79 @@ export default function ClubAdminUsersPage() {
                 const confirming = confirm?.kind === "decline" && confirm.requestId === request.id
                 const asked = shortDate(request.createdAt)
                 return (
-                  <li key={request.id} data-request={request.email} className="border-b border-sk-line py-4 last:border-b-0">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-start gap-3 md:flex-1">
-                        <Initials name={request.fullName} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <p className="min-w-0 font-bold text-sk-ink">{request.fullName}</p>
-                            {isPending ? null : <Tag tone={status.tone} className="shrink-0">{status.label}</Tag>}
-                          </div>
-                          <p className="break-all text-sm text-sk-ink-2">{request.email}</p>
-                          <p className="text-sm text-sk-mute">
-                            Wants to join as {request.role === "athlete" ? "an" : "a"} {ROLE_LABEL[request.role].toLowerCase()}
-                            {request.organization ? `, from ${request.organization}` : ""}
-                            {asked ? `. Asked ${asked}` : ""}
-                          </p>
-                          {request.notes ? <p className="mt-1.5 text-sm text-sk-ink-2">{request.notes}</p> : null}
-                        </div>
-                      </div>
-                      {isPending ? (
-                        <div className="flex shrink-0 gap-2 max-md:pl-[52px]">
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-ink sk-btn-sm max-md:h-11 max-md:flex-1"
-                            disabled={busy}
-                            onClick={() => void handleReviewRequest(request, "approved")}
-                          >
-                            <Check className="size-4" weight="bold" />
-                            {busy && !confirming ? "Saving..." : "Approve"}
-                          </button>
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-ghost sk-btn-sm max-md:h-11 max-md:flex-1"
-                            aria-expanded={confirming}
-                            disabled={busy}
-                            onClick={() => setConfirm(confirming ? null : { kind: "decline", requestId: request.id })}
-                          >
-                            Decline
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                    {confirming ? (
-                      <div role="group" aria-label="Confirm" className="mt-3 flex flex-col gap-3 rounded-2xl bg-sk-coral-tint p-4 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-sk-ink">
-                          <span className="font-bold">Decline the request from {request.fullName}?</span> They will not be added to your club.
-                        </p>
-                        <div className="flex shrink-0 gap-2">
-                          <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" onClick={() => setConfirm(null)}>
-                            Keep request
-                          </button>
-                          <button
-                            type="button"
-                            className="sk-btn sk-btn-danger sk-btn-sm max-sm:h-11 max-sm:flex-1"
-                            disabled={busy}
-                            onClick={() => void handleReviewRequest(request, "declined")}
-                          >
-                            {busy ? "Declining..." : "Decline request"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </li>
+                  <ActionRow
+                    key={request.id}
+                    data-request={request.email}
+                    className="[&_.sk-list-row]:items-start"
+                    leading={<Avatar name={request.fullName} />}
+                    title={request.fullName}
+                    subtitle={
+                      <>
+                        <span className="block break-all">{request.email}</span>
+                        Wants to join as {article(request.role)} {ROLE_LABEL[request.role].toLowerCase()}
+                        {request.organization ? `, from ${request.organization}` : ""}
+                        {asked ? `. Asked ${asked}` : ""}
+                        {request.notes ? <span className="mt-1 block text-sk-ink-2">{request.notes}</span> : null}
+                        {isPending ? (
+                          <span className="mt-2.5 flex flex-wrap gap-2">
+                            <Button size="sm" disabled={busy} onClick={() => void handleReviewRequest(request, "approved")}>
+                              {busy && !confirming ? "Saving..." : "Approve"}
+                            </Button>
+                            <Button size="sm" variant="quiet" disabled={busy} aria-expanded={confirming} onClick={() => setConfirm(confirming ? null : { kind: "decline", requestId: request.id })}>
+                              Decline
+                            </Button>
+                          </span>
+                        ) : null}
+                      </>
+                    }
+                    trailing={isPending ? undefined : <StatusText tone={status.tone}>{status.label}</StatusText>}
+                    below={
+                      confirming ? (
+                        <InlineConfirm
+                          question={`Decline the request from ${request.fullName}? They will not be added to your club.`}
+                          confirmLabel="Decline request"
+                          cancelLabel="Keep request"
+                          busy={busy}
+                          onConfirm={() => void handleReviewRequest(request, "declined")}
+                          onCancel={() => setConfirm(null)}
+                        />
+                      ) : undefined
+                    }
+                  />
                 )
               })}
-            </ul>
+            </List>
           )}
-        </Panel>
+        </Section>
       ) : null}
 
-      <Dialog
+      <InviteStaffDialog
         open={inviteOpen}
-        onOpenChange={(next) => {
-          setInviteOpen(next)
-          if (!next) resetInviteDialog()
-        }}
-      >
-        <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto rounded-[20px] border-sk-line bg-white p-5 shadow-none sm:max-w-md sm:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <DialogTitle className="sk-h2">Invite a coach</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-                We email them a personal link to join your club. It works once, for the email you enter, for {COACH_INVITE_VALID_DAYS} days.
-              </DialogDescription>
-            </div>
-            <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
-              <X className="size-5" weight="bold" />
-            </DialogClose>
-          </div>
+        onOpenChange={setInviteOpen}
+        teams={teamOptions}
+        coachLimitMessage={coachLimitReached ? coachLimitMessage : null}
+        coachSeatsLeft={coachLimit !== null ? Math.max(coachLimit - activeCoachCount, 0) : null}
+        initialRole={inviteStart.role}
+        initialView={inviteStart.view}
+        checkEmail={checkEmail}
+        onCreateOne={handleInviteOne}
+        onCreateMany={handleInviteMany}
+        onEmailed={handleInviteEmailed}
+      />
 
-          {createdInvite ? (
-            <InviteCreatedResult
-              email={createdInvite.email}
-              link={createdInvite.link}
-              outcome={createdInvite.outcome}
-              onInviteAnother={resetInviteDialog}
-            />
-          ) : (
-            <form
-              className="space-y-4"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleSendCoachInvite()
-              }}
-            >
-              <div className="space-y-1.5">
-                <label htmlFor="coach-invite-email" className="sk-label">
-                  Coach email
-                </label>
-                <input
-                  id="coach-invite-email"
-                  type="email"
-                  autoComplete="off"
-                  placeholder="coach@email.com"
-                  className="sk-field"
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="coach-invite-team" className="sk-label">
-                  Team
-                </label>
-                <select id="coach-invite-team" className="sk-field" value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)}>
-                  <option value="none">No team yet</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-sm text-sk-mute">Pick a team and they become its lead coach when they accept.</p>
-              </div>
-              {coachLimitReached ? (
-                <p className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">{coachLimitMessage}</p>
-              ) : null}
-              {inviteError ? (
-                <p role="alert" className={alertClass}>
-                  {inviteError}
-                </p>
-              ) : null}
-              <div className="flex justify-end">
-                <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={inviteBusy || !inviteEmail.trim() || coachLimitReached}>
-                  <PaperPlaneTilt className="size-5" weight="bold" />
-                  {inviteBusy ? "Sending..." : "Send invite"}
-                </button>
-              </div>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+      <AddAthletesToTeam open={addAthletesOpen} onOpenChange={setAddAthletesOpen} teams={teamOptions} onChanged={() => void reloadAthletes()} />
 
-      <Dialog
+      <UpgradeRequestDialog
         open={upgradeDialogOpen}
-        onOpenChange={(next) => {
-          setUpgradeDialogOpen(next)
-          if (!next) setUpgradeError(null)
+        onOpenChange={setUpgradeDialogOpen}
+        currentPackage={requestedPlan}
+        targetPackage={suggestedUpgradePackage}
+        placeholder="Tell us why your club needs more coaches."
+        onSent={(requestedPackage) => {
+          setPendingUpgradeRequest({ requestedPackage, createdAt: new Date().toISOString() })
+          setBackendError(null)
         }}
-      >
-        <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto rounded-[20px] border-sk-line bg-white p-5 shadow-none sm:max-w-md sm:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <DialogTitle className="sk-h2">Request a package upgrade</DialogTitle>
-              <DialogDescription className="text-sm leading-relaxed text-sk-mute">
-                Ask to move your club from {packageDefinition?.label ?? "your current package"} to{" "}
-                {getPackageById(suggestedUpgradePackage)?.label ?? suggestedUpgradePackage ?? "the next package"}. We review every request.
-              </DialogDescription>
-            </div>
-            <DialogClose className="sk-btn sk-btn-ghost size-11 shrink-0 px-0" aria-label="Close">
-              <X className="size-5" weight="bold" />
-            </DialogClose>
-          </div>
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void handleSubmitUpgradeRequest()
-            }}
-          >
-            <div className="space-y-1.5">
-              <label htmlFor="coach-upgrade-reason" className="sk-label">
-                Reason
-              </label>
-              <textarea
-                id="coach-upgrade-reason"
-                rows={4}
-                className="sk-field h-auto py-3"
-                value={upgradeReason}
-                onChange={(event) => setUpgradeReason(event.target.value)}
-                placeholder="Tell us why your club needs more coaches."
-              />
-            </div>
-            {upgradeError ? (
-              <p role="alert" className={alertClass}>
-                {upgradeError}
-              </p>
-            ) : null}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button type="button" className="sk-btn sk-btn-quiet" onClick={() => setUpgradeDialogOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="sk-btn sk-btn-ink" disabled={upgradeSaving}>
-                {upgradeSaving ? "Sending..." : "Send upgrade request"}
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+      />
+    </Screen>
   )
 }

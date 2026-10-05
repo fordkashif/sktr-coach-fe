@@ -50,6 +50,11 @@ export { PersonPicker, type PickerPerson } from "./person-picker"
 export { FilterChips, FilterBar, type FilterChipOption } from "./filter-chips"
 export { QrCode } from "./qr-code"
 export { PasteList } from "./paste-list"
+export { StepIndicator, type StepIndicatorStep } from "./step-indicator"
+export { ClubMark } from "./club-mark"
+export { SubSection, SubSections } from "./subsection"
+export { PasswordInput } from "./password-input"
+export { RadioRow } from "./radio-row"
 
 // Deprecated v1 names. They keep older screens working on the v2 look. Replacements are noted on each.
 export { PageHeader, Panel } from "./legacy"

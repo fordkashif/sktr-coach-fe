@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import { ArrowRight, Buildings, CheckCircle, ClockCounterClockwise, Tray } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { EmptyState, PageHeader, Panel, Stat } from "@/components/sk"
+import { EmptyState, Fact, FactList, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, Stat, StatStrip, StatusDot } from "@/components/sk"
 import {
   getPlatformAdminPackageUpgradeRequests,
   getPlatformAdminRequestQueue,
@@ -15,31 +14,13 @@ import {
   type PlatformTenantSize,
 } from "@/lib/data/platform-admin/ops-data"
 import { auditSentence, formatLocalDateTime, isClubRecord, lifecycleOf } from "@/lib/data/platform-admin/tenants-data"
+import { plural } from "@/lib/format/ops-format"
 
-function plural(count: number, singular: string, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`
-}
-
-/** One plain sentence about notification email: what went out in the last 24 hours and how it is sent. */
-function emailSentence(stats: PlatformNotificationEmailStats) {
-  const counts = [
-    `${stats.sent24h} sent`,
-    stats.failed24h > 0 ? `${stats.failed24h} failed` : null,
-    stats.retrying > 0 ? `${stats.retrying} being retried` : null,
-    stats.waiting > 0 ? `${stats.waiting} waiting` : null,
-    stats.notSent24h > 0 ? `${stats.notSent24h} held back (switched off, deactivated or paused)` : null,
-  ]
-    .filter(Boolean)
-    .join(", ")
-  const how =
-    stats.deliveryMode === "scheduled"
-      ? "Emails go out on their own within a minute."
-      : stats.deliveryMode === "on_queue"
-        ? "Emails go out on their own as soon as they are queued."
-        : stats.deliveryMode === "waiting_for_address"
-          ? "Automatic sending starts with the first notification after this release. Until then use Send queued emails on the Requests screen."
-          : "Automatic sending is not available on this database, so emails go out when someone in the club acts, or when you press Send queued emails on the Requests screen."
-  return `Notification email in the last 24 hours: ${counts}. ${how}`
+const EMAIL_MODE: Record<PlatformNotificationEmailStats["deliveryMode"], string> = {
+  scheduled: "On their own, within a minute",
+  on_queue: "On their own, as soon as they are queued",
+  waiting_for_address: "Automatic sending starts with the first notification after this release. Until then use Send queued emails on the Requests screen.",
+  on_request: "When someone in a club acts, or when you press Send queued emails on the Requests screen. Automatic sending is not available on this database.",
 }
 
 /** "Kingston Striders, Bolt Academy and 2 more" */
@@ -48,6 +29,7 @@ function nameList(names: string[]) {
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
 }
 
+/** The owner's front page: how big the platform is, what is waiting on them, and what just happened. */
 export default function PlatformAdminDashboardPage() {
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEventRecord[]>([])
@@ -140,55 +122,50 @@ export default function PlatformAdminDashboardPage() {
     const onboarding = clubs.filter((club) => lifecycleOf(club) === "active_onboarding")
     const upgrades = upgradeRequests.filter((item) => item.status === "pending")
     const failedInvites = clubs.filter((club) => Boolean(club.accessInviteLastError) && lifecycleOf(club) !== "cancelled")
+    const failedEmails = emailStats?.failed24h ?? 0
 
     return [
       {
         key: "requests",
         count: pending.length,
-        title: pending.length === 1 ? "New club request waiting" : "New club requests waiting",
+        title: `${plural(pending.length, "new club request")} waiting`,
         body: nameList(pending.map((item) => item.organizationName)),
         to: "/platform-admin/requests",
-        cta: "Review",
       },
       {
         key: "billing",
         count: billing.length,
-        title: billing.length === 1 ? "Approved club has not finished billing setup" : "Approved clubs have not finished billing setup",
+        title: billing.length === 1 ? "1 approved club has not finished billing setup" : `${billing.length} approved clubs have not finished billing setup`,
         body: nameList(billing.map((club) => club.organizationName)),
         to: "/platform-admin/tenants",
-        cta: "Open clubs",
       },
       {
         key: "onboarding",
         count: onboarding.length,
-        title: onboarding.length === 1 ? "Club still marked as onboarding" : "Clubs still marked as onboarding",
-        body: "A club stays in onboarding until you mark it active on the Clubs screen.",
+        title: onboarding.length === 1 ? "1 club still marked as onboarding" : `${onboarding.length} clubs still marked as onboarding`,
+        body: "A club stays in onboarding until its admin finishes setup, or you mark it active on the Clubs screen.",
         to: "/platform-admin/tenants",
-        cta: "Open clubs",
       },
       {
         key: "upgrades",
         count: upgrades.length,
-        title: upgrades.length === 1 ? "Package change request waiting" : "Package change requests waiting",
+        title: `${plural(upgrades.length, "package change request")} waiting`,
         body: nameList(upgrades.map((item) => clubNames.get(item.tenantId) ?? item.organizationName)),
         to: "/platform-admin/commercial",
-        cta: "Review",
       },
       {
         key: "invites",
         count: failedInvites.length,
-        title: failedInvites.length === 1 ? "Club admin invite failed to send" : "Club admin invites failed to send",
+        title: failedInvites.length === 1 ? "1 club admin invite failed to send" : `${failedInvites.length} club admin invites failed to send`,
         body: nameList(failedInvites.map((club) => club.organizationName)),
         to: "/platform-admin/requests",
-        cta: "Send again",
       },
       {
         key: "emails",
-        count: emailStats?.failed24h ?? 0,
-        title: emailStats?.failed24h === 1 ? "Notification email failed to send" : "Notification emails failed to send",
-        body: "In the last 24 hours, after five tries each. Check the email provider, then send the queue again.",
-        to: "/platform-admin/requests",
-        cta: "Open requests",
+        count: failedEmails,
+        title: failedEmails === 1 ? "1 notification email failed to send" : `${failedEmails} notification emails failed to send`,
+        body: "In the last 24 hours, after five tries each. Open the list to see why and send them again.",
+        to: "/platform-admin/audit?view=emails",
       },
     ].filter((item) => item.count > 0)
   }, [clubNames, clubs, emailStats, requests, upgradeRequests])
@@ -199,128 +176,131 @@ export default function PlatformAdminDashboardPage() {
     ? "Loading the platform..."
     : size.total === 0
       ? "No clubs yet. New club requests show up here as soon as someone asks to join."
-      : `${plural(size.total, "club")}, ${size.active} active. ${
-          needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`
-        }`
+      : `${plural(size.total, "club")}, ${size.active} active. ${needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`}`
 
-  const otherStates = [size.suspended > 0 ? `${size.suspended} suspended` : null, size.cancelled > 0 ? `${size.cancelled} cancelled` : null]
-    .filter(Boolean)
-    .join(", ")
+  const otherStates = [size.suspended > 0 ? `${size.suspended} suspended` : null, size.cancelled > 0 ? `${size.cancelled} cancelled` : null].filter(Boolean).join(", ")
 
   return (
-    <div className="sk-page">
-      {error ? (
-        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-          Could not load everything: {error}
-        </p>
-      ) : null}
-
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="Platform"
         lede={lede}
         actions={
           <>
-            <Link to="/platform-admin/tenants" className="sk-btn sk-btn-quiet">
-              <Buildings className="size-5" weight="bold" />
-              All clubs
-            </Link>
-            <Link to="/platform-admin/requests" className="sk-btn sk-btn-primary">
-              <Tray className="size-5" weight="bold" />
+            <LinkButton to="/platform-admin/tenants">All clubs</LinkButton>
+            <LinkButton to="/platform-admin/requests" variant="primary">
               Review requests
-            </Link>
+            </LinkButton>
           </>
         }
       />
 
-      {loading ? (
-        <p role="status" className="sk-card text-sm font-semibold text-sk-mute">
-          Loading...
-        </p>
-      ) : (
-        <>
-          <section aria-label="Platform size" className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Stat tone="blue" label="Clubs" value={size.total} hint={otherStates || "Approved so far"} />
-              <Stat tone={size.active > 0 ? "green" : "plain"} label="Active" value={size.active} hint="Setup finished" />
-              <Stat label="Onboarding" value={size.onboarding} hint="Billing done, setup not finished" />
-              <Stat
-                label="Waiting on billing"
-                value={size.billing}
-                hint={size.billingFailed > 0 ? `${size.billingFailed} with failed billing` : "Approved, billing not set up"}
-              />
-            </div>
-            <p className="text-sm text-sk-mute">
-              {people
-                ? `Across these clubs right now: ${plural(people.teams, "team")}, ${plural(people.coaches, "active coach", "active coaches")} and ${plural(people.athletes, "athlete")}.`
-                : "Team, coach and athlete totals are not shown because live counts could not be loaded. Each club's sign-up numbers are on the Clubs screen."}
-            </p>
-            {emailStats ? <p className="text-sm text-sk-mute">{emailSentence(emailStats)}</p> : null}
-          </section>
+      {error ? <Notice tone="error">Could not load everything: {error}</Notice> : null}
 
-          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-            <Panel title="Needs you today" hint="Requests, unfinished setup, package changes, club admin invites that failed and notification emails that failed.">
-              {needsYou.length > 0 ? (
-                <ul>
+      <StatStrip aria-label="Platform size">
+        <Stat label="Clubs" value={loading ? "-" : size.total} hint={otherStates || "Approved so far"} />
+        <Stat label="Active" value={loading ? "-" : size.active} hint="Setup finished" />
+        <Stat label="Onboarding" value={loading ? "-" : size.onboarding} hint="Billing done, setup not finished" />
+        <Stat label="Waiting on billing" value={loading ? "-" : size.billing} hint={size.billingFailed > 0 ? `${size.billingFailed} with failed billing` : "Approved, billing not set up"} />
+      </StatStrip>
+
+      <Split
+        main={
+          <>
+            <Section title="Needs you" hint="New requests, unfinished setup, package changes, and invites or emails that failed." meta={loading || needsYou.length === 0 ? undefined : `${needsYou.length} open`}>
+              {loading ? (
+                <SkeletonRows rows={3} label="Loading what needs you" />
+              ) : needsYou.length > 0 ? (
+                <List aria-label="Needs you">
                   {needsYou.map((item) => (
-                    <li key={item.key} className="border-b border-sk-line last:border-b-0">
-                      <Link to={item.to} className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 py-4">
-                        <span className="sk-num w-9 text-center text-[2rem] text-sk-coral">{item.count}</span>
-                        <span className="min-w-0">
-                          <span className="block font-bold text-sk-ink group-hover:text-sk-blue">{item.title}</span>
-                          <span className="block text-sm text-sk-mute">{item.body}</span>
-                        </span>
-                        <span className="hidden items-center gap-1.5 text-sm font-bold text-sk-ink-2 group-hover:text-sk-blue sm:inline-flex">
-                          {item.cta}
-                          <ArrowRight className="size-4" weight="bold" />
-                        </span>
-                        <ArrowRight className="size-5 text-sk-mute sm:hidden" weight="bold" aria-hidden />
-                      </Link>
-                    </li>
+                    <ListRow key={item.key} to={item.to} leading={<StatusDot tone="coral" />} title={item.title} subtitle={item.body} />
                   ))}
-                </ul>
+                </List>
               ) : (
                 <EmptyState
-                  icon={<CheckCircle className="size-6" weight="fill" />}
                   title="Nothing is waiting on you"
-                  body="New club requests, clubs that have not finished setup, package change requests and failed club admin invites show up here."
-                  className="border-0 bg-sk-canvas"
+                  body="New club requests, clubs that have not finished setup, package change requests and failed invites or emails show up here."
                 />
               )}
-            </Panel>
+            </Section>
 
-            <Panel
+            <Section title="Across all clubs" hint={people ? "Counted now: teams that are not archived, active coaches and every athlete on a roster." : undefined}>
+              {loading ? (
+                <SkeletonRows rows={3} label="Loading totals" />
+              ) : people ? (
+                <FactList aria-label="Totals across all clubs">
+                  <Fact label="Teams">{people.teams.toLocaleString()}</Fact>
+                  <Fact label="Active coaches">{people.coaches.toLocaleString()}</Fact>
+                  <Fact label="Athletes">{people.athletes.toLocaleString()}</Fact>
+                </FactList>
+              ) : (
+                <EmptyState
+                  title="Live totals are not available"
+                  body="Team, coach and athlete counts could not be loaded. Each club's sign-up numbers are on the Clubs screen."
+                  action={
+                    <LinkButton to="/platform-admin/tenants" size="sm">
+                      Open clubs
+                    </LinkButton>
+                  }
+                />
+              )}
+            </Section>
+          </>
+        }
+        side={
+          <>
+            <Section
               title="Recent activity"
               action={
-                <Link to="/platform-admin/audit" className="sk-btn sk-btn-ghost sk-btn-sm">
-                  Open audit
-                  <ArrowRight className="size-4" weight="bold" />
+                <Link className="sk-link" to="/platform-admin/audit">
+                  All activity
                 </Link>
               }
             >
-              {recentAudit.length > 0 ? (
-                <ul>
+              {loading ? (
+                <SkeletonRows rows={4} label="Loading recent activity" />
+              ) : recentAudit.length > 0 ? (
+                <List aria-label="Recent activity">
                   {recentAudit.map((event) => (
-                    <li key={event.id} className="border-b border-sk-line py-3.5 first:pt-0 last:border-b-0 last:pb-0">
-                      <p className="font-semibold text-sk-ink">{auditSentence(event, clubNames)}</p>
-                      <p className="mt-0.5 break-words text-sm text-sk-mute">
+                    <ListRow key={event.id} className="items-start">
+                      <span className="sk-list-title break-words">{auditSentence(event, clubNames)}</span>
+                      <span className="sk-list-sub mt-0.5 break-words">
                         <time dateTime={event.occurredAt}>{formatLocalDateTime(event.occurredAt)}</time>
                         {event.actorEmail ? `, by ${event.actorEmail}` : ""}
-                      </p>
-                    </li>
+                      </span>
+                    </ListRow>
                   ))}
-                </ul>
+                </List>
               ) : (
-                <EmptyState
-                  icon={<ClockCounterClockwise className="size-6" weight="fill" />}
-                  title="No activity yet"
-                  body="Requests, approvals, status changes and exports are listed here as they happen."
-                  className="border-0 bg-sk-canvas"
-                />
+                <EmptyState title="No activity yet" body="Requests, approvals, status changes and exports are listed here as they happen." />
               )}
-            </Panel>
-          </div>
-        </>
-      )}
-    </div>
+            </Section>
+
+            {emailStats ? (
+              <Section
+                title="Notification email"
+                hint="The last 24 hours."
+                action={
+                  <Link className="sk-link" to="/platform-admin/audit?view=emails">
+                    Failed emails
+                  </Link>
+                }
+              >
+                <FactList aria-label="Notification email in the last 24 hours">
+                  <Fact label="Sent">{emailStats.sent24h.toLocaleString()}</Fact>
+                  <Fact label="Failed">{emailStats.failed24h.toLocaleString()}</Fact>
+                  <Fact label="Being retried">{emailStats.retrying.toLocaleString()}</Fact>
+                  <Fact label="Waiting">{emailStats.waiting.toLocaleString()}</Fact>
+                  <Fact label="Held back">{emailStats.notSent24h.toLocaleString()}</Fact>
+                  <Fact label="How emails go out" stack>
+                    {EMAIL_MODE[emailStats.deliveryMode]}
+                  </Fact>
+                </FactList>
+              </Section>
+            ) : null}
+          </>
+        }
+      />
+    </Screen>
   )
 }

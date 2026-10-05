@@ -11,6 +11,8 @@ export type CoachInvitePreview = {
   teamId?: string
   teamName?: string
   hasExistingAccount: boolean
+  /** What the invite makes the person: a coach, or a club admin (who may also coach the team). */
+  role: "coach" | "club-admin"
 }
 
 export type CoachOnboardingState = {
@@ -60,6 +62,15 @@ export async function getPublicCoachInvitePreview(inviteId: string): Promise<Res
   const row = Array.isArray(data) ? data[0] : data
   if (!row) return err("NOT_FOUND", "Coach invite not found.")
 
+  // The role comes from its own function (20261010090000). A database without it yet only has coach invites in use.
+  let role: CoachInvitePreview["role"] = "coach"
+  try {
+    const roleResult = await clientResult.data.rpc("get_public_coach_invite_role", { p_invite_id: inviteId })
+    if (!roleResult.error && roleResult.data === "club-admin") role = "club-admin"
+  } catch {
+    role = "coach"
+  }
+
   return ok({
     inviteId: row.invite_id,
     email: row.email,
@@ -69,6 +80,7 @@ export async function getPublicCoachInvitePreview(inviteId: string): Promise<Res
     teamId: row.team_id ?? undefined,
     teamName: row.team_name ?? undefined,
     hasExistingAccount: Boolean(row.has_existing_account),
+    role,
   })
 }
 

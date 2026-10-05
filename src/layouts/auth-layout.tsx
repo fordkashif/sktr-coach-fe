@@ -1,5 +1,7 @@
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { Link, Outlet } from "react-router-dom"
+import { Screen } from "@/components/sk"
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 import { cn } from "@/lib/utils"
 
 export function AuthLayout() {
@@ -10,91 +12,197 @@ export function AuthLayout() {
   )
 }
 
-/** Track and field photographs used on the public pages. Each sits on a solid sk-blue-tint block in case it fails to load. */
-export const AUTH_PHOTOS = {
-  blocks: {
-    src: "https://images.unsplash.com/photo-1526676317768-d9b14f15615a?auto=format&fit=crop&w=1400&q=80",
-    alt: "A sprinter pushing out of the starting blocks on a red track",
-  },
-  lanes: {
-    src: "https://images.unsplash.com/photo-1474546652694-a33dd8161d66?auto=format&fit=crop&w=1400&q=80",
-    alt: "A red running track with white lane lines and numbered starting positions",
-  },
-  markings: {
-    src: "https://images.unsplash.com/photo-1549896869-ca27eeffe4fb?auto=format&fit=crop&w=1200&q=80",
-    alt: "Lane markings painted on a red running track",
-  },
-} as const
-
-export type AuthPhoto = { src: string; alt: string }
-
+/** The product name with its mark. Links to sign in. */
 export function AuthBrand({ className }: { className?: string }) {
   return (
     <Link
       to="/login"
       className={cn(
-        "inline-flex items-center gap-2.5 rounded-lg text-lg font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue",
+        "inline-flex min-h-11 items-center gap-2.5 self-start rounded-lg text-lg font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue",
         className,
       )}
     >
-      <img src="/app-icon.png" alt="" className="size-8 rounded-[10px] object-contain" />
+      <img src="/favicon.svg" alt="" width={32} height={32} className="size-8" />
       SKTR Coach
     </Link>
   )
 }
 
+/** The links under every public page: the two legal pages, support, and who makes the app. */
+export function PublicFooter({ className }: { className?: string }) {
+  return (
+    <footer className={cn("flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-sk-line pt-4 text-sm text-sk-mute", className)}>
+      <Link to="/privacy" className="sk-link inline-flex min-h-11 items-center">
+        Privacy
+      </Link>
+      <Link to="/terms" className="sk-link inline-flex min-h-11 items-center">
+        Terms
+      </Link>
+      <a href={SUPPORT_MAILTO} className="sk-link inline-flex min-h-11 items-center">
+        {SUPPORT_EMAIL}
+      </a>
+      <span>Made by SKTR Labs in Kingston, Jamaica</span>
+    </footer>
+  )
+}
+
+/* ---- The track drawing ---------------------------------------------------------------------- */
+
+// The bend of a running track seen from above, drawn around the bottom right corner of the panel.
+const TRACK = { cx: 660, cy: 660, inner: 210, lane: 74, lanes: 6 }
+const LANE_STARTS = [-103, -111, -118, -124, -129, -133]
+/** Where each runner ends up, in degrees round the bend, and how late they leave the line. */
+const RUNNERS = [
+  { lane: 0, to: -150, fill: "#ffc93c", delay: 0 },
+  { lane: 2, to: -158, fill: "#ffffff", delay: 80 },
+  { lane: 3, to: -147, fill: "#ffc93c", delay: 40 },
+  { lane: 5, to: -161, fill: "#ffffff", delay: 120 },
+]
+
+function polar(radius: number, degrees: number) {
+  const radians = (degrees * Math.PI) / 180
+  return { x: TRACK.cx + radius * Math.cos(radians), y: TRACK.cy + radius * Math.sin(radians) }
+}
+
 /**
- * Front door frame: the form on white, and on wide screens a photograph with one plain line about the product.
- * On small screens the photograph is left out so the form is the first thing on the page.
+ * TrackArt: the picture on the public pages. Six lanes, a staggered start with lane numbers, and four
+ * runners who leave their marks once when the page opens (they stand still for anyone who asked their
+ * device for less motion). It is drawn here, so it can never fail to load.
+ */
+export function TrackArt({ className }: { className?: string }) {
+  const outer = TRACK.inner + TRACK.lane * TRACK.lanes
+  const midBand = (TRACK.inner + outer) / 2
+  return (
+    <svg viewBox="0 0 660 660" preserveAspectRatio="xMaxYMax meet" className={className} aria-hidden focusable="false">
+      <style>{`
+        .sk-track-runner { transform-box: view-box; transform-origin: ${TRACK.cx}px ${TRACK.cy}px; transform: rotate(var(--to)); }
+        @media (prefers-reduced-motion: no-preference) {
+          .sk-track-runner { animation: sk-track-run 1400ms cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--delay); }
+        }
+        @keyframes sk-track-run { from { transform: rotate(var(--from)); } to { transform: rotate(var(--to)); } }
+      `}</style>
+      {/* The track surface: one wide band. */}
+      <circle cx={TRACK.cx} cy={TRACK.cy} r={midBand} fill="none" stroke="#ff5c39" strokeWidth={outer - TRACK.inner} />
+      {/* Lane lines. */}
+      {Array.from({ length: TRACK.lanes + 1 }, (_, index) => (
+        <circle key={index} cx={TRACK.cx} cy={TRACK.cy} r={TRACK.inner + TRACK.lane * index} fill="none" stroke="#ffffff" strokeWidth={index === 0 || index === TRACK.lanes ? 7 : 4} />
+      ))}
+      {/* The infield. */}
+      <circle cx={TRACK.cx} cy={TRACK.cy} r={TRACK.inner - 3.5} fill="#0c9d61" />
+      {/* Staggered start lines and lane numbers. */}
+      {LANE_STARTS.map((angle, lane) => {
+        const from = polar(TRACK.inner + TRACK.lane * lane, angle)
+        const to = polar(TRACK.inner + TRACK.lane * (lane + 1), angle)
+        const radius = TRACK.inner + TRACK.lane * (lane + 0.5)
+        // The number sits just behind the line, turned to face the runner.
+        const numberAngle = angle + (26 * 180) / (Math.PI * radius)
+        const at = polar(radius, numberAngle)
+        return (
+          <g key={lane}>
+            <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#ffffff" strokeWidth={7} />
+            <text
+              x={at.x}
+              y={at.y}
+              transform={`rotate(${numberAngle + 90} ${at.x} ${at.y})`}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill="#ffffff"
+              fontSize={40}
+              fontWeight={800}
+            >
+              {lane + 1}
+            </text>
+          </g>
+        )
+      })}
+      {/* Runners. Each is drawn at three o'clock and turned round the bend to its place. */}
+      {RUNNERS.map((runner) => (
+        <circle
+          key={runner.lane}
+          className="sk-track-runner"
+          cx={TRACK.cx + TRACK.inner + TRACK.lane * (runner.lane + 0.5)}
+          cy={TRACK.cy}
+          r={17}
+          fill={runner.fill}
+          style={{ "--from": `${LANE_STARTS[runner.lane]}deg`, "--to": `${runner.to}deg`, "--delay": `${runner.delay}ms` } as CSSProperties}
+        />
+      ))}
+    </svg>
+  )
+}
+
+/** The blue panel of the public pages: one plain line about the product over the track drawing. */
+function BrandPanel({ headline, body, compact = false }: { headline: string[]; body?: ReactNode; compact?: boolean }) {
+  return (
+    <div className={cn("relative isolate overflow-hidden bg-sk-blue text-white", compact ? "min-h-[400px] rounded-3xl" : "h-full rounded-[28px]")}>
+      <TrackArt className={cn("absolute bottom-0 right-0 -z-10 aspect-square max-w-full", compact ? "h-[270px]" : "h-[66%]")} />
+      <div className={compact ? "p-6" : "p-9 xl:p-12"}>
+        <p className={cn("font-extrabold tracking-[-0.045em]", compact ? "text-[2.125rem] leading-[1.02]" : "text-[2.75rem] leading-none xl:text-[3.75rem] xl:leading-[0.98]")}>
+          {headline.map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
+        </p>
+        {body && !compact ? <p className="mt-5 max-w-[34ch] text-[1.0625rem] leading-relaxed text-white/90 xl:text-lg">{body}</p> : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * AuthSplit: the front door frame. The form on white, and beside it (under it on a phone, so the
+ * form comes first) the blue panel with one plain line about the product. `children` are kit parts:
+ * a ScreenHeader, then Sections.
  */
 export function AuthSplit({
-  photo,
   headline,
   body,
   wide = false,
   children,
 }: {
-  photo: AuthPhoto
-  headline: ReactNode
+  /** One short line each. */
+  headline: string[]
   body?: ReactNode
+  /** A longer form: a wider column that starts at the top instead of sitting in the middle. */
   wide?: boolean
   children: ReactNode
 }) {
   return (
-    <div className="min-h-dvh bg-white lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <main className="flex min-w-0 flex-col px-5 pb-12 pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10">
-        <div className={cn("mx-auto flex w-full flex-1 flex-col", wide ? "max-w-[600px]" : "max-w-[440px]")}>
-          <AuthBrand className="self-start" />
-          <div className={cn("flex flex-1 flex-col pt-8 sm:pt-12", !wide && "lg:justify-center lg:pb-16 lg:pt-10")}>{children}</div>
-        </div>
+    <div className="min-h-dvh bg-white lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
+      <main className={cn("mx-auto flex w-full min-w-0 flex-col pt-3 lg:pt-0", wide ? "max-w-[720px]" : "max-w-[560px]")}>
+        <Screen width="narrow" className={cn("flex-1", !wide && "lg:justify-center")}>
+          <AuthBrand />
+          {children}
+          <div className="lg:hidden">
+            <BrandPanel headline={headline} body={body} compact />
+          </div>
+          <PublicFooter />
+        </Screen>
       </main>
-
       <aside className="hidden p-4 lg:block" aria-label="About SKTR Coach">
-        <div className="sticky top-4 flex h-[calc(100dvh-2rem)] min-h-[560px] flex-col overflow-hidden rounded-[28px] bg-sk-blue-tint">
-          <div className="relative min-h-0 flex-1 bg-sk-blue-tint">
-            <img
-              src={photo.src}
-              alt={photo.alt}
-              decoding="async"
-              className="absolute inset-0 size-full object-cover"
-              onError={(event) => {
-                event.currentTarget.style.visibility = "hidden"
-              }}
-            />
-          </div>
-          <div className="bg-sk-blue px-9 pb-10 pt-8 text-white xl:px-12 xl:pb-12 xl:pt-10">
-            <p className="max-w-[16ch] text-[2.5rem] font-extrabold leading-[0.98] tracking-[-0.045em] xl:text-[3.25rem]">{headline}</p>
-            {body ? <p className="mt-4 max-w-[44ch] text-base leading-relaxed text-white/85 xl:text-lg">{body}</p> : null}
-          </div>
+        <div className="sticky top-4 h-[calc(100dvh-2rem)] min-h-[600px]">
+          <BrandPanel headline={headline} body={body} />
         </div>
       </aside>
     </div>
   )
 }
 
-/** Small centered frame for notices that are not forms: not found, errors, loading. */
-export function AuthNotice({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * PublicFrame: a public page that is not a form (not found, access paused, privacy, terms). No app
+ * chrome: the brand, the page's kit parts, the footer. The same shape as the invite pages.
+ */
+export function PublicFrame({ children, width = "narrow" }: { children: ReactNode; width?: "narrow" | "reading" }) {
   return (
-    <main className={cn("mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-12 pt-8 sm:px-6 sm:pt-14", className)}>{children}</main>
+    <div className="min-h-dvh bg-white">
+      <main className={cn("mx-auto w-full py-3 sm:py-8", width === "reading" ? "max-w-[720px]" : "max-w-[560px]")}>
+        <Screen width="narrow">
+          <AuthBrand />
+          {children}
+          <PublicFooter />
+        </Screen>
+      </main>
+    </div>
   )
 }

@@ -1,8 +1,31 @@
-"use client"
-
-import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react"
-import { CheckCircle, Info, PaperPlaneTilt, PencilSimple } from "@phosphor-icons/react"
-import { EmptyState, Meter, PageHeader, Panel, Tag, type TagTone } from "@/components/sk"
+import { useCallback, useEffect, useState, type FormEvent } from "react"
+import { PaperPlaneTilt, PencilSimple } from "@phosphor-icons/react"
+import {
+  Button,
+  DataTable,
+  EmptyState,
+  Fact,
+  FactList,
+  Field,
+  FormActions,
+  Input,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  Section,
+  Select,
+  SkeletonRows,
+  Split,
+  Stat,
+  StatStrip,
+  StatusText,
+  Tag,
+  Textarea,
+  type DataTableColumn,
+  type StateTone,
+} from "@/components/sk"
 import { getPackageById, packageOptions, type PackageDefinition, type PackageId } from "@/lib/billing/package-catalog"
 import {
   getClubAdminPackageUpgradeRequests,
@@ -15,7 +38,7 @@ import {
 import { useRole } from "@/lib/role-context"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { formatDateTime, type MockAuditLogger } from "../ops-format"
+import { formatDateTime } from "../ops-format"
 import { loadClubTeams, loadClubUsers } from "../state"
 
 const MOCK_BILLING_KEY = "pacelab:billing-profile"
@@ -37,17 +60,17 @@ type ChangeRequest = {
   createdAt: string
 }
 
-const RESOURCES: Array<{ key: Resource; label: string; one: string; hint: string }> = [
-  { key: "teams", label: "Teams", one: "team", hint: "Teams that are not archived" },
-  { key: "coaches", label: "Coaches", one: "coach", hint: "Coach accounts that are switched on" },
-  { key: "athletes", label: "Athletes", one: "athlete", hint: "Athletes on your rosters" },
+const RESOURCES: Array<{ key: Resource; label: string; one: string }> = [
+  { key: "teams", label: "Teams", one: "team" },
+  { key: "coaches", label: "Coaches", one: "coach" },
+  { key: "athletes", label: "Athletes", one: "athlete" },
 ]
 
-const STATUS: Record<RequestStatus, { label: string; tone: TagTone }> = {
-  pending: { label: "In review", tone: "yellow" },
+const STATUS: Record<RequestStatus, { label: string; tone: StateTone }> = {
+  pending: { label: "In review", tone: "amber" },
   approved: { label: "Approved", tone: "green" },
   rejected: { label: "Declined", tone: "coral" },
-  cancelled: { label: "Cancelled", tone: "plain" },
+  cancelled: { label: "Cancelled", tone: "neutral" },
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -72,19 +95,10 @@ function limitText(definition: PackageDefinition, resource: Resource) {
   return Number.isFinite(limit) ? limit.toLocaleString() : "No limit"
 }
 
-function DetailRow({ label, children, muted = false }: { label: string; children: ReactNode; muted?: boolean }) {
-  return (
-    <div className="sk-row items-baseline">
-      <dt className="sk-label shrink-0">{label}</dt>
-      <dd className={muted ? "min-w-0 text-right text-sk-mute" : "min-w-0 break-words text-right font-bold text-sk-ink"}>{children}</dd>
-    </div>
-  )
-}
-
+/** The club's package, how much of it is in use, who to contact about billing, and package change requests. */
 export default function ClubAdminBillingPage() {
   const isSupabaseMode = getBackendMode() === "supabase"
   const { userEmail } = useRole()
-  const formId = useId()
 
   const [loading, setLoading] = useState(true)
   const [packageId, setPackageId] = useState<PackageId | null>(null)
@@ -95,12 +109,12 @@ export default function ClubAdminBillingPage() {
   const [contactLoadError, setContactLoadError] = useState<string | null>(null)
   const [requests, setRequests] = useState<ChangeRequest[]>([])
   const [requestsError, setRequestsError] = useState<string | null>(null)
-  const [mockAuditLogger, setMockAuditLogger] = useState<MockAuditLogger | null>(null)
 
   const [editingContact, setEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<Contact>({ name: "", email: "" })
   const [contactErrors, setContactErrors] = useState<Partial<Record<keyof Contact, string>>>({})
   const [contactSaveError, setContactSaveError] = useState<string | null>(null)
+  const [contactAuditError, setContactAuditError] = useState<string | null>(null)
   const [contactSaving, setContactSaving] = useState(false)
   const [contactSaved, setContactSaved] = useState(false)
 
@@ -109,6 +123,11 @@ export default function ClubAdminBillingPage() {
   const [requestError, setRequestError] = useState<string | null>(null)
   const [requestSending, setRequestSending] = useState(false)
   const [requestSent, setRequestSent] = useState(false)
+
+  const logMock = async (action: string, target: string, detail: string) => {
+    const mockAudit = await import("@/lib/mock-audit")
+    mockAudit.logAuditEvent({ actor: "club-admin", action, target, detail })
+  }
 
   const loadRequests = useCallback(async () => {
     const result = await getClubAdminPackageUpgradeRequests()
@@ -133,10 +152,7 @@ export default function ClubAdminBillingPage() {
         setUsageError(usageResult.error.message)
       }
       if (activationResult.ok) {
-        setContact({
-          name: activationResult.data.billingContactName ?? "",
-          email: activationResult.data.billingContactEmail ?? "",
-        })
+        setContact({ name: activationResult.data.billingContactName ?? "", email: activationResult.data.billingContactEmail ?? "" })
         setBillingCycle(activationResult.data.billingCycle)
         setContactLoadError(null)
       } else {
@@ -155,21 +171,17 @@ export default function ClubAdminBillingPage() {
     if (isSupabaseMode) return
     let cancelled = false
 
-    void Promise.all([import("@/lib/mock-data"), import("@/lib/mock-audit")]).then(([mockData, mockAudit]) => {
+    void import("@/lib/mock-data").then((mockData) => {
       if (cancelled) return
       const stored = readJson<{ plan?: string; contactName?: string; contactEmail?: string }>(MOCK_BILLING_KEY, {})
       setPackageId(getPackageById(stored.plan)?.id ?? "pro")
-      setContact({
-        name: stored.contactName ?? "Club Admin",
-        email: stored.contactEmail ?? userEmail ?? "clubadmin@pacelab.local",
-      })
+      setContact({ name: stored.contactName ?? "Club Admin", email: stored.contactEmail ?? userEmail ?? "clubadmin@pacelab.local" })
       setUsage({
         teams: loadClubTeams().filter((team) => team.status !== "archived").length,
         coaches: loadClubUsers().filter((user) => user.role === "coach" && user.status === "active").length,
         athletes: mockData.mockAthletes.length,
       })
       setRequests(readJson<ChangeRequest[]>(MOCK_REQUESTS_KEY, []))
-      setMockAuditLogger(() => mockAudit.logAuditEvent)
       setLoading(false)
     })
 
@@ -188,6 +200,8 @@ export default function ClubAdminBillingPage() {
           (resource) => `${usage[resource.key]} ${resource.label.toLowerCase()} (limit ${limitText(chosen, resource.key)})`,
         )
       : []
+  const atLimit =
+    currentPackage && usage ? RESOURCES.filter((resource) => Number.isFinite(currentPackage.limits[resource.key]) && usage[resource.key] >= currentPackage.limits[resource.key]) : []
 
   const startEditingContact = () => {
     setContactDraft(contact ?? { name: "", email: "" })
@@ -213,6 +227,7 @@ export default function ClubAdminBillingPage() {
 
     setContactSaving(true)
     setContactSaveError(null)
+    setContactAuditError(null)
     if (isSupabaseMode) {
       const result = await updateClubAdminBillingContact(next)
       if (!result.ok) {
@@ -225,7 +240,7 @@ export default function ClubAdminBillingPage() {
         return
       }
       const auditResult = await insertAuditEvent({ action: "billing_update", target: "billing-contact", detail: next.email })
-      if (!auditResult.ok) setContactSaveError(`Saved, but we could not add the change to the activity log. ${auditResult.error.message}`)
+      if (!auditResult.ok) setContactAuditError(auditResult.error.message)
     } else {
       try {
         writeJson(MOCK_BILLING_KEY, { plan: packageId ?? "pro", contactName: next.name, contactEmail: next.email })
@@ -234,7 +249,7 @@ export default function ClubAdminBillingPage() {
         setContactSaveError("Could not save the billing contact on this device.")
         return
       }
-      mockAuditLogger?.({ actor: "club-admin", action: "billing_update", target: "billing-contact", detail: next.email })
+      await logMock("billing_update", "billing-contact", next.email)
     }
     setContact(next)
     setContactSaving(false)
@@ -282,12 +297,7 @@ export default function ClubAdminBillingPage() {
         return
       }
       setRequests(next)
-      mockAuditLogger?.({
-        actor: "club-admin",
-        action: "package_upgrade_requested",
-        target: requestedPackage,
-        detail: `Requested package change from ${packageId ?? "pro"} to ${requestedPackage}.`,
-      })
+      await logMock("package_upgrade_requested", requestedPackage, `Requested package change from ${packageId ?? "pro"} to ${requestedPackage}.`)
     }
     setRequestSending(false)
     setRequestSent(true)
@@ -295,328 +305,247 @@ export default function ClubAdminBillingPage() {
     setReason("")
   }
 
-  return (
-    <div className="sk-page">
-      <PageHeader title="Billing" lede="Your package, how much of it the club is using, and who we contact about billing." />
+  const packageColumns: Array<DataTableColumn<PackageDefinition>> = [
+    {
+      key: "package",
+      header: "Package",
+      cell: (option) => (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {option.label}
+          {option.id === packageId ? <Tag tone="blue">Your package</Tag> : null}
+        </span>
+      ),
+    },
+    ...RESOURCES.map(
+      (resource): DataTableColumn<PackageDefinition> => ({ key: resource.key, header: resource.label, align: "right", cell: (option) => limitText(option, resource.key) }),
+    ),
+  ]
 
-      <div className="flex items-start gap-3 rounded-2xl bg-sk-blue-tint p-4">
-        <Info className="mt-0.5 size-5 shrink-0 text-[#1638b8]" weight="fill" aria-hidden />
-        <p className="text-sm leading-relaxed text-sk-ink-2">
-          <span className="font-bold text-sk-ink">Invoices and card payments are not available in the app yet.</span> Nothing is charged from this screen, and
-          there are no invoices to download. Package changes are reviewed by the SKTR team before they take effect.
-        </p>
-      </div>
+  return (
+    <Screen>
+      <ScreenHeader
+        title="Billing"
+        lede={
+          loading
+            ? "Your package, how much of it the club is using, and who we contact about billing."
+            : currentPackage
+              ? `Your club is on the ${currentPackage.label} package. Here is how much of it you are using and who we contact about billing.`
+              : "How much the club is using and who we contact about billing."
+        }
+      />
+
+      <Notice>
+        Card payments and invoices are not in the app. Nothing is charged from this screen and there are no invoices to download. Package changes are reviewed by the SKTR team before they take effect.
+      </Notice>
 
       {loading ? (
-        <p className="text-sk-mute" role="status">
-          Loading billing...
-        </p>
+        <Section title="In use">
+          <SkeletonRows rows={3} label="Loading billing" />
+        </Section>
       ) : (
-        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-8">
-          <div className="min-w-0 space-y-6 lg:space-y-8">
-            <Panel
-              title={currentPackage ? `${currentPackage.label} package` : "Your package"}
-              hint={
-                currentPackage
-                  ? currentPackage.description
-                  : "We could not read which package this club is on, so limits are not shown. The SKTR team can confirm it for you."
-              }
-            >
-              {usageError ? (
-                <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                  We could not load how much of your package is in use. {usageError}
-                </p>
-              ) : usage ? (
-                <ul>
-                  {RESOURCES.map((resource) => {
-                    const used = usage[resource.key]
-                    const limit = currentPackage ? currentPackage.limits[resource.key] : null
-                    const capped = limit !== null && Number.isFinite(limit)
-                    const percent = capped && limit ? (used / limit) * 100 : 0
-                    const atLimit = capped && limit !== null && used >= limit
-                    const left = capped && limit !== null ? Math.max(limit - used, 0) : null
-                    return (
-                      <li key={resource.key} className="border-b border-sk-line py-4 first:pt-0 last:border-b-0 last:pb-0">
-                        <div className="flex items-end justify-between gap-4">
-                          <div className="min-w-0">
-                            <p className="sk-h3">{resource.label}</p>
-                            <p className="text-sm text-sk-mute">{resource.hint}</p>
-                          </div>
-                          <p className="shrink-0 text-right">
-                            <span className="sk-num text-[2rem]">{used.toLocaleString()}</span>
-                            <span className="ml-1.5 text-sm font-bold text-sk-mute">
-                              {capped && limit !== null ? `of ${limit.toLocaleString()}` : limit === null ? "in use" : "no limit"}
+        <>
+          {usageError ? (
+            <Notice tone="error">We could not load how much of your package is in use. {usageError}</Notice>
+          ) : usage ? (
+            <StatStrip aria-label="How much of your package is in use">
+              {RESOURCES.map((resource) => {
+                const used = usage[resource.key]
+                const limit = currentPackage ? currentPackage.limits[resource.key] : null
+                if (limit === null) return <Stat key={resource.key} label={resource.label} value={used.toLocaleString()} hint="In use" />
+                if (!Number.isFinite(limit)) return <Stat key={resource.key} label={resource.label} value={used.toLocaleString()} hint="No limit" />
+                const left = Math.max(limit - used, 0)
+                return (
+                  <Stat
+                    key={resource.key}
+                    label={resource.label}
+                    value={used.toLocaleString()}
+                    of={limit.toLocaleString()}
+                    hint={left === 0 ? "At the limit" : `${left.toLocaleString()} more before the limit`}
+                  />
+                )
+              })}
+            </StatStrip>
+          ) : null}
+
+          {atLimit.length > 0 ? (
+            <Notice tone="warning">
+              You have reached the limit for {atLimit.map((resource) => resource.label.toLowerCase()).join(" and ")}. Ask for a bigger package below to add more.
+            </Notice>
+          ) : null}
+          {!currentPackage ? (
+            <Notice tone="warning">We could not read which package this club is on, so limits are not shown. The SKTR team can confirm it for you.</Notice>
+          ) : null}
+
+          <Split
+            main={
+              <>
+                <Section title="Packages" hint={currentPackage ? currentPackage.description : "What each package allows."}>
+                  <DataTable caption="What each package allows" columns={packageColumns} rows={packageOptions} rowKey={(option) => option.id} />
+                </Section>
+
+                <Section title="Change package" hint="Tell us which package you want. The SKTR team reviews every request and the answer shows in the history.">
+                  {requestSent ? (
+                    <Notice tone="success" className="mb-4">
+                      Request sent. You will see the decision in the history.
+                    </Notice>
+                  ) : null}
+                  {pendingRequest ? (
+                    <FactList aria-label="Request in review">
+                      <Fact label="Asked to move to">{packageLabel(pendingRequest.requestedPackage)}</Fact>
+                      <Fact label="Sent">{formatDateTime(pendingRequest.createdAt)}</Fact>
+                      <Fact label="Status">
+                        <StatusText tone="amber">With the SKTR team</StatusText>
+                      </Fact>
+                      <Fact label="What next" stack>
+                        You can send another request once this one has an answer.
+                      </Fact>
+                    </FactList>
+                  ) : (
+                    <form className="mt-2 flex flex-col gap-4" onSubmit={(event) => void sendRequest(event)} noValidate>
+                      <Field label="Package you want" error={requestError} className="sm:max-w-xs">
+                        <Select
+                          value={requestedPackage}
+                          onChange={(event) => {
+                            setRequestedPackage(event.target.value as PackageId | "")
+                            setRequestError(null)
+                            setRequestSent(false)
+                          }}
+                        >
+                          <option value="">Choose a package</option>
+                          {choices.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      {overChosenLimits.length > 0 && chosen ? (
+                        <Notice tone="warning">
+                          The club is using more than {chosen.label} allows: {overChosenLimits.join(", ")}. You can still send the request, and the SKTR team will talk it through with you.
+                        </Notice>
+                      ) : null}
+                      <Field label="Why you need the change" optional>
+                        <Textarea rows={3} maxLength={500} placeholder="We are adding a second sprint group in January" value={reason} onChange={(event) => setReason(event.target.value)} />
+                      </Field>
+                      <FormActions className="sm:justify-start">
+                        <Button type="submit" variant="primary" disabled={requestSending}>
+                          <PaperPlaneTilt className="size-5" weight="bold" aria-hidden />
+                          {requestSending ? "Sending..." : "Send request"}
+                        </Button>
+                      </FormActions>
+                    </form>
+                  )}
+                </Section>
+              </>
+            }
+            side={
+              <>
+                <Section
+                  title="Billing contact"
+                  hint="The person the SKTR team gets in touch with about your package."
+                  action={
+                    contact && !editingContact ? (
+                      <Button variant="quiet" size="sm" className="-my-2" onClick={startEditingContact}>
+                        <PencilSimple className="size-4" weight="bold" aria-hidden />
+                        Edit
+                      </Button>
+                    ) : null
+                  }
+                >
+                  {contactLoadError ? (
+                    <Notice tone="error">We could not load the billing contact. {contactLoadError}</Notice>
+                  ) : editingContact ? (
+                    <form className="flex flex-col gap-4" onSubmit={(event) => void saveContact(event)} noValidate>
+                      <Field label="Billing contact name" error={contactErrors.name}>
+                        <Input
+                          autoComplete="name"
+                          maxLength={80}
+                          value={contactDraft.name}
+                          onChange={(event) => {
+                            setContactDraft((current) => ({ ...current, name: event.target.value }))
+                            setContactErrors((current) => ({ ...current, name: undefined }))
+                          }}
+                        />
+                      </Field>
+                      <Field label="Billing contact email" error={contactErrors.email}>
+                        <Input
+                          type="email"
+                          autoComplete="email"
+                          autoCapitalize="none"
+                          maxLength={120}
+                          value={contactDraft.email}
+                          onChange={(event) => {
+                            setContactDraft((current) => ({ ...current, email: event.target.value }))
+                            setContactErrors((current) => ({ ...current, email: undefined }))
+                          }}
+                        />
+                      </Field>
+                      {contactSaveError ? <Notice tone="error">{contactSaveError}</Notice> : null}
+                      <FormActions>
+                        <Button variant="quiet" onClick={() => setEditingContact(false)} disabled={contactSaving}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={contactSaving}>
+                          {contactSaving ? "Saving..." : "Save billing contact"}
+                        </Button>
+                      </FormActions>
+                    </form>
+                  ) : contact ? (
+                    <>
+                      {contactSaved ? (
+                        <Notice tone="success" className="mb-3">
+                          Billing contact saved.
+                        </Notice>
+                      ) : null}
+                      {contactAuditError ? (
+                        <Notice tone="warning" className="mb-3">
+                          Saved, but we could not add the change to the activity log. {contactAuditError}
+                        </Notice>
+                      ) : null}
+                      <FactList aria-label="Billing contact">
+                        <Fact label="Name" empty="Not added yet">
+                          {contact.name}
+                        </Fact>
+                        <Fact label="Email" empty="Not added yet">
+                          {contact.email}
+                        </Fact>
+                        {billingCycle ? <Fact label="Billing cycle chosen at setup">{billingCycle === "annual" ? "Annual" : "Monthly"}</Fact> : null}
+                      </FactList>
+                    </>
+                  ) : null}
+                </Section>
+
+                <Section title="Request history" meta={requests.length > 0 ? `${requests.length} ${requests.length === 1 ? "request" : "requests"}` : undefined}>
+                  {requestsError ? (
+                    <Notice tone="error">We could not load your package requests. {requestsError}</Notice>
+                  ) : requests.length === 0 ? (
+                    <EmptyState title="No package requests yet" body="When you ask for a different package, the request and the SKTR team's decision are listed here." />
+                  ) : (
+                    <List aria-label="Package requests">
+                      {requests.map((request) => {
+                        const status = STATUS[request.status] ?? { label: request.status, tone: "neutral" as const }
+                        return (
+                          <ListRow key={request.id} className="items-start" trailing={<StatusText tone={status.tone}>{status.label}</StatusText>}>
+                            <span className="sk-list-title">
+                              {packageLabel(request.currentPackage)} to {packageLabel(request.requestedPackage)}
                             </span>
-                          </p>
-                        </div>
-                        {capped ? (
-                          <>
-                            <Meter value={percent} tone={atLimit ? "coral" : percent >= 80 ? "yellow" : "blue"} className="mt-3" />
-                            <p className={`mt-2 text-sm ${atLimit ? "font-semibold text-[#b32a0c]" : "text-sk-mute"}`}>
-                              {atLimit
-                                ? `You have reached the limit. Ask for a bigger package to add another ${resource.one}.`
-                                : `${left?.toLocaleString()} more ${left === 1 ? resource.one : resource.label.toLowerCase()} before you reach the limit.`}
-                            </p>
-                          </>
-                        ) : null}
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : null}
-            </Panel>
-
-            <Panel title="Change package" hint="Tell us which package you want. The SKTR team reviews every request and replies here.">
-              <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-                <table className="w-full min-w-[340px] text-left">
-                  <caption className="sr-only">What each package allows</caption>
-                  <thead>
-                    <tr className="border-b border-sk-line text-sm text-sk-mute">
-                      <th scope="col" className="py-2.5 pr-3 font-semibold">Package</th>
-                      <th scope="col" className="px-3 py-2.5 text-right font-semibold">Teams</th>
-                      <th scope="col" className="px-3 py-2.5 text-right font-semibold">Coaches</th>
-                      <th scope="col" className="py-2.5 pl-3 text-right font-semibold">Athletes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {packageOptions.map((option) => (
-                      <tr key={option.id} className="border-b border-sk-line last:border-b-0">
-                        <th scope="row" className="whitespace-nowrap py-3 pr-3 font-bold text-sk-ink">
-                          {option.label}
-                          {option.id === packageId ? <span className="ml-2 text-sm font-semibold text-sk-blue">Your package</span> : null}
-                        </th>
-                        {RESOURCES.map((resource, index) => (
-                          <td
-                            key={resource.key}
-                            className={`whitespace-nowrap py-3 text-right tabular-nums text-sk-ink-2 ${index === RESOURCES.length - 1 ? "pl-3" : "px-3"}`}
-                          >
-                            {limitText(option, resource.key)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {requestSent ? (
-                <p role="status" className="mt-5 flex items-center gap-2 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-bold text-[#07673f]">
-                  <CheckCircle className="size-5 shrink-0" weight="fill" aria-hidden />
-                  Request sent. You will see the decision in the history below.
-                </p>
-              ) : null}
-
-              {pendingRequest ? (
-                <div className="sk-well mt-5">
-                  <p className="font-bold text-sk-ink">
-                    Your request to move to {packageLabel(pendingRequest.requestedPackage)} is with the SKTR team.
-                  </p>
-                  <p className="mt-1 text-sm text-sk-mute">
-                    Sent {formatDateTime(pendingRequest.createdAt)}. You can send another request once this one has an answer.
-                  </p>
-                </div>
-              ) : (
-                <form className="mt-5 grid gap-4" onSubmit={sendRequest} noValidate>
-                  <div className="sm:max-w-xs">
-                    <label htmlFor={`${formId}-package`} className="sk-label mb-1.5 block">
-                      Package you want
-                    </label>
-                    <select
-                      id={`${formId}-package`}
-                      className="sk-field"
-                      value={requestedPackage}
-                      onChange={(event) => {
-                        setRequestedPackage(event.target.value as PackageId | "")
-                        setRequestError(null)
-                        setRequestSent(false)
-                      }}
-                    >
-                      <option value="">Choose a package</option>
-                      {choices.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {overChosenLimits.length > 0 && chosen ? (
-                    <p className="rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">
-                      The club is using more than {chosen.label} allows: {overChosenLimits.join(", ")}. You can still send the request, and the SKTR team will
-                      talk it through with you.
-                    </p>
-                  ) : null}
-                  <div>
-                    <label htmlFor={`${formId}-reason`} className="sk-label mb-1.5 block">
-                      Why you need the change (optional)
-                    </label>
-                    <textarea
-                      id={`${formId}-reason`}
-                      className="sk-field h-auto min-h-24 py-2.5"
-                      maxLength={500}
-                      placeholder="We are adding a second sprint group in January"
-                      value={reason}
-                      onChange={(event) => setReason(event.target.value)}
-                    />
-                  </div>
-                  {requestError ? (
-                    <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                      {requestError}
-                    </p>
-                  ) : null}
-                  <div>
-                    <button type="submit" className="sk-btn sk-btn-primary w-full sm:w-auto" disabled={requestSending}>
-                      <PaperPlaneTilt className="size-5" weight="bold" aria-hidden />
-                      {requestSending ? "Sending..." : "Send request"}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </Panel>
-          </div>
-
-          <div className="min-w-0 space-y-6 lg:space-y-8">
-            <Panel
-              title="Billing contact"
-              hint="The person the SKTR team gets in touch with about your package."
-              action={
-                contact && !editingContact ? (
-                  <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm" onClick={startEditingContact}>
-                    <PencilSimple className="size-4" weight="bold" aria-hidden />
-                    Edit
-                  </button>
-                ) : null
-              }
-            >
-              {contactLoadError ? (
-                <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                  We could not load the billing contact. {contactLoadError}
-                </p>
-              ) : editingContact ? (
-                <form className="grid gap-4" onSubmit={saveContact} noValidate>
-                  <div>
-                    <label htmlFor={`${formId}-contact-name`} className="sk-label mb-1.5 block">
-                      Billing contact name
-                    </label>
-                    <input
-                      id={`${formId}-contact-name`}
-                      className="sk-field"
-                      autoComplete="name"
-                      maxLength={80}
-                      aria-invalid={contactErrors.name ? true : undefined}
-                      aria-describedby={contactErrors.name ? `${formId}-contact-name-error` : undefined}
-                      value={contactDraft.name}
-                      onChange={(event) => {
-                        setContactDraft((current) => ({ ...current, name: event.target.value }))
-                        setContactErrors((current) => ({ ...current, name: undefined }))
-                      }}
-                    />
-                    {contactErrors.name ? (
-                      <p id={`${formId}-contact-name-error`} className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
-                        {contactErrors.name}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div>
-                    <label htmlFor={`${formId}-contact-email`} className="sk-label mb-1.5 block">
-                      Billing contact email
-                    </label>
-                    <input
-                      id={`${formId}-contact-email`}
-                      type="email"
-                      className="sk-field"
-                      autoComplete="email"
-                      maxLength={120}
-                      aria-invalid={contactErrors.email ? true : undefined}
-                      aria-describedby={contactErrors.email ? `${formId}-contact-email-error` : undefined}
-                      value={contactDraft.email}
-                      onChange={(event) => {
-                        setContactDraft((current) => ({ ...current, email: event.target.value }))
-                        setContactErrors((current) => ({ ...current, email: undefined }))
-                      }}
-                    />
-                    {contactErrors.email ? (
-                      <p id={`${formId}-contact-email-error`} className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
-                        {contactErrors.email}
-                      </p>
-                    ) : null}
-                  </div>
-                  {contactSaveError ? (
-                    <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                      {contactSaveError}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    <button type="submit" className="sk-btn sk-btn-ink" disabled={contactSaving}>
-                      {contactSaving ? "Saving..." : "Save billing contact"}
-                    </button>
-                    <button type="button" className="sk-btn sk-btn-ghost" onClick={() => setEditingContact(false)} disabled={contactSaving}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : contact ? (
-                <>
-                  {contactSaved ? (
-                    <p role="status" className="mb-3 flex items-center gap-2 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-bold text-[#07673f]">
-                      <CheckCircle className="size-5 shrink-0" weight="fill" aria-hidden />
-                      Billing contact saved.
-                    </p>
-                  ) : null}
-                  {contactSaveError ? (
-                    <p role="alert" className="mb-3 rounded-2xl bg-sk-yellow-tint px-4 py-3 text-sm font-semibold text-[#7a5600]">
-                      {contactSaveError}
-                    </p>
-                  ) : null}
-                  <dl>
-                    <DetailRow label="Name" muted={!contact.name}>
-                      {contact.name || "Not added yet"}
-                    </DetailRow>
-                    <DetailRow label="Email" muted={!contact.email}>
-                      {contact.email || "Not added yet"}
-                    </DetailRow>
-                    {billingCycle ? (
-                      <DetailRow label="Billing cycle chosen at setup">{billingCycle === "annual" ? "Annual" : "Monthly"}</DetailRow>
-                    ) : null}
-                  </dl>
-                </>
-              ) : null}
-            </Panel>
-
-            <Panel title="Request history">
-              {requestsError ? (
-                <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
-                  We could not load your package requests. {requestsError}
-                </p>
-              ) : requests.length === 0 ? (
-                <EmptyState
-                  className="border-0 bg-sk-canvas"
-                  title="No package requests yet"
-                  body="When you ask for a different package, the request and the SKTR team's decision are listed here."
-                />
-              ) : (
-                <ul>
-                  {requests.map((request) => (
-                    <li key={request.id} className="border-b border-sk-line py-4 first:pt-0 last:border-b-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="font-bold text-sk-ink">
-                          {packageLabel(request.currentPackage)} to {packageLabel(request.requestedPackage)}
-                        </p>
-                        <Tag tone={STATUS[request.status]?.tone ?? "plain"}>{STATUS[request.status]?.label ?? request.status}</Tag>
-                      </div>
-                      <p className="mt-1 text-sm text-sk-mute">
-                        Sent {formatDateTime(request.createdAt)}
-                        {request.reviewedAt ? `. Answered ${formatDateTime(request.reviewedAt)}` : ""}
-                      </p>
-                      {request.reason ? <p className="mt-2 break-words text-sm text-sk-ink-2">Your note: {request.reason}</p> : null}
-                      {request.reviewNotes ? <p className="mt-1 break-words text-sm text-sk-ink-2">SKTR team: {request.reviewNotes}</p> : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Panel>
-          </div>
-        </div>
+                            <span className="sk-list-sub mt-0.5">
+                              Sent {formatDateTime(request.createdAt)}
+                              {request.reviewedAt ? `. Answered ${formatDateTime(request.reviewedAt)}` : ""}
+                            </span>
+                            {request.reason ? <span className="sk-list-sub mt-1 break-words">Your note: {request.reason}</span> : null}
+                            {request.reviewNotes ? <span className="sk-list-sub mt-1 break-words text-sk-ink-2">SKTR team: {request.reviewNotes}</span> : null}
+                          </ListRow>
+                        )
+                      })}
+                    </List>
+                  )}
+                </Section>
+              </>
+            }
+          />
+        </>
       )}
-    </div>
+    </Screen>
   )
 }

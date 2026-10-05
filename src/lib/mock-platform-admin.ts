@@ -608,3 +608,85 @@ export function getMockTenantLifecycleStatus(tenantId: string | null): TenantLif
   if (!tenantId) return null
   return loadMockPlatformAdminRequests().find((item) => item.provisionedTenantId === tenantId)?.lifecycleStatus ?? null
 }
+
+/**
+ * Demo version of platform_admin_set_tenant_package: the platform admin moves a club to another
+ * package with a reason. A waiting request from the club for that same package is closed as approved.
+ * Returns the package the club was on before, or null when the club is not found or nothing changes.
+ */
+export function setMockTenantPackage(params: { requestId: string; packageId: PackageId; reason: string }) {
+  const requests = loadMockPlatformAdminRequests()
+  const target = requests.find((item) => item.id === params.requestId)
+  const reason = params.reason.trim()
+  if (!target || target.status !== "approved" || target.lifecycleStatus === "cancelled" || target.requestedPlan === params.packageId || reason.length < 3) return null
+
+  const previous = target.requestedPlan
+  saveMockPlatformAdminRequests(requests.map((item) => (item.id === target.id ? { ...item, requestedPlan: params.packageId } : item)))
+
+  const upgrades = loadMockPackageUpgradeRequests()
+  const closed = upgrades.find((item) => item.tenantId === target.provisionedTenantId && item.status === "pending" && item.requestedPackage === params.packageId)
+  if (closed) {
+    saveMockPackageUpgradeRequests(
+      upgrades.map((item) => (item.id === closed.id ? { ...item, status: "approved" as const, reviewNotes: reason, reviewedAt: new Date().toISOString() } : item)),
+    )
+  }
+
+  insertAuditEvent({
+    actorUserId: null,
+    actorEmail: getCurrentActorEmail(),
+    actorRole: "platform-admin",
+    action: "tenant_package_changed",
+    target: target.organizationName,
+    detail: `Package changed from ${previous} to ${params.packageId}.`,
+    metadata: {
+      requestId: target.id,
+      tenantId: target.provisionedTenantId,
+      previousPackage: previous,
+      currentPackage: previous,
+      requestedPackage: params.packageId,
+      reviewNotes: reason,
+    },
+  })
+
+  return previous
+}
+
+export type MockFailedNotificationEmail = {
+  id: string
+  tenantId: string | null
+  tenantName: string | null
+  recipientEmail: string | null
+  eventType: string
+  subject: string
+  lastError: string | null
+  attempts: number
+  createdAt: string
+  willRetry: boolean
+  canRetry: boolean
+}
+
+const PLATFORM_ADMIN_FAILED_EMAILS_KEY = "pacelab:platform-admin:failed-emails"
+
+/** Demo mode has no email queue. This list is empty unless a demo or a test put rows in it. */
+export function loadMockFailedNotificationEmails(): MockFailedNotificationEmail[] {
+  const rows = loadStorage<MockFailedNotificationEmail[]>(PLATFORM_ADMIN_FAILED_EMAILS_KEY, [])
+  return Array.isArray(rows) ? rows : []
+}
+
+/** Demo version of "Try again": the email leaves the failed list as if it had been sent. */
+export function retryMockFailedNotificationEmail(id: string) {
+  const rows = loadMockFailedNotificationEmails()
+  const target = rows.find((row) => row.id === id)
+  if (!target || !target.canRetry) return false
+  saveStorage(PLATFORM_ADMIN_FAILED_EMAILS_KEY, rows.filter((row) => row.id !== id))
+  insertAuditEvent({
+    actorUserId: null,
+    actorEmail: getCurrentActorEmail(),
+    actorRole: "platform-admin",
+    action: "notification_email_retry_requested",
+    target: target.tenantName ?? "platform",
+    detail: "A failed notification email was put back in the queue.",
+    metadata: { notificationEventId: target.id, tenantId: target.tenantId, eventType: target.eventType },
+  })
+  return true
+}

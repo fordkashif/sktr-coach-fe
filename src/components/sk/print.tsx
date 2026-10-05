@@ -7,9 +7,10 @@ import { createPortal } from "react-dom"
  * mounted, printing shows the sheet and nothing else (no navigation, no buttons).
  * Mount it when the person asks to print, call `printPage()`, and unmount it afterwards.
  * `title` is the heading on the paper, `meta` the plain lines under it (team, dates).
+ * `brand` goes above the title: whose paper this is (the club's logo and name).
  * Inside, use PrintTable and plain text. Start a new page with `<PrintBreak />`.
  */
-export function PrintSheet({ title, meta, children }: { title: ReactNode; meta?: ReactNode[]; children: ReactNode }) {
+export function PrintSheet({ title, meta, brand, children }: { title: ReactNode; meta?: ReactNode[]; brand?: ReactNode; children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement
     root.setAttribute("data-sk-print-sheet", "")
@@ -19,6 +20,7 @@ export function PrintSheet({ title, meta, children }: { title: ReactNode; meta?:
   return createPortal(
     <div className="sk-print-sheet" data-sk-print-sheet-root>
       <header className="sk-print-head">
+        {brand}
         <h1>{title}</h1>
         {meta?.filter(Boolean).map((line, index) => <p key={index}>{line}</p>)}
       </header>

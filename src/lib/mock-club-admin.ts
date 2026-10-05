@@ -37,6 +37,8 @@ export interface ClubTeam {
 export interface CoachInvite {
   id: string
   email: string
+  /** What the person becomes when they accept. Missing means coach. */
+  role?: "coach" | "club-admin"
   teamId?: string
   status: "pending" | "accepted" | "expired" | "revoked"
   createdAt: string

@@ -1,24 +1,11 @@
 "use client"
 
-import { useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import {
-  ArrowLeft,
-  Buildings,
-  CheckCircle,
-  CircleNotch,
-  Eye,
-  EyeSlash,
-  PersonSimpleRun,
-  ShieldCheck,
-  Strategy,
-  Warning,
-  WarningCircle,
-  type Icon,
-} from "@phosphor-icons/react"
-import { Tag } from "@/components/sk"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { AUTH_PHOTOS, AuthSplit } from "@/layouts/auth-layout"
+import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strategy, type Icon } from "@phosphor-icons/react"
+import { InviteSteps } from "@/components/auth/invite-frame"
+import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, ListRow, Notice, PasswordInput, RadioRow, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
+import { AuthSplit } from "@/layouts/auth-layout"
 import { describeAccessRequestError, describeAuthLinkError, describeNoAccessError, describeSignInError } from "@/lib/auth-errors"
 import { setSessionCookies } from "@/lib/auth-session"
 import { getPackageById, getRecommendedPackage, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
@@ -27,7 +14,6 @@ import type { AccountRequest } from "@/lib/mock-club-admin"
 import { getBackendMode, isSupabaseEnabled } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionAccess, resolveSessionActor } from "@/lib/supabase/actor"
-import { cn } from "@/lib/utils"
 import { REQUEST_REVIEW_TIME } from "@/lib/support"
 
 type DemoCredential = {
@@ -138,87 +124,6 @@ function todayIsoDate() {
   return `${now.getFullYear()}-${month}-${day}`
 }
 
-function FormAlert({ children, tone = "coral" }: { children: ReactNode; tone?: "coral" | "yellow" }) {
-  const isCoral = tone === "coral"
-  const Glyph = isCoral ? WarningCircle : Warning
-  return (
-    <div
-      role={isCoral ? "alert" : "status"}
-      className={cn("flex items-start gap-3 rounded-2xl p-4 text-sm", isCoral ? "bg-sk-coral-tint" : "bg-sk-yellow-tint")}
-    >
-      <Glyph className={cn("mt-0.5 size-5 shrink-0", isCoral ? "text-[#b32a0c]" : "text-[#7a5600]")} weight="fill" aria-hidden />
-      <div className={cn("min-w-0 leading-relaxed", isCoral ? "font-semibold text-[#b32a0c]" : "text-sk-ink-2")}>{children}</div>
-    </div>
-  )
-}
-
-function FieldShell({
-  id,
-  label,
-  optional = false,
-  hint,
-  error,
-  children,
-  className,
-}: {
-  id: string
-  label: string
-  optional?: boolean
-  hint?: string
-  error?: string
-  children: ReactNode
-  className?: string
-}) {
-  return (
-    <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-sk-ink-2">
-        {label}
-        {optional ? <span className="font-normal text-sk-mute"> (optional)</span> : null}
-      </label>
-      {children}
-      {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-sm text-sk-mute">
-          {hint}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function TextField({
-  id,
-  label,
-  optional,
-  hint,
-  error,
-  wrapperClassName,
-  className,
-  ...inputProps
-}: {
-  id: string
-  label: string
-  optional?: boolean
-  hint?: string
-  error?: string
-  wrapperClassName?: string
-} & InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <FieldShell id={id} label={label} optional={optional} hint={hint} error={error} className={wrapperClassName}>
-      <input
-        id={id}
-        aria-invalid={error ? "true" : undefined}
-        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
-        className={cn("sk-field text-base sm:text-[0.95rem]", error && "border-sk-coral focus:border-sk-coral focus:ring-sk-coral/20", className)}
-        {...inputProps}
-      />
-    </FieldShell>
-  )
-}
-
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -226,7 +131,6 @@ export default function LoginPage() {
   const mode: AuthMode = searchParams.get("mode") === "request" ? "request" : "signin"
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState("")
   const [isSigningIn, setIsSigningIn] = useState(false)
@@ -241,7 +145,6 @@ export default function LoginPage() {
   // Honeypot: a field people never see or reach. Only a script fills it. See the form markup below.
   const [referenceCode, setReferenceCode] = useState("")
   const requestShownAt = useRef<number | null>(null)
-  const formId = useId()
   const parsedCoachCount = Number.parseInt(requestForm.expectedCoachCount || "0", 10)
   const parsedAthleteCount = Number.parseInt(requestForm.expectedAthleteCount || "0", 10)
   const hasHeadcount =
@@ -705,443 +608,259 @@ export default function LoginPage() {
   }
 
   const isRequest = mode === "request"
+  const fitWarning =
+    packageFitWarnings.length > 0
+      ? `Your club looks bigger than this package. ${getPackageById(recommendedPackageId)?.label ?? "A larger package"} is a better fit. ${packageFitWarnings.join(" ")} You can still send the request as it is.`
+      : null
 
   return (
     <AuthSplit
       wide={isRequest && !requestSubmitted}
-      photo={isRequest ? AUTH_PHOTOS.lanes : AUTH_PHOTOS.blocks}
-      headline={isRequest ? "Put your whole club on one plan." : "See who is ready before the first rep."}
+      headline={isRequest ? ["Your whole club", "on one plan."] : ["Plan the week.", "Know who is ready."]}
       body={
         isRequest
           ? "Coaches write the training, athletes log it, and you see every team from one place."
-          : "Build the week, run test weeks and read every athlete's check-in, all in one place."
+          : "Write the training, run test weeks and read every athlete's check-in before the first rep."
       }
     >
       {!isRequest ? (
-        <div className="space-y-8">
-          <header className="space-y-3">
-            <h1 className="sk-title">Sign in</h1>
-            <p className="sk-lede">Coaches, athletes and club admins all start here.</p>
-          </header>
+        <>
+          <ScreenHeader title="Sign in" lede="Coaches, athletes and club admins all start here." />
 
-          <form className="grid gap-5" onSubmit={handleSubmit}>
-            <TextField
-              id="email"
-              label="Email"
-              type="email"
-              name="email"
-              autoComplete="email"
-              inputMode="email"
-              autoCapitalize="none"
-              spellCheck={false}
-              required
-              placeholder="you@yourclub.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-
-            <div>
-              <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                <label htmlFor="password" className="text-sm font-semibold text-sk-ink-2">
-                  Password
-                </label>
-                <Link to="/reset-password" className="rounded text-sm font-bold text-sk-blue hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue">
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  required
-                  className="sk-field pr-[4.5rem] text-base sm:text-[0.95rem]"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-                <button
-                  type="button"
-                  aria-pressed={showPassword}
-                  aria-controls="password"
-                  onClick={() => setShowPassword((previous) => !previous)}
-                  className="absolute inset-y-1 right-1 inline-flex items-center gap-1.5 rounded-[10px] px-2.5 text-sm font-bold text-sk-ink-2 hover:bg-sk-canvas hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-sk-blue"
-                >
-                  {showPassword ? <EyeSlash className="size-4" weight="bold" aria-hidden /> : <Eye className="size-4" weight="bold" aria-hidden />}
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
-            </div>
-
-            <label className="flex min-h-11 w-fit cursor-pointer items-center gap-2.5 text-sm font-semibold text-sk-ink-2">
-              <input
-                type="checkbox"
-                className="size-[18px] rounded accent-sk-blue"
-                checked={rememberMe}
-                onChange={(event) => setRememberMe(event.target.checked)}
+          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+            <Field id="email" label="Email">
+              <Input
+                type="email"
+                name="email"
+                autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+                placeholder="you@yourclub.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
               />
-              Keep me signed in on this device
-            </label>
+            </Field>
+            <Field id="password" label="Password">
+              <PasswordInput name="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+            </Field>
+            <List>
+              <CheckRow checked={rememberMe} onChange={setRememberMe} title="Keep me signed in on this device" />
+            </List>
 
-            {error ? <FormAlert>{error}</FormAlert> : null}
+            {error ? <Notice tone="error">{error}</Notice> : null}
 
-            <button type="submit" disabled={isSigningIn} className="sk-btn sk-btn-primary h-12 w-full text-base">
-              {isSigningIn ? <CircleNotch className="size-5 animate-spin" weight="bold" aria-hidden /> : null}
+            <Button type="submit" variant="primary" size="lg" block disabled={isSigningIn}>
               {isSigningIn ? "Signing in..." : "Sign in"}
-            </button>
+              {isSigningIn ? null : <ArrowRight className="size-5" weight="bold" aria-hidden />}
+            </Button>
+            <LinkButton to="/reset-password" variant="quiet">
+              Forgot password?
+            </LinkButton>
             <p className="sr-only" aria-live="polite">
               {isSigningIn ? "Signing in. Checking your account." : ""}
             </p>
           </form>
 
-          <section aria-labelledby={`${formId}-new`} className="flex flex-col gap-3 border-t border-sk-line pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 id={`${formId}-new`} className="sk-h3">
-                New to SKTR Coach?
-              </h2>
-              <p className="text-sm text-sk-mute">Clubs join by request. It takes about two minutes.</p>
+          <Section title="New to SKTR Coach?" hint="Clubs join by request. It takes about two minutes.">
+            <div className="pt-3">
+              <Button onClick={() => switchMode("request")}>Request access for your club</Button>
             </div>
-            <button type="button" className="sk-btn sk-btn-quiet shrink-0" onClick={() => switchMode("request")}>
-              Request access for your club
-            </button>
-          </section>
+          </Section>
 
           {!isSupabaseMode ? (
-            <section aria-labelledby={`${formId}-demo`} className="sk-well space-y-3">
-              <div>
-                <h2 id={`${formId}-demo`} className="sk-h3">
-                  Try the demo
-                </h2>
-                <p className="text-sm text-sk-mute">Open a sample club as any role. Nothing here touches real data.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <Section title="Try the demo" hint="Open a sample club as any role. Nothing here touches real data.">
+              <List>
                 {demoAccounts.map((account) => (
-                  <button
+                  <ListRow
                     key={account.key}
-                    type="button"
+                    leading={<account.icon className="size-6 text-sk-blue" weight="bold" aria-hidden />}
+                    title={account.label}
+                    subtitle={account.hint}
                     disabled={!demoCredentials || isSigningIn}
                     onClick={() => handleDemoSignIn(account.key)}
-                    className="flex min-h-[60px] items-center gap-3 rounded-[14px] border border-sk-line bg-white px-3 py-2.5 text-left transition-colors hover:border-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue disabled:pointer-events-none disabled:opacity-45"
-                  >
-                    <account.icon className="size-6 shrink-0 text-sk-blue" weight="bold" aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block text-[0.95rem] font-bold leading-tight text-sk-ink">{account.label}</span>
-                      <span className="block text-xs leading-snug text-sk-mute">{account.hint}</span>
-                    </span>
-                  </button>
+                  />
                 ))}
-              </div>
-            </section>
+              </List>
+            </Section>
           ) : null}
-        </div>
+        </>
       ) : requestSubmitted ? (
-        <div className="space-y-7">
-          <header className="space-y-4">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-sk-green-tint text-sk-green">
-              <CheckCircle className="size-8" weight="fill" aria-hidden />
-            </span>
-            <h1 className="sk-title">
-              We have your access request.
-            </h1>
-            <p className="sk-lede">
-              {isSupabaseMode
+        <>
+          <ScreenHeader
+            title="We have your access request."
+            lede={
+              isSupabaseMode
                 ? "Thanks. A real person reads every request, so there is nothing more to do right now."
-                : "Demo mode: this request is now in the platform-admin queue. Sign in as Platform admin to review and approve it."}
-            </p>
-          </header>
-
-          <section aria-labelledby={`${formId}-next`}>
-            <h2 id={`${formId}-next`} className="sk-h3">
-              What happens next
-            </h2>
-            <ol className="mt-3 space-y-4">
-              {[
-                {
-                  title: "We review your request",
-                  body: "We reply within 48 hours. If we need anything else we will email you.",
-                },
-                {
-                  title: "You get a setup link by email",
-                  body: submittedEmail
-                    ? `We send it to ${submittedEmail}. Use it to create your club admin sign-in.`
-                    : "Use it to create your club admin sign-in.",
-                },
-                {
-                  title: "You invite your coaches and athletes",
-                  body: "Set up your teams, then send invites from your club dashboard.",
-                },
-              ].map((step, index) => (
-                <li key={step.title} className="flex items-start gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sk-yellow text-sm font-extrabold text-sk-ink">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-bold text-sk-ink">{step.title}</p>
-                    <p className="break-words text-sm leading-relaxed text-sk-mute">{step.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="sk-btn sk-btn-primary" onClick={() => switchMode("signin")}>
+                : "Demo mode: this request is now in the platform-admin queue. Sign in as Platform admin to review and approve it."
+            }
+          />
+          <InviteSteps
+            title="What happens next"
+            steps={[
+              { title: "We review your request", body: `We reply ${REQUEST_REVIEW_TIME}. If we need anything else we will email you.` },
+              {
+                title: "You get a setup link by email",
+                body: submittedEmail ? `We send it to ${submittedEmail}. Use it to create your club admin sign-in.` : "Use it to create your club admin sign-in.",
+              },
+              { title: "You invite your coaches and athletes", body: "Set up your teams, then send invites from your club dashboard." },
+            ]}
+          />
+          <div>
+            <Button variant="primary" onClick={() => switchMode("signin")}>
               <ArrowLeft className="size-5" weight="bold" aria-hidden />
               Back to sign in
-            </button>
+            </Button>
           </div>
-        </div>
+        </>
       ) : (
-        <div className="space-y-8">
-          <header className="space-y-3">
-            <button type="button" className="sk-btn sk-btn-ghost sk-btn-sm -ml-3" onClick={() => switchMode("signin")}>
-              <ArrowLeft className="size-4" weight="bold" aria-hidden />
-              Back to sign in
-            </button>
-            <h1 className="sk-title">Request access for your club</h1>
-            <p className="sk-lede">
-              Tell us who you are and how big your club is. We review each request and email you a setup link, {REQUEST_REVIEW_TIME}.
-            </p>
-          </header>
+        <>
+          <ScreenHeader
+            variant="top"
+            back={{ onClick: () => switchMode("signin"), label: "Back to sign in" }}
+            title="Request access for your club"
+            lede={`Tell us who you are and how big your club is. We review each request and email you a setup link, ${REQUEST_REVIEW_TIME}.`}
+          />
 
-          <form className="grid gap-9" onSubmit={handleRequestSubmit} noValidate>
-            <fieldset className="grid gap-4">
-              <legend className="sk-h2 mb-4">About you</legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <TextField
-                  id="request-first-name"
-                  maxLength={60}
-                  label="First name"
-                  autoComplete="given-name"
-                  placeholder="Jordan"
-                  value={requestForm.firstName}
-                  error={requestErrors.firstName}
-                  onChange={(event) => updateRequestField("firstName", event.target.value)}
-                />
-                <TextField
-                  id="request-last-name"
-                  maxLength={60}
-                  label="Last name"
-                  autoComplete="family-name"
-                  placeholder="Davis"
-                  value={requestForm.lastName}
-                  error={requestErrors.lastName}
-                  onChange={(event) => updateRequestField("lastName", event.target.value)}
-                />
-              </div>
-              <TextField
-                id="request-email"
-                maxLength={254}
-                label="Work email"
-                type="email"
-                autoComplete="email"
-                inputMode="email"
-                autoCapitalize="none"
-                spellCheck={false}
-                placeholder="jordan@club.com"
-                hint="Your setup link goes here, so use one you check."
-                value={requestForm.email}
-                error={requestErrors.email}
-                onChange={(event) => updateRequestField("email", event.target.value)}
-              />
-              <TextField
-                id="request-job-title"
-                maxLength={120}
-                label="Job title"
-                autoComplete="organization-title"
-                placeholder="Head coach"
-                value={requestForm.jobTitle}
-                error={requestErrors.jobTitle}
-                onChange={(event) => updateRequestField("jobTitle", event.target.value)}
-              />
-            </fieldset>
+          <form className="flex flex-col gap-7 lg:gap-9" onSubmit={handleRequestSubmit} noValidate>
+            <Section title="About you">
+              <FormGrid className="pt-3">
+                <Field id="request-first-name" label="First name" error={requestErrors.firstName}>
+                  <Input maxLength={60} autoComplete="given-name" placeholder="Jordan" value={requestForm.firstName} onChange={(event) => updateRequestField("firstName", event.target.value)} />
+                </Field>
+                <Field id="request-last-name" label="Last name" error={requestErrors.lastName}>
+                  <Input maxLength={60} autoComplete="family-name" placeholder="Davis" value={requestForm.lastName} onChange={(event) => updateRequestField("lastName", event.target.value)} />
+                </Field>
+                <Field id="request-email" label="Work email" hint="Your setup link goes here, so use one you check." error={requestErrors.email} className="sm:col-span-2">
+                  <Input
+                    type="email"
+                    maxLength={254}
+                    autoComplete="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="jordan@club.com"
+                    value={requestForm.email}
+                    onChange={(event) => updateRequestField("email", event.target.value)}
+                  />
+                </Field>
+                <Field id="request-job-title" label="Job title" error={requestErrors.jobTitle} className="sm:col-span-2">
+                  <Input maxLength={120} autoComplete="organization-title" placeholder="Head coach" value={requestForm.jobTitle} onChange={(event) => updateRequestField("jobTitle", event.target.value)} />
+                </Field>
+              </FormGrid>
+            </Section>
 
-            <fieldset className="grid gap-4">
-              <legend className="sk-h2 mb-4">Your club</legend>
-              <TextField
-                id="request-organization"
-                label="Club or organization name"
-                maxLength={160}
-                autoComplete="organization"
-                placeholder="Elite Track Club"
-                value={requestForm.organization}
-                error={requestErrors.organization}
-                onChange={(event) => updateRequestField("organization", event.target.value)}
-              />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FieldShell id="request-organization-type" label="Organization type" error={requestErrors.organizationType}>
-                  <Select value={requestForm.organizationType} onValueChange={(value) => updateRequestField("organizationType", value)}>
-                    <SelectTrigger
-                      id="request-organization-type"
-                      aria-label="Organization type"
-                      aria-invalid={requestErrors.organizationType ? "true" : undefined}
-                      aria-describedby={requestErrors.organizationType ? "request-organization-type-error" : undefined}
-                      className={cn(
-                        "!h-11 w-full rounded-[14px] border-[#d5d9e3] bg-white px-3.5 py-0 text-base text-sk-ink shadow-none focus:border-sk-blue focus:ring-2 focus:ring-sk-blue/20 data-[placeholder]:text-[#9aa2b1] sm:text-[0.95rem]",
-                        requestErrors.organizationType && "border-sk-coral",
-                      )}
-                    >
-                      <SelectValue placeholder="Choose one" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {organizationTypeOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
+            <Section title="Your club">
+              <FormGrid className="pt-3">
+                <Field id="request-organization" label="Club or organization name" error={requestErrors.organization} className="sm:col-span-2">
+                  <Input maxLength={160} autoComplete="organization" placeholder="Elite Track Club" value={requestForm.organization} onChange={(event) => updateRequestField("organization", event.target.value)} />
+                </Field>
+                <Field id="request-organization-type" label="Organization type" error={requestErrors.organizationType}>
+                  <Select value={requestForm.organizationType} onChange={(event) => updateRequestField("organizationType", event.target.value)}>
+                    <option value="" disabled>
+                      Choose one
+                    </option>
+                    {organizationTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </Select>
-                </FieldShell>
-                <TextField
-                  id="request-region"
-                  maxLength={120}
-                  label="Country or region"
-                  autoComplete="country-name"
-                  placeholder="Jamaica"
-                  value={requestForm.region}
-                  error={requestErrors.region}
-                  onChange={(event) => updateRequestField("region", event.target.value)}
-                />
-              </div>
-              <TextField
-                id="request-organization-website"
-                maxLength={290}
-                label="Website"
-                optional
-                type="url"
-                inputMode="url"
-                autoComplete="url"
-                autoCapitalize="none"
-                spellCheck={false}
-                placeholder="yourclub.com"
-                value={requestForm.organizationWebsite}
-                error={requestErrors.organizationWebsite}
-                onChange={(event) => updateRequestField("organizationWebsite", event.target.value)}
-              />
-            </fieldset>
+                </Field>
+                <Field id="request-region" label="Country or region" error={requestErrors.region}>
+                  <Input maxLength={120} autoComplete="country-name" placeholder="Jamaica" value={requestForm.region} onChange={(event) => updateRequestField("region", event.target.value)} />
+                </Field>
+                <Field id="request-organization-website" label="Website" optional error={requestErrors.organizationWebsite} className="sm:col-span-2">
+                  <Input
+                    type="url"
+                    maxLength={290}
+                    inputMode="url"
+                    autoComplete="url"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="yourclub.com"
+                    value={requestForm.organizationWebsite}
+                    onChange={(event) => updateRequestField("organizationWebsite", event.target.value)}
+                  />
+                </Field>
+              </FormGrid>
+            </Section>
 
-            <fieldset className="grid gap-4">
-              <legend className="sk-h2 mb-1">Size and timing</legend>
-              <p className="mb-3 text-sm text-sk-mute">A rough guess is fine. It helps us suggest the right package.</p>
-              <div className="grid grid-cols-2 gap-4">
-                <TextField
-                  id="request-expected-coaches"
-                  label="Expected coaches"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={MAX_HEADCOUNT}
-                  step={1}
-                  placeholder="4"
-                  value={requestForm.expectedCoachCount}
-                  error={requestErrors.expectedCoachCount}
-                  onChange={(event) => updateRequestField("expectedCoachCount", event.target.value)}
-                />
-                <TextField
-                  id="request-expected-athletes"
-                  label="Expected athletes"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={MAX_HEADCOUNT}
-                  step={1}
-                  placeholder="60"
-                  value={requestForm.expectedAthleteCount}
-                  error={requestErrors.expectedAthleteCount}
-                  onChange={(event) => updateRequestField("expectedAthleteCount", event.target.value)}
-                />
+            <Section title="Size and timing" hint="A rough guess is fine. It helps us suggest the right package.">
+              <div className="grid grid-cols-2 gap-4 pt-3">
+                <Field id="request-expected-coaches" label="Expected coaches" error={requestErrors.expectedCoachCount}>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_HEADCOUNT}
+                    step={1}
+                    placeholder="4"
+                    value={requestForm.expectedCoachCount}
+                    onChange={(event) => updateRequestField("expectedCoachCount", event.target.value)}
+                  />
+                </Field>
+                <Field id="request-expected-athletes" label="Expected athletes" error={requestErrors.expectedAthleteCount}>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_HEADCOUNT}
+                    step={1}
+                    placeholder="60"
+                    value={requestForm.expectedAthleteCount}
+                    onChange={(event) => updateRequestField("expectedAthleteCount", event.target.value)}
+                  />
+                </Field>
+                <Field id="request-desired-start" label="Target start date" optional hint="When you would like your coaches using it." error={requestErrors.desiredStartDate} className="col-span-2 sm:col-span-1">
+                  <Input type="date" min={todayIsoDate()} value={requestForm.desiredStartDate} onChange={(event) => updateRequestField("desiredStartDate", event.target.value)} />
+                </Field>
               </div>
-              <TextField
-                id="request-desired-start"
-                label="Target start date"
-                optional
-                type="date"
-                min={todayIsoDate()}
-                hint="When you would like your coaches using it."
-                wrapperClassName="sm:max-w-[280px]"
-                value={requestForm.desiredStartDate}
-                error={requestErrors.desiredStartDate}
-                onChange={(event) => updateRequestField("desiredStartDate", event.target.value)}
-              />
-            </fieldset>
+            </Section>
 
-            <fieldset
-              role="radiogroup"
-              aria-invalid={requestErrors.requestedPlan ? "true" : undefined}
-              aria-describedby={requestErrors.requestedPlan ? "request-package-error" : undefined}
-            >
-              <legend className="sk-h2 mb-1">Package</legend>
-              <p className="mb-4 text-sm text-sk-mute">Pick where you want to start. You can change it later.</p>
-              <div className={cn("overflow-hidden rounded-[20px] border", requestErrors.requestedPlan ? "border-sk-coral" : "border-sk-line")}>
-                {packageOptions.map((option) => {
-                  const isSelected = requestForm.requestedPlan === option.id
-                  const hasLimits = Number.isFinite(option.limits.coaches) && Number.isFinite(option.limits.athletes)
-                  const limitsLabel = hasLimits
-                    ? `Up to ${option.limits.coaches} coaches and ${option.limits.athletes} athletes`
-                    : "No set limit on coaches or athletes"
-                  return (
-                    <label
-                      key={option.id}
-                      htmlFor={`request-package-${option.id}`}
-                      className={cn(
-                        "flex cursor-pointer items-start gap-3.5 border-b border-sk-line px-4 py-4 transition-colors last:border-b-0 sm:px-5",
-                        isSelected ? "bg-sk-blue-tint" : "bg-white hover:bg-sk-canvas",
-                      )}
-                    >
-                      <input
-                        type="radio"
+            <Section title="Package" hint="Pick where you want to start. You can change it later.">
+              <div
+                role="radiogroup"
+                aria-label="Package"
+                aria-invalid={requestErrors.requestedPlan ? "true" : undefined}
+                aria-describedby={requestErrors.requestedPlan ? "request-package-error" : undefined}
+              >
+                <List>
+                  {packageOptions.map((option) => {
+                    const hasLimits = Number.isFinite(option.limits.coaches) && Number.isFinite(option.limits.athletes)
+                    return (
+                      <RadioRow
+                        key={option.id}
                         id={`request-package-${option.id}`}
                         name="request-package"
                         value={option.id}
-                        checked={isSelected}
-                        onChange={() => updateRequestField("requestedPlan", option.id)}
-                        className="mt-0.5 size-5 shrink-0 accent-sk-blue"
+                        checked={requestForm.requestedPlan === option.id}
+                        onChange={(value) => updateRequestField("requestedPlan", value)}
+                        title={option.label}
+                        subtitle={packageCopy[option.id]}
+                        detail={hasLimits ? `Up to ${option.limits.coaches} coaches and ${option.limits.athletes} athletes` : "No set limit on coaches or athletes"}
+                        note={hasHeadcount && recommendedPackageId === option.id ? "Fits your numbers" : undefined}
                       />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-base font-bold text-sk-ink">{option.label}</span>
-                          {hasHeadcount && recommendedPackageId === option.id ? <Tag tone="blue">Fits your numbers</Tag> : null}
-                        </span>
-                        <span className="mt-0.5 block text-sm leading-relaxed text-sk-ink-2">{packageCopy[option.id]}</span>
-                        <span className="mt-1 block text-sm font-semibold text-sk-mute">{limitsLabel}</span>
-                      </span>
-                    </label>
-                  )
-                })}
+                    )
+                  })}
+                </List>
               </div>
               {requestErrors.requestedPlan ? (
-                <p id="request-package-error" className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
+                <p id="request-package-error" className="sk-field-error mt-1.5">
                   {requestErrors.requestedPlan}
                 </p>
               ) : null}
-              {packageFitWarnings.length > 0 ? (
-                <div className="mt-3">
-                  <FormAlert tone="yellow">
-                    <p className="font-bold text-[#7a5600]">
-                      Your club looks bigger than this package. {getPackageById(recommendedPackageId)?.label ?? "A larger package"} is a better fit.
-                    </p>
-                    <ul className="mt-1 list-disc pl-5">
-                      {packageFitWarnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
-                      ))}
-                    </ul>
-                    <p className="mt-1">You can still send the request as it is.</p>
-                  </FormAlert>
-                </div>
+              {fitWarning ? (
+                <Notice tone="warning" className="mt-3">
+                  {fitWarning}
+                </Notice>
               ) : null}
-            </fieldset>
+            </Section>
 
-            <FieldShell id="request-notes" label="Notes" optional hint="Anything that helps us set you up: events you coach, a deadline, questions.">
-              <textarea
-                id="request-notes"
-                rows={3}
-                maxLength={1000}
-                aria-describedby="request-notes-hint"
-                className="sk-field h-auto min-h-[96px] py-2.5 text-base leading-relaxed sm:text-[0.95rem]"
-                value={requestForm.notes}
-                onChange={(event) => updateRequestField("notes", event.target.value)}
-              />
-            </FieldShell>
+            <Field id="request-notes" label="Notes" optional hint="Anything that helps us set you up: events you coach, a deadline, questions.">
+              <Textarea rows={3} maxLength={1000} value={requestForm.notes} onChange={(event) => updateRequestField("notes", event.target.value)} />
+            </Field>
 
             {/*
               Honeypot. Scripts that fill every input fill this one; the database then reports success
@@ -1166,19 +885,26 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="space-y-4">
-              {error ? <FormAlert>{error}</FormAlert> : null}
-              {Object.values(requestErrors).some(Boolean) ? (
-                <FormAlert>Some answers need another look. Fix the fields marked above, then send again.</FormAlert>
-              ) : null}
-              <button type="submit" disabled={isSubmittingRequest} className="sk-btn sk-btn-primary h-12 w-full text-base sm:w-auto sm:px-8">
-                {isSubmittingRequest ? <CircleNotch className="size-5 animate-spin" weight="bold" aria-hidden /> : null}
+            <div className="flex flex-col gap-4">
+              {error ? <Notice tone="error">{error}</Notice> : null}
+              {Object.values(requestErrors).some(Boolean) ? <Notice tone="error">Some answers need another look. Fix the fields marked above, then send again.</Notice> : null}
+              <Button type="submit" variant="primary" size="lg" disabled={isSubmittingRequest} className="w-full sm:w-auto sm:self-start sm:px-8">
                 {isSubmittingRequest ? "Submitting request..." : "Submit request"}
-              </button>
-              <p className="text-sm text-sk-mute">We only use these details to review your request and set up your club.</p>
+              </Button>
+              <p className="text-sm text-sk-mute">
+                We only use these details to review your request and set up your club. By sending this request you agree to our{" "}
+                <Link to="/terms" className="sk-link">
+                  terms
+                </Link>{" "}
+                and{" "}
+                <Link to="/privacy" className="sk-link">
+                  privacy notice
+                </Link>
+                .
+              </p>
             </div>
           </form>
-        </div>
+        </>
       )}
     </AuthSplit>
   )

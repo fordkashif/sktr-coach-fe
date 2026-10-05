@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { EnvelopeSimple, SignOut } from "@phosphor-icons/react"
-import { AUTH_PHOTOS, AuthBrand } from "@/layouts/auth-layout"
+import { Button, ScreenHeader } from "@/components/sk"
+import { PublicFrame } from "@/layouts/auth-layout"
 import type { AccessBlock } from "@/lib/access-control"
 import { clearSessionCookies } from "@/lib/auth-session"
 import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
@@ -57,43 +58,20 @@ export function AccessPausedPage({ block, isClubAdmin }: { block: AccessBlock; i
   }
 
   return (
-    <div className="min-h-dvh bg-white">
-      <main className="mx-auto flex min-h-dvh w-full max-w-[1080px] flex-col px-4 pb-12 pt-6 sm:px-6 sm:pt-8">
-        <AuthBrand className="self-start" />
-        <div className="flex flex-1 items-center py-8">
-          <section className="grid w-full overflow-hidden rounded-[28px] border border-sk-line bg-white md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
-            <div className="flex flex-col justify-center gap-6 p-6 sm:p-10">
-              <div className="space-y-3" role="status">
-                <h1 className="sk-title">{title}</h1>
-                <p className="sk-lede">{body}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className="sk-btn sk-btn-primary" disabled={signingOut} onClick={() => void handleSignOut()}>
-                  <SignOut className="size-5" weight="bold" aria-hidden />
-                  {signingOut ? "Signing out..." : "Sign out"}
-                </button>
-                {isClubAdmin && block !== "member-inactive" ? (
-                  <a href={SUPPORT_MAILTO} className="sk-btn sk-btn-quiet">
-                    <EnvelopeSimple className="size-5" weight="bold" aria-hidden />
-                    Email support
-                  </a>
-                ) : null}
-              </div>
-            </div>
-            <div className="relative order-first h-36 bg-sk-blue-tint md:order-none md:h-auto md:min-h-[440px]">
-              <img
-                src={AUTH_PHOTOS.lanes.src}
-                alt={AUTH_PHOTOS.lanes.alt}
-                decoding="async"
-                className="absolute inset-0 size-full object-cover"
-                onError={(event) => {
-                  event.currentTarget.style.visibility = "hidden"
-                }}
-              />
-            </div>
-          </section>
-        </div>
-      </main>
-    </div>
+    <PublicFrame>
+      <ScreenHeader title={title} lede={<span role="status">{body}</span>} />
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" disabled={signingOut} onClick={() => void handleSignOut()}>
+          <SignOut className="size-5" weight="bold" aria-hidden />
+          {signingOut ? "Signing out..." : "Sign out"}
+        </Button>
+        {isClubAdmin && block !== "member-inactive" ? (
+          <a href={SUPPORT_MAILTO} className="sk-btn sk-btn-secondary">
+            <EnvelopeSimple className="size-5" weight="bold" aria-hidden />
+            Email support
+          </a>
+        ) : null}
+      </div>
+    </PublicFrame>
   )
 }

@@ -1,13 +1,41 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Buildings, CaretDown, DownloadSimple, MagnifyingGlass, X } from "@phosphor-icons/react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { DownloadSimple } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { EmptyState, Initials, Meter, PageHeader, Panel, Tag } from "@/components/sk"
-import { getPackageById, packageOptions } from "@/lib/billing/package-catalog"
+import {
+  Button,
+  DataTable,
+  EmptyState,
+  Fact,
+  FactList,
+  Field,
+  FilterBar,
+  FilterChips,
+  LinkButton,
+  List,
+  ListRow,
+  Notice,
+  Screen,
+  ScreenHeader,
+  SearchInput,
+  Section,
+  Select,
+  Sheet,
+  SkeletonRows,
+  StatusText,
+  SubSection,
+  SubSections,
+  TableSub,
+  Tag,
+  Textarea,
+  type DataTableColumn,
+} from "@/components/sk"
+import { getPackageById, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
 import {
   getPlatformAdminPackageUpgradeRequests,
   getPlatformAuditEvents,
   getPlatformTenantSizes,
   logPlatformAdminExport,
+  setTenantPackage,
   setTenantRequestLifecycleState,
   type PlatformAdminPackageUpgradeRequestRecord,
   type PlatformAuditEventRecord,
@@ -16,6 +44,7 @@ import {
 import {
   auditReason,
   auditSentence,
+  BILLING_STATUS_LABEL,
   clubHistory,
   formatLocalDate,
   formatLocalDateTime,
@@ -26,22 +55,12 @@ import {
   packageLabel,
   type PlatformClubRecord,
 } from "@/lib/data/platform-admin/tenants-data"
+import { downloadCsv, plural } from "@/lib/format/ops-format"
 import type { TenantBillingStatus, TenantLifecycleStatus } from "@/lib/tenant/lifecycle"
-import { cn } from "@/lib/utils"
-
-const alertClass = "rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]"
-const th = "px-3 py-3 font-semibold"
-
-const BILLING_LABEL: Record<TenantBillingStatus, string> = {
-  pending: "Not set up",
-  mocked_complete: "Set up (test billing)",
-  failed: "Failed",
-  active: "Active",
-  past_due: "Past due",
-  cancelled: "Cancelled",
-}
 
 const CLUB_STATES = LIFECYCLE_ORDER.filter((state) => state !== "pending_review")
+type StatusFilter = "all" | TenantLifecycleStatus
+type PackageFilter = "all" | PackageId
 
 type LifecycleAction = {
   key: "suspend" | "reactivate" | "cancel" | "activate" | "billing-failed"
@@ -103,7 +122,7 @@ function actionsFor(club: PlatformClubRecord): LifecycleAction[] {
       danger: true,
       question: `Suspend ${name}?`,
       effect:
-        "This blocks the whole club straight away. The club admin, coaches and athletes can still sign in, but they see a notice that the club's access is paused and cannot read or change anything. All data is kept, and reactivating gives access back at once. It is written to the platform audit.",
+        "This blocks the whole club straight away. The club admin, coaches and athletes can still sign in, but they see a notice that the club's access is paused and cannot read or change anything. All data is kept, and reactivating gives access back at once. It is written to the platform activity.",
       confirm: "Suspend club",
       keep: "Keep as it is",
     })
@@ -135,7 +154,7 @@ function actionsFor(club: PlatformClubRecord): LifecycleAction[] {
       danger: true,
       question: `Cancel ${name}?`,
       effect:
-        "This marks the club and its billing as cancelled and blocks the whole club straight away. Members can still sign in, but they see a notice that the club's access has ended and cannot read or change anything. All data is kept. It is written to the platform audit. You can restore a cancelled club from Club requests.",
+        "This marks the club and its billing as cancelled and blocks the whole club straight away. Members can still sign in, but they see a notice that the club's access has ended and cannot read or change anything. All data is kept. It is written to the platform activity. You can restore a cancelled club from Club requests.",
       confirm: "Cancel club",
       keep: "Keep club",
     })
@@ -144,65 +163,35 @@ function actionsFor(club: PlatformClubRecord): LifecycleAction[] {
   return actions
 }
 
-function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 function liveSizeOf(club: PlatformClubRecord, sizes: Map<string, PlatformTenantSize> | null) {
   return club.provisionedTenantId ? (sizes?.get(club.provisionedTenantId) ?? null) : null
 }
 
-function liveSizeParts(size: PlatformTenantSize) {
-  return [
-    `${size.teams.toLocaleString()} ${size.teams === 1 ? "team" : "teams"}`,
-    `${size.coaches.toLocaleString()} ${size.coaches === 1 ? "coach" : "coaches"}`,
-    `${size.athletes.toLocaleString()} ${size.athletes === 1 ? "athlete" : "athletes"}`,
-  ]
+function liveSizeText(size: PlatformTenantSize) {
+  return [plural(size.teams, "team"), plural(size.coaches, "coach", "coaches"), plural(size.athletes, "athlete")].join(", ")
 }
 
 function expectedSize(club: PlatformClubRecord) {
   const parts = [
-    club.expectedCoachCount !== null ? `${club.expectedCoachCount} ${club.expectedCoachCount === 1 ? "coach" : "coaches"}` : null,
-    club.expectedAthleteCount !== null ? `${club.expectedAthleteCount} ${club.expectedAthleteCount === 1 ? "athlete" : "athletes"}` : null,
+    club.expectedCoachCount !== null ? plural(club.expectedCoachCount, "coach", "coaches") : null,
+    club.expectedAthleteCount !== null ? plural(club.expectedAthleteCount, "athlete") : null,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(", ") : null
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-sm font-semibold text-sk-mute">{label}</dt>
-      <dd className="mt-0.5 break-words text-sk-ink">{children}</dd>
-    </div>
-  )
-}
-
-/** `live` is the real count when the platform has it. Otherwise the number given at sign-up is shown as "expected". */
-function LimitRow({ label, live, expected: signUp, limit }: { label: string; live: number | null; expected: number | null; limit: number | null }) {
-  const expected = live ?? signUp
+/** "12 now, limit 40": the live count when the platform has it, otherwise the number given at sign-up. */
+function UsageFact({ label, live, expected: signUp, limit }: { label: string; live: number | null; expected: number | null; limit: number | null }) {
+  const count = live ?? signUp
   const finite = limit !== null && Number.isFinite(limit)
-  const over = finite && expected !== null && expected > (limit as number)
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="font-semibold text-sk-ink">{label}</span>
-        <span className={cn("text-sk-ink-2", over && "font-bold text-[#b32a0c]")}>
-          {live !== null ? `${live.toLocaleString()} now` : expected !== null ? `${expected} expected` : "Not given"}
-          {limit === null ? "" : finite ? `, limit ${limit}` : ", no limit"}
-        </span>
-      </div>
-      {finite && expected !== null ? <Meter className="mt-2" value={(expected / (limit as number)) * 100} tone={over ? "coral" : "blue"} /> : null}
-    </div>
-  )
+  const over = finite && count !== null && count > (limit as number)
+  const limitWords = limit === null ? "" : finite ? `limit ${limit}` : "no limit"
+  const countWords = live !== null ? `${live.toLocaleString()} now` : signUp !== null ? `${signUp.toLocaleString()} expected` : ""
+  const joined = [countWords, limitWords].filter(Boolean).join(", ")
+  const text = joined ? joined.charAt(0).toUpperCase() + joined.slice(1) : "Not given"
+  return <Fact label={label}>{over ? <StatusText tone="coral">{text}</StatusText> : text}</Fact>
 }
 
+/** Every club: its package, status, admin and real size. Open one to change its status or its package. */
 export default function PlatformAdminTenantsPage() {
   const [clubs, setClubs] = useState<PlatformClubRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEventRecord[]>([])
@@ -214,13 +203,18 @@ export default function PlatformAdminTenantsPage() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<"all" | TenantLifecycleStatus>("all")
-  const [packageFilter, setPackageFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [packageFilter, setPackageFilter] = useState<PackageFilter>("all")
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [confirmKey, setConfirmKey] = useState<LifecycleAction["key"] | null>(null)
   const [reason, setReason] = useState("")
   const [reasonError, setReasonError] = useState(false)
+  const [changingPackage, setChangingPackage] = useState(false)
+  const [newPackage, setNewPackage] = useState<PackageId | "">("")
+  const [packageReason, setPackageReason] = useState("")
+  const [packageErrors, setPackageErrors] = useState<{ package?: string; reason?: string }>({})
+  const [sheetError, setSheetError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -260,7 +254,13 @@ export default function PlatformAdminTenantsPage() {
     return map
   }, [clubs])
 
-  const filtersActive = search.trim() !== "" || statusFilter !== "all" || packageFilter !== "all"
+  const activeFilters = (statusFilter !== "all" ? 1 : 0) + (packageFilter !== "all" ? 1 : 0)
+  const filtersActive = search.trim() !== "" || activeFilters > 0
+  const clearFilters = () => {
+    setSearch("")
+    setStatusFilter("all")
+    setPackageFilter("all")
+  }
 
   const visibleClubs = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -268,22 +268,30 @@ export default function PlatformAdminTenantsPage() {
       if (statusFilter !== "all" && lifecycleOf(club) !== statusFilter) return false
       if (packageFilter !== "all" && club.requestedPlan !== packageFilter) return false
       if (!query) return true
-      return [club.organizationName, club.requestorName, club.requestorEmail, club.region ?? "", club.provisionedTenantId ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(query)
+      return [club.organizationName, club.requestorName, club.requestorEmail, club.region ?? "", club.provisionedTenantId ?? ""].join(" ").toLowerCase().includes(query)
     })
   }, [clubs, packageFilter, search, statusFilter])
 
-  const closeConfirm = () => {
+  const resetForms = () => {
     setConfirmKey(null)
     setReason("")
     setReasonError(false)
+    setChangingPackage(false)
+    setNewPackage("")
+    setPackageReason("")
+    setPackageErrors({})
+    setSheetError(null)
   }
 
-  const toggleClub = (clubId: string) => {
-    closeConfirm()
-    setOpenId((current) => (current === clubId ? null : clubId))
+  const openClub = (clubId: string) => {
+    resetForms()
+    setOpenId(clubId)
+  }
+
+  const closeClub = () => {
+    if (busy) return
+    resetForms()
+    setOpenId(null)
   }
 
   const handleLifecycle = async (club: PlatformClubRecord, action: LifecycleAction) => {
@@ -294,6 +302,7 @@ export default function PlatformAdminTenantsPage() {
     }
 
     setBusy(true)
+    setSheetError(null)
     const result = await setTenantRequestLifecycleState({
       requestId: club.id,
       lifecycleStatus: action.next,
@@ -302,8 +311,7 @@ export default function PlatformAdminTenantsPage() {
     })
 
     if (!result.ok) {
-      setError(result.error.message)
-      setNotice(null)
+      setSheetError(result.error.message)
       setBusy(false)
       return
     }
@@ -312,7 +320,33 @@ export default function PlatformAdminTenantsPage() {
     setError(reloadError)
     setNotice(`${club.organizationName} is now ${LIFECYCLE_META[action.next].label.toLowerCase()}.`)
     setBusy(false)
-    closeConfirm()
+    resetForms()
+  }
+
+  const handlePackageChange = async (club: PlatformClubRecord) => {
+    const note = packageReason.trim()
+    const errors: { package?: string; reason?: string } = {}
+    if (!newPackage) errors.package = "Choose the package to move the club to."
+    if (note.length < 3) errors.reason = "Add a reason first. It is saved with the change and sent to the club."
+    if (errors.package || errors.reason || !newPackage || !club.provisionedTenantId) {
+      setPackageErrors(errors)
+      return
+    }
+
+    setBusy(true)
+    setSheetError(null)
+    const result = await setTenantPackage({ requestId: club.id, tenantId: club.provisionedTenantId, packageId: newPackage, reason: note })
+    if (!result.ok) {
+      setSheetError(result.error.message)
+      setBusy(false)
+      return
+    }
+
+    const reloadError = await load()
+    setError(reloadError)
+    setNotice(`${club.organizationName} is now on the ${packageLabel(newPackage)} package. The new limits apply straight away.`)
+    setBusy(false)
+    resetForms()
   }
 
   const handleExport = () => {
@@ -322,7 +356,7 @@ export default function PlatformAdminTenantsPage() {
         club.organizationName,
         packageLabel(club.requestedPlan),
         LIFECYCLE_META[lifecycleOf(club)].label,
-        club.billingStatus ? BILLING_LABEL[club.billingStatus] : "",
+        club.billingStatus ? BILLING_STATUS_LABEL[club.billingStatus] : "",
         club.requestorName,
         club.requestorEmail,
         // Blank when live counts are not available for this club.
@@ -345,225 +379,238 @@ export default function PlatformAdminTenantsPage() {
     })
   }
 
+  const columns: Array<DataTableColumn<PlatformClubRecord>> = [
+    {
+      key: "club",
+      header: "Club",
+      cell: (club) => (
+        <>
+          <button
+            type="button"
+            className="cursor-pointer rounded-[6px] text-left font-bold text-sk-ink hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+            aria-label={`Open ${club.organizationName}`}
+            onClick={(event) => {
+              event.stopPropagation()
+              openClub(club.id)
+            }}
+          >
+            <span className="break-words">{club.organizationName}</span>
+          </button>
+          {club.region ? <TableSub>{club.region}</TableSub> : null}
+        </>
+      ),
+    },
+    { key: "package", header: "Package", cell: (club) => packageLabel(club.requestedPlan) },
+    {
+      key: "admin",
+      header: "Club admin",
+      phone: "plain",
+      cell: (club) => (
+        <span className="min-w-0">
+          <span className="block text-sk-ink">{club.requestorName}</span>
+          <span className="block break-all text-sm text-sk-mute">{club.requestorEmail}</span>
+        </span>
+      ),
+    },
+    {
+      key: "size",
+      header: sizes ? "Size now" : "Expected at sign-up",
+      cell: (club) => {
+        const live = liveSizeOf(club, sizes)
+        // Live counts when the platform has them. A club with no workspace yet only has its sign-up numbers.
+        const text = live ? liveSizeText(live) : expectedSize(club)
+        return text ? (
+          <>
+            {text}
+            {!live && sizes ? <span className="block text-sm text-sk-mute">Expected at sign-up</span> : null}
+          </>
+        ) : (
+          <span className="text-sk-mute">Not given</span>
+        )
+      },
+    },
+    { key: "created", header: "Created", phone: "hide", cell: (club) => <time dateTime={club.createdAt}>{formatLocalDate(club.createdAt)}</time> },
+    {
+      key: "status",
+      header: "Status",
+      phone: "trailing",
+      cell: (club) => {
+        const state = lifecycleOf(club)
+        return (
+          <Tag tone={LIFECYCLE_META[state].tone} className="whitespace-nowrap">
+            {LIFECYCLE_META[state].label}
+          </Tag>
+        )
+      },
+    },
+  ]
+
   const lede = loading
-    ? "Loading clubs..."
+    ? "Every club, with its package, status and size."
     : clubs.length === 0
       ? "No clubs yet. A club appears here once you approve its request."
-      : `${clubs.length} ${clubs.length === 1 ? "club" : "clubs"}. Open one to see its contact, package and history, or to change its status.`
+      : `${plural(clubs.length, "club")}. Open one to see its contact, package and history, or to change its status or package.`
+
+  const openClubRecord = openId ? (clubs.find((club) => club.id === openId) ?? null) : null
 
   return (
-    <div className="sk-page">
-      <PageHeader
+    <Screen>
+      <ScreenHeader
         title="Clubs"
         lede={lede}
         actions={
-          <button type="button" className="sk-btn sk-btn-quiet" disabled={loading || visibleClubs.length === 0} onClick={handleExport}>
-            <DownloadSimple className="size-5" weight="bold" />
+          <Button disabled={loading || visibleClubs.length === 0} onClick={handleExport}>
+            <DownloadSimple className="size-5" weight="bold" aria-hidden />
             Export CSV
-          </button>
+          </Button>
         }
       />
 
       {error ? (
-        <div role="alert" className={`${alertClass} flex items-start justify-between gap-3`}>
-          <span>{error}</span>
-          <button type="button" aria-label="Dismiss" className="shrink-0" onClick={() => setError(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
+        <Notice
+          tone="error"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setError(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          {error}
+        </Notice>
       ) : null}
       {notice ? (
-        <div role="status" className="flex items-start justify-between gap-3 rounded-2xl bg-sk-green-tint px-4 py-3 text-sm font-semibold text-[#07673f]">
-          <span>{notice}</span>
-          <button type="button" aria-label="Dismiss" className="shrink-0" onClick={() => setNotice(null)}>
-            <X className="size-4" weight="bold" />
-          </button>
-        </div>
+        <Notice
+          tone="success"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          {notice}
+        </Notice>
       ) : null}
 
       {loading ? (
-        <p role="status" className="sk-card text-sm font-semibold text-sk-mute">
-          Loading...
-        </p>
+        <Section title="Clubs">
+          <SkeletonRows rows={5} label="Loading clubs" />
+        </Section>
       ) : clubs.length === 0 ? (
-        <EmptyState
-          icon={<Buildings className="size-6" weight="fill" />}
-          title="No clubs yet"
-          body="Approve a club request and it appears here with its package, status and club admin."
-          action={
-            <Link to="/platform-admin/requests" className="sk-btn sk-btn-primary sk-btn-sm">
-              Open requests
-            </Link>
-          }
-        />
+        <Section>
+          <EmptyState
+            title="No clubs yet"
+            body="Approve a club request and it appears here with its package, status and club admin."
+            action={
+              <LinkButton to="/platform-admin/requests" size="sm">
+                Open requests
+              </LinkButton>
+            }
+          />
+        </Section>
       ) : (
-        <Panel flush>
-          <div className="flex flex-col gap-3 border-b border-sk-line p-5 sm:p-6 md:flex-row md:items-center">
-            <div className="relative min-w-0 flex-1">
-              <MagnifyingGlass className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-sk-mute" weight="bold" />
-              <input
-                type="search"
-                aria-label="Search clubs"
-                placeholder="Search by club, club admin or email"
-                className="sk-field pl-11"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3 md:flex">
-              <select
-                aria-label="Filter by status"
-                className="sk-field md:w-48"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-              >
-                <option value="all">Any status</option>
-                {CLUB_STATES.map((state) => (
-                  <option key={state} value={state}>
-                    {LIFECYCLE_META[state].label}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Filter by package"
-                className="sk-field md:w-40"
-                value={packageFilter}
-                onChange={(event) => setPackageFilter(event.target.value)}
-              >
-                <option value="all">Any package</option>
-                {packageOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        <Section title="All clubs" meta={`${visibleClubs.length} of ${clubs.length}`} aria-label="Clubs">
+          <FilterBar
+            className="mb-2 mt-2"
+            search={<SearchInput aria-label="Search clubs" placeholder="Club, club admin or email" value={search} onChange={(event) => setSearch(event.target.value)} />}
+            activeCount={activeFilters}
+            onClear={clearFilters}
+          >
+            <FilterChips<StatusFilter>
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: "All" },
+                ...CLUB_STATES.filter((state) => clubs.some((club) => lifecycleOf(club) === state) || state === statusFilter).map((state) => ({
+                  value: state,
+                  label: LIFECYCLE_META[state].label,
+                  count: clubs.filter((club) => lifecycleOf(club) === state).length,
+                })),
+              ]}
+            />
+            <FilterChips<PackageFilter>
+              label="Package"
+              value={packageFilter}
+              onChange={setPackageFilter}
+              options={[{ value: "all", label: "All" }, ...packageOptions.map((option) => ({ value: option.id, label: option.label }))]}
+            />
+          </FilterBar>
 
           {visibleClubs.length === 0 ? (
-            <div className="flex flex-col items-start gap-3 p-5 sm:p-6">
-              <p className="text-sm text-sk-mute">No club matches that search or filter.</p>
-              <button
-                type="button"
-                className="sk-btn sk-btn-quiet sk-btn-sm"
-                onClick={() => {
-                  setSearch("")
-                  setStatusFilter("all")
-                  setPackageFilter("all")
-                }}
-              >
-                Clear filters
-              </button>
-            </div>
+            <EmptyState
+              title="No club matches"
+              body={`There are ${plural(clubs.length, "club")}, but none fit that search${filtersActive ? " and those filters" : ""}.`}
+              action={
+                <Button size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
           ) : (
-            <div className="md:overflow-x-auto">
-            <table className="block w-full text-left md:table">
-              <caption className="sr-only">Clubs{filtersActive ? ", filtered" : ""}</caption>
-              <thead className="hidden md:table-header-group">
-                <tr className="border-b border-sk-line text-sm text-sk-mute">
-                  <th scope="col" className={`${th} pl-6`}>Club</th>
-                  <th scope="col" className={th}>Package</th>
-                  <th scope="col" className={th}>Status</th>
-                  <th scope="col" className={th}>Club admin</th>
-                  <th scope="col" className={`${th} max-lg:hidden`}>{sizes ? "Size now" : "Expected at sign-up"}</th>
-                  <th scope="col" className={`${th} pr-6`}>Created</th>
-                </tr>
-              </thead>
-              <tbody className="block md:table-row-group">
-                {visibleClubs.map((club) => {
-                  const state = lifecycleOf(club)
-                  const open = openId === club.id
-                  const live = liveSizeOf(club, sizes)
-                  // Live counts when the platform has them. A club with no workspace yet only has its sign-up numbers.
-                  const size = live ? liveSizeParts(live).join(", ") : expectedSize(club)
-                  const sizeIsEstimate = !live && Boolean(sizes) && Boolean(size)
-                  return (
-                    <Fragment key={club.id}>
-                      <tr
-                        data-club={club.organizationName}
-                        className={cn(
-                          "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-t border-sk-line px-5 py-4 first:border-t-0 hover:bg-sk-canvas md:table-row md:px-0 md:py-0",
-                          open && "bg-sk-canvas",
-                        )}
-                        onClick={() => toggleClub(club.id)}
-                      >
-                        <th scope="row" className="min-w-0 font-normal md:py-3.5 md:pl-6 md:pr-3">
-                          <button
-                            type="button"
-                            aria-expanded={open}
-                            aria-controls={`club-detail-${club.id}`}
-                            className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-                          >
-                            <Initials name={club.organizationName} />
-                            <span className="min-w-0 font-bold leading-snug text-sk-ink md:truncate">{club.organizationName}</span>
-                            <CaretDown className={cn("size-4 shrink-0 text-sk-mute transition-transform", open && "rotate-180")} weight="bold" aria-hidden />
-                          </button>
-                        </th>
-                        <td className="max-md:row-start-3 max-md:pl-[52px] text-sm text-sk-ink-2 md:px-3 md:py-3.5">
-                          {packageLabel(club.requestedPlan)}
-                          <span className="md:hidden"> package</span>
-                        </td>
-                        <td className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-end md:px-3 md:py-3.5">
-                          <Tag tone={LIFECYCLE_META[state].tone} className="whitespace-nowrap">{LIFECYCLE_META[state].label}</Tag>
-                        </td>
-                        <td className="max-md:col-span-2 max-md:row-start-2 max-md:pl-[52px] min-w-0 text-sm md:px-3 md:py-3.5">
-                          <span className="block text-sk-ink max-md:hidden md:max-w-[14rem] xl:max-w-[16rem] md:truncate">{club.requestorName}</span>
-                          <span className="block text-sk-mute max-md:break-all md:max-w-[14rem] xl:max-w-[16rem] md:truncate" title={club.requestorEmail}>
-                            {club.requestorEmail}
-                          </span>
-                        </td>
-                        <td className="hidden text-sm text-sk-ink-2 lg:table-cell lg:px-3 lg:py-3.5">
-                          {size
-                            ? size.split(", ").map((part) => (
-                                <span key={part} className="block whitespace-nowrap">
-                                  {part}
-                                </span>
-                              ))
-                            : "Not given"}
-                          {sizeIsEstimate ? <span className="block whitespace-nowrap text-sk-mute">expected at sign-up</span> : null}
-                        </td>
-                        <td className="max-md:row-start-3 max-md:justify-self-end whitespace-nowrap text-sm text-sk-ink-2 md:py-3.5 md:pl-3 md:pr-6">
-                          <time dateTime={club.createdAt}>{formatLocalDate(club.createdAt)}</time>
-                        </td>
-                      </tr>
-                      {open ? (
-                        <tr className="block border-t border-sk-line bg-sk-canvas md:table-row">
-                          <td colSpan={6} id={`club-detail-${club.id}`} className="block px-5 pb-6 pt-5 md:table-cell md:px-6">
-                            <ClubDetail
-                              club={club}
-                              liveSize={live}
-                              history={clubHistory(auditEvents, club)}
-                              clubNames={clubNames}
-                              pendingUpgrade={upgrades.find((item) => item.status === "pending" && item.tenantId === club.provisionedTenantId) ?? null}
-                              confirmKey={confirmKey}
-                              reason={reason}
-                              reasonError={reasonError}
-                              busy={busy}
-                              onPick={(key) => {
-                                setReason("")
-                                setReasonError(false)
-                                setConfirmKey((current) => (current === key ? null : key))
-                              }}
-                              onReason={(value) => {
-                                setReason(value)
-                                if (value.trim()) setReasonError(false)
-                              }}
-                              onCancel={closeConfirm}
-                              onConfirm={(action) => void handleLifecycle(club, action)}
-                            />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-            </div>
+            <DataTable
+              caption={`Clubs${filtersActive ? ", filtered" : ""}`}
+              columns={columns}
+              rows={visibleClubs}
+              rowKey={(club) => club.id}
+              rowProps={(club) => ({ "data-club": club.organizationName, onClick: () => openClub(club.id) })}
+            />
           )}
-        </Panel>
+        </Section>
       )}
-    </div>
+
+      <Sheet
+        open={Boolean(openClubRecord)}
+        onOpenChange={(open) => (open ? null : closeClub())}
+        title={openClubRecord?.organizationName ?? "Club"}
+        description={openClubRecord ? `Created ${formatLocalDate(openClubRecord.createdAt)}` : undefined}
+        className="sm:max-w-[560px]"
+      >
+        {openClubRecord ? (
+          <ClubDetail
+            club={openClubRecord}
+            liveSize={liveSizeOf(openClubRecord, sizes)}
+            history={clubHistory(auditEvents, openClubRecord)}
+            clubNames={clubNames}
+            pendingUpgrade={upgrades.find((item) => item.status === "pending" && item.tenantId === openClubRecord.provisionedTenantId) ?? null}
+            error={sheetError}
+            busy={busy}
+            confirmKey={confirmKey}
+            reason={reason}
+            reasonError={reasonError}
+            onPick={(key) => {
+              setReason("")
+              setReasonError(false)
+              setSheetError(null)
+              setChangingPackage(false)
+              setConfirmKey((current) => (current === key ? null : key))
+            }}
+            onReason={(value) => {
+              setReason(value)
+              if (value.trim()) setReasonError(false)
+            }}
+            onCancel={resetForms}
+            onConfirm={(action) => void handleLifecycle(openClubRecord, action)}
+            changingPackage={changingPackage}
+            newPackage={newPackage}
+            packageReason={packageReason}
+            packageErrors={packageErrors}
+            onStartPackageChange={() => {
+              resetForms()
+              setChangingPackage(true)
+            }}
+            onNewPackage={(value) => {
+              setNewPackage(value)
+              setPackageErrors((current) => ({ ...current, package: undefined }))
+            }}
+            onPackageReason={(value) => {
+              setPackageReason(value)
+              if (value.trim().length >= 3) setPackageErrors((current) => ({ ...current, reason: undefined }))
+            }}
+            onConfirmPackage={() => void handlePackageChange(openClubRecord)}
+          />
+        ) : null}
+      </Sheet>
+    </Screen>
   )
 }
 
@@ -573,210 +620,231 @@ function ClubDetail({
   history,
   clubNames,
   pendingUpgrade,
+  error,
+  busy,
   confirmKey,
   reason,
   reasonError,
-  busy,
   onPick,
   onReason,
   onCancel,
   onConfirm,
+  changingPackage,
+  newPackage,
+  packageReason,
+  packageErrors,
+  onStartPackageChange,
+  onNewPackage,
+  onPackageReason,
+  onConfirmPackage,
 }: {
   club: PlatformClubRecord
   liveSize: PlatformTenantSize | null
   history: PlatformAuditEventRecord[]
   clubNames: Map<string, string>
   pendingUpgrade: PlatformAdminPackageUpgradeRequestRecord | null
+  error: string | null
+  busy: boolean
   confirmKey: LifecycleAction["key"] | null
   reason: string
   reasonError: boolean
-  busy: boolean
   onPick: (key: LifecycleAction["key"]) => void
   onReason: (value: string) => void
   onCancel: () => void
   onConfirm: (action: LifecycleAction) => void
+  changingPackage: boolean
+  newPackage: PackageId | ""
+  packageReason: string
+  packageErrors: { package?: string; reason?: string }
+  onStartPackageChange: () => void
+  onNewPackage: (value: PackageId | "") => void
+  onPackageReason: (value: string) => void
+  onConfirmPackage: () => void
 }) {
   const state = lifecycleOf(club)
   const pack = getPackageById(club.requestedPlan)
   const actions = actionsFor(club)
   const confirming = actions.find((action) => action.key === confirmKey) ?? null
-  const reasonId = `club-reason-${club.id}`
   const billingContact = [club.billingContactName?.trim(), club.billingContactEmail?.trim()].filter(Boolean).join(", ")
+  const canChangePackage = Boolean(club.provisionedTenantId) && club.status === "approved" && state !== "cancelled"
+  const chosen = getPackageById(newPackage)
+  const overChosen =
+    chosen && liveSize
+      ? (["teams", "coaches", "athletes"] as const).filter((key) => liveSize[key] > chosen.limits[key]).map((key) => `${liveSize[key]} ${key} (limit ${chosen.limits[key]})`)
+      : []
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-x-8 gap-y-6 lg:grid-cols-3">
-        <section aria-label="Contact">
-          <h3 className="sk-h3">Contact</h3>
-          <dl className="mt-3 space-y-3">
-            <Fact label="Club admin">
-              {club.requestorName}
-              {club.jobTitle ? <span className="text-sk-mute">, {club.jobTitle}</span> : null}
-            </Fact>
-            <Fact label="Email">
-              <a href={`mailto:${club.requestorEmail}`} className="font-semibold text-sk-blue hover:underline">
-                {club.requestorEmail}
-              </a>
-            </Fact>
-            <Fact label="Billing contact">{billingContact || "Not given yet"}</Fact>
-            {club.region ? <Fact label="Region">{club.region}</Fact> : null}
-            {club.organizationWebsite ? <Fact label="Website">{club.organizationWebsite}</Fact> : null}
-            <Fact label="Club admin invite">
-              {club.accessInviteLastError ? (
-                <span className="font-semibold text-[#b32a0c]">Failed to send: {club.accessInviteLastError}</span>
-              ) : club.accessInviteSentAt ? (
-                `Sent ${formatLocalDateTime(club.accessInviteSentAt)}`
-              ) : (
-                "Not sent yet"
-              )}
-            </Fact>
-          </dl>
-        </section>
+    <SubSections>
+      <StatusText tone={LIFECYCLE_META[state].state}>{LIFECYCLE_META[state].label}</StatusText>
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <section aria-label="Package and size">
-          <h3 className="sk-h3">Package and size</h3>
-          <dl className="mt-3 space-y-3">
-            <Fact label="Package">
-              {packageLabel(club.requestedPlan)}
-              {pendingUpgrade ? (
-                <>
-                  {". "}
-                  <Link to="/platform-admin/commercial" className="font-semibold text-sk-blue hover:underline">
-                    Asked to move to {packageLabel(pendingUpgrade.requestedPackage)}
-                  </Link>
-                </>
-              ) : null}
-            </Fact>
-            <Fact label="Billing">
-              {club.billingStatus ? BILLING_LABEL[club.billingStatus] : "Not set up"}
-              {club.billingCycle ? `, ${club.billingCycle}` : ""}
-            </Fact>
-          </dl>
-          <div className="mt-4 space-y-3">
-            {liveSize ? <LimitRow label="Teams" live={liveSize.teams} expected={null} limit={pack?.limits.teams ?? null} /> : null}
-            <LimitRow label="Coaches" live={liveSize?.coaches ?? null} expected={club.expectedCoachCount} limit={pack?.limits.coaches ?? null} />
-            <LimitRow label="Athletes" live={liveSize?.athletes ?? null} expected={club.expectedAthleteCount} limit={pack?.limits.athletes ?? null} />
-            {pack && !liveSize ? (
-              <p className="text-sm text-sk-ink-2">
-                <span className="font-semibold text-sk-ink">Teams</span>
-                {Number.isFinite(pack.limits.teams) ? `: limit ${pack.limits.teams}` : ": no limit"}
-              </p>
+      <SubSection title="Contact">
+        <FactList>
+          <Fact label="Club admin">
+            {club.requestorName}
+            {club.jobTitle ? `, ${club.jobTitle}` : ""}
+          </Fact>
+          <Fact label="Email">
+            <a href={`mailto:${club.requestorEmail}`} className="sk-link break-all">
+              {club.requestorEmail}
+            </a>
+          </Fact>
+          <Fact label="Billing contact" empty="Not given yet">
+            {billingContact}
+          </Fact>
+          {club.region ? <Fact label="Region">{club.region}</Fact> : null}
+          {club.organizationWebsite ? <Fact label="Website">{club.organizationWebsite}</Fact> : null}
+          <Fact label="Club admin invite" empty="Not sent yet">
+            {club.accessInviteLastError ? (
+              <StatusText tone="coral">Failed to send: {club.accessInviteLastError}</StatusText>
+            ) : club.accessInviteSentAt ? (
+              `Sent ${formatLocalDateTime(club.accessInviteSentAt)}`
             ) : null}
-          </div>
-          <p className="mt-3 text-sm text-sk-mute">
-            {liveSize
-              ? `Counted now: teams that are not archived, active coaches and every athlete on the roster. At sign-up the club expected ${expectedSize(club) ?? "no set number"}.`
-              : club.provisionedTenantId
-                ? "These are the numbers the club gave at sign-up. Live team, coach and athlete counts could not be loaded."
-                : "These are the numbers the club gave at sign-up. The club has no workspace yet, so there is nothing to count."}
-          </p>
-        </section>
+          </Fact>
+        </FactList>
+      </SubSection>
 
-        <section aria-label="History">
-          <h3 className="sk-h3">History</h3>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
-            <Fact label="Requested">{formatLocalDate(club.createdAt)}</Fact>
-            <Fact label="Approved">{formatLocalDate(club.reviewedAt)}</Fact>
-            <Fact label="Billing set up">{formatLocalDate(club.billingStartedAt, "Not yet")}</Fact>
-            {club.billingFailedAt ? <Fact label="Billing failed">{formatLocalDate(club.billingFailedAt)}</Fact> : null}
-            {state === "suspended" && club.previousLifecycleStatus ? (
-              <Fact label="Before suspension">{LIFECYCLE_META[club.previousLifecycleStatus].label}</Fact>
+      <SubSection
+        title="Package and size"
+        action={
+          canChangePackage && !changingPackage ? (
+            <Button variant="quiet" size="sm" disabled={busy} onClick={onStartPackageChange}>
+              Change package
+            </Button>
+          ) : null
+        }
+      >
+        <FactList>
+          <Fact label="Package">{packageLabel(club.requestedPlan)}</Fact>
+          {pendingUpgrade ? (
+            <Fact label="Package request">
+              <Link to="/platform-admin/commercial" className="sk-link">
+                Asked to move to {packageLabel(pendingUpgrade.requestedPackage)}
+              </Link>
+            </Fact>
+          ) : null}
+          <Fact label="Billing">
+            {club.billingStatus ? BILLING_STATUS_LABEL[club.billingStatus] : "Not set up"}
+            {club.billingCycle ? `, ${club.billingCycle}` : ""}
+          </Fact>
+          <UsageFact label="Teams" live={liveSize?.teams ?? null} expected={null} limit={pack?.limits.teams ?? null} />
+          <UsageFact label="Coaches" live={liveSize?.coaches ?? null} expected={club.expectedCoachCount} limit={pack?.limits.coaches ?? null} />
+          <UsageFact label="Athletes" live={liveSize?.athletes ?? null} expected={club.expectedAthleteCount} limit={pack?.limits.athletes ?? null} />
+        </FactList>
+        <p className="sk-list-sub mt-2">
+          {liveSize
+            ? `Counted now: teams that are not archived, active coaches and every athlete on the roster. At sign-up the club expected ${expectedSize(club) ?? "no set number"}.`
+            : club.provisionedTenantId
+              ? "These are the numbers the club gave at sign-up. Live team, coach and athlete counts could not be loaded."
+              : "These are the numbers the club gave at sign-up. The club has no workspace yet, so there is nothing to count."}
+        </p>
+
+        {changingPackage ? (
+          <form
+            className="mt-4 flex flex-col gap-3"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              onConfirmPackage()
+            }}
+          >
+            <p className="sk-list-title">Change the package of {club.organizationName}?</p>
+            <p className="sk-list-sub">
+              The club's limits change as soon as you confirm, the same way an approved package request does. The club's admins are told, and the change and your reason are written to the platform activity and
+              to the club's own activity. Nothing is charged.
+            </p>
+            <Field label="New package" error={packageErrors.package}>
+              <Select value={newPackage} disabled={busy} onChange={(event) => onNewPackage(event.target.value as PackageId | "")}>
+                <option value="">Choose a package</option>
+                {packageOptions
+                  .filter((option) => option.id !== club.requestedPlan)
+                  .map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            {overChosen.length > 0 && chosen ? (
+              <Notice tone="warning">
+                The club is using more than {chosen.label} allows: {overChosen.join(", ")}. Nothing is removed, but the club cannot add more until it is back under the limit.
+              </Notice>
             ) : null}
-          </dl>
-          {history.length > 0 ? (
-            <ol className="mt-4 space-y-3 border-t border-sk-line pt-4">
-              {history.slice(0, 8).map((event) => {
-                const note = auditReason(event)
-                return (
-                  <li key={event.id} className="text-sm">
-                    <p className="font-semibold text-sk-ink">{auditSentence(event, clubNames)}</p>
-                    {note ? <p className="text-sk-ink-2">Reason: {note}</p> : null}
-                    <p className="break-words text-sk-mute">
-                      <time dateTime={event.occurredAt}>{formatLocalDateTime(event.occurredAt)}</time>
-                      {event.actorEmail ? `, by ${event.actorEmail}` : ""}
-                    </p>
-                  </li>
-                )
-              })}
-            </ol>
-          ) : (
-            <p className="mt-4 border-t border-sk-line pt-4 text-sm text-sk-mute">No events for this club in the latest platform activity.</p>
-          )}
-        </section>
-      </div>
-
-      <section aria-label="Status" className="border-t border-sk-line pt-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="sk-h3">Status: {LIFECYCLE_META[state].label}</h3>
-            {club.reviewNotes ? <p className="mt-0.5 text-sm text-sk-mute">Last note: {club.reviewNotes}</p> : null}
-          </div>
-          {actions.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {actions.map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  aria-expanded={confirmKey === action.key}
-                  className={cn("sk-btn sk-btn-sm max-sm:h-11 max-sm:flex-1", action.danger ? "sk-btn-danger" : "sk-btn-quiet")}
-                  disabled={busy}
-                  onClick={() => onPick(action.key)}
-                >
-                  {action.button}
-                </button>
-              ))}
+            <Field label="Reason" error={packageErrors.reason} hint="The club's admins see this.">
+              <Textarea rows={2} maxLength={500} value={packageReason} disabled={busy} onChange={(event) => onPackageReason(event.target.value)} />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="quiet" disabled={busy} onClick={onCancel}>
+                Keep package
+              </Button>
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? "Saving..." : "Yes, change package"}
+              </Button>
             </div>
-          ) : (
-            <p className="text-sm text-sk-mute">A cancelled club has no status changes left on this screen.</p>
-          )}
-        </div>
+          </form>
+        ) : null}
+      </SubSection>
+
+      <SubSection title="Status" hint={club.reviewNotes ? `Last note: ${club.reviewNotes}` : undefined}>
+        {actions.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action) => (
+              <Button key={action.key} size="sm" variant={action.danger ? "danger" : "secondary"} aria-expanded={confirmKey === action.key} disabled={busy} onClick={() => onPick(action.key)}>
+                {action.button}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <p className="sk-list-sub">A cancelled club has no status changes left on this screen. Restore it from Club requests.</p>
+        )}
 
         {confirming ? (
-          <div
-            role="group"
-            aria-label="Confirm"
-            className={cn("mt-4 space-y-3 rounded-2xl p-4", confirming.danger ? "bg-sk-coral-tint" : "bg-sk-blue-tint")}
-          >
-            <div>
-              <p className="font-bold text-sk-ink">{confirming.question}</p>
-              <p className="mt-1 max-w-[72ch] text-sm text-sk-ink-2">{confirming.effect}</p>
-            </div>
-            <div>
-              <label htmlFor={reasonId} className="text-sm font-semibold text-sk-ink">
-                Reason{confirming.reasonRequired ? "" : " (optional)"}
-              </label>
-              <textarea
-                id={reasonId}
-                rows={2}
-                className="sk-field mt-1.5 h-auto py-2.5"
-                placeholder="Saved on the club and in the platform audit"
-                value={reason}
-                aria-invalid={reasonError}
-                aria-describedby={reasonError ? `${reasonId}-error` : undefined}
-                onChange={(event) => onReason(event.target.value)}
-              />
-              {reasonError ? (
-                <p id={`${reasonId}-error`} role="alert" className="mt-1.5 text-sm font-semibold text-[#b32a0c]">
-                  Add a reason first.
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="sk-btn sk-btn-quiet sk-btn-sm max-sm:h-11 max-sm:flex-1" disabled={busy} onClick={onCancel}>
+          <div role="group" aria-label="Confirm" className="mt-4 flex flex-col gap-3">
+            <p className="sk-list-title">{confirming.question}</p>
+            <p className="sk-list-sub">{confirming.effect}</p>
+            <Field label="Reason" optional={!confirming.reasonRequired} error={reasonError ? "Add a reason first." : undefined} hint="Saved on the club and in the platform activity.">
+              <Textarea rows={2} value={reason} disabled={busy} onChange={(event) => onReason(event.target.value)} />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="quiet" disabled={busy} onClick={onCancel}>
                 {confirming.keep}
-              </button>
-              <button
-                type="button"
-                className={cn("sk-btn sk-btn-sm max-sm:h-11 max-sm:flex-1", confirming.danger ? "sk-btn-danger" : "sk-btn-ink")}
-                disabled={busy}
-                onClick={() => onConfirm(confirming)}
-              >
+              </Button>
+              <Button variant={confirming.danger ? "danger" : "primary"} disabled={busy} onClick={() => onConfirm(confirming)}>
                 {busy ? "Saving..." : confirming.confirm}
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
-      </section>
-    </div>
+      </SubSection>
+
+      <SubSection title="History">
+        <FactList>
+          <Fact label="Requested">{formatLocalDate(club.createdAt)}</Fact>
+          <Fact label="Approved">{formatLocalDate(club.reviewedAt)}</Fact>
+          <Fact label="Billing set up">{formatLocalDate(club.billingStartedAt, "Not yet")}</Fact>
+          {club.billingFailedAt ? <Fact label="Billing failed">{formatLocalDate(club.billingFailedAt)}</Fact> : null}
+          {state === "suspended" && club.previousLifecycleStatus ? <Fact label="Before suspension">{LIFECYCLE_META[club.previousLifecycleStatus].label}</Fact> : null}
+        </FactList>
+        {history.length > 0 ? (
+          <List ordered aria-label="Events for this club" className="mt-2">
+            {history.slice(0, 8).map((event) => {
+              const note = auditReason(event)
+              return (
+                <ListRow key={event.id} className="items-start">
+                  <span className="sk-list-title break-words">{auditSentence(event, clubNames)}</span>
+                  {note ? <span className="sk-list-sub mt-0.5 break-words text-sk-ink-2">Reason: {note}</span> : null}
+                  <span className="sk-list-sub mt-0.5 break-words">
+                    <time dateTime={event.occurredAt}>{formatLocalDateTime(event.occurredAt)}</time>
+                    {event.actorEmail ? `, by ${event.actorEmail}` : ""}
+                  </span>
+                </ListRow>
+              )
+            })}
+          </List>
+        ) : (
+          <p className="sk-list-sub mt-2">No events for this club in the latest platform activity.</p>
+        )}
+      </SubSection>
+    </SubSections>
   )
 }

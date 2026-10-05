@@ -1,32 +1,21 @@
-import { useEffect, useId, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowRight, CheckCircle, ShieldCheck } from "@phosphor-icons/react"
-import { Field, FirstAccessFrame, FormError } from "@/components/club-admin/first-access-setup-panel"
-import { Panel, Tag } from "@/components/sk"
-import { getPackageById, packageOptions, type PackageDefinition } from "@/lib/billing/package-catalog"
+import { ArrowRight } from "@phosphor-icons/react"
+import { FirstAccessFrame } from "@/components/club-admin/first-access-setup-panel"
+import { Button, Choices, Fact, FactList, Field, Input, Notice, Section, SkeletonRows } from "@/components/sk"
+import { getPackageById } from "@/lib/billing/package-catalog"
 import {
   completeCurrentClubAdminMockBillingSetup,
   getCurrentClubAdminActivationState,
   type ClubAdminActivationState,
 } from "@/lib/data/club-admin/ops-data"
 import { getBackendMode } from "@/lib/supabase/config"
-import { cn } from "@/lib/utils"
 import { loadProfileSafe } from "../../state"
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 
 function limit(value: number, singular: string, plural: string) {
   if (!Number.isFinite(value)) return `Unlimited ${plural}`
   return `${value} ${value === 1 ? singular : plural}`
-}
-
-function packageLimits(definition: PackageDefinition) {
-  const { teams, coaches, athletes } = definition.limits
-  if (![teams, coaches, athletes].some(Number.isFinite)) return "Unlimited teams, coaches and athletes"
-  return [
-    limit(definition.limits.teams, "team", "teams"),
-    limit(definition.limits.coaches, "coach", "coaches"),
-    limit(definition.limits.athletes, "athlete", "athletes"),
-  ].join(", ")
 }
 
 /** Mock mode has no activation record. This lets the step be walked through locally. */
@@ -47,7 +36,6 @@ function buildMockActivationState(): ClubAdminActivationState {
 
 export default function ClubAdminBillingSetupPage() {
   const navigate = useNavigate()
-  const formId = useId()
   const isSupabaseMode = getBackendMode() === "supabase"
   const [loading, setLoading] = useState(isSupabaseMode)
   const [saving, setSaving] = useState(false)
@@ -134,9 +122,7 @@ export default function ClubAdminBillingSetupPage() {
   if (loading) {
     return (
       <FirstAccessFrame step="plan" title="Confirm your plan">
-        <p className="text-sm font-semibold text-sk-mute" role="status">
-          Loading...
-        </p>
+        <SkeletonRows rows={4} label="Loading your plan" />
       </FirstAccessFrame>
     )
   }
@@ -144,14 +130,12 @@ export default function ClubAdminBillingSetupPage() {
   if (!activationState) {
     return (
       <FirstAccessFrame title="We could not load your plan" lede="Nothing has been changed on your club.">
-        <section className="sk-card space-y-5">
-          <FormError>{error ?? "No approved club request was found for this account."}</FormError>
-          <div>
-            <button type="button" className="sk-btn sk-btn-primary" onClick={() => window.location.reload()}>
-              Try again
-            </button>
-          </div>
-        </section>
+        <Notice tone="error">{error ?? "No approved club request was found for this account."}</Notice>
+        <div>
+          <Button variant="primary" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
       </FirstAccessFrame>
     )
   }
@@ -169,26 +153,28 @@ export default function ClubAdminBillingSetupPage() {
           : "Check the plan your club was approved on, tell us who to contact about billing, and carry on."
       }
     >
-      <div className="flex items-start gap-3 rounded-[20px] bg-sk-green-tint p-4 sm:p-5">
-        <ShieldCheck className="mt-0.5 size-6 shrink-0 text-sk-green" weight="fill" aria-hidden />
-        <div className="space-y-1">
-          <p className="font-bold text-sk-ink">No card needed. Nothing is charged today.</p>
-          <p className="text-sm leading-relaxed text-sk-ink-2">
-            Online payment is not switched on in SKTR Coach yet. This step only records your plan and your billing contact. You
-            cannot be charged until you add payment details yourself, and that is not possible yet.
-          </p>
-        </div>
-      </div>
+      <Notice tone="success">
+        No card needed. Nothing is charged today.
+        <span className="mt-0.5 block font-normal">
+          Online payment is not switched on in SKTR Coach yet. This step only records your plan and your billing contact. You cannot be charged until you add payment details yourself, and that is
+          not possible yet.
+        </span>
+      </Notice>
 
       {activationState.lifecycleStatus === "billing_failed" ? (
-        <FormError tone="notice">
-          <p>Your plan was not confirmed last time. Check the details below and confirm again. If it keeps failing, email{" "}
-            <a href={SUPPORT_MAILTO} className="font-bold underline underline-offset-2">{SUPPORT_EMAIL}</a>{" "}
-            and we will sort it out for you.</p>
-        </FormError>
+        <Notice tone="warning">
+          Your plan was not confirmed last time
+          <span className="mt-0.5 block font-normal">
+            Check the details below and confirm again. If it keeps failing, email{" "}
+            <a href={SUPPORT_MAILTO} className="sk-link">
+              {SUPPORT_EMAIL}
+            </a>{" "}
+            and we will sort it out for you.
+          </span>
+        </Notice>
       ) : null}
 
-      <Panel
+      <Section
         title="Your plan"
         hint={
           requestedPackage
@@ -196,91 +182,51 @@ export default function ClubAdminBillingSetupPage() {
             : "No plan was recorded on your club request. You can ask for one from Billing once setup is done."
         }
       >
-        <ul className="-mx-3 space-y-1">
-          {packageOptions.map((option) => {
-            const selected = option.id === requestedPackage?.id
-            return (
-              <li
-                key={option.id}
-                className={cn("flex items-start gap-3 rounded-2xl p-3", selected && "bg-sk-blue-tint")}
-              >
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center" aria-hidden>
-                  {selected ? (
-                    <CheckCircle className="size-6 text-sk-blue" weight="fill" />
-                  ) : (
-                    <span className="size-4 rounded-full border-2 border-[#cdd2de]" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className={cn("sk-h3", !selected && requestedPackage && "text-sk-ink-2")}>{option.label}</p>
-                    {selected ? <Tag tone="blue">Your plan</Tag> : null}
-                  </div>
-                  <p className="mt-0.5 text-sm font-semibold text-sk-ink-2">{packageLimits(option)}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-sk-mute">{option.description}</p>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </Panel>
+        {requestedPackage ? (
+          <FactList aria-label="Your plan">
+            <Fact label="Plan">{requestedPackage.label}</Fact>
+            <Fact label="Teams">{limit(requestedPackage.limits.teams, "team", "teams")}</Fact>
+            <Fact label="Coaches">{limit(requestedPackage.limits.coaches, "coach", "coaches")}</Fact>
+            <Fact label="Athletes">{limit(requestedPackage.limits.athletes, "athlete", "athletes")}</Fact>
+            <Fact label="What it is for" stack>
+              {requestedPackage.description}
+            </Fact>
+          </FactList>
+        ) : (
+          <FactList aria-label="Your plan">
+            <Fact label="Plan" empty="Not chosen yet" />
+          </FactList>
+        )}
+      </Section>
 
-      <form className="sk-card grid gap-4" onSubmit={(event) => void handleSubmit(event)} noValidate>
-        <div>
-          <h2 className="sk-h2">Billing contact</h2>
-          <p className="mt-1 text-sm text-sk-mute">The person we should talk to about invoices. It can be you.</p>
-        </div>
-        <Field label="Contact name" htmlFor={`${formId}-name`}>
-          <input
-            id={`${formId}-name`}
-            name="billing-name"
-            className="sk-field"
-            autoComplete="name"
-            required
-            value={billingContactName}
-            onChange={(event) => setBillingContactName(event.target.value)}
+      <Section title="Billing contact" hint="The person we should talk to about invoices. It can be you.">
+        <form className="flex flex-col gap-4 pt-3" onSubmit={(event) => void handleSubmit(event)} noValidate>
+          <Field label="Contact name">
+            <Input name="billing-name" autoComplete="name" required value={billingContactName} onChange={(event) => setBillingContactName(event.target.value)} />
+          </Field>
+          <Field label="Contact email">
+            <Input name="billing-email" type="email" inputMode="email" autoComplete="email" required value={billingContactEmail} onChange={(event) => setBillingContactEmail(event.target.value)} />
+          </Field>
+          <Choices
+            label="How you would like to be billed"
+            hint="A preference for later. It does not start a charge."
+            value={billingCycle}
+            onChange={setBillingCycle}
+            columns={2}
+            options={[
+              { value: "monthly", label: "Monthly" },
+              { value: "annual", label: "Annually" },
+            ]}
           />
-        </Field>
-        <Field label="Contact email" htmlFor={`${formId}-email`}>
-          <input
-            id={`${formId}-email`}
-            name="billing-email"
-            type="email"
-            inputMode="email"
-            className="sk-field"
-            autoComplete="email"
-            required
-            value={billingContactEmail}
-            onChange={(event) => setBillingContactEmail(event.target.value)}
-          />
-        </Field>
-        <fieldset>
-          <legend className="sk-label mb-1.5">How you would like to be billed</legend>
-          <div className="sk-seg">
-            {(["monthly", "annual"] as const).map((cycle) => (
-              <label key={cycle} className="sk-seg-item cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sk-blue" data-active={billingCycle === cycle}>
-                <input
-                  type="radio"
-                  name="billing-cycle"
-                  value={cycle}
-                  className="sr-only"
-                  checked={billingCycle === cycle}
-                  onChange={() => setBillingCycle(cycle)}
-                />
-                {cycle === "monthly" ? "Monthly" : "Annually"}
-              </label>
-            ))}
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <div>
+            <Button type="submit" variant="primary" size="lg" disabled={saving}>
+              {saving ? "Confirming..." : "Confirm plan and continue"}
+              {saving ? null : <ArrowRight className="size-5" weight="bold" aria-hidden />}
+            </Button>
           </div>
-          <p className="mt-1.5 text-sm text-sk-mute">A preference for later. It does not start a charge.</p>
-        </fieldset>
-        <FormError>{error}</FormError>
-        <div>
-          <button type="submit" disabled={saving} className="sk-btn sk-btn-primary w-full sm:w-auto">
-            {saving ? "Confirming..." : "Confirm plan and continue"}
-            {saving ? null : <ArrowRight className="size-5" weight="bold" />}
-          </button>
-        </div>
-      </form>
+        </form>
+      </Section>
     </FirstAccessFrame>
   )
 }

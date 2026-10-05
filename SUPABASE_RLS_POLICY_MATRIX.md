@@ -687,3 +687,42 @@ Six tables, all with RLS on, `select` granted to `authenticated` and NO insert, 
 ### Competitions for staff (20261009110000)
 
 No policy is added or changed. Verified against 20261008100000 with 30 assertions: a coach creates, edits and deletes meets of their own teams only; enters, scratches and records results for athletes of their own teams only; sees a meet an athlete on their team added for themselves (and that athlete's entries), may record its results, and may not edit the meet itself; a result typed by a coach lands in `athlete_results`, `athlete_event_best()` and `pr_records` and notifies the team's other coaches of a new best. The one addition is the index `competition_entries_competition_idx`.
+
+## Club admin invites, removing people, deleting an athlete's data (20261010090000)
+
+Migration `20261010090000_club_admin_invite_role_and_member_removal.sql`. Every function below starts with `assert_caller_active()`, so a deactivated admin and the admin of a suspended or cancelled club get the usual `access_paused` refusal.
+
+| Object | Who | What |
+|---|---|---|
+| `removed_members` (table) | select: active coach or club admin of the same club. No insert, update or delete for any API role. | The name and role of a coach or club admin who was removed, so what they wrote stays attributed. Written only by `remove_tenant_member`, cleared by `accept_coach_invite` when the person joins again. |
+| `coach_invites.role = 'club-admin'` | Only an active club admin of the invite's club (row policy `coach_invites_staff_all`, plus trigger `guard_club_admin_invite` as a second lock). A coach, an athlete, an admin of another club and an admin of a suspended club are refused. | Creating one, or raising a coach invite to it, writes audit event `club_admin_invite_created` with the real caller. |
+| `accept_coach_invite(invite)` | The signed-in person whose CONFIRMED email is the invite's email. | Gives the invite's role in the invite's club only. A member of another club is refused. A coach invite never lowers a club admin to coach. Audit: `coach_invite_accept` ("accepted as club-admin ..."). |
+| `get_public_coach_invite_role(invite)` | anon, authenticated (whoever holds the invite link, same reach as `get_public_coach_invite`). | Returns `coach` or `club-admin`, nothing else. |
+| `complete_current_coach_onboarding(name)` | The caller, when their own profile is a coach or (new) a club admin. | Writes the caller's own name and first sign-in stamps only. |
+| `remove_tenant_member(user)` | Active club admin, for a coach or club admin of the same club. Refused for: yourself, the last active club admin, a member of another club ("Member not found in this club"), an athlete. | Deletes the profile and `team_coaches` rows in this club and the person's notifications from this club, cancels pending invites to their email, keeps their name in `removed_members`. Plans, sessions, test weeks, announcements, messages and audit entries they wrote are kept. Their threads become read only. Audit: `member_removed`. |
+| `remove_athlete_from_club(athlete)` | Active club admin, same club. Returns false for an athlete of another club. | Nothing is deleted. `athletes.is_active = false`, `team_id = null` (frees the seat), the athlete's own profile is deactivated (athlete role only), pending invites for them are cancelled. Audit: `athlete_removed_from_club`. |
+| `restore_athlete_to_club(athlete)` | Active club admin, same club. Refused when the package has no athlete place left. | Athlete record and their athlete profile active again, on no team. Audit: `athlete_restored_to_club`. |
+| `delete_athlete_and_data(athlete, typed full name)` | Active club admin, same club, and only with the athlete's full name passed in. A coach, the athlete, an admin of another club are refused. | THE ONE DELIBERATE DELETE. Removes the athlete record and every row that hangs off it (see below). Audit: `athlete_data_deleted`, naming nobody. |
+
+What `delete_athlete_and_data` removes: `session_row_logs`, `session_completions`, `athlete_results`, `test_results`, `sessions` (with `session_blocks` and rows), `training_plan_assignments` of scope athlete, `athlete_invites` (by record, by accepting account, by email), `team_join_code_uses`, then `athletes`, which cascades to `wellness_entries`, `pr_records`, `athlete_availability`, `pain_reports`, `athlete_private_details`, the athlete's own `competitions`, `competition_entries`, and `message_threads` with `messages`, `message_moderation` and `message_reports`. Also `notification_events` and `user_notifications` sent to the athlete by this club or about the athlete, and for an athlete with a login their `announcement_recipients` rows and their profile in this club (athlete role only). Audit entries are kept; a target or detail that is exactly the athlete's name or email is blanked to "deleted athlete".
+
+What it does NOT remove (service role only, do by hand for a full erasure request): the login account in `auth.users`, and a profile photo file in the `avatars` storage bucket with its `account_avatars` row.
+
+Verified on a throwaway Postgres 16 with every migration applied (this one twice): 127 assertions as each identity, including row counts per table before and after for another athlete of the same club and an athlete of another club.
+
+### Club logo, club contact details and two platform admin tools (migration `20261010100000_club_profile_logo_and_platform_tools.sql`)
+
+Club logos live in the Storage bucket `club-logos` (public, 2 MB limit, JPEG/PNG/WebP only) under `<club id>/<random>.jpg`. Public for the same reasons as `avatars`: one stable address the browser can cache, a name that cannot be guessed, and no listing for anyone who is not an admin of that club.
+
+| Object | Athlete | Coach | Club admin | Platform admin | Notes |
+|---|---|---|---|---|---|
+| `club_profiles.logo_path` (read through `club_profiles_select_tenant`, unchanged) | own club | own club | own club | none | check constraint `club_profiles_logo_path_own_folder`: the path must be inside the club's own folder, whoever writes it |
+| `get_current_club_brand()` | own club: name, short name, colour, logo path | same | same | no rows | no rows for a deactivated member or a suspended or cancelled club; never billing or contact details |
+| `set_current_club_logo(text)` | refused | refused | own club | refused | raises `access_paused` for a deactivated admin or a blocked club; the path must be in the club's folder and the file must exist; returns the previous path |
+| `storage.objects` in `club-logos`: select, insert, update, delete (`club_logos_*_admin`) | none | none | own club's folder | none | name must be `<own club id>/<8 to 64 url-safe chars>.<jpg\|png\|webp>`; reading through the public address does not use policies |
+| `club_contact_details` select, insert, update (`club_contact_details_select_admin`, `club_contact_details_modify_admin`) | none | none | own club | none | contact email and phone, city, region, country, website; no delete privilege for API roles; `anon` has no access |
+| `platform_admin_set_tenant_package(uuid, text, text)` | refused | refused | refused | any approved club that is not cancelled | reason required; rewrites `requested_plan` on the latest provisioning record (so `tenant_athlete_limit()` and `get_current_tenant_package()` follow); writes `platform_audit_events` (`tenant_package_changed`) and the club's `audit_events` (`package_changed`); tells the club's active admins |
+| `get_platform_failed_notification_emails(integer)` | no rows | no rows | no rows | failed emails of the last 8 days | never returns `body` or `metadata` |
+| `retry_platform_notification_email(uuid)` | refused | refused | refused | a failed email not older than 72 hours | resets the try count and writes `notification_email_retry_requested` to the platform audit |
+
+Verified on a throwaway Postgres 16 with every migration applied (this one twice): 102 assertions as each identity (club admin, coach, athlete, deactivated admin, admin of another club, admin of a suspended club, platform admin, an account with no profile, anon).

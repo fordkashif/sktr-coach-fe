@@ -1,6 +1,7 @@
 import { Printer } from "@phosphor-icons/react"
 import { useState } from "react"
 import { Button, Dialog, Field, PrintHeading, PrintSheet, PrintTable, Segmented, Select, printPage } from "@/components/sk"
+import { PrintClubBrand } from "@/components/club/club-brand"
 import {
   formatDateRange,
   formatDayMonth,
@@ -62,6 +63,7 @@ export function PlanPrintSheet({
   const whole = weeks.length === plan.weeks && plan.weeks > 1
   return (
     <PrintSheet
+      brand={<PrintClubBrand />}
       title={plan.name || "Training plan"}
       meta={[
         [team?.name, whole ? `${plural(plan.weeks, "week")}, ${formatDateRange(plan.startDate, planEndDate(plan))}` : null].filter(Boolean).join(", "),

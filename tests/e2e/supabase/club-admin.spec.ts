@@ -52,12 +52,14 @@ test.describe("club-admin supabase surfaces", () => {
       const downloadPromise = page.waitForEvent("download")
       await page.getByRole("button", { name: "Teams CSV" }).click()
       const download = await downloadPromise
-      expect(download.suggestedFilename()).toBe("club-team-summary.csv")
+      // The file name carries the period the report covers.
+      const filename = download.suggestedFilename()
+      expect(filename).toMatch(/^club-teams-\d{4}-\d{2}-\d{2}-to-\d{4}-\d{2}-\d{2}\.csv$/)
 
       await page.goto("/club-admin/audit")
-      await page.getByLabel("Search activity").fill("club-team-summary.csv")
-      await expect(page.locator("body")).toContainText("Downloaded a CSV")
-      await expect(page.locator("body")).toContainText("club-team-summary.csv")
+      // The log is searched by the stored file name and shows the export as a plain sentence.
+      await page.getByLabel("Search activity").fill(filename)
+      await expect(page.locator("#main-content")).toContainText("Downloaded the team summary as a CSV file")
     })
   })
 })

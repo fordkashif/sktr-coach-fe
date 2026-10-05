@@ -402,3 +402,23 @@ Plan adherence (computed in the app, `src/lib/data/session/adherence.ts`): sessi
 - Audit actions: `message_reported`, `message_hidden`, `message_report_dismissed`.
 - Realtime publication: `messages`, `message_threads`.
 - Competitions: no table or policy change. New index `competition_entries_competition_idx (competition_id)`.
+
+## Club admin invites, removing people, deleting an athlete's data (20261010090000)
+
+Migration `20261010090000_club_admin_invite_role_and_member_removal.sql`. Additive, except for the deletes that only run when a club admin calls `remove_tenant_member` or `delete_athlete_and_data`.
+
+- New table `removed_members (tenant_id, user_id, display_name, role, removed_by_user_id, removed_at)`, primary key `(tenant_id, user_id)`, `role in ('coach', 'club-admin')`. One row per coach or club admin removed from a club; `message_member_name()` falls back to it.
+- `coach_invites.role` (already `'coach' | 'club-admin'`, default `'coach'`) is now used: a club admin can invite someone directly as a club admin. Trigger `guard_club_admin_invite` (after insert or update of role) guards and audits it.
+- New functions: `get_public_coach_invite_role(uuid) returns text`, `remove_tenant_member(uuid) returns void`, `remove_athlete_from_club(uuid) returns boolean`, `restore_athlete_to_club(uuid) returns boolean`, `delete_athlete_and_data(uuid, text) returns boolean`.
+- Replaced functions (same signature): `accept_coach_invite(uuid)` (a coach invite never demotes a club admin; clears `removed_members`), `complete_current_coach_onboarding(text)` (also for a club admin who joined by invite), `message_member_name(uuid, text)` (former staff keep their name).
+- New audit actions: `club_admin_invite_created`, `member_removed`, `athlete_removed_from_club`, `athlete_restored_to_club`, `athlete_data_deleted`.
+- Archive strategy: unchanged. Leaving the club is still a soft switch (`athletes.is_active = false`, history kept). `delete_athlete_and_data` is the only hard delete of athlete data and exists for privacy requests.
+
+## Club logo, club contact details and platform tools (migration `20261010100000_club_profile_logo_and_platform_tools.sql`)
+
+- `club_profiles.logo_path text` (nullable): object name in the public `club-logos` bucket, `<tenant_id>/<8 to 64 of A-Z a-z 0-9 _ ->.<jpg|png|webp>` (check constraint `club_profiles_logo_path_own_folder`, helper `club_logo_path_is_valid_for(uuid, text)`). Written by `set_current_club_logo(text) returns text` (the previous path).
+- New table `club_contact_details`: `tenant_id uuid primary key references tenants`, `contact_email`, `contact_phone`, `city`, `region`, `country`, `website` (all nullable text; check constraint `club_contact_details_values_ok`: email shape, phone of digits and `+ ( ) . -`, website starting `http://` or `https://`, lengths), `created_at`, `updated_at`. Club admins only.
+- New functions: `get_current_club_brand() returns table (club_name, short_name, primary_color, logo_path)`, `club_logo_object_is_callers(text)`, `platform_admin_set_tenant_package(p_tenant_id uuid, p_package text, p_reason text) returns text` (the previous package), `get_platform_failed_notification_emails(p_limit integer default 50)` (id, tenant_id, tenant_name, recipient_email, event_type, subject, last_error, delivery_attempt_count, created_at, next_attempt_at, will_retry, can_retry; no body), `retry_platform_notification_email(uuid) returns boolean`.
+- `club_profiles.primary_color` is now used in exactly two places: behind the club's short name where it has no logo (`ClubMark`) and as a rule on printed plans. It does not theme the app.
+- New audit actions. Club (`audit_events`): `package_changed` (actor role `platform-admin`), `club_logo_update`, `club_logo_remove` (written by the browser). Platform (`platform_audit_events`): `tenant_package_changed`, `notification_email_retry_requested`.
+- Additive and idempotent: nothing is dropped and no existing row is changed.

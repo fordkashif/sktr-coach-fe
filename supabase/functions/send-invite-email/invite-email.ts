@@ -191,6 +191,8 @@ export function formatExpiryDate(expiresAt: string | null): string | null {
 
 export type InviteEmailInput = {
   kind: InviteKind
+  /** For a coach invite: "club-admin" when the invite gives the club admin role. Defaults to coach. */
+  role?: "coach" | "club-admin"
   recipientEmail: string
   inviterName: string | null
   clubName: string | null
@@ -218,7 +220,14 @@ export function renderInviteEmail(input: InviteEmailInput): RenderedInviteEmail 
   let headline: string
   let subject: string
   let intro: string
-  if (isCoach) {
+  const isClubAdmin = isCoach && input.role === "club-admin"
+  if (isClubAdmin) {
+    headline = `You are invited to help run ${club}`
+    subject = inviter ? `${inviter} invited you to be a club admin at ${club}` : `You are invited to be a club admin at ${club}`
+    intro = team
+      ? `${who} invited you to join ${club} on ${APP_NAME} as a club admin, and as a coach for ${team}.`
+      : `${who} invited you to join ${club} on ${APP_NAME} as a club admin.`
+  } else if (isCoach) {
     headline = `You are invited to coach at ${club}`
     subject = inviter ? `${inviter} invited you to coach at ${club}` : `You are invited to coach at ${club}`
     intro = team
@@ -231,7 +240,9 @@ export function renderInviteEmail(input: InviteEmailInput): RenderedInviteEmail 
     intro = `${who} invited you to join ${teamLabel} at ${club} on ${APP_NAME} as an athlete.`
   }
 
-  const whatNext = isCoach
+  const whatNext = isClubAdmin
+    ? "Accept the invite to set up your account. As a club admin you manage the club's people, teams and billing."
+    : isCoach
     ? "Accept the invite to set up your account, then start building plans and managing your athletes."
     : "Accept the invite to set up your account, then see your training plan and log your sessions."
   const buttonLabel = "Accept invite"
