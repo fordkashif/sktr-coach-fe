@@ -37,51 +37,79 @@ test("platform-admin can review, provision, invite, export, and audit a tenant r
 
   await page.goto("/platform-admin/dashboard")
   await expect(page).toHaveURL(/\/platform-admin\/dashboard$/)
-  await expect(page.locator("body")).toContainText("System control, without tenant leakage.")
+  await expect(page.getByRole("heading", { level: 1, name: "Platform" })).toBeVisible()
   await expect(page.locator("body")).toContainText(organizationName)
 
   await page.goto("/platform-admin/requests")
   await expect(page).toHaveURL(/\/platform-admin\/requests$/)
-  await page.getByPlaceholder("Search request queue").fill(organizationName)
+  await expect(page.getByRole("heading", { level: 1, name: "Club requests" })).toBeVisible()
+  await page.getByLabel("Search requests").fill(organizationName)
 
-  const requestCard = page.locator("article").filter({ hasText: organizationName }).first()
-  await expect(requestCard).toContainText(requestorEmail)
-  await requestCard.getByRole("button", { name: "Review request" }).click()
-  const reviewDialog = page.getByRole("dialog").filter({ hasText: "Review request" }).last()
-  await reviewDialog.getByPlaceholder("Add the review note or provisioning instruction.").fill("Provision immediately for Wave 5.")
-  await reviewDialog.getByRole("button", { name: "Approve and provision" }).click()
-  await page.getByRole("dialog").filter({ hasText: "Approve request?" }).getByRole("button", { name: "Confirm approval" }).click()
+  // A new request lands in the "New" stage with everything the club submitted.
+  const requestRow = page.locator("[data-request-row]").filter({ hasText: organizationName }).first()
+  await expect(requestRow).toContainText(requestorEmail)
+  await expect(requestRow).toContainText("New")
+  await requestRow.click()
 
-  await expect(page.locator("body")).toContainText(`Tenant approved and initial billing/setup access invite sent to ${requestorEmail}.`)
-  await expect(requestCard).toContainText("approved")
-  await expect(requestCard).toContainText("Invite sent")
+  const detail = page.getByRole("dialog").filter({ hasText: organizationName })
+  await expect(detail).toContainText("Director of Performance")
+  await expect(detail).toContainText("Colombia")
+  await expect(detail).toContainText("Pro")
+  await expect(detail).toContainText("Request received")
 
-  await requestCard.getByRole("button", { name: "Open request" }).click()
-  const openedDialog = page.getByRole("dialog").filter({ hasText: organizationName }).last()
-  await openedDialog.getByRole("button", { name: "Resend initial access invite" }).click()
-  await expect(page.locator("body")).toContainText(`Initial access invite re-sent to ${requestorEmail}.`)
+  // Declining needs a reason, and backing out leaves the request untouched.
+  await detail.getByRole("button", { name: "Decline", exact: true }).click()
+  await detail.getByRole("button", { name: "Decline request" }).click()
+  await expect(detail).toContainText("Give a short reason.")
+  await detail.getByRole("button", { name: "Keep request" }).click()
 
-  await openedDialog.getByRole("button", { name: "Copy initial access link" }).click()
-  await expect(page.locator("body")).toContainText(`Copied initial access link for ${requestorEmail}.`)
+  await detail.getByRole("button", { name: "Approve and provision" }).click()
+  await detail.getByLabel("Note for the record").fill("Provision immediately for Wave 5.")
+  await detail.getByRole("button", { name: "Yes, approve and provision" }).click()
+
+  // The approved request must stay reachable: the list follows it to its new stage and the detail stays open.
+  await expect(detail.getByRole("status")).toContainText(
+    `${organizationName} is approved and its workspace is ready. Access invite sent to ${requestorEmail}.`,
+  )
+  await expect(requestRow).toContainText("Waiting on billing")
+  await expect(requestRow).toContainText("Invite sent")
+  await expect(detail).toContainText("Club workspace created")
+  await expect(detail).toContainText("Provision immediately for Wave 5.")
+
+  // Close and open the request again from the list.
+  await page.keyboard.press("Escape")
+  await expect(detail).toBeHidden()
+  await expect(page.getByRole("tab", { name: /Waiting on setup/ })).toHaveAttribute("aria-selected", "true")
+  await requestRow.click()
+
+  await detail.getByRole("button", { name: "Resend access invite" }).click()
+  await expect(detail.getByRole("status")).toContainText(`Access invite sent again to ${requestorEmail}.`)
+
+  await detail.getByRole("button", { name: "Copy access link" }).click()
+  await expect(detail.getByRole("status")).toContainText(`Access link for ${requestorEmail} copied.`)
   await expect
     .poll(() => page.evaluate(() => (window as typeof window & { __PACELAB_CLIPBOARD__?: string }).__PACELAB_CLIPBOARD__ ?? ""))
     .toContain("/club-admin/claim?mock_request=")
 
-  await page.getByLabel("Dispatch pending notification emails").click()
-  await expect(page.locator("body")).toContainText("Processed 0 pending email notification event(s).")
+  await page.keyboard.press("Escape")
+  await expect(detail).toBeHidden()
+
+  await page.getByRole("button", { name: "Send queued emails" }).click()
+  await expect(page.locator("body")).toContainText("No emails were waiting to go out.")
 
   const queueDownload = page.waitForEvent("download")
-  await page.getByLabel("Export request queue as CSV").click()
+  await page.getByRole("button", { name: "Export CSV" }).click()
   expect((await queueDownload).suggestedFilename()).toBe("platform-admin-request-queue.csv")
+  await expect(page.locator("body")).toContainText("Exported 1 request to CSV.")
 
   await page.goto("/platform-admin/audit")
   await expect(page).toHaveURL(/\/platform-admin\/audit$/)
-  await page.getByPlaceholder("Search audit trail").fill(requestorEmail)
-  await expect(page.locator("body")).toContainText("tenant provision request submitted")
-  await expect(page.locator("body")).toContainText("tenant provision request reviewed")
-  await expect(page.locator("body")).toContainText("tenant provision request provisioned")
+  await page.getByLabel("Search activity").fill(requestorEmail)
+  await expect(page.locator("body")).toContainText("Asked for a club workspace")
+  await expect(page.locator("body")).toContainText("Approved a club request")
+  await expect(page.locator("body")).toContainText("Created the club workspace")
 
-  await page.getByPlaceholder("Search audit trail").fill("platform_audit_export_csv")
-  await expect(page.locator("body")).toContainText("platform audit export csv")
-  await expect(page.locator("body")).toContainText("request-queue")
+  await page.getByLabel("Search activity").fill("platform_audit_export_csv")
+  await expect(page.locator("body")).toContainText("Downloaded a CSV")
+  await expect(page.locator("body")).toContainText("Club requests")
 })

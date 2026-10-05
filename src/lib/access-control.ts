@@ -7,12 +7,28 @@ export interface AccessInput {
   tenantId: string | null
   clubAdminOnboardingComplete?: boolean
   clubAdminLifecycleStatus?: string | null
+  /** Lifecycle status of the member's club, for every tenant role. Null when unknown or when the club has no record. */
+  tenantLifecycleStatus?: string | null
+  /** False when the member's own access was turned off by a club admin (profiles.is_active). */
+  memberActive?: boolean
 }
+
+/** Why a signed-in member is shown a notice instead of the app. The database blocks the same cases. */
+export type AccessBlock = "club-suspended" | "club-cancelled" | "member-inactive"
 
 export interface AccessResult {
   allowed: boolean
-  reason?: "unauthenticated" | "missing-tenant" | "forbidden-role" | "onboarding-incomplete" | "billing-incomplete"
+  reason?:
+    | "unauthenticated"
+    | "missing-tenant"
+    | "forbidden-role"
+    | "onboarding-incomplete"
+    | "billing-incomplete"
+    | "club-blocked"
+    | "member-inactive"
   redirectTo?: string
+  /** Set with no redirectTo: the guard renders a full-page notice in place. */
+  blocked?: AccessBlock
 }
 
 export function isProtectedPath(pathname: string) {
@@ -25,7 +41,16 @@ export function isProtectedPath(pathname: string) {
 }
 
 export function evaluateAccess(input: AccessInput): AccessResult {
-  const { pathname, isAuthenticated, role, tenantId, clubAdminOnboardingComplete = true, clubAdminLifecycleStatus = null } = input
+  const {
+    pathname,
+    isAuthenticated,
+    role,
+    tenantId,
+    clubAdminOnboardingComplete = true,
+    clubAdminLifecycleStatus = null,
+    tenantLifecycleStatus = null,
+    memberActive = true,
+  } = input
 
   if (!isProtectedPath(pathname)) {
     return { allowed: true }
@@ -45,6 +70,20 @@ export function evaluateAccess(input: AccessInput): AccessResult {
 
   if (!tenantId) {
     return { allowed: false, reason: "missing-tenant", redirectTo: "/login" }
+  }
+
+  // Checked before any role or onboarding redirect: a blocked member gets the same notice on every
+  // tenant route, and is never bounced to setup screens whose data the database no longer returns.
+  if (role === "athlete" || role === "coach" || role === "club-admin") {
+    if (!memberActive) {
+      return { allowed: false, reason: "member-inactive", blocked: "member-inactive" }
+    }
+    if (tenantLifecycleStatus === "suspended") {
+      return { allowed: false, reason: "club-blocked", blocked: "club-suspended" }
+    }
+    if (tenantLifecycleStatus === "cancelled") {
+      return { allowed: false, reason: "club-blocked", blocked: "club-cancelled" }
+    }
   }
 
   if (pathname.startsWith("/athlete") && role !== "athlete") {

@@ -1,83 +1,35 @@
-"use client"
-
 import { useEffect, useMemo, useState } from "react"
+import { ArrowRight, Buildings, CheckCircle, ClockCounterClockwise, Tray } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { CreditCardIcon, Notification01Icon, Search01Icon, UserGroupIcon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { EmptyStateCard } from "@/components/ui/empty-state-card"
-import { StandardPageHeader } from "@/components/ui/standard-page-header"
+import { EmptyState, PageHeader, Panel, Stat } from "@/components/sk"
 import {
   getPlatformAdminPackageUpgradeRequests,
   getPlatformAdminRequestQueue,
   getPlatformAuditEvents,
+  getPlatformTenantSizes,
   type PlatformAdminPackageUpgradeRequestRecord,
   type PlatformAdminRequestRecord,
   type PlatformAuditEventRecord,
+  type PlatformTenantSize,
 } from "@/lib/data/platform-admin/ops-data"
-import type { TenantBillingStatus, TenantLifecycleStatus } from "@/lib/tenant/lifecycle"
+import { auditSentence, formatLocalDateTime, isClubRecord, lifecycleOf } from "@/lib/data/platform-admin/tenants-data"
 
-function formatDateLabel(value: string | null, fallback = "Not available") {
-  if (!value) return fallback
-  return new Date(value).toLocaleString()
+function plural(count: number, singular: string, pluralForm = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : pluralForm}`
 }
 
-function getLifecycleLabel(value: TenantLifecycleStatus | null) {
-  switch (value) {
-    case "approved_pending_billing":
-      return "Billing pending"
-    case "billing_failed":
-      return "Billing failed"
-    case "active_onboarding":
-      return "Onboarding"
-    case "active":
-      return "Active"
-    case "suspended":
-      return "Suspended"
-    case "cancelled":
-      return "Cancelled"
-    case "pending_review":
-    default:
-      return "Pending review"
-  }
-}
-
-function getLifecycleChipClass(value: TenantLifecycleStatus | null) {
-  if (value === "active") return "status-chip-success"
-  if (value === "active_onboarding") return "status-chip-info"
-  if (value === "approved_pending_billing") return "status-chip-warning"
-  if (value === "billing_failed" || value === "suspended" || value === "cancelled") return "status-chip-danger"
-  return "status-chip-neutral"
-}
-
-function getBillingLabel(value: TenantBillingStatus | null) {
-  switch (value) {
-    case "mocked_complete":
-      return "Mocked complete"
-    case "active":
-      return "Active"
-    case "past_due":
-      return "Past due"
-    case "failed":
-      return "Failed"
-    case "cancelled":
-      return "Cancelled"
-    case "pending":
-    default:
-      return "Pending"
-  }
-}
-
-function getBillingChipClass(value: TenantBillingStatus | null) {
-  if (value === "active" || value === "mocked_complete") return "status-chip-success"
-  if (value === "pending") return "status-chip-warning"
-  if (value === "failed" || value === "past_due" || value === "cancelled") return "status-chip-danger"
-  return "status-chip-neutral"
+/** "Kingston Striders, Bolt Academy and 2 more" */
+function nameList(names: string[]) {
+  if (names.length <= 2) return names.join(" and ")
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
 }
 
 export default function PlatformAdminDashboardPage() {
   const [requests, setRequests] = useState<PlatformAdminRequestRecord[]>([])
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEventRecord[]>([])
   const [upgradeRequests, setUpgradeRequests] = useState<PlatformAdminPackageUpgradeRequestRecord[]>([])
+  /** Live club sizes by tenant id. Null when they cannot be read. */
+  const [sizes, setSizes] = useState<Map<string, PlatformTenantSize> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -86,36 +38,23 @@ export default function PlatformAdminDashboardPage() {
 
     const load = async () => {
       setLoading(true)
-      const [requestsResult, auditResult, upgradesResult] = await Promise.all([
+      const [requestsResult, auditResult, upgradesResult, sizesResult] = await Promise.all([
         getPlatformAdminRequestQueue(),
         getPlatformAuditEvents(12),
         getPlatformAdminPackageUpgradeRequests(),
+        getPlatformTenantSizes(),
       ])
 
       if (cancelled) return
+      setSizes(sizesResult)
 
-      if (!requestsResult.ok) {
-        setError(requestsResult.error.message)
-        setLoading(false)
-        return
-      }
+      // Each list is independent: show what loaded and name what did not.
+      if (requestsResult.ok) setRequests(requestsResult.data)
+      if (auditResult.ok) setAuditEvents(auditResult.data)
+      if (upgradesResult.ok) setUpgradeRequests(upgradesResult.data)
 
-      if (!auditResult.ok) {
-        setError(auditResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      if (!upgradesResult.ok) {
-        setError(upgradesResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      setRequests(requestsResult.data)
-      setAuditEvents(auditResult.data)
-      setUpgradeRequests(upgradesResult.data)
-      setError(null)
+      const failed = [requestsResult, auditResult, upgradesResult].find((result) => !result.ok)
+      setError(failed && !failed.ok ? failed.error.message : null)
       setLoading(false)
     }
 
@@ -125,373 +64,226 @@ export default function PlatformAdminDashboardPage() {
     }
   }, [])
 
-  const summary = useMemo(() => {
-    const pending = requests.filter((item) => item.status === "pending").length
-    const billingPending = requests.filter((item) => item.lifecycleStatus === "approved_pending_billing").length
-    const active = requests.filter((item) => item.lifecycleStatus === "active").length
-    const upgradeQueue = upgradeRequests.filter((item) => item.status === "pending").length
+  const clubs = useMemo(() => requests.filter(isClubRecord), [requests])
 
-    return { pending, billingPending, active, upgradeQueue }
-  }, [requests, upgradeRequests])
+  /** Tenant id to club name. Platform admins cannot read the tenants table, so names come from here. */
+  const clubNames = useMemo(() => {
+    const map = new Map<string, string>()
+    clubs.forEach((club) => {
+      if (club.provisionedTenantId) map.set(club.provisionedTenantId, club.organizationName)
+    })
+    return map
+  }, [clubs])
 
-  const recentPending = useMemo(() => requests.filter((item) => item.status === "pending").slice(0, 4), [requests])
-  const tenantRecords = useMemo(
-    () =>
-      requests
-        .filter(
-          (item) =>
-            Boolean(item.provisionedTenantId) ||
-            item.lifecycleStatus === "approved_pending_billing" ||
-            item.lifecycleStatus === "billing_failed" ||
-            item.lifecycleStatus === "active_onboarding" ||
-            item.lifecycleStatus === "active" ||
-            item.lifecycleStatus === "suspended",
-        )
-        .slice(0, 4),
-    [requests],
-  )
-  const billingRecords = useMemo(
-    () =>
-      requests
-        .filter(
-          (item) =>
-            item.billingStatus !== null ||
-            item.lifecycleStatus === "approved_pending_billing" ||
-            item.lifecycleStatus === "billing_failed" ||
-            Boolean(item.provisionedTenantId),
-        )
-        .slice(0, 4),
-    [requests],
-  )
-  const recentUpgradeRequests = useMemo(() => upgradeRequests.slice(0, 4), [upgradeRequests])
-  const recentAudit = useMemo(() => auditEvents.slice(0, 5), [auditEvents])
-  const headerStats = [
-    { label: "Pending", value: summary.pending },
-    { label: "Billing pending", value: summary.billingPending },
-    { label: "Active", value: summary.active },
-    { label: "Upgrade queue", value: summary.upgradeQueue },
-  ]
+  /** Totals over the clubs listed here (a tenant that is not one of these clubs is not counted). */
+  const people = useMemo(() => {
+    if (!sizes) return null
+    const total = { teams: 0, coaches: 0, athletes: 0 }
+    const seen = new Set<string>()
+    for (const club of clubs) {
+      const tenantId = club.provisionedTenantId
+      if (!tenantId || seen.has(tenantId)) continue
+      seen.add(tenantId)
+      const row = sizes.get(tenantId)
+      if (!row) continue
+      total.teams += row.teams
+      total.coaches += row.coaches
+      total.athletes += row.athletes
+    }
+    return total
+  }, [clubs, sizes])
+
+  const size = useMemo(() => {
+    const count = (...states: string[]) => clubs.filter((club) => states.includes(lifecycleOf(club))).length
+    return {
+      total: clubs.length,
+      active: count("active"),
+      onboarding: count("active_onboarding"),
+      billing: count("approved_pending_billing", "billing_failed"),
+      billingFailed: count("billing_failed"),
+      suspended: count("suspended"),
+      cancelled: count("cancelled"),
+    }
+  }, [clubs])
+
+  const needsYou = useMemo(() => {
+    const pending = requests.filter((item) => item.status === "pending")
+    const billing = clubs.filter((club) => ["approved_pending_billing", "billing_failed"].includes(lifecycleOf(club)))
+    const onboarding = clubs.filter((club) => lifecycleOf(club) === "active_onboarding")
+    const upgrades = upgradeRequests.filter((item) => item.status === "pending")
+    const failedInvites = clubs.filter((club) => Boolean(club.accessInviteLastError) && lifecycleOf(club) !== "cancelled")
+
+    return [
+      {
+        key: "requests",
+        count: pending.length,
+        title: pending.length === 1 ? "New club request waiting" : "New club requests waiting",
+        body: nameList(pending.map((item) => item.organizationName)),
+        to: "/platform-admin/requests",
+        cta: "Review",
+      },
+      {
+        key: "billing",
+        count: billing.length,
+        title: billing.length === 1 ? "Approved club has not finished billing setup" : "Approved clubs have not finished billing setup",
+        body: nameList(billing.map((club) => club.organizationName)),
+        to: "/platform-admin/tenants",
+        cta: "Open clubs",
+      },
+      {
+        key: "onboarding",
+        count: onboarding.length,
+        title: onboarding.length === 1 ? "Club still marked as onboarding" : "Clubs still marked as onboarding",
+        body: "A club stays in onboarding until you mark it active on the Clubs screen.",
+        to: "/platform-admin/tenants",
+        cta: "Open clubs",
+      },
+      {
+        key: "upgrades",
+        count: upgrades.length,
+        title: upgrades.length === 1 ? "Package change request waiting" : "Package change requests waiting",
+        body: nameList(upgrades.map((item) => clubNames.get(item.tenantId) ?? item.organizationName)),
+        to: "/platform-admin/commercial",
+        cta: "Review",
+      },
+      {
+        key: "invites",
+        count: failedInvites.length,
+        title: failedInvites.length === 1 ? "Club admin invite failed to send" : "Club admin invites failed to send",
+        body: nameList(failedInvites.map((club) => club.organizationName)),
+        to: "/platform-admin/requests",
+        cta: "Send again",
+      },
+    ].filter((item) => item.count > 0)
+  }, [clubNames, clubs, requests, upgradeRequests])
+
+  const recentAudit = useMemo(() => auditEvents.slice(0, 8), [auditEvents])
+
+  const lede = loading
+    ? "Loading the platform..."
+    : size.total === 0
+      ? "No clubs yet. New club requests show up here as soon as someone asks to join."
+      : `${plural(size.total, "club")}, ${size.active} active. ${
+          needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`
+        }`
+
+  const otherStates = [size.suspended > 0 ? `${size.suspended} suspended` : null, size.cancelled > 0 ? `${size.cancelled} cancelled` : null]
+    .filter(Boolean)
+    .join(", ")
 
   return (
-    <div className="mx-auto w-full max-w-8xl space-y-6 p-4 sm:p-6">
-      <StandardPageHeader
-        variant="admin"
-        eyebrow="Platform admin dashboard"
-        title="System control, without tenant leakage."
-        description="This surface tracks new organization intake, provisioning progress, and the platform-level audit trail before tenant ownership even exists."
-        stats={headerStats}
+    <div className="sk-page">
+      {error ? (
+        <p role="alert" className="rounded-2xl bg-sk-coral-tint px-4 py-3 text-sm font-semibold text-[#b32a0c]">
+          Could not load everything: {error}
+        </p>
+      ) : null}
+
+      <PageHeader
+        title="Platform"
+        lede={lede}
+        actions={
+          <>
+            <Link to="/platform-admin/tenants" className="sk-btn sk-btn-quiet">
+              <Buildings className="size-5" weight="bold" />
+              All clubs
+            </Link>
+            <Link to="/platform-admin/requests" className="sk-btn sk-btn-primary">
+              <Tray className="size-5" weight="bold" />
+              Review requests
+            </Link>
+          </>
+        }
       />
 
-      {error ? (
-        <section className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </section>
-      ) : null}
-
       {loading ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500 shadow-sm">
-          Loading platform dashboard...
-        </section>
-      ) : null}
-
-      {!loading ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Request queue</h2>
-                <p className="text-sm text-slate-500">The latest org requests still awaiting action.</p>
-              </div>
-              <Link
-                to="/platform-admin/requests"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Open queue
-              </Link>
+        <p role="status" className="sk-card text-sm font-semibold text-sk-mute">
+          Loading...
+        </p>
+      ) : (
+        <>
+          <section aria-label="Platform size" className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Stat tone="blue" label="Clubs" value={size.total} hint={otherStates || "Approved so far"} />
+              <Stat tone={size.active > 0 ? "green" : "plain"} label="Active" value={size.active} hint="Setup finished" />
+              <Stat label="Onboarding" value={size.onboarding} hint="Billing done, setup not finished" />
+              <Stat
+                label="Waiting on billing"
+                value={size.billing}
+                hint={size.billingFailed > 0 ? `${size.billingFailed} with failed billing` : "Approved, billing not set up"}
+              />
             </div>
-
-            <div className="mt-5 space-y-3">
-              {recentPending.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Request queue"
-                  title="No pending tenant requests right now."
-                  description="The intake queue is clear. New organization requests will appear here before a tenant is provisioned."
-                  hint="Check the full queue for approved or rejected history, or wait for the next public request submission."
-                  icon={<HugeiconsIcon icon={Notification01Icon} className="size-5" />}
-                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Link
-                      to="/platform-admin/requests"
-                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
-                    >
-                      Open full queue
-                    </Link>
-                  }
-                />
-              ) : (
-                recentPending.map((request) => (
-                  <div key={request.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{request.organizationName}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {request.requestorName} · {request.requestorEmail}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
-                        Pending
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Plan / Seats</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">
-                          {request.requestedPlan} / {request.expectedSeats}
-                        </p>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Submitted</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">{formatDateLabel(request.createdAt)}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <p className="text-sm text-sk-mute">
+              {people
+                ? `Across these clubs right now: ${plural(people.teams, "team")}, ${plural(people.coaches, "active coach", "active coaches")} and ${plural(people.athletes, "athlete")}.`
+                : "Team, coach and athlete totals are not shown because live counts could not be loaded. Each club's sign-up numbers are on the Clubs screen."}
+            </p>
           </section>
 
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Tenants</h2>
-                <p className="text-sm text-slate-500">Live tenant state after approval and provisioning.</p>
-              </div>
-              <Link
-                to="/platform-admin/tenants"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Open tenants
-              </Link>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {tenantRecords.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Tenants"
-                  title="No active tenant operations yet."
-                  description="Once an organization leaves intake and enters billing, onboarding, or active service, it will appear here."
-                  icon={<HugeiconsIcon icon={UserGroupIcon} className="size-5" />}
-                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Link
-                      to="/platform-admin/tenants"
-                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
-                    >
-                      Open tenant operations
-                    </Link>
-                  }
-                />
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <Panel title="Needs you today" hint="Requests, unfinished setup, package changes and club admin invites that failed.">
+              {needsYou.length > 0 ? (
+                <ul>
+                  {needsYou.map((item) => (
+                    <li key={item.key} className="border-b border-sk-line last:border-b-0">
+                      <Link to={item.to} className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 py-4">
+                        <span className="sk-num w-9 text-center text-[2rem] text-sk-coral">{item.count}</span>
+                        <span className="min-w-0">
+                          <span className="block font-bold text-sk-ink group-hover:text-sk-blue">{item.title}</span>
+                          <span className="block text-sm text-sk-mute">{item.body}</span>
+                        </span>
+                        <span className="hidden items-center gap-1.5 text-sm font-bold text-sk-ink-2 group-hover:text-sk-blue sm:inline-flex">
+                          {item.cta}
+                          <ArrowRight className="size-4" weight="bold" />
+                        </span>
+                        <ArrowRight className="size-5 text-sk-mute sm:hidden" weight="bold" aria-hidden />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               ) : (
-                tenantRecords.map((request) => (
-                  <div key={request.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{request.organizationName}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {request.provisionedTenantId ?? "Tenant pending"} · {request.requestorEmail}
-                        </p>
-                      </div>
-                      <span className={`${getLifecycleChipClass(request.lifecycleStatus)} rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]`}>
-                        {getLifecycleLabel(request.lifecycleStatus)}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Billing</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">{getBillingLabel(request.billingStatus)}</p>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Package</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">{request.requestedPlan}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Billing</h2>
-                <p className="text-sm text-slate-500">Mocked subscription and billing-state snapshot.</p>
-              </div>
-              <Link
-                to="/platform-admin/billing"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Open billing
-              </Link>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {billingRecords.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Billing"
-                  title="No billing records to review yet."
-                  description="Approved organizations enter billing before activation. Once that happens, subscription state will be visible here."
-                  icon={<HugeiconsIcon icon={CreditCardIcon} className="size-5" />}
-                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Link
-                      to="/platform-admin/billing"
-                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
-                    >
-                      Open billing records
-                    </Link>
-                  }
+                <EmptyState
+                  icon={<CheckCircle className="size-6" weight="fill" />}
+                  title="Nothing is waiting on you"
+                  body="New club requests, clubs that have not finished setup, package change requests and failed club admin invites show up here."
+                  className="border-0 bg-sk-canvas"
                 />
-              ) : (
-                billingRecords.map((request) => (
-                  <div key={request.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{request.organizationName}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {request.billingContactEmail ?? "No billing email"} · {request.billingCycle ?? "cycle not set"}
-                        </p>
-                      </div>
-                      <span className={`${getBillingChipClass(request.billingStatus)} rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]`}>
-                        {getBillingLabel(request.billingStatus)}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Seats</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">{request.expectedSeats}</p>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Started</p>
-                        <p className="mt-1 text-sm font-medium text-slate-950">{formatDateLabel(request.billingStartedAt)}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
               )}
-            </div>
-          </section>
+            </Panel>
 
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Commercial</h2>
-                <p className="text-sm text-slate-500">Package upgrades and account expansion requests.</p>
-              </div>
-              <Link
-                to="/platform-admin/commercial"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Open commercial
-              </Link>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {recentUpgradeRequests.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Commercial"
-                  title="No package upgrade requests yet."
-                  description="Club-admin package expansion requests will appear here once tenants hit package caps."
-                  icon={<HugeiconsIcon icon={Notification01Icon} className="size-5" />}
-                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Link
-                      to="/platform-admin/commercial"
-                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
-                    >
-                      Open commercial queue
-                    </Link>
-                  }
+            <Panel
+              title="Recent activity"
+              action={
+                <Link to="/platform-admin/audit" className="sk-btn sk-btn-ghost sk-btn-sm">
+                  Open audit
+                  <ArrowRight className="size-4" weight="bold" />
+                </Link>
+              }
+            >
+              {recentAudit.length > 0 ? (
+                <ul>
+                  {recentAudit.map((event) => (
+                    <li key={event.id} className="border-b border-sk-line py-3.5 first:pt-0 last:border-b-0 last:pb-0">
+                      <p className="font-semibold text-sk-ink">{auditSentence(event, clubNames)}</p>
+                      <p className="mt-0.5 break-words text-sm text-sk-mute">
+                        <time dateTime={event.occurredAt}>{formatLocalDateTime(event.occurredAt)}</time>
+                        {event.actorEmail ? `, by ${event.actorEmail}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState
+                  icon={<ClockCounterClockwise className="size-6" weight="fill" />}
+                  title="No activity yet"
+                  body="Requests, approvals, status changes and exports are listed here as they happen."
+                  className="border-0 bg-sk-canvas"
                 />
-              ) : (
-                recentUpgradeRequests.map((request) => (
-                  <div key={request.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{request.organizationName}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {request.currentPackage} to {request.requestedPackage}
-                        </p>
-                      </div>
-                      <span className="status-chip-info rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                        {request.status}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-700">{request.reason?.trim() || "No reason provided."}</p>
-                  </div>
-                ))
               )}
-            </div>
-          </section>
-
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">Platform audit</h2>
-                <p className="text-sm text-slate-500">System-level request actions across submission, review, and provisioning.</p>
-              </div>
-              <Link
-                to="/platform-admin/audit"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Open audit
-              </Link>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {recentAudit.length === 0 ? (
-                <EmptyStateCard
-                  eyebrow="Platform audit"
-                  title="No platform audit events recorded yet."
-                  description="System-level request submission, review, and provisioning actions will show up here once the intake flow is used."
-                  hint="This feed is the pre-tenant audit trail. It should stay separate from club-admin audit history."
-                  icon={<HugeiconsIcon icon={Search01Icon} className="size-5" />}
-                  className="rounded-[22px] bg-slate-50 px-4 py-5 shadow-none"
-                  contentClassName="gap-3"
-                  actions={
-                    <Link
-                      to="/platform-admin/audit"
-                      className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700"
-                    >
-                      Open audit feed
-                    </Link>
-                  }
-                />
-              ) : (
-                recentAudit.map((event) => (
-                  <div key={event.id} className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8fc_100%)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold tracking-[-0.03em] text-slate-950">{event.action.replaceAll("_", " ")}</p>
-                        <p className="mt-1 text-sm text-slate-500">{event.target}</p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                        {event.actorRole}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-700">{event.detail ?? "No detail recorded."}</p>
-                    <p className="mt-3 text-xs text-slate-500">{formatDateLabel(event.occurredAt)}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-      ) : null}
+            </Panel>
+          </div>
+        </>
+      )}
     </div>
   )
 }

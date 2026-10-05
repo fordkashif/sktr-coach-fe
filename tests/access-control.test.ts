@@ -106,3 +106,70 @@ test("prevents platform-admin from entering tenant-scoped club-admin path", () =
   assert.equal(result.allowed, false)
   assert.equal(result.reason, "forbidden-role")
 })
+
+test("shows the paused notice to members of a suspended club instead of redirecting", () => {
+  for (const [role, pathname] of [
+    ["athlete", "/athlete/home"],
+    ["coach", "/coach/dashboard"],
+    ["club-admin", "/club-admin/dashboard"],
+  ] as const) {
+    const result = evaluateAccess({
+      pathname,
+      isAuthenticated: true,
+      role,
+      tenantId: "tenant-1",
+      // A suspended club admin cannot read club_profiles, so onboarding looks incomplete. The notice must win.
+      clubAdminOnboardingComplete: false,
+      clubAdminLifecycleStatus: role === "club-admin" ? "suspended" : null,
+      tenantLifecycleStatus: "suspended",
+    })
+
+    assert.equal(result.allowed, false)
+    assert.equal(result.blocked, "club-suspended")
+    assert.equal(result.redirectTo, undefined)
+  }
+})
+
+test("shows the notice for a cancelled club and for a deactivated member", () => {
+  const cancelled = evaluateAccess({
+    pathname: "/coach/dashboard",
+    isAuthenticated: true,
+    role: "coach",
+    tenantId: "tenant-1",
+    tenantLifecycleStatus: "cancelled",
+  })
+  assert.equal(cancelled.blocked, "club-cancelled")
+
+  const inactive = evaluateAccess({
+    pathname: "/athlete/home",
+    isAuthenticated: true,
+    role: "athlete",
+    tenantId: "tenant-1",
+    tenantLifecycleStatus: "active",
+    memberActive: false,
+  })
+  assert.equal(inactive.allowed, false)
+  assert.equal(inactive.blocked, "member-inactive")
+})
+
+test("does not block active clubs, clubs with no record, or the platform admin", () => {
+  for (const tenantLifecycleStatus of ["active", "active_onboarding", null]) {
+    const result = evaluateAccess({
+      pathname: "/coach/dashboard",
+      isAuthenticated: true,
+      role: "coach",
+      tenantId: "tenant-1",
+      tenantLifecycleStatus,
+    })
+    assert.equal(result.allowed, true)
+  }
+
+  const platformAdmin = evaluateAccess({
+    pathname: "/platform-admin/dashboard",
+    isAuthenticated: true,
+    role: "platform-admin",
+    tenantId: null,
+    tenantLifecycleStatus: "suspended",
+  })
+  assert.equal(platformAdmin.allowed, true)
+})

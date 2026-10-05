@@ -304,6 +304,27 @@ export async function reviewTenantProvisionRequest(params: {
   return ok(undefined)
 }
 
+/**
+ * supabase-js reports a non-2xx edge function reply as "Edge Function returned a non-2xx status code" and keeps
+ * the real reply on error.context (a Response). Read the function's own { error } message out of it when there is one.
+ */
+async function readFunctionErrorMessage(error: { message: string; context?: unknown }): Promise<string> {
+  const context = error.context as { json?: unknown; clone?: () => { json: () => Promise<unknown> } } | undefined
+  try {
+    if (context && typeof context.json === "function") {
+      const body = (await (typeof context.clone === "function" ? context.clone() : (context as { json: () => Promise<unknown> })).json()) as {
+        error?: unknown
+      } | null
+      if (body && typeof body.error === "string" && body.error.trim()) return body.error
+    } else if (context && typeof (context.json as { error?: unknown } | undefined)?.error === "string") {
+      return (context.json as { error: string }).error
+    }
+  } catch {
+    // The reply was not JSON. Fall back to the generic message.
+  }
+  return error.message
+}
+
 async function invokePlatformAdminInviteFunction(
   client: BrowserSupabaseClient,
   payload: {
@@ -319,11 +340,7 @@ async function invokePlatformAdminInviteFunction(
   })
 
   if (error) {
-    const contextualMessage =
-      typeof (error as { context?: { json?: { error?: string } } }).context?.json?.error === "string"
-        ? (error as { context?: { json?: { error?: string } } }).context!.json!.error!
-        : error.message
-    return err("UNKNOWN", contextualMessage, error)
+    return err("UNKNOWN", await readFunctionErrorMessage(error), error)
   }
 
   const response = (data ?? {}) as { sentAt?: string; actionLink?: string; error?: string }
@@ -384,11 +401,7 @@ export async function previewInitialClubAdminAccessInvite(params: {
   })
 
   if (error) {
-    const contextualMessage =
-      typeof (error as { context?: { json?: { error?: string } } }).context?.json?.error === "string"
-        ? (error as { context?: { json?: { error?: string } } }).context!.json!.error!
-        : error.message
-    return err("UNKNOWN", contextualMessage, error)
+    return err("UNKNOWN", await readFunctionErrorMessage(error), error)
   }
 
   const response = (data ?? {}) as { actionLink?: string; error?: string }
@@ -564,7 +577,7 @@ export async function dispatchPendingNotificationEmails(params?: {
   })
 
   if (error) {
-    return err("UNKNOWN", error.message, error)
+    return err("UNKNOWN", await readFunctionErrorMessage(error), error)
   }
 
   const payload = (data ?? {}) as {
@@ -586,6 +599,48 @@ export async function dispatchPendingNotificationEmails(params?: {
     processed: payload.processed ?? 0,
     results: payload.results ?? [],
   })
+}
+
+export type PlatformTenantSize = {
+  tenantId: string
+  /** Teams that are not archived. */
+  teams: number
+  /** Coach profiles that are active. */
+  coaches: number
+  /** Every athlete on the club's roster. */
+  athletes: number
+}
+
+/**
+ * Live size of every club, keyed by tenant id, from the `get_platform_tenant_sizes` database
+ * function (platform admins only; it returns counts and nothing else).
+ * Null means live counts are not available: mock mode, the function is not deployed yet, or the
+ * call failed. Screens then fall back to the numbers the club gave at sign-up and say so.
+ */
+export async function getPlatformTenantSizes(): Promise<Map<string, PlatformTenantSize> | null> {
+  if (isMockMode()) return null
+
+  const clientResult = requireSupabaseClient("getPlatformTenantSizes")
+  if (!clientResult.ok) return null
+
+  try {
+    const { data, error } = await clientResult.client.rpc("get_platform_tenant_sizes")
+    if (error || !Array.isArray(data)) return null
+
+    const sizes = new Map<string, PlatformTenantSize>()
+    for (const row of data as Array<{ tenant_id: string; team_count: number | null; coach_count: number | null; athlete_count: number | null }>) {
+      if (!row?.tenant_id) continue
+      sizes.set(row.tenant_id, {
+        tenantId: row.tenant_id,
+        teams: Number(row.team_count ?? 0),
+        coaches: Number(row.coach_count ?? 0),
+        athletes: Number(row.athlete_count ?? 0),
+      })
+    }
+    return sizes
+  } catch {
+    return null
+  }
 }
 
 export async function logPlatformAdminExport(params: {
@@ -611,4 +666,110 @@ export async function logPlatformAdminExport(params: {
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
+}
+
+/**
+ * Everything the platform audit trail recorded about one club request, oldest first.
+ * The RPCs disagree on the metadata key (tenant_provision_request_id, request_id) and mock mode uses requestId,
+ * so all three are matched.
+ */
+export async function getPlatformAdminRequestHistory(requestId: string): Promise<Result<PlatformAuditEventRecord[]>> {
+  if (isMockMode()) {
+    return ok(
+      loadMockPlatformAuditEvents()
+        .filter((event) => event.metadata?.requestId === requestId)
+        .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)),
+    )
+  }
+
+  const clientResult = requireSupabaseClient("getPlatformAdminRequestHistory")
+  if (!clientResult.ok) return clientResult
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) return ok([])
+
+  const { data, error } = await clientResult.client
+    .from("platform_audit_events")
+    .select("id, actor_user_id, actor_email, actor_role, action, target, detail, metadata, occurred_at, created_at")
+    .or(`metadata->>tenant_provision_request_id.eq.${requestId},metadata->>request_id.eq.${requestId}`)
+    .order("occurred_at", { ascending: true })
+    .limit(100)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  return ok(
+    ((data as Array<{
+      id: string
+      actor_user_id: string | null
+      actor_email: string | null
+      actor_role: string
+      action: string
+      target: string
+      detail: string | null
+      metadata: Record<string, unknown> | null
+      occurred_at: string
+      created_at: string
+    }> | null) ?? []).map((row) => ({
+      id: row.id,
+      actorUserId: row.actor_user_id,
+      actorEmail: row.actor_email,
+      actorRole: row.actor_role,
+      action: row.action,
+      target: row.target,
+      detail: row.detail,
+      metadata: row.metadata ?? {},
+      occurredAt: row.occurred_at,
+      createdAt: row.created_at,
+    })),
+  )
+}
+
+/** Most recent platform audit rows the activity screen loads in one go. Older rows stay in the table. */
+export const PLATFORM_AUDIT_LOG_CAP = 1000
+
+/** The platform activity log: newest first, capped at PLATFORM_AUDIT_LOG_CAP, with the true total so the cap can be stated. */
+export async function getPlatformAuditLog(): Promise<Result<{ entries: PlatformAuditEventRecord[]; total: number }>> {
+  if (isMockMode()) {
+    const events = loadMockPlatformAuditEvents()
+    return ok({ entries: events.slice(0, PLATFORM_AUDIT_LOG_CAP), total: events.length })
+  }
+
+  const clientResult = requireSupabaseClient("getPlatformAuditLog")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error, count } = await clientResult.client
+    .from("platform_audit_events")
+    .select("id, actor_user_id, actor_email, actor_role, action, target, detail, metadata, occurred_at, created_at", { count: "exact" })
+    .order("occurred_at", { ascending: false })
+    .limit(PLATFORM_AUDIT_LOG_CAP)
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+
+  const rows =
+    (data as Array<{
+      id: string
+      actor_user_id: string | null
+      actor_email: string | null
+      actor_role: string
+      action: string
+      target: string
+      detail: string | null
+      metadata: Record<string, unknown> | null
+      occurred_at: string
+      created_at: string
+    }> | null) ?? []
+
+  return ok({
+    entries: rows.map((row) => ({
+      id: row.id,
+      actorUserId: row.actor_user_id,
+      actorEmail: row.actor_email,
+      actorRole: row.actor_role,
+      action: row.action,
+      target: row.target,
+      detail: row.detail,
+      metadata: row.metadata ?? {},
+      occurredAt: row.occurred_at,
+      createdAt: row.created_at,
+    })),
+    total: count ?? rows.length,
+  })
 }

@@ -16,7 +16,6 @@ test.describe("ui data surface audit", () => {
     await fs.mkdir(screenshotDir, { recursive: true })
 
     await seedMockSession(page, { role: "platform-admin" })
-    await page.addInitScript(() => window.localStorage.setItem("platform-admin-requests-view", "table"))
     await page.goto("/platform-admin/requests")
     await page.waitForLoadState("networkidle")
     await expect(page.locator("main")).toBeVisible()
