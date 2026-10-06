@@ -2,7 +2,8 @@ import { getCookieValue, ROLE_COOKIE, SESSION_COOKIE, TENANT_COOKIE } from "@/li
 import type { AppRole } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
-import { resolveSessionActor } from "@/lib/supabase/actor"
+import { resolveSessionAccess } from "@/lib/supabase/actor"
+import { isTransientAuthError } from "@/lib/supabase/transient-auth-error"
 import { getMockClubClosure } from "@/lib/mock-data-rights"
 import { getMockTenantLifecycleStatus } from "@/lib/mock-platform-admin"
 
@@ -16,6 +17,18 @@ export type GuardAuthContext = {
   tenantLifecycleStatus: string | null
   /** False when a club admin turned this member's access off. */
   memberActive: boolean
+}
+
+/**
+ * Thrown when the sign-in could not be checked at all: the phone has just woken up with no network,
+ * or the server did not answer. It says nothing about whether the person is signed in, so the guard
+ * keeps the screen they are on and tries again instead of sending them to the login page.
+ */
+export class GuardCheckUnavailable extends Error {
+  constructor() {
+    super("The sign-in could not be checked right now.")
+    this.name = "GuardCheckUnavailable"
+  }
 }
 
 const SIGNED_OUT: GuardAuthContext = {
@@ -58,13 +71,24 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
     return SIGNED_OUT
   }
 
-  const { data } = await supabase.auth.getSession()
-  const session = data.session
+  let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>
+  try {
+    sessionResult = await supabase.auth.getSession()
+  } catch {
+    throw new GuardCheckUnavailable()
+  }
+  const session = sessionResult.data.session
   if (!session) {
+    // An expired token that could not be renewed because the network was down still has its
+    // sign-in stored. Only a clear answer counts as signed out.
+    if (isTransientAuthError(sessionResult.error) || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+      throw new GuardCheckUnavailable()
+    }
     return SIGNED_OUT
   }
 
-  const actor = await resolveSessionActor(supabase, session)
+  const { actor, noAccessReason } = await resolveSessionAccess(supabase, session)
+  if (!actor && noAccessReason === "error") throw new GuardCheckUnavailable()
   if (!actor || !isAppRole(actor.role)) {
     return { ...SIGNED_OUT, isAuthenticated: true }
   }
