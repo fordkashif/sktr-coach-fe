@@ -1,5 +1,6 @@
 "use client"
 
+import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
@@ -11,9 +12,9 @@ import { teamCoachRoleLabel } from "@/lib/coach-permissions"
 import { useGuardianChildren } from "@/lib/guardian/children-store"
 import { guardianSeesHealth, healthRuleText } from "@/lib/guardian/health-visibility"
 
+/** Today as the club has it, the day the child's plan is written for. */
 function todayIso() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  return clubToday()
 }
 
 type HomeData = { week: GuardianWeek | null; coaches: GuardianCoach[]; next: GuardianCompetition | null; news: GuardianAnnouncement[]; error: string | null }

@@ -8,11 +8,13 @@ import {
   type PlanDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
 import { useSearchParams } from "react-router-dom"
-import { notify } from "@/components/sk"
+import { EditConflictDialog, notify } from "@/components/sk"
+import { conflictSentence, readEditConflict, type EditConflict } from "@/lib/data/edit-conflict"
 import { getPlanTemplate, listPlanTemplates, markPlanTemplateUsed, savePlanAsTemplate } from "@/lib/data/training-plan/plan-template-data"
 import { countAthleteAdjustments, type PlanTemplateSummary } from "@/lib/data/training-plan/plan-templates"
 import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { PlanBuilder } from "./plan-builder"
 import { PlanList } from "./plan-list"
 import { PlanPrintDialog } from "./plan-print"
@@ -97,6 +99,9 @@ export function PlanWorkspace({
   // The plan the print dialog is open for, and the week it starts on.
   const [printing, setPrinting] = useState<{ plan: PlanDraft; week: number } | null>(null)
   const opening = useRef(false)
+  // Set when a save was refused because someone else changed the plan first.
+  const [conflict, setConflict] = useState<{ conflict: EditConflict; action: "draft" | "publish" } | null>(null)
+  const undoableDelete = useUndoableDelete()
   // Templates offered when starting a plan (null while they load), and the plan being saved as one.
   const [templates, setTemplates] = useState<PlanTemplateSummary[] | null>(null)
   const [templatesError, setTemplatesError] = useState<string | null>(null)
@@ -287,6 +292,21 @@ export function PlanWorkspace({
   }, [linkedPlanId, loading, plans, view])
 
   const runListAction = async (item: PlanListItem, action: "archive" | "remove") => {
+    // A draft never reached an athlete: it leaves the list at once and the delete waits on "Undo".
+    if (action === "remove" && item.status === "draft") {
+      setListError(null)
+      undoableDelete({
+        message: "Draft deleted",
+        failed: `Could not delete "${item.name}"`,
+        hide: () => setPlans((current) => current.filter((candidate) => candidate.id !== item.id)),
+        restore: () => void refresh(),
+        commit: () => adapter.remove(item.id),
+        done: () => {
+          if (readUnsaved()?.id === item.id) clearUnsaved()
+        },
+      })
+      return
+    }
     setBusyPlanId(item.id)
     const result = action === "archive" ? await adapter.archive(item.id) : await adapter.remove(item.id)
     setBusyPlanId(null)
@@ -311,14 +331,20 @@ export function PlanWorkspace({
     setUnsaved(null)
   }
 
-  const saveDraft = async () => {
+  const saveDraft = async (overwrite = false) => {
     if (!plan || busy) return
     const invalid = validateBasics(plan)
     if (invalid) return setActionError(`${invalid} Open plan details to fix it.`)
     setBusy("saving")
-    const result = await adapter.saveDraft(plan)
+    const result = await adapter.saveDraft(plan, { overwrite })
     setBusy(null)
-    if (!result.ok) return setActionError(`Draft not saved: ${result.error.message}`)
+    if (!result.ok) {
+      // Someone else saved this plan since it was opened: ask, never overwrite silently.
+      const found = readEditConflict(result.error)
+      if (found) return setConflict({ conflict: found, action: "draft" })
+      return setActionError(`Draft not saved: ${result.error.message}`)
+    }
+    setConflict(null)
     setPlan((current) => (current ? { ...current, id: result.data.planId, status: "draft" } : current))
     setDirty(false)
     setActionError(null)
@@ -328,7 +354,7 @@ export function PlanWorkspace({
     if (selectedTeamId) syncSelectedTeam(plan.teamId)
   }
 
-  const publish = async () => {
+  const publish = async (overwrite = false) => {
     if (!plan || busy) return
     setBusy("publishing")
     const wasUpdate = plan.status === "published"
@@ -345,13 +371,16 @@ export function PlanWorkspace({
       setPlan(target)
     }
 
-    const result = await adapter.publish(target)
+    const result = await adapter.publish(target, { overwrite })
     setBusy(null)
     if (!result.ok) {
+      const found = readEditConflict(result.error)
+      if (found) return setConflict({ conflict: found, action: "publish" })
       return setActionError(
         `Not published: ${result.error.message} Nothing was lost, your work is still here so you can try again.`,
       )
     }
+    setConflict(null)
     setPlan({ ...target, id: result.data.planId, status: "published" })
     setDirty(false)
     setActionError(null)
@@ -362,6 +391,33 @@ export function PlanWorkspace({
     if (selectedTeamId) syncSelectedTeam(target.teamId)
     void refresh()
   }
+
+  // "See their version": my work stays on this device as the unsaved copy, the plan is read again.
+  const seeTheirVersion = async () => {
+    if (!plan?.id || busy) return
+    setBusy("opening")
+    const result = await adapter.loadPlan(plan.id)
+    setBusy(null)
+    if (!result.ok) return setActionError(`Could not open their version: ${result.error.message}`)
+    writeUnsaved(plan)
+    setUnsaved(plan)
+    setConflict(null)
+    enterBuilder(result.data, { dirty: false, savedLabel: result.data.status === "draft" ? "Draft saved." : "Published. Changes go live when you update." })
+    notify("This is their version", "Your own changes are kept on this device. Pick them up from the plan list.")
+  }
+
+  const conflictDialog = conflict ? (
+    <EditConflictDialog
+      open
+      title={conflictSentence(conflict.conflict)}
+      busy={busy !== null}
+      onClose={() => setConflict(null)}
+      onSeeTheirs={() => void seeTheirVersion()}
+      onSaveMine={() => void (conflict.action === "draft" ? saveDraft(true) : publish(true))}
+    >
+      See their version opens the plan as it is now. Your own changes are kept on this device and you can pick them up again from the plan list. Save mine anyway replaces their changes with yours.
+    </EditConflictDialog>
+  ) : null
 
   const team = useMemo(() => directory.teams.find((candidate) => candidate.id === plan?.teamId) ?? null, [directory.teams, plan?.teamId])
   const teamAthletes = useMemo(() => directory.athletes.filter((athlete) => athlete.teamId === plan?.teamId), [directory.athletes, plan?.teamId])
@@ -416,6 +472,7 @@ export function PlanWorkspace({
       <>
       {printDialog}
       {templateDialog}
+      {conflictDialog}
       <PlanBuilder
         key={builderKey}
         plan={plan}
@@ -448,6 +505,8 @@ export function PlanWorkspace({
 
   if (view === "publish" && plan) {
     return (
+      <>
+      {conflictDialog}
       <PlanPublish
         plan={plan}
         teams={directory.teams}
@@ -460,6 +519,7 @@ export function PlanWorkspace({
         onBack={() => setView("build")}
         onPublish={() => void publish()}
       />
+      </>
     )
   }
 

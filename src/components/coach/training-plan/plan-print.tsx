@@ -17,6 +17,7 @@ import {
 import type { Squad } from "@/lib/data/coach/squads"
 import { assignedAthletes, type AthleteOption, type TeamOption } from "./storage"
 import { plural } from "./ui"
+import { viewTarget } from "@/lib/units-view"
 
 type Scope = "week" | "plan"
 
@@ -35,7 +36,8 @@ function DetailCell({ session }: { session: SessionDraft }) {
   return (
     <>
       {session.blocks.map((block, index) => {
-        const lines = [block.notes.trim(), ...block.exercises.map(summarizeExercise)].filter(Boolean)
+        // Loads are printed in the unit of the coach who prints the sheet.
+        const lines = [block.notes.trim(), ...block.exercises.map((exercise) => viewTarget(summarizeExercise(exercise)))].filter(Boolean)
         return (
           <p key={block.id} style={index > 0 ? { marginTop: "1.2mm" } : undefined}>
             <strong>{block.title.trim() || `Block ${index + 1}`}</strong>

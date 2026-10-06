@@ -1,3 +1,5 @@
+import { addDaysIso } from "@/lib/data/training-plan/plan-builder-model"
+import { clubToday } from "@/lib/club-day"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { availabilityCovers, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
@@ -266,10 +268,9 @@ export async function getCoachDashboardSnapshotForCurrentUser(options?: ScopedOp
     return ok(emptyAthleteSnapshot)
   }
 
-  const sinceDate = new Date()
-  sinceDate.setDate(sinceDate.getDate() - 28)
-  const sinceIsoDate = sinceDate.toISOString().slice(0, 10)
-  const todayIsoDate = new Date().toISOString().slice(0, 10)
+  // The club's day, so "up to today" is the same for a coach who is abroad.
+  const todayIsoDate = clubToday()
+  const sinceIsoDate = addDaysIso(todayIsoDate, -28)
 
   const [
     { data: wellnessRows, error: wellnessError },

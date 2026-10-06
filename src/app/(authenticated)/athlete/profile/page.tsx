@@ -62,6 +62,8 @@ import { useRole } from "@/lib/role-context"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 import { removePushOnSignOut } from "@/lib/push/push-client"
+import { useUnits } from "@/lib/units-store"
+import { bodyWeightForViewer, bodyWeightToKg, cmToFeetInches, feetInchesToCm, formatBodyWeight, formatHeight, trimNumber, type UnitPreferences } from "@/lib/units"
 
 type ProfileView = {
   firstName: string
@@ -123,18 +125,40 @@ function toInput(view: ProfileView): AthleteProfileInput {
   }
 }
 
-function toDetailsDraft(details: AthletePrivateDetails): DetailsDraft {
-  return Object.fromEntries(Object.entries(details).map(([key, value]) => [key, value === null ? "" : String(value)])) as DetailsDraft
+/**
+ * Height and weight are typed in the athlete's own units and stored in centimetres and kilograms.
+ * In feet and inches the height box holds "feet|inches" while it is being edited.
+ */
+function toDetailsDraft(details: AthletePrivateDetails, units: UnitPreferences): DetailsDraft {
+  const draft = Object.fromEntries(Object.entries(details).map(([key, value]) => [key, value === null ? "" : String(value)])) as DetailsDraft
+  if (details.weightKg !== null) draft.weightKg = trimNumber(bodyWeightForViewer(details.weightKg, units.weight))
+  if (details.heightCm !== null && units.height === "ft_in") {
+    const { feet, inches } = cmToFeetInches(details.heightCm)
+    draft.heightCm = `${feet}|${trimNumber(inches)}`
+  }
+  return draft
+}
+
+/** "5|11" to centimetres. Null when both are empty, NaN when it is not a height. */
+function feetInchesDraftToCm(value: string): number | null {
+  const [feetText = "", inchesText = ""] = value.split("|").map((part) => part.trim().replace(",", "."))
+  if (!feetText && !inchesText) return null
+  if (!/^\d{1,2}$/.test(feetText) || (inchesText !== "" && !/^\d{1,2}(\.\d)?$/.test(inchesText))) return Number.NaN
+  const inches = inchesText === "" ? 0 : Number(inchesText)
+  return inches >= 12 ? Number.NaN : feetInchesToCm(Number(feetText), inches)
 }
 
 /** Text back to details. A height or weight that is not a number becomes NaN so validation can say so. */
-function fromDetailsDraft(draft: DetailsDraft): AthletePrivateDetails {
+function fromDetailsDraft(draft: DetailsDraft, units: UnitPreferences, saved: AthletePrivateDetails): AthletePrivateDetails {
   const number = (value: string) => (value.trim() === "" ? null : Number(value.trim().replace(",", ".")))
+  const weight = number(draft.weightKg)
+  // A box that was not touched keeps the exact stored value, so opening and saving never shifts it by a rounding.
+  const shown = toDetailsDraft(saved, units)
   return {
     ...EMPTY_ATHLETE_PRIVATE_DETAILS,
     ...Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, value.trim() === "" ? null : value])),
-    heightCm: number(draft.heightCm),
-    weightKg: number(draft.weightKg),
+    heightCm: draft.heightCm === shown.heightCm ? saved.heightCm : units.height === "ft_in" ? feetInchesDraftToCm(draft.heightCm) : number(draft.heightCm),
+    weightKg: draft.weightKg === shown.weightKg ? saved.weightKg : weight === null || !Number.isFinite(weight) ? weight : bodyWeightToKg(weight, units.weight),
   }
 }
 
@@ -143,6 +167,7 @@ function hasGuardian(details: AthletePrivateDetails) {
 }
 
 export default function AthleteProfilePage() {
+  const units = useUnits()
   const isSupabaseMode = getBackendMode() === "supabase"
   const navigate = useNavigate()
   const { userEmail } = useRole()
@@ -222,7 +247,7 @@ export default function AthleteProfilePage() {
   const startEditing = () => {
     if (!profile) return
     setDraft(toInput(profile))
-    setDetailsDraft(toDetailsDraft(profile.details))
+    setDetailsDraft(toDetailsDraft(profile.details, units))
     setFieldErrors({})
     setSaveError(null)
     setSavedNotice(false)
@@ -252,9 +277,13 @@ export default function AthleteProfilePage() {
     if (!draft || !detailsDraft || !profile || saving) return
 
     const validation = validateAthleteProfileInput(draft)
-    const detailsValidation = validateAthletePrivateDetails(fromDetailsDraft(detailsDraft))
+    const detailsValidation = validateAthletePrivateDetails(fromDetailsDraft(detailsDraft, units, profile.details))
     if (!validation.ok || !detailsValidation.ok) {
-      setFieldErrors({ ...(validation.ok ? {} : validation.fieldErrors), ...(detailsValidation.ok ? {} : detailsValidation.fieldErrors) })
+      const detailErrors = detailsValidation.ok ? {} : { ...detailsValidation.fieldErrors }
+      // The same limits, said in the units the athlete typed in.
+      if (detailErrors.heightCm && units.height === "ft_in") detailErrors.heightCm = "Enter your height in feet and inches, between 1 ft 8 in and 8 ft 6 in."
+      if (detailErrors.weightKg && units.weight === "lb") detailErrors.weightKg = "Enter your weight in pounds, between 44 and 661."
+      setFieldErrors({ ...(validation.ok ? {} : validation.fieldErrors), ...detailErrors })
       setSaveError("Some details need a second look. Check the fields marked in red.")
       return
     }
@@ -407,10 +436,36 @@ export default function AthleteProfilePage() {
 
           <Section title="Body and health" hint={PRIVACY_NOTE}>
             <div className="grid gap-4 pt-2 sm:grid-cols-2">
-              <Field label="Height in cm" optional error={fieldErrors.heightCm}>
-                <Input inputMode="decimal" maxLength={6} {...detailField("heightCm")} />
-              </Field>
-              <Field label="Weight in kg" optional error={fieldErrors.weightKg}>
+              {units.height === "ft_in" ? (
+                <Field label="Height in feet and inches" optional error={fieldErrors.heightCm}>
+                  <div className="flex gap-2">
+                    {(["feet", "inches"] as const).map((part, index) => {
+                      const parts = (detailsDraft?.heightCm ?? "").split("|")
+                      return (
+                        <Input
+                          key={part}
+                          {...(index === 0 ? {} : { id: "profile-height-inches" })}
+                          aria-label={`Height, ${part}`}
+                          placeholder={index === 0 ? "ft" : "in"}
+                          inputMode={index === 0 ? "numeric" : "decimal"}
+                          maxLength={4}
+                          value={parts[index] ?? ""}
+                          onChange={(event) => {
+                            const next = [parts[0] ?? "", parts[1] ?? ""]
+                            next[index] = event.target.value.replace("|", "")
+                            updateDetail("heightCm", next.every((value) => !value.trim()) ? "" : next.join("|"))
+                          }}
+                        />
+                      )
+                    })}
+                  </div>
+                </Field>
+              ) : (
+                <Field label="Height in cm" optional error={fieldErrors.heightCm}>
+                  <Input inputMode="decimal" maxLength={6} {...detailField("heightCm")} />
+                </Field>
+              )}
+              <Field label={`Weight in ${units.weight}`} optional error={fieldErrors.weightKg}>
                 <Input inputMode="decimal" maxLength={6} {...detailField("weightKg")} />
               </Field>
               <Field
@@ -495,8 +550,8 @@ export default function AthleteProfilePage() {
 
               <Section title="Body and health" hint={PRIVACY_NOTE}>
                 <FactList>
-                  <Fact label="Height">{details.heightCm !== null ? `${details.heightCm} cm` : null}</Fact>
-                  <Fact label="Weight">{details.weightKg !== null ? `${details.weightKg} kg` : null}</Fact>
+                  <Fact label="Height">{details.heightCm !== null ? formatHeight(details.heightCm, units.height) : null}</Fact>
+                  <Fact label="Weight">{details.weightKg !== null ? formatBodyWeight(details.weightKg, units.weight) : null}</Fact>
                   <Fact label="Medical notes and allergies" stack={Boolean(details.medicalNotes)} empty="None added">
                     {details.medicalNotes}
                   </Fact>

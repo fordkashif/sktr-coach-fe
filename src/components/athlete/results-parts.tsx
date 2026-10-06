@@ -10,6 +10,7 @@ import {
   formatMarkWithUnit,
 } from "@/lib/data/pr/marks"
 import { formatFullDay, parseLocalDay } from "@/lib/data/pr/pr-display"
+import { viewText } from "@/lib/units-view"
 
 /** The five screens under the athlete's Progress tab. */
 export function ProgressTabs() {
@@ -48,7 +49,7 @@ export function ResultMark({ result, size = "md", withWind = false }: { result: 
 /** "11.28s (+0.9)" as plain text, for sentences. */
 export function markText(result: AthleteResult): string {
   const wind = result.wind !== null ? ` (${formatWind(result.wind)})` : ""
-  return `${formatMarkWithUnit(result.display, result.unit)}${wind}`
+  return `${viewText(formatMarkWithUnit(result.display, result.unit))}${wind}`
 }
 
 /** "Jul 11, 2026" */
@@ -99,8 +100,14 @@ export function BestStatus({ kind }: { kind: "pb" | "sb" }) {
  * a wind assisted series (`verdict.legal`), it says so first and then speaks about that jump.
  */
 export function verdictMessage(saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
+  // Kilogram marks in the sentence are read in the person's own unit.
+  const message = metricVerdictMessage(saved, verdict)
+  return { ...message, text: viewText(message.text) }
+}
+
+function metricVerdictMessage(saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
   if (verdict.legal) {
-    const message = verdictMessage(verdict.legal, { kind: verdict.kind, beat: verdict.beat })
+    const message = metricVerdictMessage(verdict.legal, { kind: verdict.kind, beat: verdict.beat })
     return { tone: message.tone, text: `Your longest jump, ${markText(saved)}, was wind assisted. ${message.text.replace(/^Saved\. /, "")}` }
   }
   const result = saved

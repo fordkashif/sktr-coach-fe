@@ -152,7 +152,8 @@ for (const viewport of [
       await expect(list.locator("li", { hasText: "Discus taper" })).toHaveCount(0)
       await expect(list.locator("> li")).toHaveCount(2)
 
-      // It all survives a reload.
+      // It all survives a reload (the delete is final once "Undo" has gone, about six seconds).
+      await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0, { timeout: 10_000 })
       await page.reload()
       await expect(page.getByRole("list", { name: "Templates" }).locator("> li")).toHaveCount(2)
     })

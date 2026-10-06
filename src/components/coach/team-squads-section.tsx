@@ -25,6 +25,7 @@ import {
 import type { RosterAthlete } from "@/lib/data/coach/roster-data"
 import { SQUAD_COLORS, SQUAD_COLOR_LABELS, SQUAD_NAME_MAX, SQUAD_NOTE_MAX, isSquadColor, squadNamesText, squadsByAthlete, type Squad, type SquadColor } from "@/lib/data/coach/squads"
 import { archiveSquad, createSquad, setSquadMembers, updateSquad } from "@/lib/data/coach/squads-data"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 
 function plural(count: number, one: string, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`
@@ -39,7 +40,7 @@ type Editing = { squad: Squad | null; name: string; color: SquadColor | ""; note
 export function TeamSquadsSection({
   teamId,
   teamName,
-  squads,
+  squads: allSquads,
   athletes,
   loadError,
   onChanged,
@@ -60,6 +61,10 @@ export function TeamSquadsSection({
   const [members, setMembers] = useState<{ squad: Squad; chosen: string[] } | null>(null)
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Squads taken off the list while "Undo" is offered.
+  const [hiddenIds, setHiddenIds] = useState<string[]>([])
+  const undoableDelete = useUndoableDelete()
+  const squads = allSquads ? allSquads.filter((squad) => !hiddenIds.includes(squad.id)) : allSquads
 
   const names = new Map(athletes.map((athlete) => [athlete.id, athlete.name]))
   const otherSquads = squadsByAthlete(squads ?? [])
@@ -113,17 +118,17 @@ export function TeamSquadsSection({
     else notify(`${members.squad.name} saved`, [added > 0 ? `${plural(added, "athlete")} added` : null, removed > 0 ? `${removed} removed` : null].filter(Boolean).join(", "))
   }
 
-  const archive = async (squad: Squad) => {
-    setBusy(true)
-    const result = await archiveSquad(squad.id)
-    setBusy(false)
+  // Archiving empties the squad and cannot be reversed, so it waits for "Undo" to run out.
+  const archive = (squad: Squad) => {
     setConfirmArchiveId(null)
-    if (!result.ok) {
-      notifyError("Could not archive the squad", result.error.message)
-      return
-    }
-    onChanged()
-    notify(`${squad.name} archived`)
+    undoableDelete({
+      message: `${squad.name} archived`,
+      failed: "Could not archive the squad",
+      hide: () => setHiddenIds((current) => [...current, squad.id]),
+      restore: () => setHiddenIds((current) => current.filter((id) => id !== squad.id)),
+      commit: () => archiveSquad(squad.id),
+      done: onChanged,
+    })
   }
 
   return (
@@ -201,7 +206,7 @@ export function TeamSquadsSection({
                       confirmLabel="Archive squad"
                       cancelLabel="Keep it"
                       busy={busy}
-                      onConfirm={() => void archive(squad)}
+                      onConfirm={() => archive(squad)}
                       onCancel={() => setConfirmArchiveId(null)}
                     />
                   ) : undefined

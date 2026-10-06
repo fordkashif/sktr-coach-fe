@@ -3,6 +3,7 @@ import { CoachContactSection, DevicesSection, HelpSection, NameSection, PhotoSec
 import { DeleteAccountSection, YourDataSection } from "@/components/account/data-rights-sections"
 import { useCurrentAccount } from "@/lib/account-store"
 import { useRole } from "@/lib/role-context"
+import { UnitsSection } from "@/components/account/units-section"
 
 /** Your account: photo, name, sign-in details. Every role opens it; athletes reach it from their profile. */
 export default function AccountPage() {
@@ -39,6 +40,8 @@ export default function AccountPage() {
           <ListRow to="/settings/notifications" title="Notification settings" subtitle="Choose what we tell you about and how." />
         </List>
       </Section>
+
+      {role === "platform-admin" ? null : <UnitsSection />}
 
       <DevicesSection />
       <YourDataSection />

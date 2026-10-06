@@ -172,6 +172,12 @@ export function notificationTargetPath(eventType: string, metadata: Notification
       const base = role === "athlete" ? "/athlete/messages" : "/coach/messages"
       return threadId ? `${base}/t/${threadId}` : base
     }
+    case "platform_notice": {
+      // A notice from the SKTR team to all clubs (20261017110000). Its optional link is typed by a
+      // platform admin: only a page in the app is followed from here, anything else opens the list.
+      const link = metadata?.link
+      return typeof link === "string" && /^\/[^/\\\s][^\s\\]*$/.test(link) && link.length <= 300 ? link : NOTIFICATIONS_PATH
+    }
     case "announcement_posted": {
       const announcementId = id(metadata, "announcement_id")
       const base = role === "athlete" ? "/athlete/messages" : role === "club-admin" ? "/club-admin/messages" : "/coach/messages"

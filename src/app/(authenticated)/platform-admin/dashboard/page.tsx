@@ -15,6 +15,7 @@ import {
 } from "@/lib/data/platform-admin/ops-data"
 import { auditSentence, formatLocalDateTime, isClubRecord, lifecycleOf } from "@/lib/data/platform-admin/tenants-data"
 import { plural } from "@/lib/format/ops-format"
+import { PlatformHomeTabs } from "@/components/ops/platform-tabs"
 
 const EMAIL_MODE: Record<PlatformNotificationEmailStats["deliveryMode"], string> = {
   scheduled: "On their own, within a minute",
@@ -194,6 +195,8 @@ export default function PlatformAdminDashboardPage() {
           </>
         }
       />
+
+      <PlatformHomeTabs />
 
       {error ? <Notice tone="error">Could not load everything: {error}</Notice> : null}
 

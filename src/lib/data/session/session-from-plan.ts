@@ -9,6 +9,7 @@ import {
   type PlanDraft,
   type SessionDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { loadToKg } from "@/lib/units"
 
 /**
  * Turns a coach plan session into the session an athlete logs against.
@@ -128,7 +129,12 @@ export function parseLoadKg(value: string | null | undefined): number | null {
   if (!text) return null
   if (/%|bw|body/i.test(text)) return null
   if (/\d\s*(s|sec|secs|m|min)\b/i.test(text)) return null
-  if (/kg|kilo|lb/i.test(text) || /^\d+(?:[.,]\d+)?$/.test(text)) return firstNumber(text)
+  // A load written in pounds is kept in kilograms like every other load (src/lib/units.ts).
+  if (/\d\s*(lbs?|pounds?)\b/i.test(text)) {
+    const pounds = firstNumber(text)
+    return pounds === null ? null : loadToKg(pounds, "lb")
+  }
+  if (/kg|kilo/i.test(text) || /^\d+(?:[.,]\d+)?$/.test(text)) return firstNumber(text)
   return null
 }
 

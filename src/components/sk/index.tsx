@@ -32,6 +32,7 @@ export {
 } from "./status"
 export { Button, LinkButton, HeroAction, Field, Input, Textarea, Select, Segmented, Tabs, InlineConfirm, type ButtonVariant, type ButtonSize } from "./controls"
 export { Sheet, Dialog, notify, notifyError } from "./overlays"
+export { EditConflictDialog } from "./edit-conflict-dialog"
 export { NumberInput, TickButton, SetList, SetGroup, SetRow, EffortScale, EffortButton } from "./logging"
 export { WeekPager, DayPicker, DayLabel, ActionBar, type DayPickerDay } from "./week"
 export { TapScale, Stepper, Choices, type ChoiceOption } from "./inputs"

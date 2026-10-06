@@ -2,7 +2,7 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js"
 
 /**
  * Why a signed-in user has no profile. Comes from the database, never from the browser.
- * - invite_pending: an invite is waiting for this email and has to be accepted through its own link.
+ * - invite_pending: an invite (coach, athlete, or parent or guardian) is waiting for this email and has to be accepted through its own link.
  * - none: there is nothing this account is entitled to.
  * - error: the lookup itself failed (network, or the database function is missing).
  */

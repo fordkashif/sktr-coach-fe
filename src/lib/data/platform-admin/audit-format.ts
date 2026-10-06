@@ -39,6 +39,12 @@ export const PLATFORM_ACTION_LABEL: Record<string, string> = {
   club_admin_initial_access_invite_previewed: "Copied the first sign-in link",
   notification_email_dispatched: "Sent a queued email",
   notification_email_retry_requested: "Sent a failed email again",
+  platform_club_overview_opened: "Opened a club overview for support",
+  platform_admin_added: "Added a platform admin",
+  platform_admin_deactivated: "Switched off a platform admin",
+  platform_admin_reactivated: "Switched a platform admin back on",
+  platform_notice_sent: "Sent a notice to all clubs",
+  platform_notice_withdrawn: "Withdrew a notice",
 }
 
 const EXPORT_TARGET_LABEL: Record<string, string> = {
@@ -47,6 +53,7 @@ const EXPORT_TARGET_LABEL: Record<string, string> = {
   tenants: "Clubs",
   clubs: "Clubs",
   billing: "Club billing",
+  usage: "Usage",
 }
 
 export function platformActionLabel(action: string) {
@@ -81,6 +88,8 @@ function isExport(action: string) {
 /** Works out which club an event is about. Targets are stored as a club name, a requester email or a club id depending on the action. */
 export function resolveAuditClub(event: PlatformAuditEventRecord, requests: PlatformAdminRequestRecord[]) {
   if (isExport(event.action)) return null
+  // About a platform admin or a notice, not about a club (the target is an email or a title).
+  if (event.action.startsWith("platform_admin_") || event.action.startsWith("platform_notice_")) return null
   const requestId = meta(event.metadata, "tenant_provision_request_id", "request_id", "requestId")
   const tenantId = meta(event.metadata, "tenant_id", "tenantId") ?? (UUID.test(event.target) ? event.target : null)
   const byRequest = requestId ? requests.find((request) => request.id === requestId) : null

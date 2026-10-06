@@ -681,6 +681,12 @@ function ClubDetail({
       <StatusText tone={LIFECYCLE_META[state].state}>{LIFECYCLE_META[state].label}</StatusText>
       {error ? <Notice tone="error">{error}</Notice> : null}
 
+      {club.provisionedTenantId ? (
+        <LinkButton to={`/platform-admin/tenants/${encodeURIComponent(club.provisionedTenantId)}`} size="sm" className="self-start">
+          Club overview
+        </LinkButton>
+      ) : null}
+
       <SubSection title="Contact">
         <FactList>
           <Fact label="Club admin">

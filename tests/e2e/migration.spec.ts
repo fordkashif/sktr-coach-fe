@@ -95,7 +95,8 @@ test("root and invite redirects behave correctly", async ({ page }) => {
 
 test("protected routes redirect to login when unauthenticated", async ({ page }) => {
   await page.goto("/club-admin/dashboard")
-  await expect(page).toHaveURL(/\/login$/)
+  // The login address now remembers the screen, to come back to it after signing in.
+  await expect(page).toHaveURL(/\/login\?redirect=%2Fclub-admin%2Fdashboard$/)
   await expect(page.locator("body")).toContainText("Sign in")
 })
 

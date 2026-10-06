@@ -1,3 +1,5 @@
+import { addDaysIso } from "@/lib/data/training-plan/plan-builder-model"
+import { clubToday } from "@/lib/club-day"
 import { listAthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { err, mapPostgrestError, ok, type Result } from "@/lib/data/result"
 import { adherenceCounts, adherencePercent, sumAdherence, type AdherenceSession } from "@/lib/data/session/adherence"
@@ -66,10 +68,9 @@ export async function getClubAdminTeamHealthSnapshot(): Promise<Result<ClubAdmin
   if (profile.role !== "club-admin") return err("FORBIDDEN", "Only club-admin users can perform this operation.")
   const tenantId = profile.tenant_id as string
 
-  const since = new Date()
-  since.setDate(since.getDate() - TEAM_HEALTH_WINDOW_DAYS)
-  const sinceIso = since.toISOString().slice(0, 10)
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // The club's day, not the device's or UTC's.
+  const todayIso = clubToday()
+  const sinceIso = addDaysIso(todayIso, -TEAM_HEALTH_WINDOW_DAYS)
 
   const [teamsResult, coachesResult, athletesResult, wellnessResult, sessionsResult, completionsResult] = await Promise.all([
     client.from("teams").select("id, name, event_group, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: true }),

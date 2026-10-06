@@ -19,7 +19,7 @@ import {
   publishTrainingPlanForCurrentCoach,
   saveTrainingPlanDraftForCurrentCoach,
 } from "@/lib/data/training-plan/training-plan-data"
-import type { AthleteOption, PlanScope, PlanStorageAdapter } from "./storage"
+import { loadedPlanStamps, type AthleteOption, type PlanScope, type PlanStorageAdapter } from "./storage"
 
 /** Real backend: everything goes through src/lib/data/training-plan. */
 export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter {
@@ -97,6 +97,7 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
       const result = await getTrainingPlanForBuilder(planId)
       if (!result.ok) return result
       const { plan, builderState, assignments, detail } = result.data
+      loadedPlanStamps.set(plan.id, plan.updatedAt)
       const header = {
         id: plan.id,
         status: plan.status,
@@ -124,8 +125,9 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
       return ok({ ...draft, assign })
     },
 
-    saveDraft(plan) {
-      return saveTrainingPlanDraftForCurrentCoach({
+    async saveDraft(plan, options) {
+      const result = await saveTrainingPlanDraftForCurrentCoach({
+        guard: { expectedUpdatedAt: plan.id ? loadedPlanStamps.get(plan.id) : undefined, overwrite: options?.overwrite },
         planId: plan.id,
         name: plan.name,
         startDate: plan.startDate,
@@ -134,10 +136,13 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
         teamId: plan.teamId || null,
         builderState: toBuilderState(plan),
       })
+      if (result.ok) loadedPlanStamps.set(result.data.planId, result.data.updatedAt)
+      return result
     },
 
-    publish(plan) {
-      return publishTrainingPlanForCurrentCoach({
+    async publish(plan, options) {
+      const result = await publishTrainingPlanForCurrentCoach({
+        guard: { expectedUpdatedAt: plan.id ? loadedPlanStamps.get(plan.id) : undefined, overwrite: options?.overwrite },
         planId: plan.id,
         builderState: toBuilderState(plan),
         name: plan.name,
@@ -153,6 +158,8 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
         squadIds: plan.assign.target === "squads" ? plan.assign.squadIds : [],
         structure: toPublishStructure(plan),
       })
+      if (result.ok) loadedPlanStamps.set(result.data.planId, result.data.updatedAt)
+      return result
     },
 
     async listTeamPlanDays(teamId) {

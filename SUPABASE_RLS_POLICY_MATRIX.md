@@ -986,3 +986,82 @@ No insert or update grant on the relay tables. `save_relay_entry(jsonb)` is the 
 Deletion: both tables carry `tenant_id` and go with the catalogue driven club deletion. Deleting an athlete (their own account or by a club admin) keeps the relay; `relay_entry_legs_keep_on_delete` turns the delete of the leg into a leg with no athlete. Deleting a competition keeps relays that were run (competition set to null) and drops teams that never ran. `install_deleted_account_triggers()` is run again for `entered_by_user_id`.
 
 Verified on a throwaway Postgres 16 (every migration in order including the other wave 4 files, then this one twice more): 151 assertions as athlete, team mate, lead coach, assistant, another team's coach, club admin, another club, a deactivated coach, a paused club, signed out, a guardian (of a relay runner, of a runner from another team, and after the link is revoked).
+
+## Global search (20261017100000_global_search.sql)
+
+No new table and no new policy. `search_everything(p_query, p_limit)` is SECURITY INVOKER: every table is read through its existing row level security policies, so search finds what the caller can already select and nothing else. On top of the policies each role only gets the kinds its screens show, and the scope helpers narrow where a policy is wider than the screens.
+
+| Role | What it can find | Narrowing on top of the policies |
+| --- | --- | --- |
+| Coach (lead, coach, assistant) | athletes (with team and squads), teams, plans, templates, library exercises, test weeks, competitions | athletes and teams only where `team_id = any(current_staff_team_ids())` (the teams policy shows a coach every team of the club; search does not). Active athletes only. The app hides plans, templates, exercises and competitions from an assistant, as their screens are |
+| Club admin | staff and guardians by name (`profiles`), athletes, teams, athlete and coach invites by email, seasons, club events | `profiles.tenant_id = current_tenant_id()`. Guardian invites are not searched and a guardian's email or phone is never returned |
+| Athlete | own sessions by name or day, own results by event, competitions they can see, own goals, the coaches of their team | `athlete_id = current_athlete_id()`. Coaches come from the existing `get_current_athlete_team_coaches()`; only name and team role are used |
+| Guardian | linked children, the competitions of those children | `current_guardian_athlete_ids()`, `current_guardian_competition_ids()`. Nothing else, although the policies let a guardian read more |
+| Platform admin | clubs and requests (`tenant_provision_requests`), platform admins | `is_platform_admin()`. Returns before any club table is read. `search_platform_admins()` is the one new SECURITY DEFINER function: a person can only select their own `platform_admin_contacts` row, so finding another platform admin needs it; it checks `is_platform_admin()` and returns nothing to anyone else |
+| Deactivated member, paused or cancelled club, no profile, signed out | nothing | `current_app_role()` is null; `anon` has no execute grant |
+
+Never returned or matched: wellness, pain reports, readiness, coach notes, session notes, message text, exercise cues, competition, result and goal notes, dates of birth, guardian contact details. The result columns are fixed (kind, id, title, subtitle, params, rank, sort_date).
+
+Input: trimmed, inner spaces collapsed, cut at 80 characters, at least 2; only ever used as a value, with LIKE wildcards escaped. `search_fold()` (lower case, accents removed, immutable) and `search_rank()` (exact, starts with, a word starts with, inside) are shared by the query and by two guarded trigram indexes (`athletes_search_name_trgm_idx`, `sessions_search_title_trgm_idx`); without `pg_trgm` the file still applies and search uses the tenant indexes.
+
+Verified on a throwaway Postgres 16 (every earlier migration, then this one twice): 74 assertions as coach of one team, of the other, of both, assistant, deactivated coach, club admin, athlete, guardian, a guardian with no link, platform admin, another club's coach and admin, a paused club, a person with no profile, signed out; plus accent and case folding, ordering, the per kind limit, literal `%` and `_`, injection text and an over long query.
+
+## Platform admin tools (20261017110000_platform_admin_tools.sql)
+
+Two new tables, neither a tenant table (a notice is for every club; a dismissal belongs to one login and cascades with it). Both have row level security on and no insert, update or delete grant for any API role: they are written through the functions only.
+
+| Table | Athlete | Coach, assistant | Club admin | Guardian | Platform admin | Signed out |
+| --- | --- | --- | --- | --- | --- | --- |
+| `platform_notices` | no rows (reads go through `get_my_platform_notices()`) | no rows | no rows | no rows | select (`is_platform_admin()`) | no |
+| `platform_notice_dismissals` | select own rows | select own rows | select own rows | select own rows | none of their own | no |
+| `platform_admin_contacts` (new columns `added_by_email`, `deactivated_at`) | unchanged: own active row only | unchanged | unchanged | unchanged | own row by policy; the whole list only through `list_platform_admins()` | no |
+
+Functions, all SECURITY DEFINER with `search_path = public`. Every one except the two banner functions raises 42501 unless `is_platform_admin()`, which a club admin, coach, assistant, athlete, guardian, a login with no role and a signed out caller all fail.
+
+| Function | Who | What it returns or does |
+| --- | --- | --- |
+| `get_platform_club_overview(tenant)` | platform admin | One jsonb of facts and counts for support: owner and club admins (name, email), package, lifecycle, counts of teams, coaches, athletes, guardians, session media bytes, teams with their sizes, season, the newest sign-in per role, counts of plans, sessions logged in 28 days, test weeks, messages, announcements and failed emails, and the last 15 club log entries as action, role and time only (never target or detail, never an action about messages or health). No athlete name, health row, note, result or message text. Writes `platform_club_overview_opened` to `platform_audit_events` on every call |
+| `list_platform_admins()`, `add_platform_admin(email, name)`, `set_platform_admin_active(id, bool)` | platform admin | Add is refused for an email that belongs to a club member (profile, athlete, guardian link, approved club request). Deactivate is refused for the last active admin and for the caller's own row; the table is locked so two admins cannot switch each other off at once. Reactivate is refused when the email has since joined a club. Every change is audited |
+| `get_platform_usage(days)` | platform admin | 7, 28 or 90 days. Counts per club and sessions per week. The only person named is each club's owner |
+| `send_platform_notice(...)`, `list_platform_notices()`, `withdraw_platform_notice(id)` | platform admin | Sending queues an in-app notification through `enqueue_notification` for active members of open clubs whose role the audience reaches, and an email to club admins only when asked. Withdrawing also dismisses the notification and suppresses unsent emails. Both audited |
+| `get_my_platform_notices()` | any signed in member | Live notices (not withdrawn, not ended) whose audience reaches the caller's role (`current_app_role()`, so nothing for a deactivated member, a paused, cancelled or closed club, a platform admin or a login with no role), minus the ones the caller dismissed. Athletes and guardians: audience `everyone` only. Staff: coaches (assistants included) and club admins |
+| `dismiss_platform_notice(id)` | any signed in member | Writes the caller's own dismissal, only for a notice their role is reached by |
+| `get_platform_system_status()` | platform admin | Email, reminder, push and storage clean-up queue counts, schedule and last run, the newest migration when `supabase_migrations.schema_migrations` is readable, paused and closing clubs. Never the scheduler token |
+
+Deliberate choices: a guardian and an athlete get a notice only when it is for everyone; an assistant coach counts as staff. Nothing here lets a platform admin act as a club member or read a club table directly.
+
+Verified on a throwaway Postgres 16 (every earlier migration, then this one twice): 205 assertions. Each of the nine platform functions and direct writes to the three tables are refused for a club admin, coach, athlete, guardian, a login with no role and signed out; the overview's keys are checked against a fixed list and searched for planted note, message and audit text; last admin and self deactivate guards; club member email refused for each role; audience rules per role; a withdrawn or ended notice is gone for members of the same and of another club; audit rows for every change; deleting a login removes its dismissals.
+
+## Units of measure (20261017090000_unit_preferences.sql)
+
+A preference only. Stored loads, weights and heights stay metric; no measurement column is touched.
+
+| Table | Athlete | Coach, assistant | Club admin | Guardian | Platform admin | Signed out |
+| --- | --- | --- | --- | --- | --- | --- |
+| `unit_preferences` | select, insert, update, delete own row only (`user_id = auth.uid()` and `tenant_id = current_tenant_id()`) | own row only | own row only (never a member's) | own row only | none (no club) | no |
+| `club_unit_defaults` | select own club's row | select own club's row | select own club's row; writes only through `set_club_unit_defaults()` | select own club's row | none | no |
+
+`set_club_unit_defaults(weight, height)`: SECURITY DEFINER, `search_path = public`, calls `assert_caller_active()`, club admins only (42501 otherwise), refuses an unknown unit, writes one `audit_events` line when the default really changes.
+
+Deliberate choices: nobody reads another person's choice, not their coach and not their club admin (what a person reads in is theirs). A guardian reads their child's data in the guardian's own units. An assistant coach is like any member. A deactivated member and a member of a suspended or cancelled club read and write nothing (`current_tenant_id()` is null). `tenant_id` on a person's row is filled in by the database and cannot be moved to another club.
+
+Deleting: `unit_preferences.user_id` cascades from `auth.users`, so a row goes with the account; both tables carry `tenant_id` with a cascade, so `delete_closed_club()` sweeps them. No column points at `auth.users` with set null.
+
+Verified on a throwaway Postgres 16 (every migration before it, then this one twice): 69 assertions. Own row read and written by an athlete, coach, guardian and club admin; refused or empty for another athlete, the team coach, another team's coach, the club admin, a guardian, another club and signed out; a row cannot be written for someone else, filed under or moved to another club; a deactivated member and a suspended club are refused; the club default is set by either club admin, read by every role of that club only, refused for a coach, athlete, guardian, signed out and by direct table writes; audited once per real change; `delete_my_account()` removes the row; `delete_closed_club()` leaves nothing of the club in any table with a `tenant_id`.
+
+
+## Edit conflicts and the guardian login hint (20261017120000)
+
+No new table and no policy change.
+
+| Column | Athlete | Coach, assistant | Club admin | Guardian | Platform admin | Signed out |
+| --- | --- | --- | --- | --- | --- | --- |
+| `training_plans.updated_by_user_id`, `test_weeks.updated_by_user_id`, `teams.updated_by_user_id`, `club_profiles.updated_by_user_id` | read where the row's own select policy already lets them read the row; never written by anyone | same | same | same | same | no |
+
+The column is stamped by the trigger `stamp_updated_by()` (not security definer) with `auth.uid()` on every insert and update, so a caller cannot name someone else as the last editor, and a change by the server leaves it empty. The app saves these four records with `where updated_at = <the value it loaded>`; who may update a row is still decided only by the tables' existing update policies (a coach of another team, another club and an athlete still match no row). The name shown in "Andre changed this plan" comes from `profiles.display_name` under its existing policy.
+
+`bootstrap_current_profile()`: same function, same grants (authenticated and service role, not anon). It now also returns `invite_pending` for a pending, unexpired `guardian_invites` row addressed to the caller's confirmed email. It still creates a profile only for the requestor of an approved club request, never from an invite, and returns no club or role with `invite_pending`.
+
+Deleting: the new columns reference `auth.users` with "set null"; the migration ends with `install_deleted_account_triggers()`, so deleting the account that made the last change blanks them.
+
+Verified on a throwaway Postgres 16 (every migration before it, then this one twice): 54 assertions. Stale saves match no row for plans, test weeks, teams and the club profile; the last editor is stamped and cannot be spoofed; another team's coach, another club and an athlete cannot save or read the stamp; a server change leaves it empty; a deleted account is not stamped back; guardian invites give `invite_pending` only when pending, unexpired and for a confirmed email.

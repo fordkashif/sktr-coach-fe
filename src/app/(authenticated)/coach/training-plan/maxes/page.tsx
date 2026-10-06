@@ -10,6 +10,8 @@ import { liftKey } from "@/lib/data/exercises/loads"
 import type { LiftMax } from "@/lib/data/exercises/types"
 import type { Result } from "@/lib/data/result"
 import { getBackendMode } from "@/lib/supabase/config"
+import { useUnits } from "@/lib/units-store"
+import { parseWeightInput, weightInputText } from "@/lib/units"
 
 /** Teams and athletes come from the same place as the plan builder, so both modes agree on who is listed. */
 async function loadDirectory(scope: PlanScope): Promise<Result<PlanDirectory>> {
@@ -18,12 +20,6 @@ async function loadDirectory(scope: PlanScope): Promise<Result<PlanDirectory>> {
       ? (await import("@/components/coach/training-plan/supabase-adapter")).createSupabasePlanAdapter(scope)
       : (await import("@/components/coach/training-plan/mock-adapter")).createMockPlanAdapter(scope)
   return adapter.loadDirectory()
-}
-
-function parseKg(text: string): number | null {
-  const cleaned = text.trim().replace(/\s*kg$/i, "").replace(",", ".")
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) return null
-  return Number.parseFloat(cleaned)
 }
 
 function formatDay(dateIso: string | null) {
@@ -37,6 +33,7 @@ function formatDay(dateIso: string | null) {
  * ("80%") is turned into kilograms from these numbers.
  */
 export default function CoachLiftMaxesPage() {
+  const units = useUnits()
   const { role, coachTeamId, coachTeams, coachTeamsLoading } = useCoachTeamScope()
   const isCoach = role !== "club-admin"
   const teamIdsKey = isCoach ? coachTeams.map((team) => team.id).join(",") : null
@@ -114,7 +111,8 @@ export default function CoachLiftMaxesPage() {
     if (!lift) return
     const saved = maxByCell.get(cellId)
     setCellState((current) => ({ ...current, [cellId]: { state: "saving" } }))
-    const value = parseKg(text)
+    // Typed in the coach's own unit, stored in kilograms.
+    const value = parseWeightInput(text, units.weight)
     const result =
       value === null
         ? saved?.source === "result"
@@ -127,7 +125,7 @@ export default function CoachLiftMaxesPage() {
   }
 
   const fromResults = maxes.filter((max) => max.source === "result").length
-  const lede = "Each athlete's best single lift (1RM), in kilograms. A plan load written as a percentage is worked out from these, to the nearest 2.5 kg."
+  const lede = `Each athlete's best single lift (1RM), in ${units.weightWord}. A plan load written as a percentage is worked out from these, to the nearest ${units.weight === "lb" ? "5 lb" : "2.5 kg"}.`
 
   return (
     <Screen>
@@ -145,7 +143,7 @@ export default function CoachLiftMaxesPage() {
           <>
             <EntryGrid
               className="mt-3"
-              caption="Best single lift per athlete, in kilograms"
+              caption={`Best single lift per athlete, in ${units.weightWord}`}
               rowHeader="Athlete"
               rows={athletes.map((athlete) => ({
                 key: athlete.id,
@@ -157,16 +155,16 @@ export default function CoachLiftMaxesPage() {
                   </>
                 ),
               }))}
-              columns={lifts.map((lift) => ({ key: lift.key, header: lift.name, sub: "kg" }))}
+              columns={lifts.map((lift) => ({ key: lift.key, header: lift.name, sub: units.weightLabel }))}
               cell={(athleteId, key) => {
                 const max = maxByCell.get(`${athleteId}|${key}`)
                 const state = cellState[`${athleteId}|${key}`]
-                return { value: max ? String(max.valueKg) : "", state: state?.state ?? "idle", message: state?.message ?? (max ? `${max.source === "result" ? "From results" : max.source === "athlete" ? "Entered by the athlete" : "Entered by a coach"}${max.measuredOn ? `, ${formatDay(max.measuredOn)}` : ""}` : null), marked: max?.source === "result" }
+                return { value: max ? weightInputText(max.valueKg, units.weight) : "", state: state?.state ?? "idle", message: state?.message ?? (max ? `${max.source === "result" ? "From results" : max.source === "athlete" ? "Entered by the athlete" : "Entered by a coach"}${max.measuredOn ? `, ${formatDay(max.measuredOn)}` : ""}` : null), marked: max?.source === "result" }
               }}
               validate={(_key, text) => {
                 if (!text.trim()) return null
-                const value = parseKg(text)
-                if (value === null || value <= 0) return "Write the weight in kilograms, like 120 or 122.5."
+                const value = parseWeightInput(text, units.weight)
+                if (value === null || value <= 0) return units.weight === "lb" ? "Write the weight in pounds, like 265 or 267.5." : "Write the weight in kilograms, like 120 or 122.5."
                 return value > 1000 ? "That is more than anyone has lifted. Check the number." : null
               }}
               onCommit={(athleteId, key, text) => void commit(athleteId, key, text)}

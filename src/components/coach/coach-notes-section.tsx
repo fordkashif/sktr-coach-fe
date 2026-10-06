@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { ActionRow, Button, EmptyState, Field, FormGrid, InlineConfirm, Input, List, Notice, RowMenu, Section, SkeletonRows, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { addCoachNote, COACH_NOTE_MAX_LENGTH, deleteCoachNote, listCoachNotes, updateCoachNote, type CoachNote } from "@/lib/data/coach/coach-notes-data"
 import { parseLocalDay } from "@/lib/data/pr/pr-display"
 import { todayIso } from "@/lib/data/training-plan/plan-builder-model"
@@ -67,6 +68,7 @@ function NoteForm({
  */
 export function CoachNotesSection({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
   const [notes, setNotes] = useState<CoachNote[] | null>(null)
+  const undoableDelete = useUndoableDelete()
   const [loadError, setLoadError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -102,17 +104,16 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
     void load()
   }
 
-  const remove = async (note: CoachNote) => {
-    setBusyId(note.id)
-    const result = await deleteCoachNote(note.id)
-    setBusyId(null)
+  // The note leaves the list at once. The delete is sent when "Undo" runs out.
+  const remove = (note: CoachNote) => {
     setConfirmId(null)
-    if (!result.ok) {
-      setLoadError(result.error.message)
-      return
-    }
-    notify("Note deleted")
-    void load()
+    undoableDelete({
+      message: "Note deleted",
+      failed: "The note was not deleted",
+      hide: () => setNotes((current) => (current ? current.filter((item) => item.id !== note.id) : current)),
+      restore: () => void load(),
+      commit: () => deleteCoachNote(note.id),
+    })
   }
 
   const visible = notes ? (showAll ? notes : notes.slice(0, SHOWN)) : []
@@ -209,7 +210,7 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
                         question="Delete this note? It cannot be brought back."
                         confirmLabel="Delete note"
                         busy={busyId === note.id}
-                        onConfirm={() => void remove(note)}
+                        onConfirm={() => remove(note)}
                         onCancel={() => setConfirmId(null)}
                       />
                     ) : undefined

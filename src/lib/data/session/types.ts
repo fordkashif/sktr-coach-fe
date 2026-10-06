@@ -90,6 +90,10 @@ export type LoggableRow = SessionBlockRow & {
   targetLoad: string | null
   /** A link to a video or reference for the exercise, from the coach's library. */
   referenceUrl?: string | null
+  /** Set when the load is a percentage of a best lift, so it can be worked out again in the reader's unit (src/lib/units.ts). */
+  percent?: number | null
+  /** The lift the percentage refers to. */
+  liftName?: string | null
 }
 
 export type LoggableBlock = Omit<SessionBlock, "rows"> & { rows: LoggableRow[] }

@@ -1,3 +1,5 @@
+import { conflictSentence } from "@/lib/data/edit-conflict"
+import { findEditConflict, recordMockEdit } from "@/lib/data/edit-conflict-data"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   TestWeekScreen,
@@ -275,6 +277,9 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
   const onSave = useCallback(
     async (input: TestWeekSaveInput): Promise<ActionResult<{ id: string }>> => {
       const id = input.id ?? makeId("tw")
+      // Another tab may have saved this week since it was opened here.
+      const conflict = input.id && !input.overwrite ? await findEditConflict("test-week", input.id, input.expectedUpdatedAt) : null
+      if (conflict) return { ok: false, message: conflictSentence(conflict), conflict }
       const existing = storedWeeks.find((week) => week.id === id) ?? null
       const tests = input.tests.map((test) => ({ id: test.id ?? makeId("test"), name: test.name, unit: test.unit, dayIndex: test.dayIndex }))
       const keptTestIds = new Set(tests.map((test) => test.id))
@@ -298,6 +303,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
       }
       if (input.publish && existing?.status !== "published") onCreateTestWeek()
       commit((current) => (existing ? current.map((week) => (week.id === id ? next : week)) : [next, ...current]))
+      recordMockEdit("test-week", id)
       return { ok: true, data: { id } }
     },
     [commit, storedWeeks],
@@ -383,6 +389,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
       starterTests={starterTests}
       loadDetail={loadDetail}
       onSave={onSave}
+      onReload={() => setStoredWeeks(readStoredWeeks())}
       onPublish={onPublish}
       onSetOpen={onSetOpen}
       onSaveResult={onSaveResult}

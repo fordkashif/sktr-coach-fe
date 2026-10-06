@@ -1,6 +1,6 @@
+import { clubToday } from "@/lib/club-day"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { dateKeyLocal } from "@/lib/athlete-session"
 import { cleanClubTimezone, DEFAULT_CLUB_TIMEZONE } from "@/lib/club-timezone"
 import type { CalendarData, CalendarRange } from "@/lib/data/calendar/calendar-data"
 import { CLUB_EVENTS_CHANGED_EVENT } from "@/lib/data/calendar/club-events-data"
@@ -11,7 +11,7 @@ import type { Result } from "@/lib/data/result"
 /** Which month is showing, kept in the address (?month=2026-11) so back, reload and links keep it. */
 export function useCalendarMonth() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [today] = useState(() => dateKeyLocal(new Date()))
+  const [today] = useState(() => clubToday())
   const param = searchParams.get("month")
   const month = isMonthKey(param) ? param : monthOf(today)
   const setMonth = useCallback(

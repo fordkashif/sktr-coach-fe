@@ -39,6 +39,7 @@ import {
   type SkipReason,
 } from "@/lib/data/session/types"
 import { addDaysIso } from "@/lib/data/training-plan/plan-builder-model"
+import { useUnits } from "@/lib/units-store"
 import { repeatTarget, setKey, type LogField } from "./use-session-log"
 
 function parseDay(dateIso: string) {
@@ -160,6 +161,7 @@ export const EFFORT_WORDS = ["", "Very easy", "Very easy", "Easy", "Easy", "Mode
  * (each set with its effort) and the note they left.
  */
 function LastTimeLine({ label, last }: { label: string; last: LastTimeResult }) {
+  const units = useUnits()
   const [open, setOpen] = useState(false)
   const effort = lastTimeEffort(last)
   const noun = SET_NOUN[last.kind]
@@ -172,7 +174,7 @@ function LastTimeLine({ label, last }: { label: string; last: LastTimeResult }) 
         className="-mb-1 flex min-h-11 w-full cursor-pointer items-center gap-2 text-left text-sm leading-snug text-sk-mute hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
       >
         <span className="min-w-0 flex-1">
-          Last time: {last.summary} ({formatShortDay(last.date)}){effort ? `, ${effort}` : ""}
+          Last time: {units.text(last.summary)} ({formatShortDay(last.date)}){effort ? `, ${effort}` : ""}
         </span>
         <CaretDown className={open ? "size-4 shrink-0 rotate-180" : "size-4 shrink-0"} weight="bold" aria-hidden />
         <span className="sr-only">{open ? "Hide the sets" : "Show every set"}</span>
@@ -185,7 +187,7 @@ function LastTimeLine({ label, last }: { label: string; last: LastTimeResult }) 
                 <span className="w-20 shrink-0 text-sk-mute">
                   {noun} {set.setIndex}
                 </span>
-                <span className="min-w-0 flex-1 font-semibold text-sk-ink">{lastTimeSetText(last.kind, set)}</span>
+                <span className="min-w-0 flex-1 font-semibold text-sk-ink">{units.text(lastTimeSetText(last.kind, set))}</span>
                 <span className="shrink-0 text-sk-mute">{set.rpe ? `Effort ${set.rpe}` : ""}</span>
               </li>
             ))}
@@ -236,6 +238,7 @@ export function ExerciseLog({
   /** Photos and videos of this exercise: the add button for the action line, and the rows under it. */
   media?: { action: ReactNode; list: ReactNode }
 }) {
+  const units = useUnits()
   const sets = Array.from({ length: count }, (_, index) => index + 1)
   const doneCount = sets.filter((setIndex) => logs[setKey(row.id, setIndex)]?.completed).length
   const allDone = doneCount === count
@@ -275,7 +278,7 @@ export function ExerciseLog({
       hint={hint}
       below={below}
       status={allDone ? <StatusText tone="green">Done</StatusText> : `${doneCount} of ${count}`}
-      columns={row.kind === "strength" ? ["Reps", "kg"] : row.kind === "time" ? ["Time"] : row.kind === "mark" ? ["Metres"] : undefined}
+      columns={row.kind === "strength" ? ["Reps", units.weightLabel] : row.kind === "time" ? ["Time"] : row.kind === "mark" ? ["Metres"] : undefined}
       effortColumn={rated}
       actions={
         <>
@@ -381,10 +384,11 @@ export function ExerciseLog({
                   onChange={(value) => onValue(setIndex, "reps", value)}
                 />
                 <NumberInput
-                  label={`${row.label}, set ${setIndex}, load in kilograms`}
-                  value={log?.loadKg ?? null}
-                  placeholder={trim(target.loadKg) ?? "0"}
-                  onChange={(value) => onValue(setIndex, "loadKg", value)}
+                  label={`${row.label}, set ${setIndex}, load in ${units.weightWord}`}
+                  // Stored in kilograms whatever the athlete reads and types.
+                  value={log?.loadKg == null ? null : units.loadNumber(log.loadKg)}
+                  placeholder={trim(target.loadKg == null ? null : units.loadNumber(target.loadKg)) ?? "0"}
+                  onChange={(value) => onValue(setIndex, "loadKg", value === null ? null : units.toKg(value))}
                 />
               </>
             ) : row.kind === "time" ? (
@@ -418,13 +422,14 @@ export function ExerciseLog({
 
 /** Read-only rows of what was logged: exercise, result, effort set by set, the note, target. */
 export function LoggedSummary({ blocks, logs }: { blocks: LoggableBlock[]; logs: Record<string, SessionRowLog> }) {
+  const units = useUnits()
   const all = Object.values(logs)
   return (
     <List>
       {blocks.flatMap((block) =>
         block.rows.map((row) => {
           const logged = all.filter((log) => log.rowId === row.id && !isLogEmpty(log)).sort((left, right) => left.setIndex - right.setIndex)
-          const sets = logged.map((log) => formatSetLog(row.kind, log)).filter(Boolean)
+          const sets = logged.map((log) => units.text(formatSetLog(row.kind, log))).filter(Boolean)
           const onlyDone = sets.length > 0 && sets.every((entry) => entry === "Done")
           const result = sets.length === 0 ? "Not logged" : onlyDone ? (sets.length > 1 ? `${sets.length} done` : "Done") : sets.join(", ")
           const showBlock = block.name !== row.label && blocks.length > 1

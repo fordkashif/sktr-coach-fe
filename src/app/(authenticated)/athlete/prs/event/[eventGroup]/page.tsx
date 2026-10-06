@@ -36,6 +36,7 @@ import {
 import { getCurrentAthleteGoals } from "@/lib/data/goals/goals-data"
 import { parseLocalDay } from "@/lib/data/pr/pr-display"
 import { canViewerEditResult, getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
+import { viewText } from "@/lib/units-view"
 
 type SavedNotice = { tone: "success" | "warning" | "info"; text: string }
 
@@ -247,7 +248,7 @@ export default function AthleteEventHistoryPage() {
             className="mt-2"
             points={legalOldestFirst.map((result) => ({ x: parseLocalDay(result.date) ?? new Date(result.date), y: result.value }))}
             seriesName={event.label}
-            formatValue={(value) => formatMarkWithUnit(formatMark(value, event.unit), event.unit)}
+            formatValue={(value) => viewText(formatMarkWithUnit(formatMark(value, event.unit), event.unit))}
             label={`${event.label} progression over ${legalOldestFirst.length} wind legal results, from ${markText(legalOldestFirst[0])} on ${dayText(legalOldestFirst[0].date)} to ${markText(
               legalOldestFirst[legalOldestFirst.length - 1],
             )} on ${dayText(legalOldestFirst[legalOldestFirst.length - 1].date)}.${personalBest ? ` Personal best ${markText(personalBest)}.` : ""}`}

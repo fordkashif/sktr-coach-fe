@@ -119,6 +119,18 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     emailAvailable: true,
   },
 
+  // From the SKTR team to every club (20261017110000). Athletes and guardians only get the ones
+  // sent to everyone; the email goes to club admins only, and only when the sender asks for it.
+  {
+    key: "platform-notices",
+    title: "Notices from SKTR Coach",
+    description: "Short notices from the SKTR Coach team about the app, such as planned maintenance. An email is only ever sent to club admins.",
+    eventTypes: ["platform_notice"],
+    roles: ["athlete", "coach", "club-admin", "guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+
   // Coach (and a club admin who also coaches a team)
   {
     key: "athlete-availability",

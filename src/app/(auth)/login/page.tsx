@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strateg
 import { InviteSteps } from "@/components/auth/invite-frame"
 import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, ListRow, Notice, PasswordInput, RadioRow, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
 import { AuthSplit } from "@/layouts/auth-layout"
+import { safeReturnPath } from "@/lib/return-path"
 import { describeAccessRequestError, describeAuthLinkError, describeNoAccessError, describeSignInError } from "@/lib/auth-errors"
 import { setSessionCookies } from "@/lib/auth-session"
 import { getPackageById, getRecommendedPackage, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
@@ -169,10 +170,8 @@ export default function LoginPage() {
             : []),
         ]
       : []
-  const safeRedirect = (() => {
-    const candidate = searchParams.get("redirect")
-    return candidate && candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : null
-  })()
+  // Where the person was before signing in. Checked against their role once it is known.
+  const returnParam = searchParams.get("redirect")
 
   // Start the clock when the request form appears (again after a sent request, too).
   useEffect(() => {
@@ -230,8 +229,9 @@ export default function LoginPage() {
         actor.role === "coach" ? coachTeamId : undefined,
       )
 
-      if (safeRedirect) {
-        navigate(safeRedirect, { replace: true })
+      const returnTo = safeReturnPath(returnParam, actor.role)
+      if (returnTo) {
+        navigate(returnTo, { replace: true })
         return
       }
       if (actor.role === "athlete") {
@@ -306,7 +306,7 @@ export default function LoginPage() {
       active = false
       subscription.unsubscribe()
     }
-  }, [isSupabaseMode, navigate, rememberMe, safeRedirect])
+  }, [isSupabaseMode, navigate, rememberMe, returnParam])
 
   const signInWithMockAccount = async (accountEmail: string, accountPassword: string) => {
     const { resolveMockLogin } = await import("@/lib/mock-auth")
@@ -330,7 +330,7 @@ export default function LoginPage() {
 
     setSessionCookies(match.role, match.tenantId, match.email, match.role === "coach" ? coachTeamId : undefined)
     setError("")
-    navigate(match.redirectTo)
+    navigate(safeReturnPath(returnParam, match.role) ?? match.redirectTo)
   }
 
   const signInWithSupabase = async () => {
@@ -381,8 +381,9 @@ export default function LoginPage() {
     )
 
     setError("")
-    if (safeRedirect) {
-      navigate(safeRedirect)
+    const returnTo = safeReturnPath(returnParam, actor.role)
+    if (returnTo) {
+      navigate(returnTo)
       return
     }
     if (actor.role === "athlete") {

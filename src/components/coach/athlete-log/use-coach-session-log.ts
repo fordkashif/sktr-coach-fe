@@ -1,11 +1,12 @@
+import { clubToday } from "@/lib/club-day"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { repeatTarget, setCount, setKey, type LogField } from "@/components/athlete/log/use-session-log"
-import { dateKeyLocal } from "@/lib/athlete-session"
 import { cleanMinutes } from "@/lib/data/load/training-load"
 import { loadAthleteSessionForCoach, saveAthleteCompletionForCoach, saveAthleteRowLogsForCoach, type CoachLogDay } from "@/lib/data/coach/athlete-log-data"
 import { cleanEffort, NOTE_MAX_LENGTH } from "@/lib/data/session/log-assist"
 import { MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
 import type { LoggableRow, SessionRowLog } from "@/lib/data/session/types"
+import { useViewerBlocks } from "@/lib/use-viewer-session"
 
 type LogMap = Record<string, SessionRowLog>
 export type CoachLogSaveState = { status: "idle" | "saving" | "saved" | "error"; message: string | null }
@@ -216,7 +217,7 @@ export function useCoachSessionLog(athleteId: string, date: string) {
     if (!(await flush())) return false
     setSave({ status: "saving", message: null })
     const result = await saveAthleteCompletionForCoach(athleteId, session.id, {
-      completionDate: session.completedOn ?? dateKeyLocal(new Date()),
+      completionDate: session.completedOn ?? clubToday(),
       rpe: wrapUp.rpe,
       comment: wrapUp.comment.trim() || null,
       durationMinutes: cleanMinutes(wrapUp.minutes),
@@ -242,9 +243,13 @@ export function useCoachSessionLog(athleteId: string, date: string) {
     return { total, done }
   }, [day?.session?.blocks, extraSets, logs])
 
+  // Targets in the coach's own unit (kilograms or pounds). What is logged stays in kilograms.
+  const viewBlocks = useViewerBlocks(day?.session?.blocks, athleteId)
+  const viewDay = useMemo(() => (day?.session && viewBlocks !== day.session.blocks ? { ...day, session: { ...day.session, blocks: viewBlocks } } : day), [day, viewBlocks])
+
   return {
-    day,
-    session: day?.session ?? null,
+    day: viewDay,
+    session: viewDay?.session ?? null,
     loadError,
     reload: () => setReloadToken((value) => value + 1),
     logs,

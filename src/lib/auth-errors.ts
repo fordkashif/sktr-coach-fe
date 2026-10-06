@@ -53,7 +53,8 @@ export function describeSignInError(error: ErrorLike): string {
  */
 export function describeNoAccessError(reason: "invite_pending" | "none" | "error" | null | undefined): string {
   if (reason === "invite_pending") {
-    return "Your password is right, but you have not joined your club yet. Open the link in your invite email to finish joining, then sign in."
+    // The invite may be for a coach, an athlete, or a parent or guardian following a child (migration 20261017120000).
+    return "Your password is right, but your invite has not been accepted yet. Open the link in your invite email to finish (this is the same for a coach, an athlete, and a parent or guardian), then sign in."
   }
   if (reason === "error") {
     return "Your password is right, but we could not load your account. Try again in a moment."

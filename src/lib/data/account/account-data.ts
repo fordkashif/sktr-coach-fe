@@ -398,3 +398,17 @@ export async function signOutOtherDevices(): Promise<Result<null>> {
   if (error) return err("UNKNOWN", describeAccountAuthError(error, "We could not sign out your other devices. Try again in a moment."), error)
   return ok(null)
 }
+
+/**
+ * Ends every session of this account, this device included (a stolen password, a phone that is gone).
+ * Supabase revokes all refresh tokens; another device stops working when its current access token
+ * runs out (up to an hour) or the next time it talks to the sign-in service, whichever is first.
+ */
+export async function signOutEveryDevice(): Promise<Result<null>> {
+  if (getBackendMode() !== "supabase") return ok(null)
+  const client = supabaseClient()
+  if (!client) return err("UNKNOWN", "Supabase client is not configured.")
+  const { error } = await client.auth.signOut({ scope: "global" })
+  if (error) return err("UNKNOWN", describeAccountAuthError(error, "We could not sign out every device. Try again in a moment."), error)
+  return ok(null)
+}

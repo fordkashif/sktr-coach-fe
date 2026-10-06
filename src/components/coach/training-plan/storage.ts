@@ -47,6 +47,15 @@ export type PlanScope = {
 }
 
 /**
+ * A save is refused (CONFLICT, see readEditConflict) when the plan changed since loadPlan read it.
+ * `overwrite` is "Save mine anyway".
+ */
+export type PlanSaveOptions = { overwrite?: boolean }
+
+/** What each plan looked like when this browser last loaded or saved it (its updated_at). */
+export const loadedPlanStamps = new Map<string, string | null>()
+
+/**
  * Where plans live. The builder UI only talks to this, so mock mode and the real
  * backend get exactly the same screen and the same features.
  */
@@ -55,9 +64,9 @@ export interface PlanStorageAdapter {
   listPlans(): Promise<Result<PlanListItem[]>>
   loadPlan(planId: string): Promise<Result<PlanDraft>>
   /** Creates or overwrites a draft. Never reaches athletes. */
-  saveDraft(plan: PlanDraft): Promise<Result<{ planId: string }>>
+  saveDraft(plan: PlanDraft, options?: PlanSaveOptions): Promise<Result<{ planId: string }>>
   /** Publishes a new plan or a draft, or saves changes to a plan that is already published. */
-  publish(plan: PlanDraft): Promise<Result<{ planId: string; assignedCount: number }>>
+  publish(plan: PlanDraft, options?: PlanSaveOptions): Promise<Result<{ planId: string; assignedCount: number }>>
   archive(planId: string): Promise<Result<{ planId: string }>>
   remove(planId: string): Promise<Result<{ planId: string }>>
   /**

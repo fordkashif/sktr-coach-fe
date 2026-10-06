@@ -1,7 +1,9 @@
 "use client"
 
+import { conflictSentence, readEditConflict, type EditConflict } from "@/lib/data/edit-conflict"
+import { findEditConflict, getEditStamp, recordMockEdit } from "@/lib/data/edit-conflict-data"
 import { Plus, UserPlus } from "@phosphor-icons/react"
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { AssignTeamDialog } from "@/components/club-admin/athletes-view"
@@ -37,6 +39,7 @@ import {
   type DataTableColumn,
   type RowMenuItem,
   type StateTone,
+  EditConflictDialog,
 } from "@/components/sk"
 import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
 import { coachLeftTeamLine, teamCoachRoleLabel, type TeamCoachRole } from "@/lib/coach-permissions"
@@ -135,6 +138,8 @@ export default function ClubAdminTeamsPage() {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [form, setForm] = useState<TeamForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const teamEditStamp = useRef<string | null | undefined>(undefined)
+  const [teamConflict, setTeamConflict] = useState<EditConflict | null>(null)
   const [saving, setSaving] = useState(false)
   const [addAthletesTeam, setAddAthletesTeam] = useState<{ id: string; name: string } | null>(null)
   const [movingAthlete, setMovingAthlete] = useState<ClubAthlete | null>(null)
@@ -296,6 +301,11 @@ export default function ClubAdminTeamsPage() {
 
   const openEdit = (team: TeamRow) => {
     setFormError(null)
+    // What the team looks like now, to notice another admin saving it while this form is open.
+    teamEditStamp.current = undefined
+    void getEditStamp("team", team.id).then((stamp) => {
+      if (stamp.ok) teamEditStamp.current = stamp.data.updatedAt
+    })
     setForm({
       mode: "edit",
       teamId: team.id,
@@ -327,8 +337,8 @@ export default function ClubAdminTeamsPage() {
     setSearchParams(teamId ? { team: teamId } : {})
   }
 
-  const handleSaveForm = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleSaveForm = async (event: FormEvent<HTMLFormElement> | null, overwrite = false) => {
+    event?.preventDefault()
     if (!form) return
     const name = form.name.trim()
     if (!name) {
@@ -385,9 +395,15 @@ export default function ClubAdminTeamsPage() {
       const teamId = form.teamId
       const existing = teams.find((team) => team.id === teamId)
       if (isSupabaseMode) {
-        const updateResult = await updateClubAdminTeam({ teamId, name, eventGroup: form.eventGroup, status: existing?.status ?? "active" })
+        const updateResult = await updateClubAdminTeam({ teamId, name, eventGroup: form.eventGroup, status: existing?.status ?? "active", guard: { expectedUpdatedAt: teamEditStamp.current, overwrite } })
         if (!updateResult.ok) {
           setSaving(false)
+          // Another admin saved this team since the form opened: ask, never overwrite silently.
+          const found = readEditConflict(updateResult.error)
+          if (found) {
+            setTeamConflict(found)
+            return
+          }
           setFormError(updateResult.error.message)
           return
         }
@@ -400,6 +416,13 @@ export default function ClubAdminTeamsPage() {
         }
         await reload()
       } else {
+        const found = overwrite ? null : await findEditConflict("team", teamId, teamEditStamp.current)
+        if (found) {
+          setSaving(false)
+          setTeamConflict(found)
+          return
+        }
+        recordMockEdit("team", teamId)
         const users = loadUsersSafe()
         const lead = users.find((user) => user.id === leadId)
         await saveMockTeams((current) =>
@@ -412,7 +435,19 @@ export default function ClubAdminTeamsPage() {
 
     setSaving(false)
     setError(null)
+    setTeamConflict(null)
     setForm(null)
+  }
+
+  // "See their version": the form closes and the teams are read again. This short form keeps no draft copy.
+  const seeTheirTeamVersion = async () => {
+    setSaving(true)
+    await reload()
+    setSaving(false)
+    setTeamConflict(null)
+    setForm(null)
+    setFormError(null)
+    notify("This is their version", "Your own changes to the team were not saved.")
   }
 
   const handleArchiveToggle = async (team: TeamRow, archived: boolean) => {
@@ -571,6 +606,19 @@ export default function ClubAdminTeamsPage() {
       />
     ) : null
 
+  const conflictDialog = teamConflict ? (
+    <EditConflictDialog
+      open
+      title={conflictSentence(teamConflict)}
+      busy={saving}
+      onClose={() => setTeamConflict(null)}
+      onSeeTheirs={() => void seeTheirTeamVersion()}
+      onSaveMine={() => void handleSaveForm(null, true)}
+    >
+      See their version closes this form and shows the team as it is now. What you changed here is not kept. Save mine anyway replaces their details with yours.
+    </EditConflictDialog>
+  ) : null
+
   const formDialog = (
     <Dialog
       open={Boolean(form)}
@@ -671,6 +719,7 @@ export default function ClubAdminTeamsPage() {
   const sharedDialogs = (
     <>
       {formDialog}
+      {conflictDialog}
       {addAthletesTeam ? (
         <AddAthletesDialog
           open

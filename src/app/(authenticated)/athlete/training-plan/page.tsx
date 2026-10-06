@@ -1,5 +1,6 @@
 "use client"
 
+import { clubToday } from "@/lib/club-day"
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Play, Plus } from "@phosphor-icons/react"
@@ -40,6 +41,7 @@ import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, TrainingPlanWeek } from "@/lib/data/training-plan/types"
 import { isWeekType, weekLine } from "@/lib/data/training-plan/plan-phases"
 import { getBackendMode } from "@/lib/supabase/config"
+import { useUnits, type Units } from "@/lib/units-store"
 
 function parseDateKey(key: string) {
   return new Date(`${key.slice(0, 10)}T00:00:00`)
@@ -90,10 +92,10 @@ function buildWeekRows(week: TrainingPlanWeek, planStartDate: string, weekPositi
 }
 
 /** One short line for a day in the week list. The full detail is one tap away. */
-function daySummary(day: TrainingPlanDay) {
+function daySummary(day: TrainingPlanDay, units: Units) {
   const facts = [day.durationMinutes ? `${day.durationMinutes} min` : null, day.location].filter(Boolean).join(", ")
   if (day.blockPreview.length === 0) return facts || day.focus || `${day.sessionType} session`
-  const shown = day.blockPreview.slice(0, 2).join(", ")
+  const shown = day.blockPreview.slice(0, 2).map((preview) => units.target(preview)).join(", ")
   const more = day.blockPreview.length - 2
   return more > 0 ? `${shown} and ${more} more` : shown
 }
@@ -136,7 +138,8 @@ function PlanDayScreen({
   current: AthleteAvailability | null
   onChanged: () => void
 }) {
-  const today = dateKeyLocal(new Date())
+  const units = useUnits()
+  const today = clubToday()
   const log = useSessionLog(date)
   const { day, session } = log
   const [skipOpen, setSkipOpen] = useState(false)
@@ -235,7 +238,7 @@ function PlanDayScreen({
         <Section title="What is planned">
           <List ordered>
             {planDay.blockPreview.map((block, index) => (
-              <ListRow key={`${index}-${block}`} title={block} />
+              <ListRow key={`${index}-${block}`} title={units.target(block)} />
             ))}
           </List>
         </Section>
@@ -293,6 +296,7 @@ function PlanDayScreen({
 }
 
 export default function AthleteTrainingPlanPage() {
+  const units = useUnits()
   const backendMode = getBackendMode()
   const isSupabase = backendMode === "supabase"
   const [searchParams, setSearchParams] = useSearchParams()
@@ -306,7 +310,7 @@ export default function AthleteTrainingPlanPage() {
   const [backendError, setBackendError] = useState<string | null>(null)
   const [refs, setRefs] = useState<AthleteSessionRef[]>([])
   const [refsToken, setRefsToken] = useState(0)
-  const [todayKey] = useState(() => dateKeyLocal(new Date()))
+  const [todayKey] = useState(() => clubToday())
   const [mockPlans] = useState(() => (isSupabase ? [] : mockAthletePlans()))
 
   const selectedPlanId = searchParams.get("plan")
@@ -638,7 +642,7 @@ export default function AthleteTrainingPlanPage() {
                     to={planQuery({ day: row.dateKey })}
                     leading={leading}
                     title={day.title}
-                    subtitle={daySummary(day)}
+                    subtitle={daySummary(day, units)}
                     trailing={state?.label ? <StatusText tone={state.tone}>{state.kind === "skipped" ? "Skipped" : state.label}</StatusText> : undefined}
                     aria-current={isToday ? "date" : undefined}
                   />,

@@ -26,6 +26,7 @@ import {
 } from "@/components/sk"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { deleteClubEvent } from "@/lib/data/calendar/club-events-data"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import type { CalendarTeam } from "@/lib/data/calendar/calendar-data"
 import { downloadIcsForItem } from "@/lib/data/calendar/ics-download"
 import {
@@ -78,7 +79,7 @@ function attendanceHref(item: CalendarItem, day: string) {
  */
 export function CalendarBoard({
   label,
-  items,
+  items: allItems,
   loading,
   error,
   warnings = [],
@@ -118,7 +119,10 @@ export function CalendarBoard({
   const [openUnavailable, setOpenUnavailable] = useState<{ item: CalendarItem; day: string } | null>(null)
   const [showEarlier, setShowEarlier] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  // Events taken off the calendar while "Undo" is offered.
+  const [hiddenEventIds, setHiddenEventIds] = useState<string[]>([])
+  const undoableDelete = useUndoableDelete()
+  const items = useMemo(() => (hiddenEventIds.length === 0 ? allItems : allItems.filter((item) => !(item.kind === "event" && item.sourceId !== undefined && hiddenEventIds.includes(item.sourceId as string)))), [allItems, hiddenEventIds])
 
   const bounds = monthBounds(month)
   const isCurrentMonth = month === monthOf(today)
@@ -177,15 +181,20 @@ export function CalendarBoard({
   const mayManage = Boolean(event && eventTools && canManageEvent(event, eventTools.viewer))
   const teamNames = new Map((eventTools?.teams ?? []).map((team) => [team.id, team.name]))
 
-  const removeEvent = async () => {
+  // The event leaves the calendar at once. The delete is sent when "Undo" runs out.
+  const removeEvent = () => {
     if (!event || !eventTools) return
-    setDeleting(true)
-    const result = await deleteClubEvent(event.id, eventTools.viewer)
-    setDeleting(false)
+    const { id } = event
+    const viewer = eventTools.viewer
     setConfirmDelete(false)
-    if (!result.ok) return notifyError("The event was not deleted", result.error.message)
     setOpenEventId(null)
-    notify("Event deleted")
+    undoableDelete({
+      message: "Event deleted",
+      failed: "The event was not deleted",
+      hide: () => setHiddenEventIds((current) => [...current, id]),
+      restore: () => setHiddenEventIds((current) => current.filter((hidden) => hidden !== id)),
+      commit: () => deleteClubEvent(id, viewer),
+    })
   }
 
   return (
@@ -374,7 +383,7 @@ export function CalendarBoard({
               ) : null}
             </FactList>
             {confirmDelete ? (
-              <InlineConfirm className="mt-4" question="Delete this event? It disappears from every calendar it is on." confirmLabel="Delete event" onConfirm={() => void removeEvent()} onCancel={() => setConfirmDelete(false)} busy={deleting} />
+              <InlineConfirm className="mt-4" question="Delete this event? It disappears from every calendar it is on." confirmLabel="Delete event" onConfirm={removeEvent} onCancel={() => setConfirmDelete(false)} />
             ) : null}
           </>
         ) : null}

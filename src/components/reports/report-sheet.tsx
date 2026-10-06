@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { ClubMark, PrintSheet, SheetBars, SheetLine } from "@/components/sk"
 import { reportDayText, reportRangeText, type AthleteReportSnapshot, type ReportClub } from "@/lib/data/reports/athlete-report"
 import "./report-sheet.css"
+import { useUnits } from "@/lib/units-store"
 
 /**
  * The athlete report as a sheet: the club, the athlete, the period, the coach, then the sections
@@ -82,6 +83,9 @@ function plural(count: number, one: string, many: string) {
 /** The sections of a report, in sheet order. Shared by the screen and the paper version. */
 export function ReportBody({ snapshot, headingAs = "h2" }: { snapshot: AthleteReportSnapshot; headingAs?: HeadingTag }) {
   const { attendance, training, results, tests, goals, wellness, injuries } = snapshot
+  // The report is saved in kilograms. Whoever opens it reads strength marks in their own unit;
+  // a parent on the private link, who has no account, reads kilograms.
+  const units = useUnits()
   const first = snapshot.athlete.name.split(" ")[0] || snapshot.athlete.name
   return (
     <>
@@ -152,11 +156,11 @@ export function ReportBody({ snapshot, headingAs = "h2" }: { snapshot: AthleteRe
                     {row.event}
                     {row.where ? <span className="sk-report-sub">{row.where}</span> : null}
                   </>,
-                  <strong>{row.mark}</strong>,
+                  <strong>{units.text(row.mark)}</strong>,
                   reportDayText(row.date),
                   row.standing ? <span className={row.standing === "wind-assisted" ? undefined : "sk-report-good"}>{STANDING_TEXT[row.standing]}</span> : null,
-                  row.seasonBest,
-                  row.personalBest,
+                  units.text(row.seasonBest),
+                  units.text(row.personalBest),
                 ])}
               />
               {results.more > 0 ? <p className="sk-report-note">And {plural(results.more, "more result", "more results")} in the period.</p> : null}
@@ -176,10 +180,10 @@ export function ReportBody({ snapshot, headingAs = "h2" }: { snapshot: AthleteRe
               columns={["Test", "Result", "Date", "Last time", "Change"]}
               rows={tests.rows.map((row) => [
                 row.name,
-                <strong>{row.value}</strong>,
+                <strong>{units.text(row.value)}</strong>,
                 reportDayText(row.date),
-                row.previous ?? "First time",
-                row.changeText ? <span className={row.change === "better" ? "sk-report-good" : row.change === "worse" ? "sk-report-watch" : undefined}>{row.changeText}</span> : null,
+                units.text(row.previous) ?? "First time",
+                row.changeText ? <span className={row.change === "better" ? "sk-report-good" : row.change === "worse" ? "sk-report-watch" : undefined}>{units.text(row.changeText)}</span> : null,
               ])}
             />
           ) : (
@@ -200,8 +204,8 @@ export function ReportBody({ snapshot, headingAs = "h2" }: { snapshot: AthleteRe
                   {row.event}
                   {row.targetDate ? <span className="sk-report-sub">By {reportDayText(row.targetDate)}</span> : null}
                 </>,
-                <strong>{row.target}</strong>,
-                row.current ?? "No mark yet",
+                <strong>{units.text(row.target)}</strong>,
+                units.text(row.current) ?? "No mark yet",
                 <span className="sk-report-progress">
                   <span className="sk-report-meter" aria-hidden>
                     <i style={{ width: `${row.percent}%` }} />
