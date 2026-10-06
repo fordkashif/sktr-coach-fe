@@ -20,10 +20,10 @@ export function GuardedAuthenticatedLayout() {
     let retryTimer: number | undefined
     let attempts = 0
 
-    const resolveAccess = async () => {
+    const resolveAccess = async (fresh = false) => {
       let authContext: GuardAuthContext
       try {
-        authContext = await getCurrentGuardAuthContext()
+        authContext = await getCurrentGuardAuthContext({ fresh })
         attempts = 0
       } catch (error) {
         if (!(error instanceof GuardCheckUnavailable)) throw error
@@ -33,7 +33,7 @@ export function GuardedAuthenticatedLayout() {
         attempts += 1
         setUnreachable(attempts >= 3)
         window.clearTimeout(retryTimer)
-        retryTimer = window.setTimeout(() => void resolveAccess(), Math.min(1000 * 2 ** (attempts - 1), 15_000))
+        retryTimer = window.setTimeout(() => void resolveAccess(fresh), Math.min(1000 * 2 ** (attempts - 1), 15_000))
         return
       }
       if (!cancelled) setUnreachable(false)
@@ -60,8 +60,9 @@ export function GuardedAuthenticatedLayout() {
       }
     }
 
+    // The sign-in or its standing changed (signed in or out, access paused): ask the server again.
     const handleSessionUpdated = () => {
-      void resolveAccess()
+      void resolveAccess(true)
     }
 
     window.addEventListener("focus", handleWindowFocus)

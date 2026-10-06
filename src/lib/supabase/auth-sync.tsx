@@ -37,7 +37,11 @@ export function SupabaseAuthSync() {
 
     let active = true
 
-    const syncSession = async () => {
+    // Coming back to the tab asks again at most once a minute. A real change of sign-in always asks.
+    let lastSyncedAt = 0
+    let lastSyncedUser: string | null = null
+
+    const syncSession = async (force = false) => {
       let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>
       try {
         sessionResult = await supabase.auth.getSession()
@@ -47,6 +51,8 @@ export function SupabaseAuthSync() {
       const session = sessionResult.data.session
 
       if (!active) return
+
+      if (session && !force && lastSyncedUser === session.user.id && Date.now() - lastSyncedAt < 60_000) return
 
       if (!session) {
         // No answer from the server is not a sign out. Leave everything as it is.
@@ -76,6 +82,8 @@ export function SupabaseAuthSync() {
 
       // A platform admin has no club. The login page writes the same placeholder.
       setSessionCookies(actor.role, actor.tenantId ?? "platform-admin", session.user.email ?? session.user.id, coachTeamId)
+      lastSyncedAt = Date.now()
+      lastSyncedUser = session.user.id
     }
 
     void syncSession()
@@ -92,8 +100,9 @@ export function SupabaseAuthSync() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void syncSession()
+    } = supabase.auth.onAuthStateChange((event) => {
+      // A renewed token is the same sign-in. Everything else may be a different one.
+      void syncSession(event !== "TOKEN_REFRESHED" && event !== "INITIAL_SESSION")
     })
 
     window.addEventListener("focus", handleWindowFocus)
