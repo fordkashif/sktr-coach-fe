@@ -65,7 +65,40 @@ async function getMockGuardAuthContext(): Promise<GuardAuthContext> {
   }
 }
 
-async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
+/*
+ * Working out who someone is takes several requests to the server, and the guard asks on every
+ * screen change. For a member in good standing the answer is remembered for a short while, so
+ * moving between screens costs nothing. Anything unsettled (setup not finished, access paused, a
+ * closed club) is never remembered: those states are meant to change under the person's feet.
+ * A request the database refuses still fires the access paused event, which asks afresh.
+ */
+const SETTLED_FOR_MS = 60_000
+let settled: { userId: string; at: number; context: GuardAuthContext } | null = null
+
+export function isSettledContext(context: GuardAuthContext): boolean {
+  if (!context.isAuthenticated || !context.role || !context.memberActive) return false
+  if (!context.clubAdminOnboardingComplete) return false
+  const blocked = ["closed", "suspended", "cancelled", "approved_pending_billing", "billing_failed"]
+  if (context.tenantLifecycleStatus && blocked.includes(context.tenantLifecycleStatus)) return false
+  if (context.clubAdminLifecycleStatus && blocked.includes(context.clubAdminLifecycleStatus)) return false
+  return true
+}
+
+function recallSettled(userId: string, fresh: boolean, now: number = Date.now()): GuardAuthContext | null {
+  if (fresh || !settled || settled.userId !== userId || now - settled.at > SETTLED_FOR_MS) return null
+  return settled.context
+}
+
+function rememberIfSettled(userId: string, context: GuardAuthContext) {
+  settled = isSettledContext(context) ? { userId, at: Date.now(), context } : null
+}
+
+/** Forget the remembered answer, for example after a sign out. */
+export function forgetGuardAuthContext() {
+  settled = null
+}
+
+async function getSupabaseGuardAuthContext(options?: { fresh?: boolean }): Promise<GuardAuthContext> {
   const supabase = getBrowserSupabaseClient()
   if (!supabase) {
     return SIGNED_OUT
@@ -78,6 +111,7 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
     throw new GuardCheckUnavailable()
   }
   const session = sessionResult.data.session
+  if (!session) settled = null
   if (!session) {
     // An expired token that could not be renewed because the network was down still has its
     // sign-in stored. Only a clear answer counts as signed out.
@@ -86,6 +120,9 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
     }
     return SIGNED_OUT
   }
+
+  const remembered = recallSettled(session.user.id, options?.fresh === true)
+  if (remembered) return remembered
 
   const { actor, noAccessReason } = await resolveSessionAccess(supabase, session)
   if (!actor && noAccessReason === "error") throw new GuardCheckUnavailable()
@@ -153,7 +190,7 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
     }
   }
 
-  return {
+  const context: GuardAuthContext = {
     isAuthenticated: true,
     role: actor.role,
     tenantId: actor.tenantId,
@@ -162,8 +199,10 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
     tenantLifecycleStatus,
     memberActive,
   }
+  rememberIfSettled(session.user.id, context)
+  return context
 }
 
-export async function getCurrentGuardAuthContext(): Promise<GuardAuthContext> {
-  return getBackendMode() === "supabase" ? getSupabaseGuardAuthContext() : getMockGuardAuthContext()
+export async function getCurrentGuardAuthContext(options?: { fresh?: boolean }): Promise<GuardAuthContext> {
+  return getBackendMode() === "supabase" ? getSupabaseGuardAuthContext(options) : getMockGuardAuthContext()
 }

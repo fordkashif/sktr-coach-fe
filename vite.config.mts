@@ -16,7 +16,6 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined
 
-          if (id.includes("@mui/")) return "mui-vendor"
           if (id.includes("@radix-ui/")) return "radix-vendor"
           if (id.includes("@hugeicons/")) return "icons-vendor"
           if (id.includes("@supabase/")) return "supabase-vendor"

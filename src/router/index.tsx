@@ -11,13 +11,14 @@ import { ClubAdminRedirectPage } from "@/pages/redirects/club-admin-redirect"
 import { PlatformAdminRedirectPage } from "@/pages/redirects/platform-admin-redirect"
 import { NotFoundPage } from "@/pages/not-found"
 import LoginPage from "@/app/(auth)/login/page"
-import ResetPasswordPage from "@/app/(auth)/reset-password/page"
-import AthleteClaimPage from "@/app/(auth)/athlete/claim/[inviteId]/page"
-import ClubAdminClaimPage from "@/app/(auth)/club-admin/claim/page"
-import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
-import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
-import TeamJoinCodePage from "@/app/(auth)/join/[code]/page"
-import GuardianClaimPage from "@/app/(auth)/guardian/claim/[inviteId]/page"
+// Opened from an email link or a code, not on a normal visit: loaded when needed.
+const ResetPasswordPage = lazy(() => import("@/app/(auth)/reset-password/page"))
+const AthleteClaimPage = lazy(() => import("@/app/(auth)/athlete/claim/[inviteId]/page"))
+const ClubAdminClaimPage = lazy(() => import("@/app/(auth)/club-admin/claim/page"))
+const CreateClubAccountPage = lazy(() => import("@/app/(auth)/create-club-account/page"))
+const CoachInviteAcceptPage = lazy(() => import("@/app/(auth)/invite/coach/[inviteId]/page"))
+const TeamJoinCodePage = lazy(() => import("@/app/(auth)/join/[code]/page"))
+const GuardianClaimPage = lazy(() => import("@/app/(auth)/guardian/claim/[inviteId]/page"))
 import { AssistantGate, type AssistantGateNeed } from "@/components/coach/assistant-gate"
 const GuardianHomePage = lazy(() => import("@/app/(authenticated)/guardian/home/page"))
 const GuardianPlanPage = lazy(() => import("@/app/(authenticated)/guardian/plan/page"))
@@ -139,16 +140,16 @@ export function AppRouter() {
 
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/athlete/claim/:inviteId" element={<AthleteClaimPage />} />
-          <Route path="/club-admin/claim" element={<ClubAdminClaimPage />} />
-          <Route path="/create-club-account" element={<CreateClubAccountPage />} />
+          <Route path="/reset-password" element={routeElement(ResetPasswordPage)} />
+          <Route path="/athlete/claim/:inviteId" element={routeElement(AthleteClaimPage)} />
+          <Route path="/club-admin/claim" element={routeElement(ClubAdminClaimPage)} />
+          <Route path="/create-club-account" element={routeElement(CreateClubAccountPage)} />
           <Route path="/privacy" element={routeElement(PrivacyPage)} />
           <Route path="/shared/report" element={routeElement(SharedReportPage)} />
           <Route path="/terms" element={routeElement(TermsPage)} />
-          <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
-          <Route path="/join/:code" element={<TeamJoinCodePage />} />
-          <Route path="/guardian/claim/:inviteId" element={<GuardianClaimPage />} />
+          <Route path="/invite/coach/:inviteId" element={routeElement(CoachInviteAcceptPage)} />
+          <Route path="/join/:code" element={routeElement(TeamJoinCodePage)} />
+          <Route path="/guardian/claim/:inviteId" element={routeElement(GuardianClaimPage)} />
         </Route>
 
         <Route element={<GuardedAuthenticatedLayout />}>
