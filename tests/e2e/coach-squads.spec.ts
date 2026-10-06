@@ -211,6 +211,7 @@ test("a plan goes to a squad, reaches its athletes, and says when two sessions l
   await page.getByRole("dialog").getByRole("checkbox", { name: /David Okafor/ }).uncheck()
   await page.getByRole("dialog").getByRole("checkbox", { name: /Sophia Kim/ }).uncheck()
   await page.getByRole("dialog").getByRole("button", { name: "Save 2 athletes" }).click()
+  await expect(page.locator('[data-squad="Short sprints"] [data-squad-count]')).toHaveText("2 athletes")
   await page.goto("/coach/training-plan")
   await expect(page.locator('li[data-plan-status="published"]', { hasText: "Speed block" })).toContainText("2 athletes")
 })

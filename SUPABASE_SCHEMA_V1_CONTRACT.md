@@ -709,3 +709,14 @@ Notification event types, queued for guardians through the existing `enqueue_not
 Edge functions: `send-invite-email` accepts `kind: "guardian"` (table `guardian_invites`, link `/guardian/claim/<id>`, permission from `can_send_guardian_invite`); new `claim-guardian-invite-account` (public, creates the confirmed sign-in for an invited email with no account, after asking `guardian_email_standing`; handler tests beside it).
 
 App: data in `src/lib/data/guardian/` (mock stores included), screens under `src/app/(authenticated)/guardian/`, the claim page at `src/app/(auth)/guardian/claim/[inviteId]/page.tsx`.
+
+## Result detail and relays (20261016100000_result_detail_splits_attempts_relays_rounds.sql)
+
+`athlete_results` gains `round` (heat, quarter_final, semi_final, final, timed_final), `heat_number`, `lane`, `qualifier` (Q or q), `detail` jsonb and `derived_from_result_id`. One result per entry and round (`athlete_results_entry_round_uniq`). `detail` has one stored form, written by `apply_result_detail()` (mirrored by `applyResultDetail()` in `src/lib/data/pr/marks.ts`):
+
+- `splits`: `{ "every": 200, "times": [24.10] }`, running (cumulative) seconds, the finish left out. Per lap entry is converted before saving.
+- `reaction`: seconds, three decimals, under one second.
+- `attempts` (horizontal jumps and throws, six at most): `{ "result": "mark" | "foul" | "pass", "mark", "wind" }`. The result's mark is the best measured attempt.
+- `heights` (vertical jumps): `{ "height": 1.85, "tries": "XO" }`. The result's mark is the highest height cleared.
+
+`relay_entries` (tenant_id, competition_id, team_id, event_key, event_label, team_label, round, heat_number, lane, place, mark_value, mark_display, result_date, location, entered_by_user_id) and `relay_entry_legs` (tenant_id, relay_entry_id, leg_number 1 to 4, athlete_id nullable after deletion, split_value). View `relay_team_bests`: best time per team and relay event. Functions `save_relay_entry(jsonb)`, `get_relay_entries(uuid, uuid)`.

@@ -41,6 +41,12 @@
 --              included, like results), club admins.
 --              write: club admins, and lead coaches and coaches for a team they coach with
 --              athletes they coach. Athletes never write a relay.
+--   Guardians (20261016090000): NO policy on relay_entries or relay_entry_legs and nothing from
+--              get_relay_entries(), so a parent reads no relay, not even their child's (a relay
+--              names three other athletes). Result detail is a column of athlete_results, so a
+--              guardian who already reads the child's result through athlete_results_select_guardian
+--              reads its round, splits and attempts with it. That is deliberate: it is the same
+--              result, and it names nobody else.
 --   Everyone else, a deactivated member and anyone in a suspended or cancelled club: nothing.
 --
 -- DELETION
