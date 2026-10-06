@@ -5,6 +5,7 @@ import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState
 import { Link } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { AddAthletesDialog, type AddAthletesView } from "@/components/coach/add-athletes-dialog"
+import { TeamSquadsSection } from "@/components/coach/team-squads-section"
 import { inviteEmailSummary, resendInviteEmailLabel, canResendInviteEmail } from "@/components/invites/invite-email-ui"
 import {
   ActionRow,
@@ -13,6 +14,7 @@ import {
   EmptyState,
   FilterBar,
   FilterChips,
+  GroupDot,
   InlineConfirm,
   LinkButton,
   List,
@@ -45,6 +47,8 @@ import { attendanceRateText, type AttendanceRate } from "@/lib/data/coach/attend
 import { ATTENDANCE_CHANGED_EVENT, getTeamAttendanceRates } from "@/lib/data/coach/attendance-data"
 import { getTeamRoster, type RosterAthlete, type TeamRoster } from "@/lib/data/coach/roster-data"
 import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
+import { squadsByAthlete, type Squad } from "@/lib/data/coach/squads"
+import { SQUADS_CHANGED_EVENT, listTeamSquads } from "@/lib/data/coach/squads-data"
 import { sendInviteEmail } from "@/lib/data/invites/invite-email-data"
 import { adherenceText } from "@/lib/data/session/adherence"
 import type { EventGroup } from "@/lib/mock-data"
@@ -107,7 +111,11 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
   const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
   const [invites, setInvites] = useState<TeamAthleteInvite[] | null>(null)
   const [invitesError, setInvitesError] = useState<string | null>(null)
-  const [view, setView] = useState<"athletes" | "invites">("athletes")
+  const [view, setView] = useState<"athletes" | "squads" | "invites">("athletes")
+  const [squads, setSquads] = useState<Squad[] | null>(null)
+  const [squadsError, setSquadsError] = useState<string | null>(null)
+  // "all", "none" (athletes in no squad) or a squad id.
+  const [squadFilter, setSquadFilter] = useState<string>("all")
   const [addOpen, setAddOpen] = useState(false)
   const [addView, setAddView] = useState<AddAthletesView>("email")
   const [search, setSearch] = useState("")
@@ -155,6 +163,27 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
     setInvites(result.data)
   }, [teamId])
 
+  const loadSquads = useCallback(async () => {
+    const result = await listTeamSquads(teamId)
+    if (!result.ok) {
+      setSquadsError(result.error.message)
+      return
+    }
+    setSquadsError(null)
+    setSquads(result.data)
+  }, [teamId])
+
+  // A move or a removal ends squad memberships, so the squads reload with the roster.
+  useEffect(() => {
+    void loadSquads()
+    window.addEventListener(SQUADS_CHANGED_EVENT, loadSquads)
+    window.addEventListener(ROSTER_CHANGED_EVENT, loadSquads)
+    return () => {
+      window.removeEventListener(SQUADS_CHANGED_EVENT, loadSquads)
+      window.removeEventListener(ROSTER_CHANGED_EVENT, loadSquads)
+    }
+  }, [loadSquads])
+
   useEffect(() => {
     void loadRoster()
     void loadInvites()
@@ -172,6 +201,9 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
 
   const athletes = useMemo(() => [...(roster?.athletes ?? [])].sort((left, right) => left.name.localeCompare(right.name)), [roster])
   const groupsOnTeam = useMemo(() => [...new Set(athletes.map((athlete) => athlete.eventGroup))], [athletes])
+  const athleteSquads = useMemo(() => squadsByAthlete(squads ?? []), [squads])
+  // A squad that was archived while it was the filter falls back to everyone.
+  const shownSquadFilter = squadFilter === "all" || squadFilter === "none" || (squads ?? []).some((squad) => squad.id === squadFilter) ? squadFilter : "all"
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -181,15 +213,19 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
       if (availability === "available" && athlete.availability) return false
       if (availability === "unavailable" && !athlete.availability) return false
       if (eventGroup !== "all" && athlete.eventGroup !== eventGroup) return false
+      const inSquads = athleteSquads.get(athlete.id) ?? []
+      if (shownSquadFilter === "none" && inSquads.length > 0) return false
+      if (shownSquadFilter !== "all" && shownSquadFilter !== "none" && !inSquads.some((squad) => squad.id === shownSquadFilter)) return false
       return true
     })
-  }, [athletes, availability, eventGroup, readiness, search])
+  }, [athleteSquads, athletes, availability, eventGroup, readiness, search, shownSquadFilter])
 
-  const activeFilters = (readiness !== "all" ? 1 : 0) + (availability !== "all" ? 1 : 0) + (eventGroup !== "all" ? 1 : 0)
+  const activeFilters = (readiness !== "all" ? 1 : 0) + (availability !== "all" ? 1 : 0) + (eventGroup !== "all" ? 1 : 0) + (shownSquadFilter !== "all" ? 1 : 0)
   const clearFilters = () => {
     setReadiness("all")
     setAvailability("all")
     setEventGroup("all")
+    setSquadFilter("all")
   }
 
   const openAdd = (which: AddAthletesView) => {
@@ -238,6 +274,30 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         </Link>
       ),
     },
+    ...((squads ?? []).length > 0
+      ? [
+          {
+            key: "squads",
+            header: "Squads",
+            // Quiet on purpose: names with their dot, nothing for an athlete in no squad.
+            phone: "plain" as const,
+            cell: (athlete: RosterAthlete) => {
+              const inSquads = athleteSquads.get(athlete.id) ?? []
+              if (inSquads.length === 0) return <span className="text-sk-faint max-sm:hidden">None</span>
+              return (
+                <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm font-normal text-sk-mute" data-athlete-squads={athlete.id}>
+                  {inSquads.map((squad) => (
+                    <span key={squad.id} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <GroupDot color={squad.color} />
+                      {squad.name}
+                    </span>
+                  ))}
+                </span>
+              )
+            },
+          },
+        ]
+      : []),
     {
       key: "readiness",
       header: "Readiness",
@@ -339,6 +399,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         onChange={setView}
         options={[
           { value: "athletes", label: "Athletes", count: roster ? athletes.length : undefined },
+          { value: "squads", label: "Squads", count: squads && squads.length > 0 ? squads.length : undefined },
           { value: "invites", label: "Invites", count: pendingInvites.length > 0 ? pendingInvites.length : undefined },
         ]}
       />
@@ -398,6 +459,18 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                     options={[{ value: "all" as const, label: "All" }, ...groupsOnTeam.map((group) => ({ value: group, label: group }))]}
                   />
                 ) : null}
+                {(squads ?? []).length > 0 ? (
+                  <FilterChips
+                    label="Squad"
+                    value={shownSquadFilter}
+                    onChange={setSquadFilter}
+                    options={[
+                      { value: "all", label: "All" },
+                      ...(squads ?? []).map((squad) => ({ value: squad.id, label: squad.name, count: squad.athleteIds.length })),
+                      { value: "none", label: "No squad" },
+                    ]}
+                  />
+                ) : null}
               </FilterBar>
 
               {filtered.length > 0 ? (
@@ -427,6 +500,8 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
             </div>
           )}
         </Section>
+      ) : view === "squads" ? (
+        <TeamSquadsSection teamId={teamId} teamName={name} squads={roster ? squads : null} athletes={athletes} loadError={squadsError} onChanged={() => void loadSquads()} />
       ) : (
         <Section aria-label="Invites" title="Invites" hint="Every invite for this team, newest first. Open the menu on a waiting invite to email it again, copy its link or cancel it.">
           {invitesError ? <Notice tone="error">Could not load invites: {invitesError}</Notice> : null}

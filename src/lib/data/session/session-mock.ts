@@ -1,4 +1,5 @@
 import { readStoredMockPlans } from "@/components/coach/training-plan/mock-adapter"
+import { loadMockSquads } from "@/lib/data/coach/squads-mock"
 import { availabilityCovers, readMockAvailability } from "@/lib/data/athlete/availability-data"
 import { err, ok, type Result } from "@/lib/data/result"
 import { mockLiftMaxKg } from "@/lib/data/exercises/mock-exercise-store"
@@ -167,6 +168,7 @@ function coachPlansForMockAthlete() {
       if (plan.status !== "published" || plan.teamId !== MOCK_ATHLETE_TEAM_ID) return false
       if (plan.assign.target === "team") return true
       if (plan.assign.target === "subgroup") return plan.assign.subgroup === MOCK_ATHLETE_EVENT_GROUP
+      if (plan.assign.target === "squads") return loadMockSquads(MOCK_ATHLETE_TEAM_ID).some((squad) => plan.assign.squadIds.includes(squad.id) && squad.athleteIds.includes(MOCK_ATHLETE_ID))
       return plan.assign.athleteIds.includes(MOCK_ATHLETE_ID)
     })
   } catch {

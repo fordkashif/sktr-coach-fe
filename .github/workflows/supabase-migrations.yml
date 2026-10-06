@@ -86,6 +86,8 @@ jobs:
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"
 
       # Lets the function tell the database where it lives (so the database scheduler can call it) and
       # sends anything already waiting. Not required: the address is also learned the first time a
@@ -173,6 +175,8 @@ jobs:
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"
 
       # Lets the function tell the database where it lives (so the database scheduler can call it) and
       # sends anything already waiting. Not required: the address is also learned the first time a

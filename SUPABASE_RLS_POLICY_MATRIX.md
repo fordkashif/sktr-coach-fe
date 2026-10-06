@@ -806,3 +806,77 @@ Verified on a throwaway Postgres 16 with every earlier migration applied and thi
 | `get_session_logged_by(uuid)` | own sessions | sessions of athletes on their teams | sessions of their club | no row | Security definer, `search_path = public`, starts with `assert_caller_active()`. Returns the staff member who entered a session, or nothing when the athlete logged it. No execute for `anon`. |
 
 Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 95 assertions as each identity (two coaches of the team, a coach of another team, a deactivated coach, a club admin, the athlete, a team mate, the coach and admin of another club, a coach of a suspended club, signed out).
+
+## Seasons and the year end rollover (20261014090000)
+
+| Object | Athlete | Coach | Club admin | Other club, platform admin | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `club_seasons` select (`club_seasons_select_members`) | every season of their club | every season of their club | every season of their club | none | `tenant_id = current_tenant_id()`, so a deactivated member or a member of a suspended club reads nothing. |
+| `club_seasons` insert, update, delete | none | none | none directly | none | No write policy and no write grant for `authenticated`. Changes go through the three functions below. |
+| `save_club_season(id, name, start, end)` | refused | refused | adds an upcoming season, or changes the name and dates of a season of their club | another club's season reads as "no longer exists" | Security definer, `search_path = public`, `assert_caller_active()`, then `is_club_admin()`. Audited (`season_added`, `season_changed`). |
+| `delete_club_season(id)` | refused | refused | an upcoming season of their club only | refused | A current or past season is never removed. Audited (`season_removed`). |
+| `start_club_season(id, name, start, end, archive_team_ids, end_plans)` | refused | refused | the rollover for their club | refused | One transaction. The old season becomes past, the chosen one current, the named teams are archived (their athletes get `team_id` null), published plans are archived when asked, one `season_started` audit event. A team id of another club, or one already archived, fails the whole call. Nothing is deleted. |
+| `results_season_bounds`, `athlete_event_bests` | unchanged access | unchanged access | unchanged access | unchanged | The season best window is now the current row of `club_seasons` until its last day has passed, otherwise the calendar year. |
+
+Rules kept by the database: one current season per club (partial unique index), no two seasons of a club share a day (trigger `club_seasons_guard`, SQLSTATE 23P01), and `club_profiles.season_year/season_start/season_end` always mirror the current season (triggers both ways).
+
+Verified on a throwaway Postgres 16 with every migration up to 20261012100000 applied, a seeded database, then this one twice: 81 assertions as a club admin, a coach, a deactivated coach, an athlete, the admin and an athlete of another club, the admin of a suspended club and signed out.
+
+## Calendar: club events and calendar feed links (20261014100000_calendar_and_feeds.sql)
+
+| Object | Athlete | Coach | Club admin | Other club, deactivated, signed out | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `club_events` select (`club_events_select_visible`) | whole club events and events of their own team | whole club events and events of teams they coach | every event of their club | none | `tenant_id = current_tenant_id() and id = any(current_club_event_ids())`. The helper holds the rule once, so the two policies never query each other. |
+| `club_event_teams` select (`club_event_teams_select_visible`) | links of events they can see | links of events they can see | all of their club | none | Same helper. |
+| `club_events`, `club_event_teams` insert, update, delete | none | none | none | none | No write policy and select only grants. Writes go through the two functions below. |
+| `save_club_event(...)` | refused | add and change events that are for teams they coach only (never whole club, never a team they do not coach, never an event shared with another team) | add and change any event of their club | refused | Security definer, `search_path = public`, starts with `assert_caller_active()`. Teams must belong to the caller's club. Creator and role are taken from the caller. |
+| `delete_club_event(uuid)` | refused | same events they may change | any event of their club | refused | Uses `can_manage_club_event(uuid)`. |
+| `calendar_feeds` | no access | no access | no access | no access | RLS on, no policy, no grant to `authenticated` or `anon`. Holds `sha256(token)` only. |
+| `get_calendar_feed_status()`, `turn_on_calendar_feed()` | own link only | own link only | own link only | refused (paused or deactivated: access paused error; signed out: no execute) | The token (64 hex characters, 244 random bits) is returned once and never stored. Calling turn on again replaces the hash, so the old link stops at once. |
+| `turn_off_calendar_feed()` | own link | own link | own link | own link, also while paused or deactivated | Removing a link is always allowed. No execute for `anon`. |
+| `calendar_feed_payload(text)` | no execute | no execute | no execute | no execute | Service role only (the `calendar-feed` server function). Returns null for an unknown hash, a deactivated member, an athlete whose athlete record is off, an inactive tenant and a suspended or cancelled club. Content: athlete: own session titles (not skipped ones), published test weeks of their team, competitions they are entered in or added, events for the club or their team. Coach: one line per team, day and session title from published plans of teams they coach, those teams' test weeks, club and own team competitions with a count of athletes entered, events for the club or their teams. Club admin: test weeks, competitions and events of the club, no session lines. Never availability, wellness, pain reports, results or notes, and no athlete names for staff. |
+
+Verified on a throwaway Postgres 16 with every migration up to 20261012100000 applied and this one twice: 120 assertions as each identity (club admin, coach of team 1, coach of team 2, coach of both, a deactivated coach, athletes of both teams, a deactivated athlete, admin, coach and athlete of another club, members of a suspended club, someone with no profile, signed out, and the service role for the feed lookup).
+
+## Squads (20261014110000_squads.sql)
+
+A squad is a small named group inside ONE team. It never changes who can see an athlete. "Team coach" means a coach assigned to the squad's team.
+
+| Object | Club admin | Team coach | Other team's coach | Athlete | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `team_squads` select | club | their teams | none | the squads they are in (names) | Other clubs: none. |
+| `team_squads` insert, update, delete | club | their teams | none | none | The club is copied from the team; a squad never changes team; two live squads of a team cannot share a name. Archiving (set `archived_at`) ends its memberships. |
+| `team_squad_members` select | club | their teams | none | their own rows only | An athlete never reads a teammate's membership. |
+| `team_squad_members` insert, delete | club | their teams | none | none | Trigger: the athlete must be an active athlete on the squad's own team, for every caller including the table owner. Club and team on the row are copied from the squad. |
+| `training_plan_assignments` with scope `squad` | club | plans of their teams | none | reads rows of squads they are in | Trigger: the squad must be a live squad of the plan's own team. `current_athlete_plan_ids()` includes plans of the athlete's squads, so plan, weeks, days and "create my planned day" follow the squad. |
+| `test_weeks.squad_ids` | club | their teams | none | no write | Empty means the whole team. Trigger: every id must be a squad of the week's team. An athlete outside the squads does not see the week or its tests and cannot enter a result (`current_athlete_test_week_ids()`, `athlete_can_enter_test_result()`); a week they already have a result in stays readable. |
+
+Triggers that keep it true: an athlete who moves team, is taken off a team or is deactivated loses the memberships of the old team (`athletes_end_squad_memberships`); when a membership ends, the athlete's untouched upcoming sessions of plans that only reached them through that squad are removed, and anything started, finished or in the past stays (`squad_prune_member_sessions`). Notifications follow the audience: plan published, test week published or reopened and the "closes today" reminder go to squad members only.
+
+Verified on a throwaway Postgres 16 with every migration up to 20261012100000 applied and this one twice: 132 assertions as each identity (club admin, coach of team 1, coach of team 2, coach of both, a deactivated coach, athletes in one, two and no squads, an athlete of the other team, admin, coach and athlete of another club, a coach of a suspended club).
+
+## Personal data rights and club exit (20261014120000_data_export_account_deletion_and_club_exit.sql)
+
+"Owner" is the one club admin who owns the club: the admin recorded in `club_owners`, or for a club that never transferred ownership its longest standing active club admin.
+
+| Object | Athlete | Coach | Club admin | Club owner | Platform admin | Other club, paused, signed out | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `club_owners` select | none | own club | own club | own club | none | none | No write policy. Written only by `transfer_club_ownership`. |
+| `get_club_ownership()` | null | owner name | owner and the admins it could go to | same | null | null | |
+| `transfer_club_ownership(user, typed club name)` | refused | refused | refused | to another ACTIVE club admin of the same club | refused | refused | Both people are notified, audit entry `club_ownership_transferred`. |
+| `profiles` update, delete of a club admin row (trigger `guard_club_owner_and_admins`) | n/a | n/a | may not remove, turn off or change the role of the owner or of another club admin | may do it to other admins, never to themselves while owner | passes | n/a | Second lock under `set_tenant_member_access` and `remove_tenant_member`. Acting on your own row is judged by the function called. |
+| `record_data_export('personal')` | own audit entry | own | own | own | platform audit entry | paused: access paused error | Who and when only. |
+| `record_data_export('club', health)` | refused | refused | allowed | allowed | refused | refused | |
+| `get_my_account_deletion_check()`, `delete_my_account(typed email)` | allowed | refused while lead of a team or only coach of a team with athletes | same team rule | refused (transfer or close first) | refused, not in the app | paused: access paused error; signed out: refused | Deletes the login inside the function. Only ever the caller's own account: there is no user parameter. |
+| `close_current_club(typed club name)` | refused | refused | refused | allowed | refused | refused | Blocks access for every member through the existing lifecycle path and starts the 90 days. |
+| `get_current_club_closure()` | own club's closure | own | own | own | null | own club's closure also while locked out | Lets the "club is closed" notice show its date. |
+| `club_closures` select, `get_closed_clubs()`, `reopen_closed_club(club)` | none | none | none | none | allowed | none | |
+| `delete_closed_club(club, typed club name)` | refused | refused | refused | refused | allowed for a club that is closed now | refused | With no signed-in user (the scheduler, service role) only after the club's deletion date. Refused for a club that is open, was never closed or was reopened. |
+| `run_club_deletions()` | no execute | no execute | no execute | no execute | no execute | no execute | Service role and pg_cron only. |
+| `storage_deletion_queue` | none | none | none | none | select | none | Paths only. `claim_storage_deletions`, `finish_storage_deletion`, `request_storage_purge`: service role only. |
+
+What cannot be removed by SQL: files in storage (profile photos in `avatars`, club logos in `club-logos`). Supabase refuses a direct delete on `storage.objects`. Every delete above queues the paths and the server function `purge-deleted-storage` removes them with the Storage API (called by the app after "Delete permanently now" and by the daily job).
+
+Also changed: `message_member_name` returns "Deleted account" for a sender whose account is gone; `enqueue_club_lifecycle_notifications` does not send the "access paused" email for a club its owner closed; every table with a "set null" foreign key to `auth.users` gets the trigger `zz_release_deleted_account`, without which the author pinning triggers (plan templates, exercises, coach notes, goals, attendance, lift maxes) made deleting a coach's login fail with a foreign key error. A later migration that adds such a column should end with `select public.install_deleted_account_triggers();`.
+
+Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 191 assertions as each identity (owner, second and third club admin, lead coach, shared coach, only coach of a team, athletes with and without a conversation, admin, coach and athlete of another club, members of a suspended club, a platform admin, a platform admin who is also a club member, signed out, and the scheduler). The club deletion test lists the tables from the catalogue: it fails for a public table that has no `tenant_id` and is not accounted for, and for a tenant table the test did not put rows in.

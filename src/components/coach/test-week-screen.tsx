@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ArrowDown, ArrowUp, DownloadSimple, LockSimple, LockSimpleOpen, PencilSimple, Plus, Trash } from "@phosphor-icons/react"
 import {
   Button,
+  CheckRow,
   DataTable,
   EmptyState,
   EntryGrid,
@@ -57,14 +58,18 @@ export type TestWeekRow = {
   endDate: string
   status: TestWeekStatus
   isArchived: boolean
+  /** Squads of the team this week is for. Empty or missing means the whole team. */
+  squadIds?: string[]
   testCount: number
-  /** Athletes on the assigned team. Null when the team is unknown. */
+  /** Athletes the week is for (the team, or the chosen squads). Null when the team is unknown. */
   athleteCount: number | null
   /** Athletes who have at least one result. */
   submittedCount: number
 }
 
 export type TestWeekTeamOption = { id: string; name: string; athleteCount: number }
+/** A squad a test week can be for: a small group inside one team. */
+export type TestWeekSquadOption = { id: string; teamId: string; name: string; athleteIds: string[] }
 
 export type TestWeekTest = { id: string; name: string; unit: TestUnit; dayIndex: number }
 
@@ -92,6 +97,8 @@ export type TestWeekSaveInput = {
   id: string | null
   name: string
   teamId: string
+  /** Squads of that team. Empty means the whole team. */
+  squadIds: string[]
   startDate: string
   endDate: string
   publish: boolean
@@ -106,6 +113,8 @@ export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; messag
 export type TestWeekScreenProps = {
   weeks: TestWeekRow[]
   teams: TestWeekTeamOption[]
+  /** The live squads of those teams. A test week can be for the whole team or for some of its squads. */
+  squads?: TestWeekSquadOption[]
   /** Set when the team cannot be changed (a coach with one team). */
   lockedTeamId: string | null
   /** The coach's selected team: the list is for this team and new test weeks start on it. Null for club admins. */
@@ -127,7 +136,17 @@ export type TestWeekScreenProps = {
 
 type View = { kind: "list" } | { kind: "detail"; id: string } | { kind: "builder"; id: string | null }
 type DraftTest = { key: string; id: string | null; name: string; unit: TestUnit; dayIndex: number }
-type Draft = { id: string | null; name: string; teamId: string; startDate: string; endDate: string; tests: DraftTest[] }
+type Draft = { id: string | null; name: string; teamId: string; squadIds: string[]; startDate: string; endDate: string; tests: DraftTest[] }
+
+/** How many athletes a set of squads holds, each athlete once. */
+function squadAthleteCount(squads: TestWeekSquadOption[], squadIds: string[]) {
+  return new Set(squads.filter((squad) => squadIds.includes(squad.id)).flatMap((squad) => squad.athleteIds)).size
+}
+
+/** "400m and Juniors". */
+function joinNames(names: string[]) {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+}
 type Lens = "athlete" | "test" | "enter"
 
 const UNIT_OPTIONS: Array<{ value: TestUnit; label: string }> = [
@@ -224,11 +243,21 @@ function Change({ change }: { change: ResultChange | null }) {
   return null
 }
 
+const NO_SQUADS: TestWeekSquadOption[] = []
+
 export function TestWeekScreen(props: TestWeekScreenProps) {
   const { weeks, teams, lockedTeamId, isLoading, loadError } = props
+  const squads = props.squads ?? NO_SQUADS
+  /** The squads a week is for, by name. Empty for a whole team week. */
+  const weekSquadNames = (week: Pick<TestWeekRow, "squadIds">) =>
+    joinNames(squads.filter((squad) => (week.squadIds ?? []).includes(squad.id)).map((squad) => squad.name))
   const defaultTeamId = props.defaultTeamId ?? null
   const { syncSelectedTeam } = useCoachTeams()
-  const [view, setView] = useState<View>({ kind: "list" })
+  // "?week=<id>" opens that test week straight away (the calendar links here).
+  const [view, setView] = useState<View>(() => {
+    const linked = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("week")
+    return linked ? { kind: "detail", id: linked } : { kind: "list" }
+  })
   const [listFilter, setListFilter] = useState<"active" | "archived">("active")
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -298,6 +327,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
       id: null,
       name: "",
       teamId,
+      squadIds: [],
       startDate: today,
       endDate: addDays(today, 4),
       tests: props.starterTests(teamId).map((test) => ({ key: makeKey(), id: null, name: test.name, unit: test.unit, dayIndex: 0 })),
@@ -313,6 +343,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
       id: week.id,
       name: week.name,
       teamId: week.teamId ?? lockedTeamId ?? defaultTeamId ?? teams[0]?.id ?? "",
+      squadIds: (week.squadIds ?? []).filter((id) => squads.some((squad) => squad.id === id && squad.teamId === week.teamId)),
       startDate: week.startDate,
       endDate: week.endDate,
       tests: detail.tests.map((test) => ({ key: test.id, id: test.id, name: test.name, unit: test.unit, dayIndex: test.dayIndex })),
@@ -358,7 +389,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         cell: (week) => (
           <button type="button" className="cursor-pointer rounded-[6px] text-left hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue" onClick={() => goTo({ kind: "detail", id: week.id })}>
             {week.name}
-            <TableSub>{[scopeTeam ? null : teamName(week.teamId), dateWindow(week.startDate, week.endDate)].filter(Boolean).join(", ")}</TableSub>
+            <TableSub>{[scopeTeam ? null : teamName(week.teamId), weekSquadNames(week) || null, dateWindow(week.startDate, week.endDate)].filter(Boolean).join(", ")}</TableSub>
           </button>
         ),
       },
@@ -448,6 +479,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         }}
         editingWeek={editingWeek}
         teams={teams}
+        squads={squads}
         lockedTeam={lockedTeam}
         busy={busy}
         error={actionError}
@@ -458,7 +490,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
             async () => {
               const result = await props.onSave(input)
               if (result.ok) {
-                const athletes = teams.find((team) => team.id === input.teamId)?.athleteCount ?? 0
+                const athletes = input.squadIds.length > 0 ? squadAthleteCount(squads, input.squadIds) : (teams.find((team) => team.id === input.teamId)?.athleteCount ?? 0)
                 setNotice(
                   input.publish && editingWeek?.status !== "published"
                     ? `Test week published to ${plural(athletes, "athlete")}.`
@@ -537,7 +569,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         back={back}
         fact={<StatusText tone={status.tone}>{status.label}</StatusText>}
         title={week.name}
-        lede={`${teamName(week.teamId)}, ${dateWindow(week.startDate, week.endDate)}.`}
+        lede={`${teamName(week.teamId)}${weekSquadNames(week) ? ` (${weekSquadNames(week)})` : ""}, ${dateWindow(week.startDate, week.endDate)}.`}
         actions={
           <>
             {week.isArchived ? (
@@ -926,6 +958,7 @@ function Builder({
   setDraft,
   editingWeek,
   teams,
+  squads,
   lockedTeam,
   busy,
   error,
@@ -937,6 +970,7 @@ function Builder({
   setDraft: (update: (current: Draft) => Draft) => void
   editingWeek: TestWeekRow | null
   teams: TestWeekTeamOption[]
+  squads: TestWeekSquadOption[]
   lockedTeam: TestWeekTeamOption | null
   busy: boolean
   error: string | null
@@ -949,6 +983,10 @@ function Builder({
   const days = dayCount(draft.startDate, draft.endDate)
   const day = Math.min(activeDay, days - 1)
   const team = lockedTeam ?? teams.find((candidate) => candidate.id === draft.teamId) ?? null
+  const teamSquads = squads.filter((squad) => squad.teamId === draft.teamId)
+  const [audience, setAudience] = useState<"team" | "squads">(draft.squadIds.length > 0 ? "squads" : "team")
+  const forSquads = audience === "squads" && teamSquads.length > 0
+  const chosenSquads = teamSquads.filter((squad) => draft.squadIds.includes(squad.id))
   const isPublished = editingWeek?.status === "published"
   const isClosed = editingWeek?.status === "closed"
   const hasResults = (editingWeek?.submittedCount ?? 0) > 0
@@ -977,6 +1015,7 @@ function Builder({
     const span = Math.round((parseDate(draft.endDate)!.getTime() - parseDate(draft.startDate)!.getTime()) / 86_400_000) + 1
     if (span > MAX_DAYS) return setError(`A test week can run for ${MAX_DAYS} days at most.`)
     if (namedTests.length === 0) return setError("Add at least one test.")
+    if (forSquads && chosenSquads.length === 0) return setError("Pick at least one squad, or send it to the whole team.")
 
     const seen = new Set<string>()
     const tests: TestWeekSaveInput["tests"] = []
@@ -992,7 +1031,16 @@ function Builder({
     }
 
     setError(null)
-    onSubmit({ id: draft.id, name: draft.name.trim(), teamId: draft.teamId, startDate: draft.startDate, endDate: draft.endDate, publish, tests })
+    onSubmit({
+      id: draft.id,
+      name: draft.name.trim(),
+      teamId: draft.teamId,
+      squadIds: forSquads ? chosenSquads.map((squad) => squad.id) : [],
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      publish,
+      tests,
+    })
   }
 
   return (
@@ -1092,8 +1140,20 @@ function Builder({
               <Field label="Test week name" className="sm:col-span-2">
                 <Input value={draft.name} placeholder="Week 4 testing" onChange={(event) => patch({ name: event.target.value })} />
               </Field>
-              <Field label="Team" className="sm:col-span-2" hint={team ? `Goes to the whole team, ${plural(team.athleteCount, "athlete")}.` : "Choose who this is for."}>
-                <Select value={draft.teamId} disabled={Boolean(lockedTeam)} onChange={(event) => patch({ teamId: event.target.value })}>
+              <Field
+                label="Team"
+                className="sm:col-span-2"
+                hint={
+                  !team
+                    ? "Choose who this is for."
+                    : forSquads
+                      ? chosenSquads.length === 0
+                        ? "Pick the squads below."
+                        : `Goes to ${joinNames(chosenSquads.map((squad) => squad.name))}, ${plural(squadAthleteCount(teamSquads, draft.squadIds), "athlete")}.`
+                      : `Goes to the whole team, ${plural(team.athleteCount, "athlete")}.`
+                }
+              >
+                <Select value={draft.teamId} disabled={Boolean(lockedTeam)} onChange={(event) => patch({ teamId: event.target.value, squadIds: [] })}>
                   {teams.length === 0 ? <option value="">No teams yet</option> : null}
                   {teams.map((option) => (
                     <option key={option.id} value={option.id}>
@@ -1102,6 +1162,33 @@ function Builder({
                   ))}
                 </Select>
               </Field>
+              {teamSquads.length > 0 ? (
+                <div className="flex flex-col gap-1 sm:col-span-2" data-test-week-audience>
+                  <Segmented<"team" | "squads">
+                    label="Who it is for"
+                    className="self-start"
+                    value={forSquads ? "squads" : "team"}
+                    onChange={setAudience}
+                    options={[
+                      { value: "team", label: "Whole team" },
+                      { value: "squads", label: "Squads" },
+                    ]}
+                  />
+                  {forSquads ? (
+                    <List aria-label="Choose squads">
+                      {teamSquads.map((squad) => (
+                        <CheckRow
+                          key={squad.id}
+                          checked={draft.squadIds.includes(squad.id)}
+                          onChange={(checked) => patch({ squadIds: checked ? [...draft.squadIds, squad.id] : draft.squadIds.filter((id) => id !== squad.id) })}
+                          title={squad.name}
+                          trailing={plural(squad.athleteIds.length, "athlete")}
+                        />
+                      ))}
+                    </List>
+                  ) : null}
+                </div>
+              ) : null}
               <Field label="Start date">
                 <Input type="date" value={draft.startDate} onChange={(event) => patch({ startDate: event.target.value })} />
               </Field>

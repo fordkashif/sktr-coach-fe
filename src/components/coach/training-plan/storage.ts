@@ -1,3 +1,4 @@
+import { reachedAthleteIds, type PlanDays, type Squad } from "@/lib/data/coach/squads"
 import type { Result } from "@/lib/data/result"
 import type { PlanDraft, PlanStatus } from "@/lib/data/training-plan/plan-builder-model"
 import type { EventGroup } from "@/lib/mock-data"
@@ -19,6 +20,8 @@ export type AthleteOption = {
 export type PlanDirectory = {
   teams: TeamOption[]
   athletes: AthleteOption[]
+  /** The live squads of those teams, with their members. */
+  squads: Squad[]
 }
 
 export type PlanListItem = {
@@ -57,18 +60,26 @@ export interface PlanStorageAdapter {
   publish(plan: PlanDraft): Promise<Result<{ planId: string; assignedCount: number }>>
   archive(planId: string): Promise<Result<{ planId: string }>>
   remove(planId: string): Promise<Result<{ planId: string }>>
+  /**
+   * The published plans of one team with the days they have a session on and who they reach, so
+   * the publish step can say when an athlete will get two sessions on one day.
+   */
+  listTeamPlanDays(teamId: string): Promise<Result<PlanDays[]>>
 }
 
 /** The athletes a draft's assignment settings would reach. */
-export function assignedAthletes(plan: PlanDraft, athletes: AthleteOption[]) {
-  const teamAthletes = athletes.filter((athlete) => athlete.teamId === plan.teamId)
-  if (plan.assign.target === "team") return teamAthletes
-  if (plan.assign.target === "subgroup") return teamAthletes.filter((athlete) => athlete.eventGroup === plan.assign.subgroup)
-  const ids = new Set(plan.assign.athleteIds)
-  return teamAthletes.filter((athlete) => ids.has(athlete.id))
+export function assignedAthletes(plan: PlanDraft, athletes: AthleteOption[], squads: Squad[] = []) {
+  const ids = new Set(
+    reachedAthleteIds(
+      { teamId: plan.teamId, target: plan.assign.target, squadIds: plan.assign.squadIds, subgroup: plan.assign.subgroup, athleteIds: plan.assign.athleteIds },
+      athletes,
+      squads,
+    ),
+  )
+  return athletes.filter((athlete) => ids.has(athlete.id))
 }
 
 /** How many athletes a draft's assignment settings would reach. */
-export function countAssignedAthletes(plan: PlanDraft, athletes: AthleteOption[]) {
-  return assignedAthletes(plan, athletes).length
+export function countAssignedAthletes(plan: PlanDraft, athletes: AthleteOption[], squads: Squad[] = []) {
+  return assignedAthletes(plan, athletes, squads).length
 }

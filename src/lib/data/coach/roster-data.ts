@@ -423,15 +423,26 @@ export async function getManagedAthlete(athleteId: string): Promise<Result<(Mana
  * session for the athlete is left alone, so running this twice changes nothing.
  */
 async function createTeamPlanSessions(client: SupabaseClient, athleteId: string, teamId: string): Promise<Result<{ created: number }>> {
+  return createAssignedPlanSessions(client, athleteId, { teamId })
+}
+
+/**
+ * The same for any way a plan reaches an athlete later than its publish: they joined the team the
+ * plan is for, or they were added to a squad the plan is for.
+ */
+export async function createAssignedPlanSessions(
+  client: SupabaseClient,
+  athleteId: string,
+  via: { teamId: string } | { squadId: string },
+): Promise<Result<{ created: number }>> {
   const { data: authSession } = await client.auth.getSession()
   const userId = authSession.session?.user.id ?? null
   const today = todayIso()
 
-  const { data: assignments, error: assignmentError } = await client
-    .from("training_plan_assignments")
-    .select("plan_id, visibility_start, visibility_date")
-    .eq("scope", "team")
-    .eq("team_id", teamId)
+  const assignmentQuery = client.from("training_plan_assignments").select("plan_id, visibility_start, visibility_date")
+  const { data: assignments, error: assignmentError } = await ("teamId" in via
+    ? assignmentQuery.eq("scope", "team").eq("team_id", via.teamId)
+    : assignmentQuery.eq("scope", "squad").eq("squad_id", via.squadId))
   if (assignmentError) return { ok: false, error: mapPostgrestError(assignmentError) }
   const visibleFrom = new Map<string, string>()
   for (const row of (assignments as Array<{ plan_id: string; visibility_start: string; visibility_date: string | null }> | null) ?? []) {

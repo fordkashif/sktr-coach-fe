@@ -113,8 +113,9 @@ type PlanCalendar = { planned: PlannedDay[]; ranges: Array<{ start: string; end:
 
 /** Published plans assigned to the athlete (directly or through their team) that are visible by now. */
 async function assignedPlanCalendar(client: SupabaseClient, context: AthleteContext): Promise<Result<PlanCalendar>> {
+  // Squad rows: the database only returns the ones of squads this athlete is in.
   const filter = context.teamId
-    ? `athlete_id.eq.${context.athleteId},team_id.eq.${context.teamId}`
+    ? `athlete_id.eq.${context.athleteId},team_id.eq.${context.teamId},scope.eq.squad`
     : `athlete_id.eq.${context.athleteId}`
   const { data: assignments, error: assignmentsError } = await client
     .from("training_plan_assignments")

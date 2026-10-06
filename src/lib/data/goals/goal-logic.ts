@@ -82,7 +82,11 @@ export function achievementFromResults(
   results: RankedResult[],
 ): { achievedOn: string | null; achievedResultId: string | null } {
   if (goal.achievedManually) return { achievedOn: goal.achievedOn, achievedResultId: null }
-  const since = goal.createdAt.slice(0, 10)
+  // The goal's day is stored in UTC and a result's date is the athlete's local day, so an evening
+  // result in Jamaica can be dated the day "before" the goal. One day of slack, as in the database.
+  const sinceDay = new Date(`${goal.createdAt.slice(0, 10)}T00:00:00Z`)
+  sinceDay.setUTCDate(sinceDay.getUTCDate() - 1)
+  const since = sinceDay.toISOString().slice(0, 10)
   const hit = results
     .filter((result) => result.eventGroup === goal.eventGroup && result.windLegal && result.date >= since && meetsTarget(result.compareValue, goal.targetValue, goal.lowerIsBetter))
     .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))[0]

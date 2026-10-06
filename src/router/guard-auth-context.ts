@@ -3,6 +3,7 @@ import type { AppRole } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { resolveSessionActor } from "@/lib/supabase/actor"
+import { getMockClubClosure } from "@/lib/mock-data-rights"
 import { getMockTenantLifecycleStatus } from "@/lib/mock-platform-admin"
 
 export type GuardAuthContext = {
@@ -46,7 +47,7 @@ async function getMockGuardAuthContext(): Promise<GuardAuthContext> {
     clubAdminOnboardingComplete: true,
     clubAdminLifecycleStatus: null,
     // Only clubs created through the mock platform admin have a status. The demo club has none.
-    tenantLifecycleStatus: role && role !== "platform-admin" ? getMockTenantLifecycleStatus(tenantId) : null,
+    tenantLifecycleStatus: role && role !== "platform-admin" ? (getMockClubClosure(tenantId) ? "closed" : getMockTenantLifecycleStatus(tenantId)) : null,
     memberActive: true,
   }
 }
@@ -115,6 +116,16 @@ async function getSupabaseGuardAuthContext(): Promise<GuardAuthContext> {
         | { lifecycle_status?: string | null }
         | null
       tenantLifecycleStatus = row?.lifecycle_status ?? null
+    }
+  }
+
+  // A club closed by its owner is suspended with a closure on top: the notice says "closed".
+  if (tenantLifecycleStatus === "suspended" && actor.role !== "platform-admin") {
+    try {
+      const closure = await supabase.rpc("get_current_club_closure")
+      if (!closure.error && closure.data) tenantLifecycleStatus = "closed"
+    } catch {
+      // The plain "paused" notice is shown.
     }
   }
 

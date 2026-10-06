@@ -77,7 +77,7 @@ export function PlanWorkspace({
   teamLocked: boolean
 }) {
   const { syncSelectedTeam } = useCoachTeams()
-  const [directory, setDirectory] = useState<PlanDirectory>({ teams: [], athletes: [] })
+  const [directory, setDirectory] = useState<PlanDirectory>({ teams: [], athletes: [], squads: [] })
   const [plans, setPlans] = useState<PlanListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -275,6 +275,17 @@ export function PlanWorkspace({
     else enterBuilder(result.data, { dirty: false, savedLabel: result.data.status === "draft" ? "Draft saved." : "Published. Changes go live when you update." })
   }
 
+  // "?plan=<id>" opens that plan (the calendar links here). An id that is not in the list is ignored.
+  const linkedPlanId = searchParams.get("plan")
+  useEffect(() => {
+    if (!linkedPlanId || loading) return
+    setSearchParams({}, { replace: true })
+    const linked = plans.find((candidate) => candidate.id === linkedPlanId)
+    if (linked && view === "list") void loadForEdit(linked, false)
+    // loadForEdit is rebuilt on every render; the linked id and the loaded list decide when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedPlanId, loading, plans, view])
+
   const runListAction = async (item: PlanListItem, action: "archive" | "remove") => {
     setBusyPlanId(item.id)
     const result = action === "archive" ? await adapter.archive(item.id) : await adapter.remove(item.id)
@@ -369,6 +380,7 @@ export function PlanWorkspace({
       plan={printing.plan}
       team={directory.teams.find((candidate) => candidate.id === printing.plan.teamId) ?? null}
       athletes={directory.athletes}
+      squads={directory.squads}
       initialWeek={printing.week}
       onClose={() => setPrinting(null)}
     />
@@ -440,6 +452,8 @@ export function PlanWorkspace({
         plan={plan}
         teams={directory.teams}
         athletes={directory.athletes}
+        squads={directory.squads}
+        listTeamPlanDays={adapter.listTeamPlanDays}
         busy={busy !== null}
         error={actionError}
         onChange={changePlan}

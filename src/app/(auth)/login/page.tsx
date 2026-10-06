@@ -650,6 +650,8 @@ export default function LoginPage() {
             </List>
 
             {error ? <Notice tone="error">{error}</Notice> : null}
+            {!error && searchParams.get("account") === "deleted" ? <Notice tone="success">Your account and your data have been deleted. Thank you for using SKTR Coach.</Notice> : null}
+            {!error && searchParams.get("club") === "closed" ? <Notice tone="info">The club is closed and nobody in it can sign in. To reopen it before it is deleted, email support.</Notice> : null}
 
             <Button type="submit" variant="primary" size="lg" block disabled={isSigningIn}>
               {isSigningIn ? "Signing in..." : "Sign in"}

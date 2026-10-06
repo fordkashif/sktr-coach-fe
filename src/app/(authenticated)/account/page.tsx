@@ -1,5 +1,6 @@
 import { List, ListRow, Screen, ScreenHeader, Section } from "@/components/sk"
 import { CoachContactSection, DevicesSection, HelpSection, NameSection, PhotoSection, SignInSection } from "@/components/account/account-sections"
+import { DeleteAccountSection, YourDataSection } from "@/components/account/data-rights-sections"
 import { useCurrentAccount } from "@/lib/account-store"
 import { useRole } from "@/lib/role-context"
 
@@ -40,6 +41,8 @@ export default function AccountPage() {
       </Section>
 
       <DevicesSection />
+      <YourDataSection />
+      <DeleteAccountSection />
       <HelpSection />
     </Screen>
   )

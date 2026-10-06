@@ -1,3 +1,5 @@
+import type { Squad } from "@/lib/data/coach/squads"
+import { listSquadsForTeams } from "@/lib/data/coach/squads-data"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import { ok } from "@/lib/data/result"
 import {
@@ -7,11 +9,13 @@ import {
   toPublishStructure,
   type PlanDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import type { TrainingPlanAssignmentRow } from "@/lib/data/training-plan/training-plan-data"
 import {
   archiveTrainingPlanForCurrentCoach,
   deleteTrainingPlanForCurrentCoach,
   getTrainingPlanForBuilder,
   listCoachTrainingPlansForCurrentUser,
+  listPublishedPlanDaysForTeam,
   publishTrainingPlanForCurrentCoach,
   saveTrainingPlanDraftForCurrentCoach,
 } from "@/lib/data/training-plan/training-plan-data"
@@ -22,6 +26,23 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
   const scopeTeamId = scope.listTeamId
   const allowedTeamIds = scope.teamIds ? new Set(scope.teamIds) : null
   let athletes: AthleteOption[] = []
+  let squads: Squad[] = []
+
+  /** Everyone a published plan's assignment rows reach right now. */
+  const reached = (assignments: TrainingPlanAssignmentRow[]) => {
+    const teamIds = new Set(assignments.filter((row) => row.scope === "team").map((row) => row.teamId))
+    const squadIds = new Set(assignments.filter((row) => row.scope === "squad").map((row) => row.squadId))
+    const athleteIds = new Set(assignments.filter((row) => row.scope === "athlete" && row.athleteId).map((row) => row.athleteId as string))
+    for (const athlete of athletes) {
+      if (teamIds.has(athlete.teamId)) athleteIds.add(athlete.id)
+    }
+    const known = new Set(athletes.map((athlete) => athlete.id))
+    for (const squad of squads) {
+      if (!squadIds.has(squad.id)) continue
+      for (const athleteId of squad.athleteIds) if (known.has(athleteId)) athleteIds.add(athleteId)
+    }
+    return athleteIds
+  }
 
   const loadDirectory: PlanStorageAdapter["loadDirectory"] = async () => {
     const result = await getCoachTeamsSnapshotForCurrentUser()
@@ -39,7 +60,10 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
         eventGroup: athlete.eventGroup,
         primaryEvent: athlete.primaryEvent,
       }))
-    return ok({ teams, athletes })
+    // Squads are an extra: if they cannot be read the builder still works, with whole team and athletes.
+    const squadResult = await listSquadsForTeams([...teamIds])
+    squads = squadResult.ok ? squadResult.data : []
+    return ok({ teams, athletes, squads })
   }
 
   return {
@@ -54,13 +78,7 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
       if (!result.ok) return result
       return ok(
         result.data.map((plan) => {
-          const teamIds = new Set(plan.assignments.filter((row) => row.scope === "team").map((row) => row.teamId))
-          const athleteIds = new Set(
-            plan.assignments.filter((row) => row.scope === "athlete" && row.athleteId).map((row) => row.athleteId as string),
-          )
-          for (const athlete of athletes) {
-            if (teamIds.has(athlete.teamId)) athleteIds.add(athlete.id)
-          }
+          const athleteIds = reached(plan.assignments)
           return {
             id: plan.id,
             name: plan.name,
@@ -93,11 +111,13 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
       // Published before the builder stored its model: rebuild from what athletes see.
       const draft = planFromPublishedDetail(header, detail)
       const athleteRows = assignments.filter((row) => row.scope === "athlete" && row.athleteId)
+      const squadRows = assignments.filter((row) => row.scope === "squad" && row.squadId)
       const first = assignments[0]
       const assign: PlanDraft["assign"] = {
-        target: athleteRows.length > 0 ? "selected" : "team",
+        target: squadRows.length > 0 ? "squads" : athleteRows.length > 0 ? "selected" : "team",
         subgroup: null,
         athleteIds: athleteRows.map((row) => row.athleteId as string),
+        squadIds: squadRows.map((row) => row.squadId as string),
         visibilityStart: first?.visibilityStart ?? "immediate",
         visibilityDate: first?.visibilityDate ?? null,
       }
@@ -130,8 +150,19 @@ export function createSupabasePlanAdapter(scope: PlanScope): PlanStorageAdapter 
         assignTarget: plan.assign.target,
         assignSubgroup: plan.assign.target === "subgroup" ? plan.assign.subgroup : null,
         selectedAthleteIds: plan.assign.target === "selected" ? plan.assign.athleteIds : [],
+        squadIds: plan.assign.target === "squads" ? plan.assign.squadIds : [],
         structure: toPublishStructure(plan),
       })
+    },
+
+    async listTeamPlanDays(teamId) {
+      if (athletes.length === 0) {
+        const directory = await loadDirectory()
+        if (!directory.ok) return directory
+      }
+      const result = await listPublishedPlanDaysForTeam(teamId)
+      if (!result.ok) return result
+      return ok(result.data.map((plan) => ({ id: plan.id, name: plan.name || "Untitled plan", dates: plan.dates, athleteIds: [...reached(plan.assignments)] })))
     },
 
     archive: (planId) => archiveTrainingPlanForCurrentCoach(planId),

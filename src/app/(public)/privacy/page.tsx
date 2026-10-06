@@ -24,7 +24,7 @@ export default function PrivacyPage() {
             "Club admins can read the messages between coaches and athletes in their club. This is on purpose, to keep athletes safe.",
             "We do not sell your information and we do not show adverts or use advertising trackers.",
             "Health information is only recorded with consent, and for an athlete under 18 that consent comes from a parent or guardian.",
-            <>To see, correct or delete your information, email {support}. We answer within 30 days.</>,
+            <>You can download a copy of your information and delete your account yourself, in the app under Your account. For anything else, email {support}. We answer within 30 days.</>,
           ]}
         />
       </LegalSection>
@@ -199,8 +199,9 @@ export default function PrivacyPage() {
         <LegalList
           items={[
             "A club's information is kept for as long as the club uses SKTR Coach. If a club's access is paused, its information is kept so it can be restored.",
-            "When a club tells us it has stopped using SKTR Coach, we delete its information within 90 days.",
-            "If an athlete leaves a team, their history stays in their own account. A club admin can delete an athlete's information, and anyone can ask us to delete their account.",
+            "A club's owner can close the club in the app, or tell us the club has stopped using SKTR Coach. Closing locks every member out at once. The club's information is kept for 90 days, in case the club asks us to reopen it, and is then deleted for good together with its members' sign-in accounts.",
+            "If an athlete leaves a team, their history stays in their own account. A club admin can delete an athlete's information, and anyone can delete their own account in the app under Your account.",
+            "When you delete your account, your sign-in and what is recorded about you are deleted straight away. Messages you sent stay in the other person's conversation, shown as from \"Deleted account\", so that a club admin can still read a conversation that was reported. Plans, templates and notes a coach wrote stay with the club, shown as written by \"A former coach\". A coach who leads a team, and the owner of a club, must hand that over first.",
             "A request from a club to join that we decline is deleted within 12 months.",
             "The records kept to stop spam on the request form are kept for about a day.",
             "We may keep something longer where the law requires it, or where a club needs a record to protect an athlete. We will tell you if that applies to a request you make.",
@@ -221,7 +222,7 @@ export default function PrivacyPage() {
           ]}
         />
         <LegalText>
-          You can change your name, photo, password and notification choices yourself in the app under Your account. Athletes can edit their own private details and mark a pain report as resolved.
+          You can change your name, photo, password and notification choices yourself in the app under Your account. There you can also download a copy of everything stored about you, as one file, and delete your account. Athletes can edit their own private details and mark a pain report as resolved. A club admin can export all of the club's information.
         </LegalText>
         <LegalText>
           For anything else, email {support} from the address you sign in with. We do not charge for this. We will answer within 30 days. We may need to confirm who you are, and where your club is the data controller we will work with the club to deal with your request.

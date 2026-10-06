@@ -569,3 +569,85 @@ How it is used:
 The attendance rate used by the app is (present + late) / (present + late + absent) over the last 28 days; excused marks are left out and nothing counted means no figure (`src/lib/data/coach/attendance.ts`).
 
 Logging for an athlete adds no table. A coach of the athlete's team or a club admin writes the athlete's own `session_row_logs` and `session_completions` rows; `logged_by_user_id` and `completed_by_user_id` are stamped with the caller by trigger, and `get_session_logged_by(session_id)` returns that person to the athlete ("Logged by Coach ...").
+
+## Seasons (20261014090000)
+
+### `club_seasons`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid pk | |
+| `tenant_id` | uuid | the club, cascade on delete of the club |
+| `name` | text | 1 to 60 characters, for example `2026/27 outdoor` |
+| `start_date`, `end_date` | date | first and last day, start on or before end, no day shared with another season of the club |
+| `status` | text | `upcoming`, `current` or `past`. At most one `current` per club. |
+| `started_at`, `ended_at` | timestamptz null | set by the rollover |
+| `created_by_user_id` | uuid null | |
+| `created_at`, `updated_at` | timestamptz | |
+
+Backfilled with one `current` season per club from `club_profiles`. The three season columns of `club_profiles` stay and always equal the current season, so older readers and the setup steps keep working: writing them changes the current season (or makes the club's first one), and changing the current season writes them.
+
+Season bests are counted inside the current season until its last day has passed, otherwise inside the calendar year (`results_season_bounds`, the `athlete_event_bests` view, and `seasonBestWindow` in `src/lib/data/club-admin/season-logic.ts`). Personal bests ignore seasons. Past seasons stay readable so history can be filtered by them.
+
+Functions: `save_club_season`, `delete_club_season`, `start_club_season` (the rollover, returns `{ season_id, previous_season_id, previous_season_end, teams_archived, athletes_unassigned, plans_ended }`).
+
+## Calendar: club events and calendar feed links (20261014100000)
+
+`club_events`: dated events of a club that are not training (a parents' meeting, a camp, a closure).
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | primary key |
+| `tenant_id` | uuid | cascades when the club is deleted |
+| `title` | text | 1 to 120 characters |
+| `starts_on`, `ends_on` | date | `ends_on` is the last day, inclusive; at most 60 days after `starts_on` |
+| `start_time`, `end_time` | time null | clock times in the club's time zone (`club_profiles.timezone`); both null means all day |
+| `place` | text null | up to 160 characters |
+| `note` | text null | up to 1000 characters, readable by everyone the event is for |
+| `audience` | text | `club` (everyone) or `teams` (the teams in `club_event_teams`) |
+| `created_by_user_id`, `created_by_role` | uuid null, text null | set from the caller by `save_club_event` |
+| `created_at`, `updated_at` | timestamptz | |
+
+`club_event_teams`: `(event_id, team_id)` primary key, `tenant_id`; cascades with the event, the team and the club.
+
+`calendar_feeds`: one private subscription link per person. `user_id` (primary key, cascades with the account), `tenant_id` (cascades with the club), `token_hash` (SHA-256 of the token as 64 hex characters, unique), `created_at`, `rotated_at`. The token itself is never stored.
+
+Functions: `save_club_event`, `delete_club_event`, `can_manage_club_event`, `current_club_event_ids`, `get_calendar_feed_status`, `turn_on_calendar_feed`, `turn_off_calendar_feed`, and `calendar_feed_payload(token_hash)` for the service role only.
+
+Server function `calendar-feed` (`verify_jwt = false`): `GET /functions/v1/calendar-feed/<token>.ics`. It hashes the token, calls `calendar_feed_payload` and answers with a `text/calendar` file (`Cache-Control: private, max-age=900`) or one fixed 404 for everything else. The file building, the token handling and the handler are in `supabase/functions/_shared/calendar-feed.ts` and are unit tested in `tests/calendar-ics.test.ts`.
+
+Sessions, test weeks, competitions and availability on the calendars are read from their existing tables; nothing is copied.
+
+## Squads (20261014110000_squads.sql)
+
+`team_squads`: a named group inside one team. `id`, `tenant_id`, `team_id` (cascades with the team), `name` (1 to 60 characters, unique per team among live squads, compared without case), `color` (null or one of `blue`, `green`, `yellow`, `coral`, `ink`), `note` (up to 280 characters, staff only), `archived_at` (null while live), `created_by_user_id`, `created_at`, `updated_at`.
+
+`team_squad_members`: `(squad_id, athlete_id)` primary key, `tenant_id` and `team_id` copied from the squad, `added_by_user_id`, `created_at`. Cascades with the squad and the athlete. A member is always an active athlete of the squad's team; rows are removed when that stops being true.
+
+`training_plan_assignments`: new `squad_id` (cascades with the squad) and scope `squad` (`squad_id` set, `team_id` and `athlete_id` null), one row per plan and squad. The plan reaches the squad's members at any moment, not a list taken at publish time. Sessions are written by the app as for a team plan: at publish for the members then, when an athlete is added to the squad (`createAssignedPlanSessions`), and by the athlete's own app for a missing day.
+
+`test_weeks`: new `squad_ids uuid[]` (default empty, meaning the whole team).
+
+Functions: `current_athlete_squad_ids()` (for policies), and internal ones not callable from the browser: `squads_include_athlete(uuid[], uuid)`, `squad_prune_member_sessions(athlete, squad)`. Changed to know about squads: `current_athlete_plan_ids`, `notify_training_plan_audience`, `current_athlete_test_week_ids`, `athlete_can_enter_test_result`, `test_weeks_status_changed`, `enqueue_test_week_published_notifications`, and one condition added in place to `run_reminders`.
+
+Pure logic (who a plan reaches, two sessions on one day) is in `src/lib/data/coach/squads.ts`, unit tested in `tests/squads.test.ts`.
+
+## Personal data rights and club exit (20261014120000_data_export_account_deletion_and_club_exit.sql)
+
+`club_owners`: `tenant_id` (primary key, cascades with the club), `owner_user_id` (cascades with the account), `since`, `set_by_user_id`. At most one owner per club. A club with no row is owned by its longest standing active club admin (`club_owner_user_id(tenant)`).
+
+`club_closures`: a club closed by its owner. `id`, `tenant_id` (cascades with the club), `club_name`, `closed_at`, `closed_by_user_id`, `delete_after` (closed_at plus 90 days), `previous_lifecycle_status`, `reopened_at`, `reopened_by_user_id`, `reopen_note`. A club is closed while it has a row with `reopened_at` null (a partial unique index allows one). Closing also sets the club's latest `tenant_provision_requests.lifecycle_status` to `suspended`, which is what blocks access; a trigger on that table marks the closure reopened in the same statement when access is turned back on by any route.
+
+`storage_deletion_queue`: `id`, `bucket_id`, `object_path` (unique together), `reason`, `queued_at`, `attempts`, `last_error`, `done_at`. Global, no tenant: it has to outlive the club whose files it lists. Holds paths only.
+
+Personal export has no table. The browser builds the file from ordinary reads (`src/lib/data/account/data-rights-data.ts`), so it holds only what row level security lets the person read. Notes a coach wrote about an athlete are never in the athlete's file (they are not readable to the athlete, and the file builder drops them as a second lock).
+
+What a deleted account leaves behind: an athlete with message threads leaves an `athletes` row named "Deleted account" (no login, no team, no date of birth, inactive) that only the threads hang off; without threads the row goes too. A coach or club admin leaves their plans, templates, exercises, notes and entered results with a null author. `audit_events` rows about them have their name and email replaced by "deleted account".
+
+Permanent club deletion (`delete_closed_club`) removes every row with that `tenant_id` in every public table that has the column (found from the catalogue, children first), the tables that hang off those through cascades, the club's `tenant_provision_requests`, the `tenants` row, and the logins of its members (a platform admin's login is kept). `platform_audit_events` about the club are kept without the requester's email.
+
+Functions: `get_club_ownership`, `transfer_club_ownership`, `record_data_export`, `get_my_account_deletion_check`, `delete_my_account`, `close_current_club`, `get_current_club_closure`, `get_closed_clubs`, `reopen_closed_club`, `delete_closed_club`, `run_club_deletions` (pg_cron job `sktr-delete-closed-clubs`, daily at 04:23 UTC), and internal ones not callable from the browser: `sweep_rows_by_column`, `purge_athlete_personal_data`, `club_owner_user_id`, `club_display_name`, `queue_storage_deletion`, `claim_storage_deletions`, `finish_storage_deletion`, `request_storage_purge`, `install_deleted_account_triggers`.
+
+Server function `purge-deleted-storage` (`verify_jwt = false`, checks the caller itself: scheduler token, service role key or a platform admin): removes queued files from the `avatars` and `club-logos` buckets with the Storage API.
+
+Pure logic (zip writer with CRC-32, CSV cells, export shapes, deletion blockers, typed confirmations) is in `src/lib/data-rights.ts`, unit tested with the server function's handler in `tests/data-rights.test.ts`.

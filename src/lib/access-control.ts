@@ -14,7 +14,7 @@ export interface AccessInput {
 }
 
 /** Why a signed-in member is shown a notice instead of the app. The database blocks the same cases. */
-export type AccessBlock = "club-suspended" | "club-cancelled" | "member-inactive"
+export type AccessBlock = "club-suspended" | "club-cancelled" | "club-closed" | "member-inactive"
 
 export interface AccessResult {
   allowed: boolean
@@ -103,6 +103,10 @@ export function evaluateAccess(input: AccessInput): AccessResult {
   if (role === "athlete" || role === "coach" || role === "club-admin") {
     if (!memberActive) {
       return { allowed: false, reason: "member-inactive", blocked: "member-inactive" }
+    }
+    // Closed by its owner (a closure on top of the suspended lifecycle, see 20261014120000).
+    if (tenantLifecycleStatus === "closed") {
+      return { allowed: false, reason: "club-blocked", blocked: "club-closed" }
     }
     if (tenantLifecycleStatus === "suspended") {
       return { allowed: false, reason: "club-blocked", blocked: "club-suspended" }

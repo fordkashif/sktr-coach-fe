@@ -16,10 +16,10 @@ import {
   Section,
   SkeletonRows,
   Split,
-  StatusText,
   notify,
-  type StateTone,
 } from "@/components/sk"
+import { ClubSeasonSection } from "@/components/club-admin/club-season-section"
+import { ClubDataAndOwnership } from "@/components/club-admin/club-data-ownership"
 import { ClubTimezoneSection } from "@/components/club-admin/club-timezone-section"
 import { DEFAULT_CLUB_ADMIN_PROFILE, useClubAdmin } from "@/lib/club-admin-context"
 import { refreshClubBrand, useClubBrand } from "@/lib/club-brand-store"
@@ -36,7 +36,7 @@ import {
 import { insertAuditEvent, upsertClubAdminProfileRecord } from "@/lib/data/club-admin/ops-data"
 import { prepareAvatarImage, type AvatarImageError } from "@/lib/image-resize"
 import { getBackendMode } from "@/lib/supabase/config"
-import { formatDay, localIsoDay, parseLocalDay } from "../ops-format"
+import { parseLocalDay } from "../ops-format"
 import { loadProfileSafe, persistProfile } from "../state"
 
 type ClubProfileForm = {
@@ -84,22 +84,6 @@ function validateProfile(draft: ClubProfileForm, fields: ProfileField[]): { ok: 
   // Only the fields of the section being saved can block it.
   const relevant = Object.fromEntries(Object.entries(errors).filter(([field]) => fields.includes(field as ProfileField))) as Errors<ClubProfileForm>
   return Object.keys(relevant).length > 0 ? { ok: false, errors: relevant } : { ok: true, data }
-}
-
-function seasonStatus(start: string, end: string): { label: string; tone: StateTone } | null {
-  const startDay = parseLocalDay(start)
-  const endDay = parseLocalDay(end)
-  if (!startDay || !endDay) return null
-  const today = localIsoDay()
-  const todayDay = parseLocalDay(today) as Date
-  const dayMs = 24 * 60 * 60 * 1000
-  if (today < start) {
-    const days = Math.round((startDay.getTime() - todayDay.getTime()) / dayMs)
-    return { label: days === 1 ? "Starts tomorrow" : `Starts in ${days} days`, tone: "blue" }
-  }
-  if (today > end) return { label: "Season ended", tone: "neutral" }
-  const left = Math.round((endDay.getTime() - todayDay.getTime()) / dayMs)
-  return { label: left === 0 ? "Last day of the season" : `In season, ${left} ${left === 1 ? "day" : "days"} left`, tone: "green" }
 }
 
 /** The club's own details: logo, name and colour, how to reach it, and its season. */
@@ -305,7 +289,6 @@ export default function ClubAdminProfilePage() {
 
   const clubName = profile?.clubName.trim() || "Your club"
   const logoUrl = brand?.logoUrl ?? null
-  const status = profile ? seasonStatus(profile.seasonStart, profile.seasonEnd) : null
   const location = contact ? formatClubLocation(contact) : ""
   const editAction = (section: Exclude<Editing, null>, label: string) =>
     profile && editing === null ? (
@@ -501,47 +484,15 @@ export default function ClubAdminProfilePage() {
                 ) : null}
               </Section>
 
-              <Section title="Season" action={editAction("season", "Edit season")}>
-                {editing === "season" && draft ? (
-                  <form className="flex flex-col gap-4" onSubmit={(event) => void saveProfile(event, "season")} noValidate>
-                    <Field label="Season" error={errors.seasonYear}>
-                      <Input placeholder="2026" maxLength={20} value={draft.seasonYear} onChange={(event) => updateDraft("seasonYear", event.target.value)} />
-                    </Field>
-                    <FormGrid>
-                      <Field label="First day" error={errors.seasonStart}>
-                        <Input type="date" max={draft.seasonEnd || undefined} value={draft.seasonStart} onChange={(event) => updateDraft("seasonStart", event.target.value)} />
-                      </Field>
-                      <Field label="Last day" error={errors.seasonEnd}>
-                        <Input type="date" min={draft.seasonStart || undefined} value={draft.seasonEnd} onChange={(event) => updateDraft("seasonEnd", event.target.value)} />
-                      </Field>
-                    </FormGrid>
-                    {formEnd("Save season")}
-                  </form>
-                ) : (
-                  <FactList aria-label="Season">
-                    <Fact label="Season" empty="Not set">
-                      {profile.seasonYear.trim()}
-                    </Fact>
-                    <Fact label="First day" empty="Not set">
-                      {formatDay(profile.seasonStart)}
-                    </Fact>
-                    <Fact label="Last day" empty="Not set">
-                      {formatDay(profile.seasonEnd)}
-                    </Fact>
-                    {status ? (
-                      <Fact label="Now">
-                        <StatusText tone={status.tone}>{status.label}</StatusText>
-                      </Fact>
-                    ) : null}
-                  </FactList>
-                )}
-              </Section>
+              <ClubSeasonSection fallback={{ name: profile.seasonYear, start: profile.seasonStart, end: profile.seasonEnd }} />
 
               <ClubTimezoneSection />
             </>
           }
         />
       ) : null}
+
+      {profile ? <ClubDataAndOwnership /> : null}
     </Screen>
   )
 }

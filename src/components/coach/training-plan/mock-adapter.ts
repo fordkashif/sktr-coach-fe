@@ -1,4 +1,6 @@
+import { loadMockSquads } from "@/lib/data/coach/squads-mock"
 import { err, ok } from "@/lib/data/result"
+import { planBlueprints } from "@/lib/data/session/session-from-plan"
 import {
   createSkeletonSessions,
   defaultAssign,
@@ -10,7 +12,7 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import { mockAthletes, mockTeams, mockTrainingPlans } from "@/lib/mock-data"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { countAssignedAthletes, type PlanScope, type PlanStorageAdapter } from "./storage"
+import { assignedAthletes, countAssignedAthletes, type PlanScope, type PlanStorageAdapter } from "./storage"
 
 const STORAGE_KEY = "pacelab:coach-training-plans:v1"
 
@@ -108,6 +110,8 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
       eventGroup: athlete.eventGroup,
       primaryEvent: athlete.primaryEvent,
     }))
+  // Read on every use: the coach may have changed a squad on the roster since the plans page opened.
+  const squads = () => loadMockSquads().filter((squad) => (allowedTeamIds ? allowedTeamIds.has(squad.teamId) : true))
   // Seeds are generated once per adapter so their session ids stay stable while the page is open.
   const seeds = seedPlans(scopeTeamId)
 
@@ -129,7 +133,7 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
       const teams = mockTeams
         .filter((team) => (allowedTeamIds ? allowedTeamIds.has(team.id) : true))
         .map((team) => ({ id: team.id, name: team.name, eventGroup: team.eventGroup }))
-      return ok({ teams, athletes })
+      return ok({ teams, athletes, squads: squads() })
     },
 
     async listPlans() {
@@ -142,7 +146,7 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
             startDate: plan.startDate,
             weeks: plan.weeks,
             status: plan.status,
-            athleteCount: plan.status === "draft" ? null : countAssignedAthletes(plan, athletes),
+            athleteCount: plan.status === "draft" ? null : countAssignedAthletes(plan, athletes, squads()),
             updatedAt: plan.updatedAt,
           }))
           .sort((left, right) => right.startDate.localeCompare(left.startDate)),
@@ -174,7 +178,7 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
     async publish(plan) {
       const invalid = validateBasics(plan)
       if (invalid) return err("VALIDATION", invalid)
-      const assignedCount = countAssignedAthletes(plan, athletes)
+      const assignedCount = countAssignedAthletes(plan, athletes, squads())
       try {
         const planId = plan.id ?? makeId("plan")
         store({ ...plan, id: planId, status: "published", updatedAt: new Date().toISOString() })
@@ -182,6 +186,20 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
       } catch {
         return err("UNKNOWN", "Could not publish the plan in this browser. Storage may be full or blocked.")
       }
+    },
+
+    async listTeamPlanDays(teamId) {
+      const live = squads()
+      return ok(
+        allPlans()
+          .filter((plan) => plan.status === "published" && plan.teamId === teamId)
+          .map((plan) => ({
+            id: plan.id,
+            name: plan.name || "Untitled plan",
+            dates: planBlueprints(plan).map((blueprint) => blueprint.date),
+            athleteIds: assignedAthletes(plan, athletes, live).map((athlete) => athlete.id),
+          })),
+      )
     },
 
     async archive(planId) {
