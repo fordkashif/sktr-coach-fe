@@ -203,6 +203,9 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     // Platform admin, and the person who asked for a club
     case "tenant_provision_request_submitted":
       return role === "platform-admin" ? "/platform-admin/requests" : NOTIFICATIONS_PATH
+    case "tenant_provision_request_received":
+      // The person has no account yet. The button only shows them the app's front door.
+      return "/"
     case "tenant_provision_request_reviewed":
     case "tenant_provision_request_provisioned":
       return role === "platform-admin" ? "/platform-admin/requests" : role === "club-admin" ? "/club-admin/dashboard" : "/login"
@@ -263,6 +266,8 @@ export function notificationActionLabel(eventType: string): string {
       return "Review the message"
     case "tenant_provision_request_submitted":
       return "Review the request"
+    case "tenant_provision_request_received":
+      return "Visit SKTR Coach"
     case "guardian_plan_published":
       return "Open the plan"
     case "guardian_test_week_published":
