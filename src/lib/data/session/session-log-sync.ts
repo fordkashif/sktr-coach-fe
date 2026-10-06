@@ -17,7 +17,7 @@ export type SyncState = {
   message: string | null
 }
 
-export type PendingCompletion = { completionDate: string; rpe: number | null; comment: string | null }
+export type PendingCompletion = { completionDate: string; rpe: number | null; comment: string | null; durationMinutes?: number | null }
 
 type Outbox = {
   logs: Record<string, { sessionId: string; log: SessionRowLog }>

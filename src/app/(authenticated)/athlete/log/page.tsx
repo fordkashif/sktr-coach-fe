@@ -25,6 +25,7 @@ import {
   EmptyState,
   Field,
   InlineConfirm,
+  Input,
   LinkButton,
   List,
   ListRow,
@@ -293,6 +294,7 @@ export default function AthleteLogPage() {
               of={session.overallRpe ? 10 : undefined}
               hint={session.overallRpe ? EFFORT_WORDS[session.overallRpe] : "Not rated"}
             />
+            <Stat label="Time" value={session.durationMinutes ?? "None"} unit={session.durationMinutes ? "min" : undefined} hint={session.durationMinutes ? undefined : "Not given"} />
           </StatStrip>
 
           <Section
@@ -404,6 +406,25 @@ export default function AthleteLogPage() {
 
           <Section title="How hard was it?" hint="1 is very easy, 10 is everything you had.">
             <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />
+            {/* Prefilled from the plan, so when that is right there is nothing to do. Effort x minutes is the session's load. */}
+            <Field
+              label="How long did it take?"
+              className="mt-4"
+              hint={
+                session.estimatedDurationMinutes
+                  ? `In minutes. Your coach planned ${session.estimatedDurationMinutes}. Change it if it ran longer or shorter.`
+                  : "In minutes, warm up to cool down. Leave it empty if you are not sure."
+              }
+            >
+              <Input
+                inputMode="numeric"
+                autoComplete="off"
+                className="max-w-[8rem]"
+                placeholder="Minutes"
+                value={log.wrapUp.minutes ?? ""}
+                onChange={(event) => log.updateWrapUp({ minutes: event.target.value.replace(/[^0-9]/g, "").slice(0, 3) })}
+              />
+            </Field>
             <Field label="Anything your coach should know?" optional className="mt-2">
               <Textarea
                 rows={3}

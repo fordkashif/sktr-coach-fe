@@ -651,3 +651,25 @@ Functions: `get_club_ownership`, `transfer_club_ownership`, `record_data_export`
 Server function `purge-deleted-storage` (`verify_jwt = false`, checks the caller itself: scheduler token, service role key or a platform admin): removes queued files from the `avatars` and `club-logos` buckets with the Storage API.
 
 Pure logic (zip writer with CRC-32, CSV cells, export shapes, deletion blockers, typed confirmations) is in `src/lib/data-rights.ts`, unit tested with the server function's handler in `tests/data-rights.test.ts`.
+
+## Athlete reports (20261015110000_athlete_reports.sql)
+
+`athlete_reports`: `id`, `tenant_id`, `athlete_id` (cascade), `author_user_id` (set null), `period_start`, `period_end`, `sections text[]` (summary, attendance, training, results, tests, goals, wellness, injuries), `summary` (up to 4000 characters, mirrored into the snapshot by trigger), `snapshot jsonb` (what the sheet showed when it was saved, shape in `src/lib/data/reports/athlete-report.ts`, at most 300 KB), `shared_with_athlete_at`, `shared_by_user_id`, `created_at`, `updated_at`.
+
+`athlete_report_links`: `id`, `tenant_id`, `report_id` (cascade), `athlete_id` (cascade), `token_hash` (SHA-256 hex of the 64 character token, never the token), `made_for`, `created_by_user_id`, `created_at`, `expires_at`, `revoked_at`, `open_count`, `last_opened_at`.
+
+Functions: `share_athlete_report`, `create_athlete_report_link`, `revoke_athlete_report_link`, `can_manage_athlete_report`, `get_shared_athlete_report` (callable signed out). Notification type `athlete_report_shared` (athlete, in-app and email, opens `/athlete/reports/<id>`).
+
+App: data in `src/lib/data/reports/athlete-report-data.ts`, pure logic in `athlete-report.ts` (unit tested in `tests/athlete-report.test.ts`). The public page is `/shared/report#<token>`: the token rides in the address fragment, which is not sent to servers.
+
+## Training load and plan phases (20261015100000_training_load_and_plan_phases.sql)
+
+Columns: `session_completions.duration_minutes smallint` (1 to 600, null when not given), `sessions.planned_effort smallint` (1 to 10), `training_plan_weeks.week_type text` (build, hold, deload, test, competition) and `training_plan_weeks.phase_name text` (up to 60 characters). All nullable, nothing backfilled.
+
+Session load = `rpe` x `duration_minutes`. A completion missing either has no load. Planned load = `sessions.estimated_duration_minutes` x `sessions.planned_effort` for sessions with `origin = 'plan'`.
+
+`training_load_weeks(p_team_id, p_athlete_id, p_as_of, p_weeks)` returns one row per readable athlete and week (Monday to Sunday, at most 52): `week_load`, `sessions_with_load`, `sessions_without_load`, `planned_load` (null when no session of the week has both numbers), `acute_load` (7 days), `chronic_load` (28 days / 4), `load_ratio` (acute / chronic to 2 places; null until the first session with a load is 28 days old, and when chronic is 0), `first_load_on`. For the running week the 7 and 28 days end on `p_as_of` once the athlete finished a session that day, otherwise the day before. `training_load_sessions(p_athlete_id, p_from, p_to)` lists the finished sessions behind a period.
+
+Phases, week types, target loads and a session's intended effort live in `training_plans.builder_state` and `plan_templates.structure` as optional keys (`phases`, `weekTypes`, `weekTargetLoad`, `sessions[].intendedEffort`). A plan or template without them reads and saves exactly as before.
+
+App: pure logic in `src/lib/data/load/training-load.ts` and `src/lib/data/training-plan/plan-phases.ts` (unit tested in `tests/training-load.test.ts` and `tests/plan-phases.test.ts` with the same hand-worked examples as the database test), data in `src/lib/data/load/training-load-data.ts`. Bands on the ratio: under 0.8 well below usual, 0.8 to 1.3 in the usual range, over 1.3 to 1.5 above usual, over 1.5 well above usual.

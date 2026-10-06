@@ -62,7 +62,8 @@ export type ThreadMessage = {
   id: string
   threadId: string
   senderUserId: string | null
-  senderRole: "coach" | "athlete"
+  /** "system" is a line the app wrote itself, for example when a coach comes off the team. */
+  senderRole: "coach" | "athlete" | "system"
   /** Null once hidden. */
   body: string | null
   hiddenAt: string | null

@@ -50,7 +50,7 @@ export function TemplatePreview({ template, onClose, onUse }: { template: PlanTe
       ) : (
         <SubSections>
           {weeks.map((week) => (
-            <SubSection key={week.week} title={`Week ${week.week}`} hint={week.focus ?? undefined}>
+            <SubSection key={week.week} title={`Week ${week.week}`} hint={[week.phaseLine, week.focus].filter(Boolean).join(". ") || undefined}>
               {week.sessions.length === 0 ? (
                 <p className="sk-list-sub">No sessions this week.</p>
               ) : (

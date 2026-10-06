@@ -39,6 +39,8 @@ import {
   type StateTone,
 } from "@/components/sk"
 import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
+import { coachLeftTeamLine, teamCoachRoleLabel, type TeamCoachRole } from "@/lib/coach-permissions"
+import { mockTeamCoaches, setTeamAssistantSettings, setTeamCoachRole } from "@/lib/data/club-admin/handover-data"
 import {
   createClubAdminTeam,
   getClubAdminAssignableCoachOptions,
@@ -50,7 +52,6 @@ import {
   removeClubAdminTeamCoach,
   setClubAdminTeamArchived,
   setClubAdminTeamCoaches,
-  setClubAdminTeamLeadCoach,
   updateClubAdminTeam,
   type ClubAdminAssignableCoachOption,
 } from "@/lib/data/club-admin/ops-data"
@@ -65,7 +66,7 @@ import { loadTeamsSafe, loadUsersSafe, persistTeams } from "../state"
 
 const EVENT_GROUP_OPTIONS: EventGroup[] = ["Sprint", "Mid", "Distance", "Jumps", "Throws"]
 
-type TeamCoach = { userId: string; name: string; isPrimary: boolean; isSelf: boolean }
+type TeamCoach = { userId: string; name: string; isPrimary: boolean; isSelf: boolean; role: TeamCoachRole; active: boolean }
 type TeamAthlete = { id: string; name: string; primaryEvent: string | null; hasLogin: boolean }
 
 type TeamRow = {
@@ -77,6 +78,8 @@ type TeamRow = {
   athletes: TeamAthlete[]
   /** Lead label from the server, used only when the lead is not in the coaches list. */
   leadCoachLabel?: string
+  assistantsCanMessage: boolean
+  assistantsSeeHealth: boolean
 }
 
 type TeamForm = {
@@ -86,6 +89,8 @@ type TeamForm = {
   eventGroup: EventGroup
   leadId: string
   extraIds: string[]
+  /** Role of each additional coach. Missing means coach. */
+  extraRoles: Record<string, "coach" | "assistant">
 }
 
 type Confirm =
@@ -161,10 +166,6 @@ export default function ClubAdminTeamsPage() {
     const mockData = await import("@/lib/mock-data")
     const users = loadUsersSafe()
     const userById = new Map(users.map((user) => [user.id, user]))
-    const toCoach = (userId: string, isPrimary: boolean): TeamCoach | null => {
-      const user = userById.get(userId)
-      return user ? { userId, name: user.name, isPrimary, isSelf: user.role === "club-admin" } : null
-    }
     // The demo roster with everything the demo coach and admin changed (moves, athletes without a login).
     const roster = mergeMockAthletes(mockData.mockAthletes)
 
@@ -173,13 +174,13 @@ export default function ClubAdminTeamsPage() {
       name: team.name,
       eventGroup: team.eventGroup,
       status: team.status,
-      coaches: [team.coachUserId ? toCoach(team.coachUserId, true) : null, ...(team.coachUserIds ?? []).filter((id) => id !== team.coachUserId).map((id) => toCoach(id, false))].filter(
-        (coach): coach is TeamCoach => coach !== null,
-      ),
+      coaches: mockTeamCoaches(team, users).map((coach) => ({ ...coach, isPrimary: coach.role === "lead", isSelf: userById.get(coach.userId)?.role === "club-admin" })),
       athletes: roster
         .filter((athlete) => athlete.teamId === team.id)
         .map((athlete) => ({ id: athlete.id, name: athlete.name, primaryEvent: athlete.primaryEvent, hasLogin: athlete.hasLogin })),
       leadCoachLabel: team.coachEmail,
+      assistantsCanMessage: team.assistantsCanMessage === true,
+      assistantsSeeHealth: team.assistantsSeeHealth === true,
     }))
 
     return {
@@ -224,6 +225,8 @@ export default function ClubAdminTeamsPage() {
         coaches: membersResult.data[team.id]?.coaches ?? [],
         athletes: membersResult.data[team.id]?.athletes ?? [],
         leadCoachLabel: team.leadCoachLabel,
+        assistantsCanMessage: team.assistantsCanMessage === true,
+        assistantsSeeHealth: team.assistantsSeeHealth === true,
       })),
     )
     setCoachOptions(coachResult.data)
@@ -288,7 +291,7 @@ export default function ClubAdminTeamsPage() {
 
   const openCreate = () => {
     setFormError(null)
-    setForm({ mode: "create", name: "", eventGroup: "Sprint", leadId: "none", extraIds: [] })
+    setForm({ mode: "create", name: "", eventGroup: "Sprint", leadId: "none", extraIds: [], extraRoles: {} })
   }
 
   const openEdit = (team: TeamRow) => {
@@ -300,6 +303,7 @@ export default function ClubAdminTeamsPage() {
       eventGroup: team.eventGroup,
       leadId: team.coaches.find((coach) => coach.isPrimary)?.userId ?? "none",
       extraIds: team.coaches.filter((coach) => !coach.isPrimary).map((coach) => coach.userId),
+      extraRoles: Object.fromEntries(team.coaches.filter((coach) => coach.role === "assistant").map((coach) => [coach.userId, "assistant" as const])),
     })
   }
 
@@ -342,6 +346,7 @@ export default function ClubAdminTeamsPage() {
 
     const leadId = form.leadId === "none" ? null : form.leadId
     const extraIds = form.extraIds.filter((id) => id !== leadId)
+    const extraRoles = Object.fromEntries(extraIds.filter((id) => form.extraRoles[id] === "assistant").map((id) => [id, "assistant" as const]))
     setSaving(true)
     setFormError(null)
 
@@ -361,7 +366,7 @@ export default function ClubAdminTeamsPage() {
           return
         }
         if (extraIds.length > 0) {
-          const coachResult = await setClubAdminTeamCoaches({ teamId: result.data.id, leadCoachUserId: leadId, coachUserIds: extraIds })
+          const coachResult = await setClubAdminTeamCoaches({ teamId: result.data.id, leadCoachUserId: leadId, coachUserIds: extraIds, roles: extraRoles })
           if (!coachResult.ok) setError(`${name} was created, but the additional coaches were not saved: ${coachResult.error.message}`)
         }
         await reload()
@@ -369,7 +374,7 @@ export default function ClubAdminTeamsPage() {
         const users = loadUsersSafe()
         const lead = users.find((user) => user.id === leadId)
         await saveMockTeams((current) => [
-          { id: `team-${Date.now()}`, name, eventGroup: form.eventGroup, status: "active", coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds },
+          { id: `team-${Date.now()}`, name, eventGroup: form.eventGroup, status: "active", coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds, coachRoles: extraRoles },
           ...current,
         ])
       }
@@ -386,7 +391,7 @@ export default function ClubAdminTeamsPage() {
           setFormError(updateResult.error.message)
           return
         }
-        const coachResult = await setClubAdminTeamCoaches({ teamId, leadCoachUserId: leadId, coachUserIds: extraIds })
+        const coachResult = await setClubAdminTeamCoaches({ teamId, leadCoachUserId: leadId, coachUserIds: extraIds, roles: extraRoles })
         if (!coachResult.ok) {
           setSaving(false)
           setFormError(`The team details were saved, but the coaches were not: ${coachResult.error.message}`)
@@ -398,7 +403,7 @@ export default function ClubAdminTeamsPage() {
         const users = loadUsersSafe()
         const lead = users.find((user) => user.id === leadId)
         await saveMockTeams((current) =>
-          current.map((team) => (team.id === teamId ? { ...team, name, eventGroup: form.eventGroup, coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds } : team)),
+          current.map((team) => (team.id === teamId ? { ...team, name, eventGroup: form.eventGroup, coachUserId: lead?.id, coachEmail: lead?.email, coachUserIds: extraIds, coachRoles: extraRoles } : team)),
         )
       }
       await emitAudit("team_update", name, leadId ? `lead ${coachName(leadId)}` : "no lead coach")
@@ -439,37 +444,48 @@ export default function ClubAdminTeamsPage() {
     else notify(team.status === "draft" ? `${team.name} is now active` : `${team.name} restored`)
   }
 
-  const handleMakeLead = async (team: TeamRow, coach: TeamCoach) => {
+  /** Lead coach, coach or assistant. Making someone lead moves the previous lead down to coach. */
+  const handleSetRole = async (team: TeamRow, coach: TeamCoach, role: TeamCoachRole) => {
     setError(null)
     setBusyKey(`coach:${team.id}:${coach.userId}`)
-    if (isSupabaseMode) {
-      const result = await setClubAdminTeamLeadCoach({ teamId: team.id, leadCoachUserId: coach.userId })
-      if (!result.ok) {
-        setBusyKey(null)
-        setError(`Could not make ${coach.name} the lead coach: ${result.error.message}`)
-        void reload()
-        return
-      }
-      await reload()
-    } else {
-      const users = loadUsersSafe()
-      const lead = users.find((user) => user.id === coach.userId)
-      await saveMockTeams((current) =>
-        current.map((item) =>
-          item.id === team.id
-            ? {
-                ...item,
-                coachUserId: coach.userId,
-                coachEmail: lead?.email,
-                coachUserIds: [...(item.coachUserId ? [item.coachUserId] : []), ...(item.coachUserIds ?? [])].filter((id, index, all) => id !== coach.userId && all.indexOf(id) === index),
-              }
-            : item,
-        ),
+    const result = await setTeamCoachRole({ teamId: team.id, userId: coach.userId, role })
+    if (!result.ok) {
+      setBusyKey(null)
+      setError(`Could not make ${coach.name} ${role === "lead" ? "the lead coach" : role === "assistant" ? "an assistant coach" : "a coach"}: ${result.error.message}`)
+      void reload()
+      return
+    }
+    await reload()
+    setBusyKey(null)
+    // The database writes its own audit entry for a role change.
+    if (!isSupabaseMode) await emitAudit(role === "lead" ? "team_lead_coach_set" : "team_coach_role_set", team.name, `${coach.name} is ${teamCoachRoleLabel(role).toLowerCase()}`)
+    notify(
+      role === "lead" ? `${coach.name} is now lead coach of ${team.name}` : role === "assistant" ? `${coach.name} is now an assistant coach on ${team.name}` : `${coach.name} is now a coach on ${team.name}`,
+      role === "assistant" ? "They can see the team, take attendance, log sessions and enter test results." : undefined,
+    )
+  }
+
+  /** The two per-team switches for assistant coaches. */
+  const handleAssistantSetting = async (team: TeamRow, change: { assistantsCanMessage?: boolean; assistantsSeeHealth?: boolean }) => {
+    setError(null)
+    setBusyKey(`assistants:${team.id}`)
+    const result = await setTeamAssistantSettings({ teamId: team.id, ...change })
+    setBusyKey(null)
+    if (!result.ok) {
+      setError(`Could not change what assistants can do on ${team.name}: ${result.error.message}`)
+      void reload()
+      return
+    }
+    setTeams((current) => current.map((item) => (item.id === team.id ? { ...item, ...result.data } : item)))
+    if (!isSupabaseMode) {
+      await emitAudit(
+        "team_assistant_settings",
+        team.name,
+        `assistants can message athletes: ${result.data.assistantsCanMessage ? "yes" : "no"}, assistants can see health information: ${result.data.assistantsSeeHealth ? "yes" : "no"}`,
       )
     }
-    setBusyKey(null)
-    await emitAudit("team_lead_coach_set", team.name, coach.name)
-    notify(`${coach.name} is now lead coach of ${team.name}`)
+    if (change.assistantsCanMessage !== undefined) notify(change.assistantsCanMessage ? `Assistants can now message athletes on ${team.name}` : `Assistants can no longer message athletes on ${team.name}`)
+    else notify(change.assistantsSeeHealth ? `Assistants can now see health information on ${team.name}` : `Assistants can no longer see health information on ${team.name}`)
   }
 
   const handleRemoveCoach = async (team: TeamRow, coach: TeamCoach) => {
@@ -498,6 +514,9 @@ export default function ClubAdminTeamsPage() {
             : item,
         ),
       )
+      // As in the database: their conversations with this team's athletes close, with a line saying why.
+      const messages = await import("@/lib/data/messages/mock-messages-store")
+      messages.mockCloseCoachThreadsForTeam(team.id, coachLeftTeamLine(coach.name))
     }
     setBusyKey(null)
     setConfirm(null)
@@ -612,6 +631,28 @@ export default function ClubAdminTeamsPage() {
               </div>
             )}
           </fieldset>
+          {form.extraIds.filter((id) => id !== form.leadId).length > 0 ? (
+            <fieldset className="flex min-w-0 flex-col gap-2">
+              <legend className="sk-field-label">Their role on this team</legend>
+              <p className="text-sm text-sk-mute">A coach has full rights. An assistant sees the team, takes attendance, logs sessions and enters test results, and cannot change plans or the roster.</p>
+              <FormGrid>
+                {form.extraIds
+                  .filter((id) => id !== form.leadId)
+                  .map((id) => (
+                    <Field key={id} label={coachName(id)}>
+                      <Select
+                        data-coach-role={id}
+                        value={form.extraRoles[id] ?? "coach"}
+                        onChange={(event) => setForm({ ...form, extraRoles: { ...form.extraRoles, [id]: event.target.value === "assistant" ? "assistant" : "coach" } })}
+                      >
+                        <option value="coach">Coach</option>
+                        <option value="assistant">Assistant coach</option>
+                      </Select>
+                    </Field>
+                  ))}
+              </FormGrid>
+            </fieldset>
+          ) : null}
           {form.mode === "create" && teamLimitReached ? <Notice tone="warning">{teamLimitMessage}</Notice> : null}
           {formError ? <Notice tone="error">{formError}</Notice> : null}
           <FormActions>
@@ -816,6 +857,7 @@ export default function ClubAdminTeamsPage() {
             </Section>
           }
           side={
+            <>
             <Section
               title="Coaches"
               action={
@@ -838,16 +880,23 @@ export default function ClubAdminTeamsPage() {
                       <ActionRow
                         key={coach.userId}
                         data-team-coach={coach.name}
+                        data-team-coach-role={coach.role}
                         leading={<PersonAvatar name={coach.name} userId={coach.userId} size="sm" />}
                         title={coachLabel(coach)}
-                        subtitle={coach.isPrimary ? "Lead coach" : "Coach"}
+                        subtitle={`${teamCoachRoleLabel(coach.role)}${coach.active ? "" : ", deactivated"}`}
                         actions={
                           <RowMenu
                             label={`More for ${coach.name}`}
                             items={[
-                              ...(coach.isPrimary || team.status === "archived"
+                              ...(team.status === "archived" || !coach.active
                                 ? []
-                                : [{ label: busyKey === key ? "Saving..." : "Make lead coach", onSelect: () => void handleMakeLead(team, coach), disabled: busyKey === key }]),
+                                : (["lead", "coach", "assistant"] as TeamCoachRole[])
+                                    .filter((role) => role !== coach.role)
+                                    .map((role) => ({
+                                      label: busyKey === key ? "Saving..." : role === "lead" ? "Make lead coach" : role === "assistant" ? "Make assistant coach" : "Make coach",
+                                      onSelect: () => void handleSetRole(team, coach, role),
+                                      disabled: busyKey === key,
+                                    }))),
                               { label: "Remove from team", onSelect: () => setConfirm({ kind: "remove-coach", teamId: team.id, userId: coach.userId }), danger: true },
                             ]}
                           />
@@ -855,7 +904,7 @@ export default function ClubAdminTeamsPage() {
                         below={
                           confirming ? (
                             <InlineConfirm
-                              question={`Remove ${coach.name} from ${team.name}? They lose access to this team only.`}
+                              question={`Remove ${coach.name} from ${team.name}? They lose access to this team only. Their conversations with its athletes are closed, and the history is kept.`}
                               confirmLabel="Remove coach"
                               cancelLabel="Keep"
                               busy={busyKey === key}
@@ -871,6 +920,28 @@ export default function ClubAdminTeamsPage() {
               )}
               {team.coaches.length > 0 && !lead ? <Notice tone="warning">Nobody is lead coach. Make one of the coaches the lead.</Notice> : null}
             </Section>
+            <Section
+              title="Assistant coaches"
+              hint="An assistant sees the roster, training, results and attendance, takes attendance, logs sessions for athletes and enters test results. Plans, invites and squads stay with the lead coach and coaches."
+            >
+              <List aria-label={`What assistant coaches can do on ${team.name}`}>
+                <CheckRow
+                  title="Assistants can message athletes"
+                  subtitle="Direct messages with the athletes of this team. Off unless you turn it on."
+                  checked={team.assistantsCanMessage}
+                  disabled={busyKey === `assistants:${team.id}`}
+                  onChange={(checked) => void handleAssistantSetting(team, { assistantsCanMessage: checked })}
+                />
+                <CheckRow
+                  title="Assistants can see health information"
+                  subtitle="Wellness detail, pain and injury reports, medical notes and private coach notes. Off unless you turn it on."
+                  checked={team.assistantsSeeHealth}
+                  disabled={busyKey === `assistants:${team.id}`}
+                  onChange={(checked) => void handleAssistantSetting(team, { assistantsSeeHealth: checked })}
+                />
+              </List>
+            </Section>
+            </>
           }
         />
         {sharedDialogs}

@@ -124,22 +124,24 @@ test("club admin removes a coach from the club for good, and cannot remove thems
   const coachRow = page.locator('[data-person="coach.rivera@pacelab.local"]')
   await coachRow.getByRole("button", { name: "More for Coach Rivera" }).click()
   await page.getByRole("menuitem", { name: "Remove from club" }).click()
-  const confirm = page.getByRole("group", { name: "Confirm" })
-  await expect(confirm).toContainText("The plans, notes and messages they wrote stay")
+  // Coach Rivera still leads Sprint Group, so the team is handed over first (see coach-handover-and-assistants.spec.ts).
+  const handover = page.getByRole("dialog", { name: "Hand over teams, then remove Coach Rivera" })
+  await expect(handover).toContainText("Plans, test weeks, templates, exercises and coach notes stay with the club")
   // Changing your mind leaves them where they were.
-  await confirm.getByRole("button", { name: "Keep in club" }).click()
+  await handover.getByRole("button", { name: "Cancel" }).click()
   await expect(coachRow).toBeVisible()
 
   await coachRow.getByRole("button", { name: "More for Coach Rivera" }).click()
   await page.getByRole("menuitem", { name: "Remove from club" }).click()
-  await page.getByRole("group", { name: "Confirm" }).getByRole("button", { name: "Remove from club" }).click()
+  await handover.locator('[data-handover-team="Sprint Group"]').selectOption({ label: "Coach Smith takes over as lead (joins the team)" })
+  await handover.getByRole("button", { name: "Hand over and remove" }).click()
   await expect(coachRow).toHaveCount(0)
   await expect(page.getByRole("tab", { name: /Staff/ })).toContainText("2")
   expect(await auditLog(page, "people-remove")).toContain("member_removed")
 
-  // Their team has no lead coach any more.
+  // Their team is never left without a lead coach.
   await page.goto("/club-admin/teams")
-  await expect(page.locator('[data-team="Sprint Group"]')).toContainText("No lead coach")
+  await expect(page.locator('[data-team="Sprint Group"]')).toContainText("Coach Smith")
 })
 
 test("an athlete removed from the club keeps their record and can be brought back or deleted with a typed name", async ({ page }) => {

@@ -1,10 +1,12 @@
 import type { EventGroup } from "@/lib/mock-data"
+import { phaseForWeek, weekLine, type PlanPhase, type WeekType } from "./plan-phases"
 import {
   EVENT_GROUPS,
   MAX_WEEKS,
   defaultAssign,
   makeId,
   planFromBuilderState,
+  planStructureExtras,
   summarizeBlock,
   type PlanDraft,
   type SessionDraft,
@@ -35,6 +37,10 @@ export const TEMPLATE_DESCRIPTION_MAX = 500
 export type TemplateStructure = {
   version: 1
   weekFocus: Record<string, string>
+  /** Phases, week types and target loads of the plan it was saved from. Missing on older templates. */
+  phases?: PlanPhase[]
+  weekTypes?: Record<string, WeekType>
+  weekTargetLoad?: Record<string, number>
   sessions: SessionDraft[]
 }
 
@@ -105,6 +111,7 @@ export function stripSquadData(sessions: SessionDraft[]): SessionDraft[] {
     sessionType: session.sessionType,
     location: session.location,
     durationMinutes: session.durationMinutes,
+    ...(session.intendedEffort ? { intendedEffort: session.intendedEffort } : {}),
     notes: session.notes,
     blocks: session.blocks.map((block) => ({
       id: makeId("block"),
@@ -137,11 +144,12 @@ export function countAthleteAdjustments(plan: Pick<PlanDraft, "sessions">) {
 }
 
 /** The part of a plan a template keeps. Team, dates, assignment and per athlete changes are not in it. */
-export function templateStructureFromPlan(plan: Pick<PlanDraft, "weeks" | "weekFocus" | "sessions">): TemplateStructure {
+export function templateStructureFromPlan(plan: Pick<PlanDraft, "weeks" | "weekFocus" | "sessions" | "phases" | "weekTypes" | "weekTargetLoad">): TemplateStructure {
   const weeks = clampWeeks(plan.weeks)
   return {
     version: 1,
     weekFocus: Object.fromEntries(Object.entries(plan.weekFocus).filter(([week, focus]) => Number(week) >= 1 && Number(week) <= weeks && focus.trim().length > 0)),
+    ...planStructureExtras({ ...plan, weeks }),
     sessions: stripSquadData(plan.sessions.filter((session) => session.week >= 1 && session.week <= weeks)),
   }
 }
@@ -176,6 +184,10 @@ export function planFromTemplate(
     weeks,
     notes: target.notes ?? "",
     weekFocus: structure.weekFocus,
+    // Phase ids are made fresh, like every other id: the draft shares nothing with the template.
+    ...(structure.phases ? { phases: structure.phases.map((phase, index) => ({ ...phase, id: makeId(`phase${index}`) })) } : {}),
+    ...(structure.weekTypes ? { weekTypes: { ...structure.weekTypes } } : {}),
+    ...(structure.weekTargetLoad ? { weekTargetLoad: { ...structure.weekTargetLoad } } : {}),
     sessions: structure.sessions,
     assign: defaultAssign(),
   }
@@ -191,6 +203,8 @@ export function sessionsPerWeek(sessionCount: number, weeks: number) {
 export type TemplateOutlineWeek = {
   week: number
   focus: string | null
+  /** "Specific prep, deload week", when the plan it was saved from had phases or week types. */
+  phaseLine: string | null
   sessions: Array<{ id: string; dayLabel: string; title: string; sessionType: SessionType; lines: string[] }>
 }
 
@@ -199,6 +213,7 @@ export function templateOutline(structure: TemplateStructure, weeks: number, sta
   return Array.from({ length: clampWeeks(weeks) }, (_, index) => index + 1).map((week) => ({
     week,
     focus: structure.weekFocus[String(week)]?.trim() || null,
+    phaseLine: weekLine(phaseForWeek(structure.phases, week)?.name, structure.weekTypes?.[String(week)]),
     sessions: structure.sessions
       .filter((session) => session.week === week)
       .sort((left, right) => left.dayIndex - right.dayIndex)

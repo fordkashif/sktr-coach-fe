@@ -39,13 +39,15 @@ type StoredThread = {
   athleteId: string
   coachLastReadAt: string | null
   athleteLastReadAt: string | null
+  /** Set when the coach came off the team: nothing more can be sent. */
+  closedAt?: string | null
 }
 
 type StoredMessage = {
   id: string
   threadId: string
   senderUserId: string
-  senderRole: "coach" | "athlete"
+  senderRole: "coach" | "athlete" | "system"
   body: string | null
   originalBody: string | null
   hiddenAt: string | null
@@ -241,7 +243,7 @@ function cleanBody(text: string) {
 
 function isOpen(thread: StoredThread) {
   const athlete = mockAthletes.find((item) => item.id === thread.athleteId)
-  return Boolean(athlete) && athlete?.teamId === thread.teamId && mockAthleteUserId(thread.athleteId) !== null
+  return !thread.closedAt && Boolean(athlete) && athlete?.teamId === thread.teamId && mockAthleteUserId(thread.athleteId) !== null
 }
 
 function canRead(thread: StoredThread, me: Viewer) {
@@ -376,7 +378,7 @@ export function mockThread(threadId: string): ThreadWithMessages | null {
       coachName: MOCK_COACH_DISPLAY_NAME,
       viewerSide: side,
       canSend: open && side !== "oversight",
-      readOnlyReason: open ? null : mockAthleteUserId(thread.athleteId) === null ? "no_login" : "athlete_left_team",
+      readOnlyReason: open ? null : thread.closedAt ? "coach_not_on_team" : mockAthleteUserId(thread.athleteId) === null ? "no_login" : "athlete_left_team",
       otherLastReadAt: side === "coach" ? thread.athleteLastReadAt : side === "athlete" ? thread.coachLastReadAt : null,
       // The demo has one athlete under 18 with a guardian on file, so the line can be seen.
       guardianContactOnFile: side !== "athlete" && athlete?.id === MOCK_MINOR_ATHLETE_ID,
@@ -403,6 +405,31 @@ export function mockOpenThread(target: { athleteId?: string | null; coachUserId?
   const thread: StoredThread = { id: newId("thread"), teamId: athlete.teamId, coachUserId: MOCK_COACH_USER_ID, athleteId: athlete.id, coachLastReadAt: null, athleteLastReadAt: null }
   update((state) => ({ ...state, threads: [...state.threads, thread] }))
   return ok(thread.id)
+}
+
+/**
+ * A coach came off a team (a handover, or a club admin took them off). The demo has one coach
+ * persona, so every open conversation of that team is closed with a system line. Nothing is
+ * deleted: the athlete and club admins keep reading the history. Returns how many were closed.
+ */
+export function mockCloseCoachThreadsForTeam(teamId: string, line: string): number {
+  const now = new Date().toISOString()
+  let closed = 0
+  update((state) => {
+    const open = state.threads.filter((thread) => thread.teamId === teamId && !thread.closedAt)
+    closed = open.length
+    if (closed === 0) return state
+    const withMessages = new Set(state.messages.map((item) => item.threadId))
+    const lines: StoredMessage[] = open
+      .filter((thread) => withMessages.has(thread.id))
+      .map((thread) => ({ id: newId("msg"), threadId: thread.id, senderUserId: "system", senderRole: "system", body: line, originalBody: null, hiddenAt: null, hiddenReason: null, createdAt: now }))
+    return {
+      ...state,
+      messages: [...state.messages, ...lines],
+      threads: state.threads.map((thread) => (open.some((item) => item.id === thread.id) ? { ...thread, closedAt: now } : thread)),
+    }
+  })
+  return closed
 }
 
 export function mockSendMessage(threadId: string, text: string): Result<string> {

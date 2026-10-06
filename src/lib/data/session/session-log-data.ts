@@ -223,7 +223,7 @@ export async function loadSessionBody(
       .eq("session_id", record.id),
     client
       .from("session_completions")
-      .select("completion_date, rpe, athlete_comment")
+      .select("completion_date, rpe, athlete_comment, duration_minutes")
       .eq("session_id", record.id)
       .eq("athlete_id", record.athlete_id)
       .maybeSingle(),
@@ -272,7 +272,7 @@ export async function loadSessionBody(
     note: typeof row.note === "string" && row.note ? row.note : null,
   }))
 
-  const completion = completionResult.data as { completion_date: string; rpe: number | null; athlete_comment: string | null } | null
+  const completion = completionResult.data as { completion_date: string; rpe: number | null; athlete_comment: string | null; duration_minutes?: number | null } | null
   const completedOn = completion?.completion_date ?? (record.completed_at ? record.completed_at.slice(0, 10) : null)
   return ok({
     id: record.id,
@@ -290,6 +290,7 @@ export async function loadSessionBody(
     location: record.location,
     completedOn,
     overallRpe: completion?.rpe ?? null,
+    durationMinutes: completion?.duration_minutes ?? null,
     athleteComment: completion?.athlete_comment ?? null,
     origin: record.origin === "athlete" ? "athlete" : "plan",
     skipReason: completedOn ? null : record.skip_reason,
@@ -498,8 +499,11 @@ export async function saveSessionCompletion(params: {
   completionDate: string
   rpe: number | null
   comment: string | null
+  /** How long it took, in minutes. Undefined (an entry queued by an older version) leaves what is stored alone. */
+  durationMinutes?: number | null
 }): Promise<Result<null>> {
   if (getBackendMode() !== "supabase") return saveMockCompletion(params)
+  const duration = params.durationMinutes === undefined ? {} : { duration_minutes: params.durationMinutes }
   try {
     const clientResult = supabaseClient("saveSessionCompletion")
     if (!clientResult.ok) return clientResult
@@ -520,7 +524,7 @@ export async function saveSessionCompletion(params: {
     if (existing) {
       const { error } = await client
         .from("session_completions")
-        .update({ rpe: params.rpe, athlete_comment: params.comment })
+        .update({ rpe: params.rpe, athlete_comment: params.comment, ...duration })
         .eq("id", existing.id as string)
       if (error) return { ok: false, error: mapPostgrestError(error) }
       return ok(null)
@@ -534,6 +538,7 @@ export async function saveSessionCompletion(params: {
       completed_by_user_id: context.userId,
       rpe: params.rpe,
       athlete_comment: params.comment,
+      ...duration,
     })
     // Two tabs finishing at once: the other one won, which is fine.
     if (error && error.code !== "23505") return { ok: false, error: mapPostgrestError(error) }

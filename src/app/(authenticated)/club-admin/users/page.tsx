@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { AddAthletesToTeam, ClubAthletesView } from "@/components/club-admin/athletes-view"
+import { CoachHandoverDialog } from "@/components/club-admin/coach-handover-dialog"
 import { InviteStaffDialog, type InviteStaffView, type StaffInviteCheck, type StaffInviteCreated } from "@/components/club-admin/invite-staff-dialog"
 import { UpgradeRequestDialog } from "@/components/club-admin/upgrade-request-dialog"
 import { applyInviteEmailResult, canResendInviteEmail, inviteEmailSummary, resendInviteEmailLabel } from "@/components/invites/invite-email-ui"
@@ -35,11 +36,22 @@ import {
 } from "@/components/sk"
 import { getNextPackageTier, getPackageById, type PackageId } from "@/lib/billing/package-catalog"
 import { useClubAdmin } from "@/lib/club-admin-context"
+import { teamsCoachedBy, type HandoverChoice, type HandoverTeam, type HandoverThen } from "@/lib/coach-permissions"
+import {
+  dismissHandoverRequest,
+  getOpenHandoverRequests,
+  handOverCoachTeams,
+  mockTeamCoaches,
+  type HandoverOutcome,
+  type HandoverRequest,
+} from "@/lib/data/club-admin/handover-data"
 import {
   COACH_INVITE_VALID_DAYS,
   createCoachInvite,
   getClubAdminPackageUpgradeRequests,
   getClubAdminPeopleDirectory,
+  getClubAdminTeamMembers,
+  getClubAdminTeamsSnapshot,
   getCurrentClubAdminActivationState,
   insertAuditEvent,
   reviewAccountRequest,
@@ -50,7 +62,7 @@ import {
 import { createStaffInvites, getClubAthletes, removeClubMember, type ClubAthlete, type StaffInviteRole } from "@/lib/data/club-admin/people-data"
 import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { sendInviteEmail, type InviteEmailSent } from "@/lib/data/invites/invite-email-data"
-import type { Result } from "@/lib/data/result"
+import { ok, type Result } from "@/lib/data/result"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
@@ -167,6 +179,8 @@ export default function ClubAdminUsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteStart, setInviteStart] = useState<{ view: InviteStaffView; role: StaffInviteRole }>({ view: "one", role: "coach" })
   const [addAthletesOpen, setAddAthletesOpen] = useState(false)
+  const [handover, setHandover] = useState<{ user: ClubUser; then: HandoverThen; teams: HandoverTeam[] } | null>(null)
+  const [handoverRequests, setHandoverRequests] = useState<HandoverRequest[]>([])
 
   const [requestedPlan, setRequestedPlan] = useState<PackageId | null>(null)
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false)
@@ -293,6 +307,15 @@ export default function ClubAdminUsersPage() {
       cancelled = true
     }
   }, [isSupabaseMode])
+
+  const reloadHandoverRequests = useCallback(async () => {
+    const result = await getOpenHandoverRequests()
+    if (result.ok) setHandoverRequests(result.data)
+  }, [])
+
+  useEffect(() => {
+    void reloadHandoverRequests()
+  }, [reloadHandoverRequests, opsSnapshot])
 
   const saveUsers = (next: ClubUser[]) => {
     usersRef.current = next
@@ -649,6 +672,117 @@ export default function ClubAdminUsersPage() {
     syncBackend()
   }
 
+  /** The teams (not archived) a member coaches, with everyone on them, read fresh for the handover step. */
+  const coachedTeamsOf = async (user: ClubUser): Promise<Result<HandoverTeam[]>> => {
+    if (!isSupabaseMode) {
+      const everyone = loadUsersSafe()
+      return ok(
+        teamsCoachedBy(
+          user.id,
+          loadTeamsSafe()
+            .filter((team) => team.status !== "archived")
+            .map((team) => ({ id: team.id, name: team.name, coaches: mockTeamCoaches(team, everyone) })),
+        ),
+      )
+    }
+    const [teamResult, memberResult] = await Promise.all([getClubAdminTeamsSnapshot(), getClubAdminTeamMembers()])
+    if (!teamResult.ok) return teamResult
+    if (!memberResult.ok) return memberResult
+    return ok(
+      teamsCoachedBy(
+        user.id,
+        teamResult.data
+          .filter((team) => team.status !== "archived")
+          .map((team) => ({
+            id: team.id,
+            name: team.name,
+            coaches: (memberResult.data[team.id]?.coaches ?? []).map((coach) => ({ userId: coach.userId, name: coach.name, role: coach.role, active: coach.active })),
+          })),
+      ),
+    )
+  }
+
+  /**
+   * Deactivate, remove or hand over. A coach who still coaches a team gets the handover step, so
+   * no team is left without a coach. Anyone else gets the plain confirmation.
+   */
+  const beginStaffAction = async (user: ClubUser, kind: "handover" | "deactivate" | "remove") => {
+    setBackendError(null)
+    if (user.role === "athlete") {
+      if (kind !== "handover") setConfirm({ kind, userId: user.id })
+      return
+    }
+    setBusyKey(`user:${user.id}`)
+    const result = await coachedTeamsOf(user)
+    setBusyKey(null)
+    if (!result.ok) {
+      setBackendError(`Could not check which teams ${user.name} coaches: ${result.error.message}`)
+      return
+    }
+    if (result.data.length === 0) {
+      if (kind === "handover") notify(`${user.name} does not coach a team`, "There is nothing to hand over.")
+      else setConfirm({ kind, userId: user.id })
+      return
+    }
+    setConfirm(null)
+    setHandover({ user, then: kind === "handover" ? "none" : kind, teams: result.data })
+  }
+
+  const nameOfUser = (userId: string) => usersRef.current.find((item) => item.id === userId)?.name ?? "Coach"
+
+  const submitHandover = (choices: Record<string, HandoverChoice | "">): Promise<Result<HandoverOutcome>> => {
+    if (!handover) return Promise.resolve(ok({ teams: 0, threadsClosed: 0, summary: [] }))
+    return handOverCoachTeams({ userId: handover.user.id, coachName: handover.user.name, teams: handover.teams, choices, then: handover.then, nameOf: nameOfUser })
+  }
+
+  const handleHandoverDone = async (outcome: HandoverOutcome) => {
+    if (!handover) return
+    const { user, then } = handover
+    setHandover(null)
+    if (!isSupabaseMode) {
+      // The demo keeps coaches on teams in the team list. The database writes these audit entries itself.
+      setTeams(loadTeamsSafe().filter((team) => team.status === "active"))
+      const after = then === "remove" ? ". Then removed from the club." : then === "deactivate" ? ". Then deactivated." : ""
+      await emitAudit("coach_handover", labelOf(user), `${outcome.summary.join("; ") || "no teams to hand over"}${after}`)
+      if (then === "remove") {
+        const email = user.email.toLowerCase()
+        saveInvites(invitesRef.current.map((invite) => (invite.status === "pending" && invite.email.toLowerCase() === email ? { ...invite, status: "revoked" } : invite)))
+        await emitAudit("member_removed", labelOf(user), `${user.name} removed from the club (${ROLE_LABEL[user.role].toLowerCase()})`)
+      } else if (then === "deactivate") {
+        await emitAudit("user_disable", labelOf(user))
+      }
+    }
+    if (!isSupabaseMode) {
+      // The demo store was changed by the handover itself: show what it holds now.
+      const fresh = loadUsersSafe()
+      usersRef.current = fresh
+      setUsers(fresh)
+    } else if (then === "remove") saveUsers(usersRef.current.filter((item) => item.id !== user.id))
+    else if (then === "deactivate") saveUsers(usersRef.current.map((item) => (item.id === user.id ? { ...item, status: "disabled" } : item)))
+
+    const closed = outcome.threadsClosed > 0 ? ` ${outcome.threadsClosed} ${outcome.threadsClosed === 1 ? "conversation was" : "conversations were"} closed, the history is kept.` : ""
+    notify(
+      then === "remove" ? `${user.name} handed over and removed from the club` : then === "deactivate" ? `${user.name} handed over and deactivated` : `${user.name}'s teams handed over`,
+      `${outcome.summary.join(". ")}.${closed}`,
+    )
+    syncBackend()
+    void reloadHandoverRequests()
+    if (isSupabaseMode) {
+      const directoryResult = await getClubAdminPeopleDirectory()
+      if (directoryResult.ok) setDirectory(directoryResult.data)
+    }
+  }
+
+  const handleDismissRequest = async (request: HandoverRequest) => {
+    const result = await dismissHandoverRequest(request.id)
+    if (!result.ok) {
+      setBackendError(`Could not set the request aside: ${result.error.message}`)
+      return
+    }
+    setHandoverRequests((current) => current.filter((item) => item.id !== request.id))
+    notify("Handover request set aside")
+  }
+
   /** Switches an athlete's login for the club off or on. Returns a message when it did not work. */
   const handleSetAthleteLogin = async (athlete: ClubAthlete, active: boolean): Promise<string | null> => {
     if (!athlete.userId) return "This athlete has no login."
@@ -745,10 +879,12 @@ export default function ClubAdminUsersPage() {
     const roles = (["club-admin", "coach", "athlete"] as UserRole[]).filter((role) => role !== user.role)
     return [
       ...roles.map((role) => ({ label: `Make ${ROLE_LABEL[role].toLowerCase()}`, onSelect: () => setConfirm({ kind: "role" as const, userId: user.id, role }), disabled: busy })),
+      // Only offered to someone who coaches a team, so the item is never a dead end.
+      ...(user.role !== "athlete" && teamNamesOf(user).length > 0 ? [{ label: "Hand over teams", onSelect: () => void beginStaffAction(user, "handover"), disabled: busy }] : []),
       user.status === "active"
-        ? { label: "Deactivate", onSelect: () => setConfirm({ kind: "deactivate", userId: user.id }), disabled: busy }
+        ? { label: "Deactivate", onSelect: () => void beginStaffAction(user, "deactivate"), disabled: busy }
         : { label: "Reactivate", onSelect: () => void handleSetStatus(user, "active"), disabled: busy },
-      ...(user.role === "athlete" ? [] : [{ label: "Remove from club", onSelect: () => setConfirm({ kind: "remove" as const, userId: user.id }), danger: true, disabled: busy }]),
+      ...(user.role === "athlete" ? [] : [{ label: "Remove from club", onSelect: () => void beginStaffAction(user, "remove"), danger: true, disabled: busy }]),
     ]
   }
 
@@ -915,6 +1051,33 @@ export default function ClubAdminUsersPage() {
             />
           ) : (
             <div className="flex flex-col gap-4">
+              {handoverRequests.map((request) => {
+                const coach = staff.find((user) => user.id === request.coachUserId)
+                const names = request.teamIds.map((id) => teamNameById.get(id)).filter((name): name is string => Boolean(name))
+                return (
+                  <Notice
+                    key={request.id}
+                    tone="info"
+                    action={
+                      <span className="flex flex-wrap gap-2">
+                        {coach ? (
+                          <Button size="sm" onClick={() => void beginStaffAction(coach, "handover")}>
+                            Hand over teams
+                          </Button>
+                        ) : null}
+                        <Button size="sm" variant="quiet" onClick={() => void handleDismissRequest(request)}>
+                          Set aside
+                        </Button>
+                      </span>
+                    }
+                  >
+                    <span data-handover-request>
+                      {coach?.name ?? "A coach"} asked to hand over {names.length > 0 ? names.join(", ") : "their teams"}
+                      {request.note ? <span className="mt-0.5 block font-normal">{request.note}</span> : null}
+                    </span>
+                  </Notice>
+                )
+              })}
               <FilterBar
                 search={<SearchInput aria-label="Search staff" placeholder="Search by name, email or team" value={search} onChange={(event) => setSearch(event.target.value)} />}
                 activeCount={activeFilters}
@@ -1177,6 +1340,23 @@ export default function ClubAdminUsersPage() {
         onCreateOne={handleInviteOne}
         onCreateMany={handleInviteMany}
         onEmailed={handleInviteEmailed}
+      />
+
+      <CoachHandoverDialog
+        open={Boolean(handover)}
+        coach={handover ? { userId: handover.user.id, name: handover.user.name } : null}
+        then={handover?.then ?? "none"}
+        teams={handover?.teams ?? []}
+        candidates={users
+          .filter((user) => user.status === "active" && (user.role === "coach" || user.role === "club-admin") && user.id !== handover?.user.id)
+          .map((user) => ({ userId: user.id, name: isSelf(user) ? `${user.name} (you)` : user.name }))}
+        onClose={() => setHandover(null)}
+        onInviteCoach={() => {
+          setHandover(null)
+          openInvite()
+        }}
+        onSubmit={submitHandover}
+        onDone={(outcome) => void handleHandoverDone(outcome)}
       />
 
       <AddAthletesToTeam open={addAthletesOpen} onOpenChange={setAddAthletesOpen} teams={teamOptions} onChanged={() => void reloadAthletes()} />

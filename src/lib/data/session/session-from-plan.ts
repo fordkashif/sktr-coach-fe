@@ -1,5 +1,6 @@
 import { cleanReferenceUrl, isEmptyOverride, mergeOverride, parsePercent, resolvePercentTarget } from "@/lib/data/exercises/loads"
 import type { LogKind, LoggableRow, SessionBlockType, SessionRowLog } from "@/lib/data/session/types"
+import { cleanIntendedEffort } from "@/lib/data/training-plan/plan-phases"
 import {
   sessionDisplayTitle,
   slotDate,
@@ -58,6 +59,8 @@ export type SessionBlueprint = {
   title: string
   sessionType: SessionDraft["sessionType"]
   durationMinutes: number | null
+  /** The effort the coach intends, 1 to 10. With the minutes it gives the planned load. */
+  plannedEffort?: number | null
   location: string | null
   coachNote: string | null
   blocks: BlockBlueprint[]
@@ -269,6 +272,7 @@ export function sessionBlueprint(plan: Pick<PlanDraft, "startDate">, session: Se
     title,
     sessionType: session.sessionType,
     durationMinutes: Number.isFinite(duration) && duration > 0 ? duration : null,
+    plannedEffort: cleanIntendedEffort(session.intendedEffort),
     location: session.location.trim() || null,
     coachNote: session.notes.trim() || null,
     blocks: blocks.map((block, index) => {

@@ -69,6 +69,11 @@ function seedPlans(scopeTeamId: string | null): StoredPlan[] {
       weeks: 4,
       notes: "",
       weekFocus: { "1": "Build the base" },
+      phases: [
+        { id: "seed-phase-1", name: "General prep", color: "blue", startWeek: 1, endWeek: 3 },
+        { id: "seed-phase-2", name: "Specific prep", color: "green", startWeek: 4, endWeek: 4 },
+      ],
+      weekTypes: { "1": "build", "2": "build", "3": "deload", "4": "test" },
       sessions: createSkeletonSessions(4, demoTeam.eventGroup, 5),
       assign: defaultAssign(),
       updatedAt: null,

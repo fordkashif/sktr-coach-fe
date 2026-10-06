@@ -63,8 +63,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
   {
     key: "team-membership",
     title: "Your team",
-    description: "When you are added to, moved to or removed from a team.",
-    eventTypes: ["athlete_team_added", "athlete_team_removed"],
+    description: "When you are added to, moved to or removed from a team, or your team gets a new lead coach.",
+    eventTypes: ["athlete_team_added", "athlete_team_removed", "team_coach_changed"],
     roles: ["athlete"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,
@@ -79,6 +79,15 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     emailAvailable: true,
   },
 
+  {
+    key: "coach-reports",
+    title: "Reports from your coach",
+    description: "When your coach shares a report about your training with you.",
+    eventTypes: ["athlete_report_shared"],
+    roles: ["athlete"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
   {
     key: "availability-set",
     title: "Your availability",
@@ -195,8 +204,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
   {
     key: "coach-teams",
     title: "Your teams",
-    description: "When a club admin adds you to a team or takes you off one.",
-    eventTypes: ["coach_team_assigned", "coach_team_removed"],
+    description: "When a club admin adds you to a team, takes you off one, changes your role on it or hands a team over to you.",
+    eventTypes: ["coach_team_assigned", "coach_team_removed", "coach_team_role_changed", "coach_handover_new_lead"],
     roles: ["coach"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,
@@ -206,8 +215,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
   {
     key: "coach-invites",
     title: "Coach invites",
-    description: "When a coach you invited accepts.",
-    eventTypes: ["coach_invite_created", "coach_invite_accepted"],
+    description: "When a coach you invited accepts, or a coach asks to hand over a team.",
+    eventTypes: ["coach_invite_created", "coach_invite_accepted", "coach_handover_requested"],
     roles: ["club-admin"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,

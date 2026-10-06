@@ -262,6 +262,17 @@ export function ThreadView({ role, threadId }: { role: MessagesRole; threadId: s
             const newDay = day !== lastDay
             lastDay = day
             const mine = oversight ? message.senderRole === "athlete" : message.senderUserId === viewerUserId
+            // A line the app wrote itself (a coach came off the team): said once, quietly, in the flow.
+            if (message.senderRole === "system") {
+              return (
+                <Fragment key={message.id}>
+                  {newDay ? <MessageDay>{dayHeading(message.createdAt)}</MessageDay> : null}
+                  <MessageDay>
+                    <span data-system-message>{message.body}</span>
+                  </MessageDay>
+                </Fragment>
+              )
+            }
             return (
               <Fragment key={message.id}>
                 {newDay ? <MessageDay>{dayHeading(message.createdAt)}</MessageDay> : null}

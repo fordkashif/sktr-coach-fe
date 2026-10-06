@@ -105,6 +105,8 @@ export type AthleteSession = {
   location: string | null
   completedOn: string | null
   overallRpe: number | null
+  /** How long the session took, in minutes, as said when finishing. Missing or null when not given. */
+  durationMinutes?: number | null
   athleteComment: string | null
   origin: SessionOrigin
   /** Set while status is "skipped". */

@@ -61,6 +61,11 @@ export function notificationTargetPath(eventType: string, metadata: Notification
       const competitionId = id(metadata, "competition_id")
       return competitionId ? `/athlete/competitions/${competitionId}` : "/athlete/competitions"
     }
+    case "athlete_report_shared": {
+      // A report the coach shared: straight to it.
+      const reportId = id(metadata, "report_id")
+      return reportId ? `/athlete/reports/${reportId}` : "/athlete/trends"
+    }
     case "session_note_added": {
       const sessionDate = date(metadata, "session_date")
       return sessionDate ? `/athlete/log?date=${sessionDate}` : "/athlete/log"
@@ -195,6 +200,8 @@ export function notificationActionLabel(eventType: string): string {
       return "See who has not logged"
     case "competition_entry_added":
       return "Open the competition"
+    case "athlete_report_shared":
+      return "Open the report"
     case "athlete_new_best":
       return "Open the athlete"
     case "session_note_added":

@@ -24,7 +24,7 @@ import {
   Textarea,
   notify,
 } from "@/components/sk"
-import { useCoachTeamScope } from "@/lib/coach-teams"
+import { useCoachPermissions, useCoachTeamScope } from "@/lib/coach-teams"
 import { loggedByLabel } from "@/lib/data/coach/attendance"
 import { MAX_SETS } from "@/lib/data/session/session-from-plan"
 import { skippedLabel } from "@/lib/data/session/types"
@@ -48,6 +48,8 @@ export default function CoachLogForAthletePage() {
 
 /** A coach or club admin entering an athlete's session for them, on the same parts the athlete logs with. */
 function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
+  // An assistant coach logs sessions and does not build plans, so they are not sent to the plan builder.
+  const permissions = useCoachPermissions()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const today = todayIso()
@@ -147,9 +149,11 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
             title={`No session for ${first} on this day`}
             body="Pick another day above. Sessions come from the training plan published to their team."
             action={
-              <LinkButton size="sm" to="/coach/training-plan">
-                Open plans
-              </LinkButton>
+              permissions.canEditPlans ? (
+                <LinkButton size="sm" to="/coach/training-plan">
+                  Open plans
+                </LinkButton>
+              ) : undefined
             }
           />
         </Section>
@@ -204,6 +208,16 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
 
           <Section title="How hard was it?" hint={`Ask ${first}, or leave it empty. 1 is very easy, 10 is everything they had.`}>
             <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />
+            <Field label="How long did it take?" hint="In minutes. With the effort it gives the session's load. Leave it empty if you do not know." className="mt-4">
+              <Input
+                inputMode="numeric"
+                autoComplete="off"
+                className="max-w-[8rem]"
+                placeholder="Minutes"
+                value={log.wrapUp.minutes}
+                onChange={(event) => log.updateWrapUp({ minutes: event.target.value.replace(/[^0-9]/g, "").slice(0, 3) })}
+              />
+            </Field>
             <Field label="Comment" optional hint={`Saved as the comment on ${first}'s session.`} className="mt-2">
               <Textarea rows={3} maxLength={1000} value={log.wrapUp.comment} onChange={(event) => log.updateWrapUp({ comment: event.target.value })} />
             </Field>

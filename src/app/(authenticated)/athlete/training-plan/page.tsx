@@ -38,6 +38,7 @@ import { mockAthletePlans } from "@/lib/data/session/session-mock"
 import { skipReasonLabel, skippedLabel, type AthleteSessionRef } from "@/lib/data/session/types"
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, TrainingPlanWeek } from "@/lib/data/training-plan/types"
+import { isWeekType, weekLine } from "@/lib/data/training-plan/plan-phases"
 import { getBackendMode } from "@/lib/supabase/config"
 
 function parseDateKey(key: string) {
@@ -598,6 +599,12 @@ export default function AthleteTrainingPlanPage() {
               }
               className="mb-1.5"
             />
+            {/* The phase and kind of week, when the coach set them: "Specific prep, deload week". */}
+            {weekLine(selected.week.phaseName, isWeekType(selected.week.weekType) ? selected.week.weekType : null) ? (
+              <p className="sk-list-sub pb-1.5" data-week-line>
+                {weekLine(selected.week.phaseName, isWeekType(selected.week.weekType) ? selected.week.weekType : null)}
+              </p>
+            ) : null}
             <List ordered aria-label="Days of this week">
               {selected.rows.flatMap((row) => {
                 const date = parseDateKey(row.dateKey)

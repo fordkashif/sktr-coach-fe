@@ -880,3 +880,32 @@ What cannot be removed by SQL: files in storage (profile photos in `avatars`, cl
 Also changed: `message_member_name` returns "Deleted account" for a sender whose account is gone; `enqueue_club_lifecycle_notifications` does not send the "access paused" email for a club its owner closed; every table with a "set null" foreign key to `auth.users` gets the trigger `zz_release_deleted_account`, without which the author pinning triggers (plan templates, exercises, coach notes, goals, attendance, lift maxes) made deleting a coach's login fail with a foreign key error. A later migration that adds such a column should end with `select public.install_deleted_account_triggers();`.
 
 Verified on a throwaway Postgres 16 with every earlier migration applied and this one twice: 191 assertions as each identity (owner, second and third club admin, lead coach, shared coach, only coach of a team, athletes with and without a conversation, admin, coach and athlete of another club, members of a suspended club, a platform admin, a platform admin who is also a club member, signed out, and the scheduler). The club deletion test lists the tables from the catalogue: it fails for a public table that has no `tenant_id` and is not accounted for, and for a tenant table the test did not put rows in.
+
+## Athlete reports (20261015110000_athlete_reports.sql)
+
+| Table | Select | Insert | Update | Delete |
+|---|---|---|---|---|
+| `athlete_reports` | Coaches of the athlete's current team and club admins of the club. The athlete: only their own reports with `shared_with_athlete_at` set. Nobody else, no anon. | Same staff, `author_user_id = auth.uid()` (stamped by trigger). | Same staff. The trigger freezes summary, snapshot, sections and period once the report is shared with the athlete or has any link, and ignores a client that sets the shared columns. | Same staff. |
+| `athlete_report_links` | Same staff, without the `token_hash` column (column grants). No athlete policy. | Function only (`create_athlete_report_link`). | Function only (`revoke_athlete_report_link`, and the open counter in the public read). | Cascade from the report or the athlete. |
+
+Functions: `share_athlete_report(report)` (staff in scope, active caller; sets the shared time and sends `athlete_report_shared` to the athlete), `create_athlete_report_link(report, made_for, days)` (7, 30 or 90 days; returns the token once, stores its SHA-256), `revoke_athlete_report_link(link)`, `can_manage_athlete_report(report)`, and `get_shared_athlete_report(token)`, the only thing `anon` can call: it returns the snapshot JSON or NULL, the same NULL for a wrong, expired or revoked link, a paused or closed club and a rate limited caller (20 wrong tokens in 10 minutes per network address, 2,000 an hour in total, counted as hashes in `request_form_attempts`, form `report_link_lookup`).
+
+Checks on the snapshot: it may not carry a coach notes key, and it may carry `wellness` or `injuries` only when `sections` lists them.
+
+Deletion: both tables have `tenant_id` and `athlete_id`, so `purge_athlete_personal_data` and `delete_closed_club` remove them through `sweep_rows_by_column` with no change to those functions. The migration ends with `install_deleted_account_triggers()` for the three "set null" references to `auth.users`.
+
+Verified on a throwaway Postgres 16 (every migration up to 20261014130000, then this one twice): 109 assertions as team coach, coach of both teams, another team's coach, inactive coach, club admin, another club's admin and coach, the athlete, a team mate, an athlete of another club, signed out, and a suspended club.
+
+## Training load and plan phases (20261015100000_training_load_and_plan_phases.sql)
+
+No new table and no new policy. New columns ride on the policies their tables already have: `session_completions.duration_minutes` (the athlete writes their own, a coach of the team or a club admin writes it when logging for the athlete), `sessions.planned_effort` and `training_plan_weeks.week_type` / `phase_name` (written by the plan's coach on publish, read by whoever reads the row today).
+
+| Function | Athlete | Coach | Club admin | Other club, signed out |
+|---|---|---|---|---|
+| `training_load_weeks(team, athlete, as_of, weeks)` | Their own athlete record only, whatever they pass. | Athletes of the teams they coach. Another team: no rows. | Every athlete of the club. | No rows. `anon` has no execute. A deactivated member or a paused club: access paused error. |
+| `training_load_sessions(athlete, from, to)` | Their own. | An athlete of a team they coach. | Any athlete of the club. | No rows. Same refusals. |
+| `training_load_readable_athlete_ids()` | Helper for the two above. | | | |
+
+Both are security definer with `search_path = public` and call `assert_caller_active()` first. Load is effort times minutes: training data, not health data. Every coach of the athlete's team reads it, and the functions keep that rule whatever happens to the row policies of the health tables.
+
+Verified on a throwaway Postgres 16 (every earlier migration, then this one twice): 72 assertions. The numbers against hand-worked examples (weekly, acute, chronic, ratio, a week with no sessions, sessions with no minutes or no effort, under 4 weeks of history, the running day), and access as the athlete, a team mate, the team's coach, another team's coach, a coach of both teams, the club admin, another club's admin and coach, a deactivated coach, a suspended club and a token with no user.

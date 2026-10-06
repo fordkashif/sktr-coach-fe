@@ -43,6 +43,7 @@ export function TeamSquadsSection({
   athletes,
   loadError,
   onChanged,
+  canManage = true,
 }: {
   teamId: string
   teamName: string
@@ -51,6 +52,8 @@ export function TeamSquadsSection({
   athletes: RosterAthlete[]
   loadError: string | null
   onChanged: () => void
+  /** False for an assistant coach: squads are shown, not changed. */
+  canManage?: boolean
 }) {
   const [editing, setEditing] = useState<Editing | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -129,7 +132,7 @@ export function TeamSquadsSection({
       title="Squads"
       hint={`Groups inside ${teamName}, for sending a plan or a test week to part of the team.`}
       action={
-        squads && squads.length > 0 ? (
+        canManage && squads && squads.length > 0 ? (
           <Button size="sm" onClick={openNew}>
             <Plus className="size-4" weight="bold" aria-hidden />
             New squad
@@ -145,11 +148,17 @@ export function TeamSquadsSection({
       ) : squads.length === 0 ? (
         <EmptyState
           title="No squads yet"
-          body="Make one for each group you coach differently, such as Short sprints, 400m or Juniors. Then a plan or a test week can go to just that group."
+          body={
+            canManage
+              ? "Make one for each group you coach differently, such as Short sprints, 400m or Juniors. Then a plan or a test week can go to just that group."
+              : "The lead coach has not made any squads on this team."
+          }
           action={
-            <Button size="sm" onClick={openNew}>
-              New squad
-            </Button>
+            canManage ? (
+              <Button size="sm" onClick={openNew}>
+                New squad
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -170,8 +179,9 @@ export function TeamSquadsSection({
                     {squad.note ? <span className="block">{squad.note}</span> : null}
                   </>
                 }
-                onClick={() => setMembers({ squad, chosen: squad.athleteIds })}
+                onClick={canManage ? () => setMembers({ squad, chosen: squad.athleteIds }) : undefined}
                 actions={
+                  !canManage ? undefined : (
                   <RowMenu
                     label={`More for ${squad.name}`}
                     items={[
@@ -180,6 +190,7 @@ export function TeamSquadsSection({
                       { label: "Archive squad", onSelect: () => setConfirmArchiveId(squad.id), danger: true },
                     ]}
                   />
+                  )
                 }
                 below={
                   confirmArchiveId === squad.id ? (

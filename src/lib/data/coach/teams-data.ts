@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { normaliseTeamCoachRole, type TeamCoachRole } from "@/lib/coach-permissions"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import type { Athlete, EventGroup, Team } from "@/lib/mock-data"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -222,6 +223,10 @@ export type CoachAssignedTeam = {
   id: string
   name: string
   eventGroup: EventGroup
+  /** The coach's role on this team. Lead and coach have full rights, an assistant a limited set. */
+  role: TeamCoachRole
+  assistantsCanMessage: boolean
+  assistantsSeeHealth: boolean
 }
 
 /**
@@ -247,19 +252,22 @@ export async function getAssignedCoachTeamsForCurrentUser(): Promise<Result<Coac
   if (!profile || profile.role !== "coach") return ok([])
 
   const tenantId = profile.tenant_id as string
+  // "*" so a database that does not have the role column yet still answers (everyone is then a coach).
   const membershipResult = await clientResult.client
     .from("team_coaches")
-    .select("team_id")
+    .select("*")
     .eq("tenant_id", tenantId)
     .eq("user_id", userId)
 
   if (membershipResult.error) return { ok: false, error: mapPostgrestError(membershipResult.error) }
-  const teamIds = ((membershipResult.data as Array<{ team_id: string }> | null) ?? []).map((row) => row.team_id).filter(Boolean)
+  const memberships = (membershipResult.data as Array<{ team_id: string; is_primary?: boolean | null; role?: string | null }> | null) ?? []
+  const roleByTeamId = new Map(memberships.map((row) => [row.team_id, normaliseTeamCoachRole(row.role, row.is_primary)]))
+  const teamIds = memberships.map((row) => row.team_id).filter(Boolean)
   if (teamIds.length === 0) return ok([])
 
   const { data: teamRows, error: teamsError } = await clientResult.client
     .from("teams")
-    .select("id, name, event_group")
+    .select("*")
     .eq("tenant_id", tenantId)
     .eq("status", "active")
     .eq("is_archived", false)
@@ -269,10 +277,13 @@ export async function getAssignedCoachTeamsForCurrentUser(): Promise<Result<Coac
   if (teamsError) return { ok: false, error: mapPostgrestError(teamsError) }
 
   return ok(
-    ((teamRows as Array<{ id: string; name: string; event_group: string | null }> | null) ?? []).map((row) => ({
+    ((teamRows as Array<{ id: string; name: string; event_group: string | null; assistants_can_message?: boolean | null; assistants_see_health?: boolean | null }> | null) ?? []).map((row) => ({
       id: row.id,
       name: row.name,
       eventGroup: toEventGroup(row.event_group),
+      role: roleByTeamId.get(row.id) ?? "coach",
+      assistantsCanMessage: row.assistants_can_message === true,
+      assistantsSeeHealth: row.assistants_see_health === true,
     })),
   )
 }

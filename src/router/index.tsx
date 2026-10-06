@@ -17,6 +17,7 @@ import ClubAdminClaimPage from "@/app/(auth)/club-admin/claim/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
 import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
 import TeamJoinCodePage from "@/app/(auth)/join/[code]/page"
+import { AssistantGate, type AssistantGateNeed } from "@/components/coach/assistant-gate"
 const AthleteHomePage = lazy(() => import("@/app/(authenticated)/athlete/home/page"))
 const AthleteJoinTeamPage = lazy(() => import("@/app/(authenticated)/athlete/join/page"))
 const AthleteJoinTeamCodePage = lazy(() => import("@/app/(authenticated)/athlete/join/[code]/page"))
@@ -46,6 +47,7 @@ const AthleteMessageCoachPage = lazy(() => import("@/app/(authenticated)/athlete
 const AthleteAnnouncementPage = lazy(() => import("@/app/(authenticated)/athlete/messages/a/[announcementId]/page"))
 const CoachDashboardPage = lazy(() => import("@/app/(authenticated)/coach/dashboard/page"))
 const CoachReportsPage = lazy(() => import("@/app/(authenticated)/coach/reports/page"))
+const CoachLoadPage = lazy(() => import("@/app/(authenticated)/coach/reports/load/page"))
 const CoachTeamsPage = lazy(() => import("@/app/(authenticated)/coach/teams/page"))
 const CoachTeamDetailPage = lazy(() => import("@/app/(authenticated)/coach/teams/[teamId]/page"))
 const CoachTestWeekPage = lazy(() => import("@/app/(authenticated)/coach/test-week/page"))
@@ -95,6 +97,10 @@ const AccountPage = lazy(() => import("@/app/(authenticated)/account/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
 const NotificationsPage = lazy(() => import("@/app/(authenticated)/notifications/page"))
 const PrivacyPage = lazy(() => import("@/app/(public)/privacy/page"))
+const SharedReportPage = lazy(() => import("@/app/(public)/shared-report/page"))
+const CoachCreateAthleteReportPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/report/page"))
+const CoachAthleteReportPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/report/[reportId]/page"))
+const AthleteReportPage = lazy(() => import("@/app/(authenticated)/athlete/reports/[reportId]/page"))
 const TermsPage = lazy(() => import("@/app/(public)/terms/page"))
 
 function routeElement(Component: ComponentType) {
@@ -103,6 +109,11 @@ function routeElement(Component: ComponentType) {
       <Component />
     </Suspense>
   )
+}
+
+/** A coach screen an assistant coach may not use: they get a plain "this is with the lead coach" screen instead. */
+function gatedRouteElement(Component: ComponentType, need: AssistantGateNeed) {
+  return <AssistantGate need={need}>{routeElement(Component)}</AssistantGate>
 }
 
 export function AppRouter() {
@@ -119,6 +130,7 @@ export function AppRouter() {
           <Route path="/club-admin/claim" element={<ClubAdminClaimPage />} />
           <Route path="/create-club-account" element={<CreateClubAccountPage />} />
           <Route path="/privacy" element={routeElement(PrivacyPage)} />
+          <Route path="/shared/report" element={routeElement(SharedReportPage)} />
           <Route path="/terms" element={routeElement(TermsPage)} />
           <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
           <Route path="/join/:code" element={<TeamJoinCodePage />} />
@@ -147,6 +159,7 @@ export function AppRouter() {
             <Route path="/athlete/test-week/history" element={routeElement(AthleteTestWeekHistoryPage)} />
             <Route path="/athlete/training-plan" element={routeElement(AthleteTrainingPlanPage)} />
             <Route path="/athlete/trends" element={routeElement(AthleteTrendsPage)} />
+            <Route path="/athlete/reports/:reportId" element={routeElement(AthleteReportPage)} />
             <Route path="/athlete/wellness" element={routeElement(AthleteWellnessPage)} />
             <Route path="/athlete/wellness/history" element={routeElement(AthleteWellnessHistoryPage)} />
             <Route path="/athlete/wellness/pain" element={routeElement(AthletePainReportPage)} />
@@ -156,29 +169,32 @@ export function AppRouter() {
             <Route path="/athlete/messages/a/:announcementId" element={routeElement(AthleteAnnouncementPage)} />
 
             <Route path="/coach/dashboard" element={routeElement(CoachDashboardPage)} />
-            <Route path="/coach/reports" element={routeElement(CoachReportsPage)} />
+            <Route path="/coach/reports" element={gatedRouteElement(CoachReportsPage, "reports")} />
+            <Route path="/coach/reports/load" element={gatedRouteElement(CoachLoadPage, "reports")} />
             <Route path="/coach/teams" element={routeElement(CoachTeamsPage)} />
             <Route path="/coach/teams/:teamId" element={routeElement(CoachTeamDetailPage)} />
             <Route path="/coach/test-week" element={routeElement(CoachTestWeekPage)} />
-            <Route path="/coach/training-plan" element={routeElement(CoachTrainingPlanPage)} />
-            <Route path="/coach/training-plan/exercises" element={routeElement(CoachExercisesPage)} />
-            <Route path="/coach/training-plan/maxes" element={routeElement(CoachLiftMaxesPage)} />
-            <Route path="/coach/training-plan/templates" element={routeElement(CoachPlanTemplatesPage)} />
-            <Route path="/coach/training-plan/calendar" element={routeElement(CoachTeamCalendarPage)} />
+            <Route path="/coach/training-plan" element={gatedRouteElement(CoachTrainingPlanPage, "plans")} />
+            <Route path="/coach/training-plan/exercises" element={gatedRouteElement(CoachExercisesPage, "club-content")} />
+            <Route path="/coach/training-plan/maxes" element={gatedRouteElement(CoachLiftMaxesPage, "athlete-records")} />
+            <Route path="/coach/training-plan/templates" element={gatedRouteElement(CoachPlanTemplatesPage, "club-content")} />
+            <Route path="/coach/training-plan/calendar" element={gatedRouteElement(CoachTeamCalendarPage, "plans")} />
             <Route path="/coach/athletes/:athleteId" element={routeElement(CoachAthleteDetailPage)} />
             <Route path="/coach/athletes/:athleteId/log" element={routeElement(CoachLogForAthletePage)} />
+            <Route path="/coach/athletes/:athleteId/report" element={gatedRouteElement(CoachCreateAthleteReportPage, "reports")} />
+            <Route path="/coach/athletes/:athleteId/report/:reportId" element={gatedRouteElement(CoachAthleteReportPage, "reports")} />
             <Route path="/coach/teams/:teamId/attendance" element={routeElement(CoachTeamAttendancePage)} />
-            <Route path="/coach/athletes/:athleteId/results/new" element={routeElement(CoachAddAthleteResultPage)} />
-            <Route path="/coach/athletes/:athleteId/results/:resultId" element={routeElement(CoachEditAthleteResultPage)} />
-            <Route path="/coach/competitions" element={routeElement(CoachCompetitionsPage)} />
-            <Route path="/coach/competitions/new" element={routeElement(CoachNewCompetitionPage)} />
-            <Route path="/coach/competitions/:competitionId" element={routeElement(CoachCompetitionDetailPage)} />
-            <Route path="/coach/competitions/:competitionId/edit" element={routeElement(CoachEditCompetitionPage)} />
-            <Route path="/coach/competitions/:competitionId/enter" element={routeElement(CoachEnterAthletesPage)} />
+            <Route path="/coach/athletes/:athleteId/results/new" element={gatedRouteElement(CoachAddAthleteResultPage, "athlete-records")} />
+            <Route path="/coach/athletes/:athleteId/results/:resultId" element={gatedRouteElement(CoachEditAthleteResultPage, "athlete-records")} />
+            <Route path="/coach/competitions" element={gatedRouteElement(CoachCompetitionsPage, "athlete-records")} />
+            <Route path="/coach/competitions/new" element={gatedRouteElement(CoachNewCompetitionPage, "athlete-records")} />
+            <Route path="/coach/competitions/:competitionId" element={gatedRouteElement(CoachCompetitionDetailPage, "athlete-records")} />
+            <Route path="/coach/competitions/:competitionId/edit" element={gatedRouteElement(CoachEditCompetitionPage, "athlete-records")} />
+            <Route path="/coach/competitions/:competitionId/enter" element={gatedRouteElement(CoachEnterAthletesPage, "athlete-records")} />
             <Route path="/coach/messages" element={routeElement(CoachMessagesPage)} />
             <Route path="/coach/messages/t/:threadId" element={routeElement(CoachMessageThreadPage)} />
-            <Route path="/coach/messages/with/:athleteId" element={routeElement(CoachMessageAthletePage)} />
-            <Route path="/coach/messages/a/new" element={routeElement(CoachNewAnnouncementPage)} />
+            <Route path="/coach/messages/with/:athleteId" element={gatedRouteElement(CoachMessageAthletePage, "messages")} />
+            <Route path="/coach/messages/a/new" element={gatedRouteElement(CoachNewAnnouncementPage, "announcements")} />
             <Route path="/coach/messages/a/:announcementId" element={routeElement(CoachAnnouncementPage)} />
 
             <Route path="/club-admin" element={<ClubAdminRedirectPage />} />

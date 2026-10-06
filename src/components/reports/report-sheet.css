@@ -1,0 +1,54 @@
+/* The athlete report sheet. One set of rules for the screen (inside .sk-report) and for paper
+   (the same markup inside a PrintSheet). Sizes are in em: 15px text on screen, 10.5pt on paper.
+   Hairlines and type only, like the rest of the app: no boxes, no fills. */
+.sk-report { container-type: inline-size; color: #0e1320; font-size: 0.9375rem; line-height: 1.45; }
+.sk-report-brand { display: flex; align-items: center; gap: 0.75em; padding-bottom: 0.8em; margin-bottom: 1em; border-bottom: 3px solid var(--sk-report-club, #2152ff); font-weight: 700; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.sk-report-title { font-size: 1.9em; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
+.sk-report-meta { margin-top: 0.25em; color: #3a4252; }
+.sk-report-section { margin-top: 1.7em; }
+.sk-report-h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; margin-bottom: 0.45em; font-size: 1.2em; font-weight: 700; letter-spacing: -0.02em; break-after: avoid; }
+.sk-report-h2 span { font-size: 0.8em; font-weight: 500; letter-spacing: 0; color: #5a6274; text-align: right; }
+.sk-report-summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05em; }
+.sk-report-empty, .sk-report-note { color: #5a6274; }
+.sk-report-note { margin-top: 0.5em; font-size: 0.9em; }
+.sk-report-stats { display: flex; flex-wrap: wrap; border-top: 1px solid #e6e8ee; border-bottom: 1px solid #e6e8ee; break-inside: avoid; }
+.sk-report-stat { flex: 1 1 9em; padding: 0.7em 1em 0.7em 0; }
+.sk-report-stat + .sk-report-stat { padding-left: 1em; border-left: 1px solid #e6e8ee; }
+.sk-report-stat dt { font-size: 0.85em; color: #5a6274; }
+.sk-report-stat dd { margin: 0; }
+.sk-report-stat-value { display: block; font-size: 1.75em; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.sk-report-stat-hint { display: block; font-size: 0.85em; color: #5a6274; }
+.sk-report-chart { margin-top: 1em; }
+.sk-report-table { width: 100%; border-collapse: collapse; }
+.sk-report-table th, .sk-report-table td { padding: 0.45em 0.8em 0.45em 0; border-bottom: 1px solid #e6e8ee; text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
+.sk-report-table th:last-child, .sk-report-table td:last-child { padding-right: 0; }
+.sk-report-table thead th { font-size: 0.85em; font-weight: 600; color: #5a6274; border-bottom-color: #d5d9e3; }
+.sk-report-table tbody th { font-weight: 700; }
+.sk-report-table tr { break-inside: avoid; }
+.sk-report-table .sk-report-sub { display: block; font-size: 0.85em; font-weight: 400; color: #5a6274; }
+.sk-report-good { font-weight: 700; color: #07673f; }
+.sk-report-watch { font-weight: 700; color: #c7300f; }
+.sk-report-progress { white-space: nowrap; }
+.sk-report-meter { display: inline-block; width: 5em; height: 0.4em; margin-right: 0.5em; vertical-align: middle; border-radius: 1em; background: #eef0f5; overflow: hidden; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.sk-report-meter i { display: block; height: 100%; background: #2152ff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.sk-report-foot { margin-top: 2em; padding-top: 0.8em; border-top: 1px solid #e6e8ee; font-size: 0.85em; color: #5a6274; }
+
+/* Narrow (a phone, or the preview beside the form): a table row becomes a short labelled block. */
+@container (max-width: 520px) {
+  .sk-report-title { font-size: 1.6em; }
+  .sk-report-table, .sk-report-table tbody, .sk-report-table tr, .sk-report-table th, .sk-report-table td { display: block; }
+  .sk-report-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sk-report-table tr { padding: 0.6em 0; border-bottom: 1px solid #e6e8ee; }
+  .sk-report-table th, .sk-report-table td { padding: 0.1em 0; border: 0; }
+  .sk-report-table td { display: flex; justify-content: space-between; gap: 1em; text-align: right; }
+  .sk-report-table td::before { content: attr(data-label); flex: none; color: #5a6274; text-align: left; }
+  .sk-report-table td:empty { display: none; }
+  .sk-report-stat { flex-basis: 40%; }
+}
+
+@media print {
+  /* Paper sets the text size (PrintSheet); the sheet never reflows into phone rows. */
+  .sk-print-sheet .sk-report { container-type: normal; font-size: inherit; }
+  .sk-report-section { margin-top: 5mm; break-inside: avoid; }
+  .sk-report-foot { margin-top: 6mm; }
+}

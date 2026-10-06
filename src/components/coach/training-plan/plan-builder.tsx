@@ -44,7 +44,9 @@ import {
   type SessionDraft,
   type SessionType,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { WEEK_TYPES, cleanTargetLoad, isWeekType, phaseForWeek, plannedWeekLoad } from "@/lib/data/training-plan/plan-phases"
 import { ExerciseRows } from "./exercise-rows"
+import { PlanOverview, usePlanMarkers } from "./plan-overview"
 import type { AthleteOption, TeamOption } from "./storage"
 import { PlanStatusText, plural } from "./ui"
 import { useExerciseTools, type ExerciseTools } from "./use-exercise-tools"
@@ -117,6 +119,7 @@ export function PlanBuilder({
   const athleteIds = useMemo(() => athletes.map((athlete) => athlete.id), [athletes])
   const exerciseTools = useExerciseTools(athleteIds)
   const editorRef = useRef<HTMLDivElement | null>(null)
+  const markers = usePlanMarkers(plan, team?.name ?? null)
   // What to put the cursor in once the screen has caught up with a change.
   const pendingFocus = useRef<null | "title" | { blockId: string; field: "name" | "details" }>(null)
 
@@ -129,6 +132,9 @@ export function PlanBuilder({
   const copyTargetDate = copyTarget ? slotDate(plan, copyTarget.week, copyTarget.dayIndex) : null
   const copyTargetName = copyTargetDate ? `${weekdayLabel(copyTargetDate)} ${formatDayMonth(copyTargetDate)}` : ""
   const isPublished = plan.status === "published"
+  const weekPhase = phaseForWeek(plan.phases, activeWeek)
+  const weekPlanned = plannedWeekLoad(plan.sessions, activeWeek)
+  const weekTarget = plan.weekTargetLoad?.[String(activeWeek)] ?? null
 
   useEffect(() => {
     if (!notice) return
@@ -240,7 +246,7 @@ export function PlanBuilder({
   const weekSection = (
     <Section
       title={`Week ${activeWeek}`}
-      hint={formatDateRange(slotDate(plan, activeWeek, 0), slotDate(plan, activeWeek, 6))}
+      hint={[formatDateRange(slotDate(plan, activeWeek, 0), slotDate(plan, activeWeek, 6)), weekPhase?.name].filter(Boolean).join(", ")}
       meta={sessions.length === 0 ? "No sessions yet" : plural(sessions.length, "session")}
       className="lg:sticky lg:top-6"
     >
@@ -251,6 +257,49 @@ export function PlanBuilder({
           onChange={(event) => onChange((current) => ({ ...current, weekFocus: { ...current.weekFocus, [String(activeWeek)]: event.target.value } }))}
         />
       </Field>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Field label="Week type" optional>
+          <Select
+            value={plan.weekTypes?.[String(activeWeek)] ?? ""}
+            onChange={(event) =>
+              onChange((current) => {
+                const next = { ...(current.weekTypes ?? {}) }
+                if (isWeekType(event.target.value)) next[String(activeWeek)] = event.target.value
+                else delete next[String(activeWeek)]
+                return { ...current, weekTypes: next }
+              })
+            }
+          >
+            <option value="">Not set</option>
+            {WEEK_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Target load" optional>
+          <Input
+            inputMode="numeric"
+            placeholder="1500"
+            value={weekTarget === null ? "" : String(weekTarget)}
+            onChange={(event) =>
+              onChange((current) => {
+                const next = { ...(current.weekTargetLoad ?? {}) }
+                const target = cleanTargetLoad(event.target.value.replace(/[^0-9]/g, "").slice(0, 5))
+                if (target === null) delete next[String(activeWeek)]
+                else next[String(activeWeek)] = target
+                return { ...current, weekTargetLoad: next }
+              })
+            }
+          />
+        </Field>
+      </div>
+      <p className="mt-2 text-sm text-sk-mute" data-week-planned-load>
+        {weekPlanned.load !== null
+          ? `Planned load ${weekPlanned.load.toLocaleString("en-GB")}${weekTarget !== null ? ` of a target of ${weekTarget.toLocaleString("en-GB")}` : ""}, from ${weekPlanned.counted} of ${plural(weekPlanned.sessions, "session")}.`
+          : "Planned load shows once a session has minutes and an intended effort."}
+      </p>
 
       <List className="mt-2" aria-label={`Week ${activeWeek} days`}>
         {DAY_INDEXES.map((index) => {
@@ -352,7 +401,17 @@ export function PlanBuilder({
               placeholder="75"
             />
           </Field>
-          <Field label="Location" className="sm:col-span-2">
+          <Field label="Intended effort" optional>
+            <Select value={session.intendedEffort ?? ""} onChange={(event) => updateSession({ intendedEffort: event.target.value })}>
+              <option value="">Not set</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort} out of 10
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Location">
             <Input value={session.location} onChange={(event) => updateSession({ location: event.target.value })} placeholder="Track, gym, throws field" />
           </Field>
           <Field label="Coach note" className="sm:col-span-2">
@@ -459,6 +518,8 @@ export function PlanBuilder({
           options={Array.from({ length: plan.weeks }, (_, index) => ({ value: String(index + 1), label: `Week ${index + 1}` }))}
         />
       )}
+
+      {showEditorOnly ? null : <PlanOverview plan={plan} activeWeek={activeWeek} markers={markers} onSelectWeek={selectWeek} onChange={onChange} />}
 
       {isDesktop ? <Split main={editor} side={weekSection} /> : showEditorOnly ? editor : weekSection}
 
