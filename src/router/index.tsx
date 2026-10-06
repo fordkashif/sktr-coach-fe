@@ -102,6 +102,11 @@ const PlatformAdminBillingPage = lazy(() => import("@/app/(authenticated)/platfo
 const PlatformAdminCommercialPage = lazy(() => import("@/app/(authenticated)/platform-admin/commercial/page"))
 const PlatformAdminAuditPage = lazy(() => import("@/app/(authenticated)/platform-admin/audit/page"))
 const PlatformAdminDashboardPage = lazy(() => import("@/app/(authenticated)/platform-admin/dashboard/page"))
+const PlatformAdminUsagePage = lazy(() => import("@/app/(authenticated)/platform-admin/usage/page"))
+const PlatformAdminStatusPage = lazy(() => import("@/app/(authenticated)/platform-admin/status/page"))
+const PlatformAdminNoticesPage = lazy(() => import("@/app/(authenticated)/platform-admin/notices/page"))
+const PlatformAdminAdminsPage = lazy(() => import("@/app/(authenticated)/platform-admin/admins/page"))
+const PlatformAdminClubOverviewPage = lazy(() => import("@/app/(authenticated)/platform-admin/club/page"))
 const AccountPage = lazy(() => import("@/app/(authenticated)/account/page"))
 const NotificationSettingsPage = lazy(() => import("@/app/(authenticated)/settings/notifications/page"))
 const NotificationsPage = lazy(() => import("@/app/(authenticated)/notifications/page"))
@@ -242,6 +247,11 @@ export function AppRouter() {
             <Route path="/platform-admin/billing" element={routeElement(PlatformAdminBillingPage)} />
             <Route path="/platform-admin/commercial" element={routeElement(PlatformAdminCommercialPage)} />
             <Route path="/platform-admin/audit" element={routeElement(PlatformAdminAuditPage)} />
+            <Route path="/platform-admin/usage" element={routeElement(PlatformAdminUsagePage)} />
+            <Route path="/platform-admin/status" element={routeElement(PlatformAdminStatusPage)} />
+            <Route path="/platform-admin/notices" element={routeElement(PlatformAdminNoticesPage)} />
+            <Route path="/platform-admin/admins" element={routeElement(PlatformAdminAdminsPage)} />
+            <Route path="/platform-admin/tenants/:tenantId" element={routeElement(PlatformAdminClubOverviewPage)} />
 
             <Route path="/account" element={routeElement(AccountPage)} />
             <Route path="/settings/notifications" element={routeElement(NotificationSettingsPage)} />

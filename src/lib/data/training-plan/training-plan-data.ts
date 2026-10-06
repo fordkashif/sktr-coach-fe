@@ -1,3 +1,4 @@
+import { guardStamp, staleWriteError, type EditGuard } from "@/lib/data/edit-conflict-data"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
@@ -101,11 +102,15 @@ export type PublishTrainingPlanInput = {
   /** For "squads": squads of the plan's team. Their members now, and anyone added later, get the plan. */
   squadIds?: string[]
   structure: PublishPlanStructure
+  /** Refuse to save over someone else's change (see src/lib/data/edit-conflict-data.ts). */
+  guard?: EditGuard
 }
 
 export type PublishTrainingPlanOutput = {
   planId: string
   assignedCount: number
+  /** The plan's stamp after this save, to send with the next one. */
+  updatedAt: string | null
 }
 
 export type SaveTrainingPlanDraftInput = {
@@ -117,6 +122,8 @@ export type SaveTrainingPlanDraftInput = {
   notes?: string | null
   teamId: string | null
   builderState: Record<string, unknown>
+  /** Refuse to save over someone else's change (see src/lib/data/edit-conflict-data.ts). */
+  guard?: EditGuard
 }
 
 export type TrainingPlanAssignmentRow = {
@@ -500,14 +507,15 @@ export async function publishTrainingPlanForCurrentCoach(
     alreadyPublished = existingPlan.status === "published"
     planId = existingPlan.id as string
 
-    const { data: updatedRows, error: updateError } = await client
-      .from("training_plans")
-      .update(planFields)
-      .eq("id", planId)
-      .eq("tenant_id", context.tenantId)
-      .select("id")
+    // With a stamp, the update only lands on the version this coach loaded.
+    const stamp = guardStamp(input.guard)
+    let update = client.from("training_plans").update(planFields).eq("id", planId).eq("tenant_id", context.tenantId)
+    if (typeof stamp === "string") update = update.eq("updated_at", stamp)
+    const { data: updatedRows, error: updateError } = await update.select("id")
     if (updateError) return { ok: false, error: mapPostgrestError(updateError) }
     if (((updatedRows as Array<{ id: string }> | null) ?? []).length === 0) {
+      const conflict = await staleWriteError("plan", planId, stamp)
+      if (conflict) return { ok: false, error: conflict }
       return err("FORBIDDEN", "You do not have permission to change this plan.")
     }
   } else {
@@ -560,7 +568,9 @@ export async function publishTrainingPlanForCurrentCoach(
 
   // Sends the emails this just queued without waiting for the scheduler (and where there is no scheduler).
   kickNotificationEmails()
-  return ok({ planId, assignedCount: athleteAssignmentIds.length })
+  // Publishing touches the plan row more than once: read the stamp it ended on.
+  const { data: stamped } = await client.from("training_plans").select("updated_at").eq("id", planId).maybeSingle()
+  return ok({ planId, assignedCount: athleteAssignmentIds.length, updatedAt: ((stamped as { updated_at: string | null } | null)?.updated_at) ?? null })
 }
 
 /**
@@ -570,7 +580,7 @@ export async function publishTrainingPlanForCurrentCoach(
  */
 export async function saveTrainingPlanDraftForCurrentCoach(
   input: SaveTrainingPlanDraftInput,
-): Promise<Result<{ planId: string }>> {
+): Promise<Result<{ planId: string; updatedAt: string | null }>> {
   const clientResult = requireSupabaseClient("saveTrainingPlanDraftForCurrentCoach")
   if (!clientResult.ok) return clientResult
   const client = clientResult.client
@@ -594,18 +604,19 @@ export async function saveTrainingPlanDraftForCurrentCoach(
 
   if (input.planId) {
     if (!isUuid(input.planId)) return err("VALIDATION", "This plan has an invalid id.")
-    const { data: updatedRows, error } = await client
-      .from("training_plans")
-      .update(fields)
-      .eq("id", input.planId)
-      .eq("tenant_id", context.tenantId)
-      .eq("status", "draft")
-      .select("id")
+    // With a stamp, the update only lands on the version this coach loaded.
+    const stamp = guardStamp(input.guard)
+    let update = client.from("training_plans").update(fields).eq("id", input.planId).eq("tenant_id", context.tenantId).eq("status", "draft")
+    if (typeof stamp === "string") update = update.eq("updated_at", stamp)
+    const { data: updatedRows, error } = await update.select("id, updated_at")
     if (error) return { ok: false, error: mapPostgrestError(error) }
-    if (((updatedRows as Array<{ id: string }> | null) ?? []).length === 0) {
+    const updated = (updatedRows as Array<{ id: string; updated_at: string | null }> | null) ?? []
+    if (updated.length === 0) {
+      const conflict = await staleWriteError("plan", input.planId, stamp)
+      if (conflict) return { ok: false, error: conflict }
       return err("CONFLICT", "This plan is no longer a draft, so it was not saved. Reload your plans and try again.")
     }
-    return ok({ planId: input.planId })
+    return ok({ planId: input.planId, updatedAt: updated[0].updated_at ?? null })
   }
 
   const { data: insertedPlan, error: insertError } = await client
@@ -616,10 +627,10 @@ export async function saveTrainingPlanDraftForCurrentCoach(
       status: "draft",
       created_by_user_id: context.userId,
     })
-    .select("id")
+    .select("id, updated_at")
     .single()
   if (insertError) return { ok: false, error: mapPostgrestError(insertError) }
-  return ok({ planId: insertedPlan.id as string })
+  return ok({ planId: insertedPlan.id as string, updatedAt: (insertedPlan.updated_at as string | null) ?? null })
 }
 
 /** Plans for the coach list (drafts, published and archived) with their assignment rows. */

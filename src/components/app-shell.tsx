@@ -25,7 +25,7 @@ import {
   UsersThree,
 } from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
 import { GuardianChildSwitcher } from "@/components/guardian/child-switcher"
@@ -52,6 +52,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, List, ListRow, Sheet } from "@/components/sk"
+import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
+import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
+import { GlobalSearch, SearchButton, useSearchShortcut } from "@/components/search/global-search"
 
 /**
  * App shell. See DESIGN.md, "Navigation".
@@ -191,6 +194,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
   // An assistant coach does not build plans, keep competitions or export reports, so those tabs are not shown to them.
   const coachIsAssistant = role === "coach" && coachTeams.find((team) => team.id === coachTeamId)?.role === "assistant"
@@ -234,7 +238,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ? pathname.startsWith("/guardian/results") || pathname.startsWith("/guardian/reports")
           : role === "guardian" && link.id === "home"
             ? pathname.startsWith("/guardian/home") || pathname.startsWith("/guardian/contact")
-            : pathname.startsWith(link.href)
+            : role === "platform-admin" && link.id === "dashboard"
+              ? PLATFORM_HOME_PATHS.some((prefix) => pathname.startsWith(prefix))
+              : pathname.startsWith(link.href)
 
   const homeHref = links[0]?.href ?? "/"
   const accountHref = role === "athlete" ? "/athlete/profile" : "/account"
@@ -316,6 +322,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showBell = showChrome
 
   const bell = showBell ? <NotificationBell onOpen={() => setPanelOpen(true)} /> : null
+  // Search: an icon button in both bars, "/" or Ctrl or Cmd and K. Its screen list is built from `links`.
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+  useSearchShortcut(openSearch, showChrome)
+  const searchButton = showChrome ? <SearchButton onOpen={openSearch} /> : null
+  const searchDestinations = useMemo(() => links.map((link) => ({ id: link.id, label: link.label, href: link.href })), [links])
+  const coachTeamIdList = useMemo(() => coachTeams.map((team) => team.id), [coachTeams])
   const messagesButton = showChrome && messagesLink ? <MessagesButton to={messagesLink.href} active={isLinkActive(messagesLink)} /> : null
 
   const menuItem = "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold text-sk-ink focus:bg-sk-soft"
@@ -383,7 +395,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showChrome ? (
         <header
           data-shell="topbar"
-          className="hidden h-[69px] shrink-0 items-center gap-5 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
+          className="hidden h-[69px] shrink-0 items-center gap-4 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
         >
           {brand}
           <ShellClubBrand compact={showTeamSwitcher || showChildSwitcher} />
@@ -416,7 +428,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )
             })}
           </nav>
-          <div className="flex shrink-0 items-center gap-3">
+          {/* Four buttons since search joined: a little closer together below 1280px so the tabs keep their full labels. */}
+          <div className="flex shrink-0 items-center gap-2 xl:gap-3">
+            {searchButton}
             {messagesButton}
             {bell}
             {profileMenu("md")}
@@ -440,6 +454,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
+          {searchButton}
           {messagesInAppBar ? messagesButton : null}
           {bell}
           {profileMenu("lg")}
@@ -447,6 +462,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
+        {showChrome ? <PlatformNoticeBanner role={role} /> : null}
         <div className="min-h-full">{children}</div>
       </main>
 
@@ -538,6 +554,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       {showBell ? <NotificationSheet open={panelOpen} onOpenChange={setPanelOpen} /> : null}
+      {showChrome ? (
+        <GlobalSearch
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          role={role}
+          destinations={searchDestinations}
+          assistant={coachIsAssistant}
+          coachTeamIds={coachTeamIdList}
+          owner={userEmail}
+        />
+      ) : null}
       {showChrome && messagesLink ? <MessageUnreadKeeper /> : null}
     </div>
   )

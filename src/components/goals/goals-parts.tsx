@@ -1,18 +1,20 @@
 "use client"
 
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { UNIT_WORDS } from "@/components/athlete/results-parts"
 import { ActionRow, Button, Dialog, Field, FormGrid, InlineConfirm, Input, List, Meter, Notice, RowMenu, Select, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
 import { currentBest, daysUntil, goalProgressPercent, goalState, remainingToTarget, type AthleteGoal, type GoalState } from "@/lib/data/goals/goal-logic"
 import { addAthleteGoal, deleteAthleteGoal, setAthleteGoalAchieved, updateAthleteGoal, type AthleteGoalsView } from "@/lib/data/goals/goals-data"
-import { formatMark, formatMarkWithUnit, groupResultsByEvent, parseMarkInput, RESULT_EVENTS, seasonFor, type AthleteResult, type MarkUnit } from "@/lib/data/pr/marks"
+import { formatMark, formatMarkWithUnit, groupResultsByEvent, RESULT_EVENTS, seasonFor, type AthleteResult, type MarkUnit } from "@/lib/data/pr/marks"
 import { formatFullDay } from "@/lib/data/pr/pr-display"
 import { localToday } from "@/lib/data/pr/results-data"
 import type { Result } from "@/lib/data/result"
+import { markEntryText, parseMarkForViewer, unitWordsForViewer, viewText } from "@/lib/units-view"
 
 /** "11.10s", "6.60m", "190kg", "1:52.30". */
 export function goalMarkText(value: number, unit: MarkUnit): string {
-  return formatMarkWithUnit(formatMark(value, unit), unit)
+  return viewText(formatMarkWithUnit(formatMark(value, unit), unit))
 }
 
 /** A difference between two marks: "0.18s", "0.30m", "5kg". */
@@ -110,7 +112,7 @@ export function GoalDialog({
   const options = useMemo(() => eventOptions(view.results), [view.results])
   const all = useMemo(() => [...options.own, ...options.listed], [options])
   const [eventValue, setEventValue] = useState(goal?.eventGroup ?? "")
-  const [mark, setMark] = useState(goal ? formatMark(goal.targetValue, goal.unit) : "")
+  const [mark, setMark] = useState(goal ? markEntryText(goal.targetValue, goal.unit) : "")
   const [targetDate, setTargetDate] = useState(goal?.targetDate ?? "")
   const [note, setNote] = useState(goal?.note ?? "")
   const [errors, setErrors] = useState<{ event?: string; mark?: string; date?: string }>({})
@@ -120,7 +122,7 @@ export function GoalDialog({
   const chosen = goal
     ? { value: goal.eventGroup, eventKey: goal.eventKey, label: goal.eventLabel, unit: goal.unit, lowerIsBetter: goal.lowerIsBetter, best: currentBest(view.results, goal.eventGroup, goal.lowerIsBetter) }
     : (all.find((option) => option.value === eventValue) ?? null)
-  const words = chosen ? UNIT_WORDS[chosen.unit] : null
+  const words = chosen ? unitWordsForViewer(UNIT_WORDS, chosen.unit) : null
   const whose = audience === "athlete" ? "Your" : `${athleteName ?? "Their"}'s`
   const bestHint = chosen
     ? chosen.best
@@ -132,7 +134,7 @@ export function GoalDialog({
     event.preventDefault()
     const nextErrors: typeof errors = {}
     if (!chosen) nextErrors.event = "Choose an event."
-    const parsed = chosen ? parseMarkInput(mark, chosen.unit) : null
+    const parsed = chosen ? parseMarkForViewer(mark, chosen.unit) : null
     if (chosen && parsed && !parsed.ok) nextErrors.mark = parsed.message === "Enter the mark." ? "Enter the mark to aim for." : parsed.message
     if (targetDate && !goal && targetDate < today) nextErrors.date = "The date to reach it by cannot be in the past."
     setErrors(nextErrors)
@@ -234,6 +236,9 @@ function GoalRow({
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Off the screen while "Undo" is offered. The delete itself is sent a few seconds later.
+  const [removed, setRemoved] = useState(false)
+  const undoableDelete = useUndoableDelete()
   const progress = describeGoal(goal, results, localToday())
   const target = goalMarkText(goal.targetValue, goal.unit)
   const name = `${goal.eventLabel} ${target}`
@@ -252,18 +257,18 @@ function GoalRow({
     onChanged()
   }
 
-  const remove = async () => {
-    setBusy(true)
+  // The goal leaves the list at once. The delete is sent when "Undo" runs out.
+  const remove = () => {
     setError(null)
-    const result = await deleteAthleteGoal(goal.id)
-    setBusy(false)
-    if (!result.ok) {
-      setError(result.error.message)
-      return
-    }
     setConfirming(false)
-    notify("Goal removed")
-    onChanged()
+    undoableDelete({
+      message: "Goal removed",
+      failed: "The goal was not removed",
+      hide: () => setRemoved(true),
+      restore: () => setRemoved(false),
+      commit: () => deleteAthleteGoal(goal.id),
+      done: onChanged,
+    })
   }
 
   const items: RowMenuItem[] = [
@@ -275,6 +280,8 @@ function GoalRow({
       : [{ label: "Mark achieved", onSelect: () => void setAchieved(true), disabled: busy }]),
     { label: "Remove goal", onSelect: () => setConfirming(true), danger: true },
   ]
+
+  if (removed) return null
 
   return (
     <ActionRow
@@ -310,7 +317,7 @@ function GoalRow({
             </Notice>
           ) : null}
           {confirming ? (
-            <InlineConfirm className="mt-2" question={`Remove the goal ${name}? Results are not touched.`} confirmLabel="Remove goal" onConfirm={() => void remove()} onCancel={() => setConfirming(false)} busy={busy} />
+            <InlineConfirm className="mt-2" question={`Remove the goal ${name}? Results are not touched.`} confirmLabel="Remove goal" onConfirm={remove} onCancel={() => setConfirming(false)} busy={busy} />
           ) : null}
         </>
       }

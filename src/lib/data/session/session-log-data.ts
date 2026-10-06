@@ -192,6 +192,8 @@ type BlockRecord = {
     target_reps: string | null
     target_load: string | null
     reference_url: string | null
+    percent_1rm?: number | string | null
+    lift_name?: string | null
   }> | null
 }
 
@@ -213,7 +215,7 @@ export async function loadSessionBody(
     client
       .from("session_blocks")
       .select(
-        "id, session_id, sort_order, block_type, name, focus, coach_note, previous_result, rest_label, session_block_rows(id, session_block_id, sort_order, label, target, helper, log_kind, target_sets, target_reps, target_load, reference_url)",
+        "id, session_id, sort_order, block_type, name, focus, coach_note, previous_result, rest_label, session_block_rows(id, session_block_id, sort_order, label, target, helper, log_kind, target_sets, target_reps, target_load, reference_url, percent_1rm, lift_name)",
       )
       .eq("session_id", record.id)
       .order("sort_order", { ascending: true }),
@@ -256,6 +258,8 @@ export async function loadSessionBody(
         targetReps: row.target_reps,
         targetLoad: row.target_load,
         referenceUrl: row.reference_url ?? null,
+        percent: numberOrNull(row.percent_1rm),
+        liftName: row.lift_name ?? null,
       })),
   }))
 

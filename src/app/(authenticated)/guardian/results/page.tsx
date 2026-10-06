@@ -7,6 +7,7 @@ import { getGuardianReports, getGuardianResults } from "@/lib/data/guardian/guar
 import type { GuardianChild, GuardianResults } from "@/lib/data/guardian/types"
 import { reportRangeText } from "@/lib/data/reports/athlete-report"
 import type { MyReport } from "@/lib/data/reports/athlete-report-data"
+import { viewText } from "@/lib/units-view"
 
 function ChildResults({ child }: { child: GuardianChild }) {
   const [data, setData] = useState<GuardianResults | null>(null)
@@ -74,7 +75,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
                       key={result.id}
                       title={result.eventLabel}
                       subtitle={[shortDay(result.date), result.where ?? result.source, result.place ? `Place ${result.place}` : null, result.wind ? `Wind ${result.wind}` : null].filter(Boolean).join(", ")}
-                      trailing={<span className="text-lg font-extrabold tabular-nums text-sk-ink">{result.mark}</span>}
+                      trailing={<span className="text-lg font-extrabold tabular-nums text-sk-ink">{viewText(result.mark)}</span>}
                     />
                   ))}
                 </List>
@@ -98,7 +99,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
                         <ListRow
                           key={test.name}
                           title={test.name}
-                          trailing={test.value ? <span className="font-bold tabular-nums text-sk-ink">{test.value}</span> : <span className="text-sm text-sk-mute">No result yet</span>}
+                          trailing={test.value ? <span className="font-bold tabular-nums text-sk-ink">{viewText(test.value)}</span> : <span className="text-sm text-sk-mute">No result yet</span>}
                         />
                       ))}
                     </List>
@@ -118,7 +119,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
               ) : (
                 <List aria-label="Records">
                   {data.records.map((record) => (
-                    <ListRow key={record.eventLabel} title={record.eventLabel} subtitle={shortDay(record.date)} trailing={<span className="text-lg font-extrabold tabular-nums text-sk-ink">{record.mark}</span>} />
+                    <ListRow key={record.eventLabel} title={record.eventLabel} subtitle={shortDay(record.date)} trailing={<span className="text-lg font-extrabold tabular-nums text-sk-ink">{viewText(record.mark)}</span>} />
                   ))}
                 </List>
               )}
@@ -134,7 +135,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
                   {data.goals.map((goal) => (
                     <ListRow
                       key={goal.id}
-                      title={`${goal.eventLabel}: ${goal.target}`}
+                      title={`${goal.eventLabel}: ${viewText(goal.target)}`}
                       subtitle={goal.achievedOn ? `Reached on ${shortDay(goal.achievedOn)}` : goal.targetDate ? `By ${shortDay(goal.targetDate)}` : "No date set"}
                       trailing={goal.achievedOn ? <StatusText tone="green">Reached</StatusText> : undefined}
                     />

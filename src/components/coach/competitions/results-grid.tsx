@@ -8,10 +8,8 @@ import type { CompetitionEntryWithResult, CompetitionWithEntries } from "@/lib/d
 import {
   describeDifference,
   findResultEvent,
-  formatMark,
   formatMarkWithUnit,
   formatWind,
-  parseMarkInput,
   parseWindInput,
   roundSlot,
   type AthleteResult,
@@ -20,6 +18,7 @@ import {
   type Timing,
 } from "@/lib/data/pr/marks"
 import { deleteAthleteResult, type SeriesVerdict } from "@/lib/data/pr/results-data"
+import { markEntryText, parseMarkForViewer, viewText, viewWeightWord } from "@/lib/units-view"
 
 type ColumnKey = "mark" | "wind" | "place"
 type CellState = { value: string; state: SaveStateValue; message: string | null }
@@ -34,7 +33,7 @@ function cellOf(value: string): CellState {
 
 function rowFromResult(result: AthleteResult | null): RowState {
   return {
-    mark: cellOf(result ? formatMark(result.value, result.unit, result.timing) : ""),
+    mark: cellOf(result ? markEntryText(result.value, result.unit, result.timing) : ""),
     wind: cellOf(result && result.wind !== null ? formatWind(result.wind) : ""),
     place: cellOf(result?.place ? String(result.place) : ""),
   }
@@ -46,7 +45,7 @@ function calloutFor(name: string, saved: AthleteResult, verdict: SeriesVerdict):
   const result = verdict.legal ?? saved
   const mark = markText(result)
   const gain = verdict.beat ? describeDifference(result, verdict.beat) : null
-  const beat = gain && verdict.beat ? `, ${gain.text} than ${formatMarkWithUnit(verdict.beat.display, verdict.beat.unit)}` : ""
+  const beat = gain && verdict.beat ? viewText(`, ${gain.text} than ${formatMarkWithUnit(verdict.beat.display, verdict.beat.unit)}`) : ""
   if (verdict.kind === "personal-best") return { key: result.id, tone: "success", text: `Personal best for ${name} in the ${result.eventLabel}: ${mark}${beat}.` }
   if (verdict.kind === "first") return { key: result.id, tone: "success", text: `${name}'s first ${result.eventLabel} result, ${mark}, so it is a personal best.` }
   if (verdict.kind === "season-best") return { key: result.id, tone: "success", text: `Season best for ${name} in the ${result.eventLabel}: ${mark}${beat}.` }
@@ -210,7 +209,7 @@ export function ResultsGrid({
 
     // "10.6h" is a hand time.
     const hand = unit === "s" && /h$/i.test(next.mark.trim())
-    const parsedMark = parseMarkInput(hand ? next.mark.trim().slice(0, -1) : next.mark, unit)
+    const parsedMark = parseMarkForViewer(hand ? next.mark.trim().slice(0, -1) : next.mark, unit)
     if (!parsedMark.ok) {
       refuse(entryId, "mark", next.mark, parsedMark.message)
       if (column !== "mark") setCell(entryId, column, { value: text, state: "idle", message: null })
@@ -300,7 +299,7 @@ export function ResultsGrid({
                   {entry.athleteName ?? "Athlete"}
                   <TableSub>
                     {entry.eventLabel}
-                    {unit && unit !== "s" ? `, ${UNIT_HINT[unit]}` : ""}
+                    {unit && unit !== "s" ? `, ${unit === "kg" ? viewWeightWord() : UNIT_HINT[unit]}` : ""}
                   </TableSub>
                   {standing ? (
                     <span className="mt-0.5 block text-sm">

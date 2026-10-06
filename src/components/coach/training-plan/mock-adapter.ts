@@ -12,7 +12,8 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import { mockAthletes, mockTeams, mockTrainingPlans } from "@/lib/mock-data"
 import { tenantStorageKey } from "@/lib/tenant-storage"
-import { assignedAthletes, countAssignedAthletes, type PlanScope, type PlanStorageAdapter } from "./storage"
+import { getEditStamp, recordMockEdit, staleWriteError } from "@/lib/data/edit-conflict-data"
+import { assignedAthletes, countAssignedAthletes, loadedPlanStamps, type PlanScope, type PlanStorageAdapter } from "./storage"
 
 const STORAGE_KEY = "pacelab:coach-training-plans:v1"
 
@@ -161,12 +162,16 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
     async loadPlan(planId) {
       const plan = allPlans().find((candidate) => candidate.id === planId)
       if (!plan) return err("NOT_FOUND", "This plan no longer exists.")
+      const stamp = await getEditStamp("plan", plan.id)
+      loadedPlanStamps.set(plan.id, stamp.ok ? stamp.data.updatedAt : null)
       return ok(planFromBuilderState(plan, toBuilderState(plan)))
     },
 
-    async saveDraft(plan) {
+    async saveDraft(plan, options) {
       const invalid = validateBasics(plan)
       if (invalid) return err("VALIDATION", invalid)
+      const stale = plan.id && !options?.overwrite ? await staleWriteError("plan", plan.id, loadedPlanStamps.get(plan.id)) : null
+      if (stale) return { ok: false, error: stale }
       const existing = plan.id ? allPlans().find((candidate) => candidate.id === plan.id) : null
       if (existing && existing.status !== "draft") {
         return err("CONFLICT", "This plan is no longer a draft, so it was not saved. Reload your plans and try again.")
@@ -174,19 +179,23 @@ export function createMockPlanAdapter(scope: PlanScope): PlanStorageAdapter {
       try {
         const planId = plan.id ?? makeId("plan")
         store({ ...plan, id: planId, status: "draft", updatedAt: new Date().toISOString() })
+        loadedPlanStamps.set(planId, recordMockEdit("plan", planId))
         return ok({ planId })
       } catch {
         return err("UNKNOWN", "Could not save the draft in this browser. Storage may be full or blocked.")
       }
     },
 
-    async publish(plan) {
+    async publish(plan, options) {
       const invalid = validateBasics(plan)
       if (invalid) return err("VALIDATION", invalid)
+      const stale = plan.id && !options?.overwrite ? await staleWriteError("plan", plan.id, loadedPlanStamps.get(plan.id)) : null
+      if (stale) return { ok: false, error: stale }
       const assignedCount = countAssignedAthletes(plan, athletes, squads())
       try {
         const planId = plan.id ?? makeId("plan")
         store({ ...plan, id: planId, status: "published", updatedAt: new Date().toISOString() })
+        loadedPlanStamps.set(planId, recordMockEdit("plan", planId))
         return ok({ planId, assignedCount })
       } catch {
         return err("UNKNOWN", "Could not publish the plan in this browser. Storage may be full or blocked.")

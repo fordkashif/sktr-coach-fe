@@ -160,7 +160,7 @@ All from `@/components/sk`.
 | `QuickPick` | Mark one row of a list with one tap: two to four short words side by side in one line (attendance: Present, Late, Absent, Excused). The chosen one takes the tint of what it means (green, amber, coral, neutral); nothing has to be chosen. Needs a `label` naming the row. `Choices` is for a question in a form, `Segmented` for switching views. |
 | `SuggestInput` | A text input that offers matching saved items under it while you type (an exercise from the club library): `options`, `onPick`, a `listLabel`. Free text is always allowed. Arrow keys and Enter pick, Escape closes; with nothing highlighted every key reaches `onKeyDown`, so it works inside `EditableRows` style tables. |
 | `Notice` | One line about the screen: could not load, saved, heads up. Tones `info`, `success`, `warning`, `error`. Small and tinted. It never wraps other content. |
-| `notify`, `notifyError` | A short toast after an action ("Plan saved"). |
+| `notify`, `notifyError` | A short toast after an action ("Plan saved"). `notify(message, detail, { action: { label, onSelect }, durationMs })` adds one short action beside the message. The only use today is "Undo" after a small delete, through `useUndoableDelete` (`src/lib/use-undoable-delete.ts`): the row leaves the screen at once and the delete is sent about six seconds later, or when the screen is left or the tab is hidden. Never for typed-confirmation actions. |
 
 ### Controls
 
@@ -186,11 +186,12 @@ All from `@/components/sk`.
 | `ActionBar` | A bar that stays at the bottom while the screen scrolls, above the phone tab bar: progress and save state of a long task, at most one button (a quiet text action such as "Save draft" may sit beside the state). Last child of `Screen`. |
 | `Tabs` | Underlined tabs for more views or longer labels. |
 | `StepIndicator` | Where someone is in a short run of screens done in order (the club setup wizard): one thin bar per step, blue up to the current one, the step names under them from tablet up. Read only. Goes straight under the `ScreenHeader`, whose `fact` says "Step 3 of 6: Club details" for phones. |
-| `NavTabs` | The sub-sections of one destination when each is its own screen with its own address (Progress: Overview, Records, Competitions, Tests). Looks like `Tabs`, every tab is a link. Goes straight under the `ScreenHeader` of each of those screens. |
+| `NavTabs` | The sub-sections of one destination when each is its own screen with its own address (Progress: Overview, Records, Competitions, Tests). Looks like `Tabs`, every tab is a link. Goes straight under the `ScreenHeader` of each of those screens. When the tabs do not all fit on a phone, the row fades at the edge that hides more (a hint that it scrolls, never an arrow), and the open screen's tab is scrolled into view. |
 | `InlineConfirm` | "Are you sure" in place, where the button was. Use it instead of a dialog for remove, archive, cancel. |
 | `SubSection`, `SubSections` | A titled group one level below a `Section` (an h3, an optional hint, a quiet `action`), for the parts of a `Sheet` or `Dialog`: "About the requester", "History". `SubSections` is the column they sit in. |
 | `Sheet` | A panel over the screen with a title and a close button. `side="right"` for something to glance at (notifications), `side="bottom"` for a short choice on phone. |
 | `Dialog` | A centred panel for one short form or decision. Title, close button, actions in `footer`. |
+| `EditConflictDialog` | Shown when a save would replace a change someone else made to the same record since it was opened (plan, test week, team, club profile). The title says who and when ("Andre changed this plan 2 minutes ago."), then "See their version" (primary) and "Save mine anyway". Closing it keeps the form open with the person's own work. The sentence comes from `conflictSentence` in `src/lib/data/edit-conflict.ts`. |
 | `PrintSheet`, `PrintHeading`, `PrintTable`, `PrintBreak`, `printPage` | What goes on paper or into a PDF when the screen itself is the wrong thing to print (a plan week as a table). Invisible on screen; while one is mounted, printing shows the sheet and nothing else. Without one, any screen prints without the navigation and without being cut at one page; mark controls `print:hidden`. |
 
 Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus rings stay visible (2px blue).
@@ -212,7 +213,13 @@ Built once in `src/components/app-shell.tsx`. Screens never draw navigation.
 | Club admin | Dashboard, People, Teams, Reports, Club, Activity, Billing. Messages button | Dashboard, People, Teams, Reports, More (Messages, Club, Activity, Billing) |
 | Platform admin | Dashboard, Requests, Clubs, Billing, Packages, Activity | Dashboard, Requests, Clubs, Billing, More (Packages, Activity) |
 
+The platform admin's Dashboard has five sections, each its own screen with `NavTabs` under the header (Overview, Usage, Notices, Status, Admins); the Dashboard tab stays lit on all of them. A club's overview for support is a detail screen under Clubs.
+
+A notice from the SKTR team to every club shows as one `Notice` at the top of the main area, above the screen, until the person dismisses it (`src/components/ops/platform-notice-banner.tsx`, mounted once in the shell). It is the only thing the shell ever puts above a screen.
+
 **Messages** is an icon button beside the bell wherever it is not a tab: a speech bubble with the number of unread messages and announcements (for a club admin, plus reported messages waiting for a look). It is a link to the role's Messages screen, not a sheet. On the coach's phone it is a tab with the same count; for a club admin on a phone it is the first row behind More. Where a link sits is declared on the link itself in `app-shell.tsx` (`desktop: "icon"`, `phone: "more"` or `"icon"`).
+
+**Search** is an icon button (a magnifying glass) to the left of Messages and the bell, in the top bar and in the phone app bar, for every role. It also opens with "/" (when not typing in a field) and with Ctrl or Cmd and K. On desktop it is a `Dialog`, on a phone a full screen `Sheet`: one `SearchInput`, then results as `ListRow`s under a small heading per group, five per group with "Show all". Up, down, Enter and Esc work from the field. Screens come from the shell's own destinations (`buildScreenIndex` in `src/lib/search/model.ts`), so a screen the person cannot open is never offered. Recent searches stay on the device.
 
 The bell is there for every role. It shows the number of unread notifications and opens the notifications sheet: the ten most recent as list rows (a blue dot and a bold title mean unread, then a relative time), "Mark all read" and "See all", which goes to `/notifications` (the full history grouped by day). A row is a link to the screen it is about and is marked read when followed. Where each kind of notification leads is decided in one file, `supabase/functions/_shared/notification-target.ts`.
 

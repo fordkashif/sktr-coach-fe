@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { evaluateAccess, type AccessResult } from "@/lib/access-control"
 import { ACCESS_PAUSED_EVENT } from "@/lib/access-paused"
-import { SESSION_UPDATED_EVENT } from "@/lib/auth-session"
+import { SESSION_UPDATED_EVENT, signedOutOnPurpose } from "@/lib/auth-session"
+import { loginPathWithReturn } from "@/lib/return-path"
 import { AccessPausedPage } from "@/pages/access-paused"
 import { getCurrentGuardAuthContext } from "@/router/guard-auth-context"
 
@@ -68,7 +69,10 @@ export function GuardedAuthenticatedLayout() {
   }
 
   if (!access.allowed) {
-    return <Navigate to={access.redirectTo ?? "/login"} replace state={{ from: location }} />
+    // A sign-in that ran out: the login page brings the person back to this screen afterwards.
+    // Not after a sign out the person chose: that lands on the plain login page.
+    const to = access.reason === "unauthenticated" && !signedOutOnPurpose() ? loginPathWithReturn(location.pathname, location.search) : (access.redirectTo ?? "/login")
+    return <Navigate to={to} replace state={{ from: location }} />
   }
 
   return <Outlet />

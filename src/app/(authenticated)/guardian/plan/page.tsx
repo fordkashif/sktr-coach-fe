@@ -1,5 +1,6 @@
 "use client"
 
+import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
 import { Button, DayLabel, EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText, WeekPager, type StateTone } from "@/components/sk"
@@ -8,9 +9,9 @@ import { getGuardianAttendance, getGuardianWeek } from "@/lib/data/guardian/guar
 import { weekStartOf } from "@/lib/data/guardian/mock-guardian-content"
 import type { GuardianAttendanceRow, GuardianChild, GuardianDayState, GuardianWeek } from "@/lib/data/guardian/types"
 
+/** Today as the club has it, the day the child's plan is written for. */
 function todayIso() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  return clubToday()
 }
 
 function shiftDays(day: string, days: number) {

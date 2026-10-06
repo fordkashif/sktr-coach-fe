@@ -39,6 +39,7 @@ import type { WellnessTrendPoint } from "@/lib/data/wellness/types"
 import { MyReportsSection } from "@/components/reports/my-reports-section"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import { viewText } from "@/lib/units-view"
 
 /** Most recent check-ins loaded for the "All" range (a little over a year of daily entries). */
 const TREND_LIMIT = 400
@@ -428,14 +429,14 @@ export default function AthleteTrendsPage() {
                       title={result.name}
                       subtitle={
                         result.change ? (
-                          <StatusText tone={result.change.improved ? "green" : "coral"}>{result.change.text}</StatusText>
+                          <StatusText tone={result.change.improved ? "green" : "coral"}>{viewText(result.change.text)}</StatusText>
                         ) : result.previousValueText ? (
                           "Same as last time"
                         ) : (
                           "First result"
                         )
                       }
-                      trailing={result.valueText}
+                      trailing={viewText(result.valueText)}
                     />
                   ))}
                 </List>

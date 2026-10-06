@@ -244,6 +244,8 @@ function blueprintBlocks(sessionId: string, blueprint: SessionBlueprint): Loggab
         targetSets: row.targetSets,
         targetReps: row.targetReps,
         targetLoad: row.targetLoad,
+        percent: row.percent ?? null,
+        liftName: row.liftName ?? null,
       })),
     }
   })

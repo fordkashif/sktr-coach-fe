@@ -1,3 +1,5 @@
+import { conflictSentence, readEditConflict, type EditConflict } from "@/lib/data/edit-conflict"
+import { CLUB_PROFILE_EDIT_ID, findEditConflict, getEditStamp, recordMockEdit } from "@/lib/data/edit-conflict-data"
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { ImageSquare, PencilSimple } from "@phosphor-icons/react"
 import {
@@ -17,6 +19,7 @@ import {
   SkeletonRows,
   Split,
   notify,
+  EditConflictDialog,
 } from "@/components/sk"
 import { ClubSeasonSection } from "@/components/club-admin/club-season-section"
 import { ClubDataAndOwnership } from "@/components/club-admin/club-data-ownership"
@@ -38,6 +41,7 @@ import { prepareAvatarImage, type AvatarImageError } from "@/lib/image-resize"
 import { getBackendMode } from "@/lib/supabase/config"
 import { parseLocalDay } from "../ops-format"
 import { loadProfileSafe, persistProfile } from "../state"
+import { ClubUnitsSection } from "@/components/club-admin/club-units-section"
 
 type ClubProfileForm = {
   clubName: string
@@ -105,6 +109,8 @@ export default function ClubAdminProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [auditError, setAuditError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const editStamp = useRef<string | null | undefined>(undefined)
+  const [conflict, setConflict] = useState<{ conflict: EditConflict; section: "club" | "season" } | null>(null)
 
   const [logoBusy, setLogoBusy] = useState<"upload" | "remove" | null>(null)
   const [logoError, setLogoError] = useState<string | null>(null)
@@ -148,6 +154,13 @@ export default function ClubAdminProfilePage() {
     setContactErrors({})
     setSaveError(null)
     setEditing(section)
+    // What the profile looks like now, to notice another admin saving it while this form is open.
+    editStamp.current = undefined
+    if (section !== "contact") {
+      void getEditStamp("club-profile", CLUB_PROFILE_EDIT_ID).then((stamp) => {
+        if (stamp.ok) editStamp.current = stamp.data.updatedAt
+      })
+    }
   }
 
   const stopEditing = () => {
@@ -168,8 +181,8 @@ export default function ClubAdminProfilePage() {
     setContactErrors((current) => (current[field] ? { ...current, [field]: undefined } : current))
   }
 
-  const saveProfile = async (event: FormEvent<HTMLFormElement>, section: "club" | "season") => {
-    event.preventDefault()
+  const saveProfile = async (event: FormEvent<HTMLFormElement> | null, section: "club" | "season", overwrite = false) => {
+    event?.preventDefault()
     if (!draft || saving) return
     const validation = validateProfile(draft, section === "club" ? ["clubName", "shortName", "primaryColor"] : ["seasonYear", "seasonStart", "seasonEnd"])
     if (!validation.ok) {
@@ -187,9 +200,15 @@ export default function ClubAdminProfilePage() {
     setSaving(true)
     setSaveError(null)
     if (isSupabaseMode) {
-      const result = await upsertClubAdminProfileRecord(next)
+      const result = await upsertClubAdminProfileRecord(next, { expectedUpdatedAt: editStamp.current, overwrite })
       if (!result.ok) {
         setSaving(false)
+        // Another admin saved the profile since this form opened: ask, never overwrite silently.
+        const found = readEditConflict(result.error)
+        if (found) {
+          setConflict({ conflict: found, section })
+          return
+        }
         setSaveError(
           result.error.code === "FORBIDDEN" || result.error.code === "UNAUTHORIZED"
             ? "You are not allowed to change the club's details. Sign in again and retry."
@@ -204,8 +223,15 @@ export default function ClubAdminProfilePage() {
         setupGuideDismissedAt: clubAdmin.profile?.setupGuideDismissedAt ?? null,
       })
     } else {
+      const found = overwrite ? null : await findEditConflict("club-profile", CLUB_PROFILE_EDIT_ID, editStamp.current)
+      if (found) {
+        setSaving(false)
+        setConflict({ conflict: found, section })
+        return
+      }
       try {
         persistProfile(next)
+        recordMockEdit("club-profile", CLUB_PROFILE_EDIT_ID)
       } catch {
         setSaving(false)
         setSaveError("Could not save on this device.")
@@ -216,8 +242,21 @@ export default function ClubAdminProfilePage() {
     await audit("profile_update", section === "club" ? `${next.clubName} (${next.shortName})` : `Season ${next.seasonYear}, ${next.seasonStart} to ${next.seasonEnd}`)
     await refreshClubBrand()
     setSaving(false)
+    setConflict(null)
     stopEditing()
     notify(section === "club" ? "Club details saved" : "Season saved")
+  }
+
+  // "See their version": the form closes and the profile is read again. These short forms keep no draft copy.
+  const seeTheirVersion = async () => {
+    setSaving(true)
+    if (isSupabaseMode) await clubAdmin.refreshProfile()
+    else setMockProfile(loadProfileSafe())
+    await refreshClubBrand()
+    setSaving(false)
+    setConflict(null)
+    stopEditing()
+    notify("This is their version", "Your own changes were not saved.")
   }
 
   const saveContact = async (event: FormEvent<HTMLFormElement>) => {
@@ -313,6 +352,18 @@ export default function ClubAdminProfilePage() {
 
   return (
     <Screen>
+      {conflict ? (
+        <EditConflictDialog
+          open
+          title={conflictSentence(conflict.conflict)}
+          busy={saving}
+          onClose={() => setConflict(null)}
+          onSeeTheirs={() => void seeTheirVersion()}
+          onSaveMine={() => void saveProfile(null, conflict.section, true)}
+        >
+          See their version closes this form and shows the club profile as it is now. What you typed here is not kept. Save mine anyway replaces their details with yours.
+        </EditConflictDialog>
+      ) : null}
       <ScreenHeader
         title={clubName}
         lede={
@@ -487,6 +538,8 @@ export default function ClubAdminProfilePage() {
               <ClubSeasonSection fallback={{ name: profile.seasonYear, start: profile.seasonStart, end: profile.seasonEnd }} />
 
               <ClubTimezoneSection />
+
+              <ClubUnitsSection />
             </>
           }
         />

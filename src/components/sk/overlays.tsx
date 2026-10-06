@@ -2,6 +2,7 @@ import { X } from "@phosphor-icons/react"
 import type { ButtonHTMLAttributes, ReactNode, Ref } from "react"
 import { Dialog as UiDialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Sheet as UiSheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
+import { ToastAction } from "@/components/ui/toast"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
 
@@ -126,8 +127,23 @@ export function Dialog({
  * notify: a short message that appears for a moment after an action ("Plan saved").
  * For anything the person must read or act on, use Notice on the screen instead.
  */
-export function notify(message: string, detail?: string) {
-  toast({ title: message, description: detail })
+export function notify(message: string, detail?: string, options?: { action?: { label: string; onSelect: () => void }; durationMs?: number }) {
+  const action = options?.action
+  return toast({
+    title: message,
+    description: detail,
+    ...(options?.durationMs ? { duration: options.durationMs } : {}),
+    // One short action beside the message ("Undo"). The toast closes when it is used.
+    ...(action
+      ? {
+          action: (
+            <ToastAction altText={action.label} onClick={action.onSelect} className="h-9 rounded-[12px] border-sk-line-strong bg-white px-3.5 text-sm font-bold text-sk-blue-ink hover:bg-sk-soft">
+              {action.label}
+            </ToastAction>
+          ),
+        }
+      : {}),
+  })
 }
 
 export function notifyError(message: string, detail?: string) {

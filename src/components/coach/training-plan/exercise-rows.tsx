@@ -1,7 +1,7 @@
 import { Plus, X } from "@phosphor-icons/react"
-import { useEffect, useRef, useState, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from "react"
 import { RowMenu, StatusText, SuggestInput } from "@/components/sk"
-import { cleanReferenceUrl, liftKey, mergeOverride, parsePercent, resolvePercentTarget } from "@/lib/data/exercises/loads"
+import { cleanReferenceUrl, liftKey, mergeOverride, parsePercent } from "@/lib/data/exercises/loads"
 import { categoryLabel, type ExerciseCategory, type ExerciseMeasure, type LibraryExercise } from "@/lib/data/exercises/types"
 import { inferLogKind } from "@/lib/data/session/session-from-plan"
 import { makeId, newExercise, type ExerciseDraft, type ExerciseOverrideDraft } from "@/lib/data/training-plan/plan-builder-model"
@@ -9,17 +9,44 @@ import { cn } from "@/lib/utils"
 import type { AthleteOption } from "./storage"
 import { plural } from "./ui"
 import type { ExerciseTools } from "./use-exercise-tools"
+import { useUnits } from "@/lib/units-store"
+import { describePercentLoadFor, loadFieldForViewer, loadFieldToStored } from "@/lib/units"
 
 const FIELDS = ["name", "sets", "reps", "load"] as const
 type FieldKey = (typeof FIELDS)[number]
 const HEADERS: Record<FieldKey, string> = { name: "Exercise", sets: "Sets", reps: "Reps", load: "Load" }
-const PLACEHOLDERS: Record<FieldKey, string> = { name: "Exercise", sets: "Sets", reps: "Reps", load: "kg or %" }
+const PLACEHOLDERS: Record<Exclude<FieldKey, "load">, string> = { name: "Exercise", sets: "Sets", reps: "Reps" }
 
 // Name, sets, reps, load, the "more" menu, remove. On a phone the name takes a line of its own.
 const GRID =
   "grid items-center gap-x-2 gap-y-1.5 grid-cols-[repeat(3,minmax(0,1fr))_2.75rem_2.75rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6rem_2.75rem_2.75rem]"
 const ICON_BUTTON =
   "inline-flex size-11 cursor-pointer items-center justify-center rounded-[12px] text-sk-mute transition-colors hover:bg-sk-soft hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+
+/**
+ * The load box of a row. The coach types and reads loads in their own unit; what is kept in the plan
+ * is metric ("225" typed by a coach on pounds is kept as "102.06 kg"). A percentage, "BW" or a time
+ * is kept as typed. On kilograms this is a plain input.
+ */
+function LoadInput({ value, onValueChange, placeholder, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: string; onValueChange: (stored: string) => void }) {
+  const units = useUnits()
+  // What is being typed, so "22" is not rewritten to "22 lb" half way to "225".
+  const [typing, setTyping] = useState<string | null>(null)
+  if (units.weight === "kg") return <input {...rest} placeholder={placeholder} value={value} onChange={(event) => onValueChange(event.target.value)} />
+  return (
+    <input
+      {...rest}
+      placeholder={placeholder}
+      value={typing ?? loadFieldForViewer(value, units.weight)}
+      onFocus={() => setTyping(loadFieldForViewer(value, units.weight))}
+      onChange={(event) => {
+        setTyping(event.target.value)
+        onValueChange(loadFieldToStored(event.target.value, units.weight))
+      }}
+      onBlur={() => setTyping(null)}
+    />
+  )
+}
 
 /** What a row typed by hand is saved to the library as. The coach can change it under Exercises. */
 function guessLibraryFields(blockTitle: string, exercise: ExerciseDraft): { category: ExerciseCategory; measure: ExerciseMeasure } {
@@ -61,6 +88,7 @@ export function ExerciseRows({
   onChange: (updater: (exercises: ExerciseDraft[]) => ExerciseDraft[]) => void
   className?: string
 }) {
+  const units = useUnits()
   const root = useRef<HTMLDivElement | null>(null)
   const focusNewRow = useRef(false)
   const focusOverride = useRef<string | null>(null)
@@ -185,6 +213,19 @@ export function ExerciseRows({
                       onKeyDown={(event) => onKeyDown(event, rowIndex, 0)}
                     />
                   </div>
+                ) : key === "load" ? (
+                  <LoadInput
+                    key={key}
+                    data-cell={`${rowIndex}:${columnIndex}`}
+                    className="sk-field px-2.5"
+                    aria-label={`${label} ${key}`}
+                    placeholder={`${units.weightLabel} or %`}
+                    autoComplete="off"
+                    enterKeyHint={rowIndex === exercises.length - 1 ? "done" : "next"}
+                    value={exercise.load}
+                    onValueChange={(load) => patch(exercise.id, { load })}
+                    onKeyDown={(event) => onKeyDown(event, rowIndex, columnIndex)}
+                  />
                 ) : (
                   <input
                     key={key}
@@ -275,10 +316,11 @@ export function ExerciseRows({
                       const own = mergeOverride(exercise, override)
                       const ownPercent = parsePercent(own.load)
                       const volume = own.sets.trim() && own.reps.trim() ? `${own.sets.trim()} x ${own.reps.trim()}` : own.reps.trim() || (own.sets.trim() ? `${own.sets.trim()} sets` : "")
+                      // Said in the coach's own unit: a percentage to the nearest 2.5 kg or 5 lb.
                       const gets =
                         ownPercent !== null
-                          ? resolvePercentTarget({ volume, percent: ownPercent, maxKg: athlete && liftName ? tools.maxFor(athlete.id, liftName) : null, liftName }).target
-                          : [volume, own.load.trim() ? `at ${own.load.trim()}` : ""].filter(Boolean).join(" ")
+                          ? [volume, describePercentLoadFor(ownPercent, athlete && liftName ? tools.maxFor(athlete.id, liftName) : null, units.weight)].filter(Boolean).join(" at ")
+                          : [volume, own.load.trim() ? `at ${loadFieldForViewer(own.load.trim(), units.weight)}` : ""].filter(Boolean).join(" ")
                       const who = athlete?.name ?? "this athlete"
                       return (
                         <li key={override.id} data-override-id={override.id} className="flex flex-col gap-1.5 border-l-2 border-sk-line pl-3">
@@ -298,18 +340,30 @@ export function ExerciseRows({
                                   </option>
                                 ))}
                             </select>
-                            {(["sets", "reps", "load"] as const).map((key) => (
-                              <input
-                                key={key}
-                                className="sk-field px-2.5"
-                                aria-label={`${label} ${key} for ${who}`}
-                                // Empty means the same as the row, so the row's own value shows through.
-                                placeholder={exercise[key] || PLACEHOLDERS[key]}
-                                autoComplete="off"
-                                value={override[key]}
-                                onChange={(event) => patchOverride(exercise, override.id, { [key]: event.target.value })}
-                              />
-                            ))}
+                            {(["sets", "reps", "load"] as const).map((key) =>
+                              key === "load" ? (
+                                <LoadInput
+                                  key={key}
+                                  className="sk-field px-2.5"
+                                  aria-label={`${label} ${key} for ${who}`}
+                                  placeholder={exercise.load ? loadFieldForViewer(exercise.load, units.weight) : `${units.weightLabel} or %`}
+                                  autoComplete="off"
+                                  value={override.load}
+                                  onValueChange={(load) => patchOverride(exercise, override.id, { load })}
+                                />
+                              ) : (
+                                <input
+                                  key={key}
+                                  className="sk-field px-2.5"
+                                  aria-label={`${label} ${key} for ${who}`}
+                                  // Empty means the same as the row, so the row's own value shows through.
+                                  placeholder={exercise[key] || PLACEHOLDERS[key]}
+                                  autoComplete="off"
+                                  value={override[key]}
+                                  onChange={(event) => patchOverride(exercise, override.id, { [key]: event.target.value })}
+                                />
+                              ),
+                            )}
                             <span aria-hidden />
                             <button
                               type="button"

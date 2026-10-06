@@ -1,3 +1,5 @@
+// Relative on purpose: this file is loaded by the unit tests, outside the bundler.
+import { clubToday } from "../../club-day"
 import type { EventGroup } from "@/lib/mock-data"
 import type { PublishPlanStructure, TrainingPlanDetail } from "@/lib/data/training-plan/types"
 import {
@@ -179,11 +181,9 @@ export function makeId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** Today as the club has it (its time zone, not the device's). See src/lib/club-day.ts. */
 export function todayIso() {
-  const now = new Date()
-  const month = `${now.getMonth() + 1}`.padStart(2, "0")
-  const day = `${now.getDate()}`.padStart(2, "0")
-  return `${now.getFullYear()}-${month}-${day}`
+  return clubToday()
 }
 
 function parseIso(dateIso: string) {

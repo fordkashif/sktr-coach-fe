@@ -21,7 +21,6 @@ import type { CompetitionEntryWithResult, CompetitionResultInput, CompetitionWit
 import {
   detailKindsFor,
   findResultEvent,
-  formatMark,
   formatWind,
   parseMarkInput,
   parseWindInput,
@@ -35,6 +34,7 @@ import {
 import { addDays, localDayKey, parseLocalDay } from "@/lib/data/pr/pr-display"
 import { deleteAthleteResult } from "@/lib/data/pr/results-data"
 import type { Result } from "@/lib/data/result"
+import { markEntryText, parseMarkForViewer, unitWordsForViewer, viewWeightWord } from "@/lib/units-view"
 
 export type EntryResultNotice = { tone: "success" | "warning" | "info"; text: string }
 
@@ -103,7 +103,7 @@ function useRoundForm({
   const [otherUnit, setOtherUnit] = useState<MarkUnit>(existing?.unit ?? entry.result?.unit ?? "s")
   const unit: MarkUnit = isOther ? otherUnit : (event.unit ?? "s")
   const kinds = detailKindsFor(entry.eventKey, unit)
-  const [mark, setMark] = useState(existing ? formatMark(existing.value, existing.unit) : "")
+  const [mark, setMark] = useState(existing ? markEntryText(existing.value, existing.unit) : "")
   const [timing, setTiming] = useState<Timing>(existing?.timing ?? "electronic")
   const [wind, setWind] = useState(existing && existing.wind !== null ? formatWind(existing.wind) : "")
   const [place, setPlace] = useState(existing?.place ? String(existing.place) : "")
@@ -124,14 +124,14 @@ function useRoundForm({
   const inSeries = draft.series && seriesKind !== null
   const parsedWind = windApplies && !inSeries ? parseWindInput(wind) : null
   const windAssisted = Boolean(parsedWind?.ok && parsedWind.value !== null && parsedWind.value > WIND_LEGAL_LIMIT)
-  const words = UNIT_WORDS[unit]
+  const words = unitWordsForViewer(UNIT_WORDS, unit)
   const typedTime = unit === "s" ? parseMarkInput(mark, "s") : null
   const whose = audience === "athlete" ? "you" : "they"
 
   const submit = async () => {
     setFormError(null)
     const nextErrors: typeof errors = {}
-    const parsedMark = inSeries ? null : parseMarkInput(mark, unit)
+    const parsedMark = inSeries ? null : parseMarkForViewer(mark, unit)
     if (parsedMark && !parsedMark.ok) nextErrors.mark = parsedMark.message
     if (parsedWind && !parsedWind.ok) nextErrors.wind = parsedWind.message
     const placeNumber = place.trim() ? Number(place.trim()) : null
@@ -229,7 +229,7 @@ function useRoundForm({
             <Select value={otherUnit} onChange={(changeEvent) => setOtherUnit(changeEvent.target.value as MarkUnit)}>
               {OTHER_UNITS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {option.value === "kg" ? `Weight (${viewWeightWord()})` : option.label}
                 </option>
               ))}
             </Select>

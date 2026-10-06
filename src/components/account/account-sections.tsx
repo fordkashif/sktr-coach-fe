@@ -10,6 +10,7 @@ import {
   changePassword,
   removeAvatar,
   requestEmailChange,
+  signOutEveryDevice,
   signOutOtherDevices,
   updateDisplayName,
   uploadAvatar,
@@ -427,6 +428,7 @@ export function DevicesSection() {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [confirmingAll, setConfirmingAll] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -441,6 +443,26 @@ export function DevicesSection() {
       return
     }
     setDone(true)
+  }
+
+  // Every device, this one included. The server ends the sessions; this device is then cleared like a normal sign out.
+  const handleSignOutEverywhere = async () => {
+    setBusy(true)
+    setError(null)
+    await removePushOnSignOut()
+    const result = await signOutEveryDevice()
+    if (!result.ok) {
+      setBusy(false)
+      setConfirmingAll(false)
+      setError(result.error.message)
+      return
+    }
+    if (getBackendMode() !== "supabase") {
+      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
+      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
+    }
+    clearSessionCookies()
+    navigate("/login")
   }
 
   const handleSignOut = async () => {
@@ -477,8 +499,43 @@ export function DevicesSection() {
           onConfirm={() => void handleSignOutOthers()}
           onCancel={() => setConfirming(false)}
         />
+      ) : confirmingAll ? (
+        <div data-sign-out-everywhere>
+          <p className="text-[0.9375rem] font-semibold text-sk-ink">Signing out of every device does this:</p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-5 text-[0.9375rem] text-sk-mute">
+            <li>Signs you out here, and on every other phone, tablet and browser.</li>
+            <li>Another device can stay open for up to an hour before it asks you to sign in again.</li>
+            <li>Stops notifications on this device until you sign in again.</li>
+            <li>Keeps your password and your data as they are. If someone else may know your password, change it first.</li>
+          </ul>
+          <InlineConfirm
+            className="mt-3"
+            question="Sign out of every device, including this one?"
+            confirmLabel="Sign out everywhere"
+            cancelLabel="Cancel"
+            busy={busy}
+            onConfirm={() => void handleSignOutEverywhere()}
+            onCancel={() => setConfirmingAll(false)}
+          />
+        </div>
       ) : (
         <List>
+          <ListRow
+            title="Every device"
+            subtitle="Sign out here and everywhere else."
+            trailing={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setDone(false)
+                  setError(null)
+                  setConfirmingAll(true)
+                }}
+              >
+                Sign out everywhere
+              </Button>
+            }
+          />
           <ListRow
             title="Other devices"
             subtitle="Sign out of every other phone and browser."

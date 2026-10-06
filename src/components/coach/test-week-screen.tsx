@@ -1,3 +1,5 @@
+import { conflictSentence, type EditConflict } from "@/lib/data/edit-conflict"
+import { getEditStamp } from "@/lib/data/edit-conflict-data"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ArrowDown, ArrowUp, DownloadSimple, LockSimple, LockSimpleOpen, PencilSimple, Plus, Trash } from "@phosphor-icons/react"
 import {
@@ -33,10 +35,11 @@ import {
   type EntryGridCell,
   type SaveStateValue,
   type StateTone,
+  EditConflictDialog,
 } from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { csvFileName, downloadCsv } from "@/lib/csv"
-import { TEST_UNIT_META, checkTestResultEntry, entryTextFor, testWeekResultsCsvRows } from "@/lib/data/test-week/result-entry"
+import { TEST_UNIT_META, entryTextFor, testWeekResultsCsvRows } from "@/lib/data/test-week/result-entry"
 
 /**
  * Test weeks: the one presentation used by both backend modes.
@@ -44,6 +47,7 @@ import { TEST_UNIT_META, checkTestResultEntry, entryTextFor, testWeekResultsCsvR
  * everything a coach sees and clicks lives here so the two cannot drift.
  */
 import { useCoachTeams, useTeamSwitchGuard } from "@/lib/coach-teams"
+import { checkTestEntryForViewer, testEntryTextForViewer, testUnitWordForViewer, viewText, viewUnitLabel, weightEntryToMetric } from "@/lib/units-view"
 
 export type TestUnit = "time" | "distance" | "weight" | "height" | "score"
 export type TestWeekStatus = "draft" | "published" | "closed"
@@ -103,12 +107,16 @@ export type TestWeekSaveInput = {
   endDate: string
   publish: boolean
   tests: Array<{ id: string | null; name: string; unit: TestUnit; dayIndex: number; scheduledDate: string }>
+  /** The week's updated_at when the builder opened. Undefined for a new week. */
+  expectedUpdatedAt?: string | null
+  /** "Save mine anyway": save even though someone else changed the week since. */
+  overwrite?: boolean
 }
 
 export type TestWeekResultInput = { testWeekId: string; testId: string; athleteId: string; unit: TestUnit; value: string }
 export type TestWeekSavedResult = { value: string; numeric: number | null; enteredBy: ResultEnteredBy | null; submittedAt: string }
 
-export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; message: string }
+export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; message: string; conflict?: EditConflict | null }
 
 export type TestWeekScreenProps = {
   weeks: TestWeekRow[]
@@ -125,6 +133,8 @@ export type TestWeekScreenProps = {
   starterTests: (teamId: string) => Array<{ name: string; unit: TestUnit }>
   loadDetail: (testWeekId: string) => Promise<ActionResult<TestWeekDetail>>
   onSave: (input: TestWeekSaveInput) => Promise<ActionResult<{ id: string }>>
+  /** Read the list again (after someone else's change was found). */
+  onReload?: () => Promise<void> | void
   onPublish: (testWeekId: string) => Promise<ActionResult>
   /** Close a published week (athletes can no longer enter results) or reopen a closed one. */
   onSetOpen: (testWeekId: string, open: boolean) => Promise<ActionResult>
@@ -269,6 +279,9 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [detailState, setDetailState] = useState<{ id: string; detail: TestWeekDetail | null; error: string | null } | null>(null)
   const [detailVersion, setDetailVersion] = useState(0)
+  // The test week's stamp when its builder opened (undefined: new, or not read yet), and a refused save.
+  const editStamp = useRef<string | null | undefined>(undefined)
+  const [conflict, setConflict] = useState<{ conflict: EditConflict; input: TestWeekSaveInput } | null>(null)
 
   const teamName = (teamId: string | null) => teams.find((team) => team.id === teamId)?.name ?? "No team"
   const lockedTeam = teams.find((team) => team.id === lockedTeamId) ?? null
@@ -337,6 +350,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     }
     setDraft(next)
     setDraftBaseline(JSON.stringify(next))
+    editStamp.current = undefined
     viewTeamId.current = teamId
     goTo({ kind: "builder", id: null })
   }
@@ -353,6 +367,10 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
     }
     setDraft(next)
     setDraftBaseline(JSON.stringify(next))
+    editStamp.current = undefined
+    void getEditStamp("test-week", week.id).then((stamp) => {
+      if (stamp.ok) editStamp.current = stamp.data.updatedAt
+    })
     viewTeamId.current = next.teamId
     goTo({ kind: "builder", id: week.id })
   }
@@ -368,6 +386,54 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
       return
     }
     after()
+  }
+
+  const submitDraft = (input: TestWeekSaveInput, overwrite: boolean) => {
+    const editingWeek = input.id ? (weeks.find((week) => week.id === input.id) ?? null) : null
+    void run(
+            async () => {
+              const result = await props.onSave({ ...input, expectedUpdatedAt: editStamp.current, overwrite })
+              // Someone else saved this test week since it was opened: ask, never overwrite silently.
+              if (!result.ok && result.conflict) {
+                setConflict({ conflict: result.conflict, input })
+                return { ok: true, data: null }
+              }
+              setConflict(null)
+              if (result.ok) {
+                const athletes = input.squadIds.length > 0 ? squadAthleteCount(squads, input.squadIds) : (teams.find((team) => team.id === input.teamId)?.athleteCount ?? 0)
+                setNotice(
+                  input.publish && editingWeek?.status !== "published"
+                    ? `Test week published to ${plural(athletes, "athlete")}.`
+                    : input.id
+                      ? "Changes saved."
+                      : "Draft saved. Publish it when you are ready for athletes to see it.",
+                )
+                setDetailVersion((version) => version + 1)
+                // Saved for another of the coach's teams: show that team, so this test week is in its list.
+                viewTeamId.current = input.teamId
+                if (defaultTeamId) syncSelectedTeam(input.teamId)
+                setView({ kind: "detail", id: result.data.id })
+                document.getElementById("main-content")?.scrollTo?.({ top: 0 })
+              }
+              return result
+            },
+            () => {},
+    )
+  }
+
+  // "See their version": the builder closes and the test week is read again. The builder keeps no draft copy.
+  const seeTheirVersion = async () => {
+    if (!conflict?.input.id) return
+    const id = conflict.input.id
+    setBusy(true)
+    await props.onReload?.()
+    setBusy(false)
+    setConflict(null)
+    setDraft(null)
+    setActionError(null)
+    setNotice("This is their version. Your own changes were not saved.")
+    setDetailVersion((version) => version + 1)
+    setView({ kind: "detail", id })
   }
 
   /* ------------------------------ List ------------------------------ */
@@ -481,6 +547,19 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   if (view.kind === "builder" && draft) {
     const editingWeek = draft.id ? (weeks.find((week) => week.id === draft.id) ?? null) : null
     return (
+      <>
+      {conflict ? (
+        <EditConflictDialog
+          open
+          title={conflictSentence(conflict.conflict)}
+          busy={busy}
+          onClose={() => setConflict(null)}
+          onSeeTheirs={() => void seeTheirVersion()}
+          onSaveMine={() => submitDraft(conflict.input, true)}
+        >
+          See their version closes this form and shows the test week as it is now. What you changed here is not kept, so note anything you need first. Save mine anyway replaces their setup with yours.
+        </EditConflictDialog>
+      ) : null}
       <Builder
         key={draft.id ?? "new"}
         draft={draft}
@@ -496,32 +575,9 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         error={actionError}
         setError={setActionError}
         onCancel={() => goTo(draft.id ? { kind: "detail", id: draft.id } : { kind: "list" })}
-        onSubmit={(input) =>
-          void run(
-            async () => {
-              const result = await props.onSave(input)
-              if (result.ok) {
-                const athletes = input.squadIds.length > 0 ? squadAthleteCount(squads, input.squadIds) : (teams.find((team) => team.id === input.teamId)?.athleteCount ?? 0)
-                setNotice(
-                  input.publish && editingWeek?.status !== "published"
-                    ? `Test week published to ${plural(athletes, "athlete")}.`
-                    : input.id
-                      ? "Changes saved."
-                      : "Draft saved. Publish it when you are ready for athletes to see it.",
-                )
-                setDetailVersion((version) => version + 1)
-                // Saved for another of the coach's teams: show that team, so this test week is in its list.
-                viewTeamId.current = input.teamId
-                if (defaultTeamId) syncSelectedTeam(input.teamId)
-                setView({ kind: "detail", id: result.data.id })
-                document.getElementById("main-content")?.scrollTo?.({ top: 0 })
-              }
-              return result
-            },
-            () => {},
-          )
-        }
+        onSubmit={(input) => submitDraft(input, false)}
       />
+      </>
     )
   }
 
@@ -788,7 +844,7 @@ function DetailBody({
         const result = athlete.results[test.id]
         return result ? (
           <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap font-semibold text-sk-ink">
-            {result.value}
+            {viewText(result.value)}
             <Change change={result.change} />
           </span>
         ) : (
@@ -808,13 +864,13 @@ function DetailBody({
         <>
           {test.name}
           <TableSub>
-            {TEST_UNIT_META[test.unit].long}
+            {testUnitWordForViewer(test.unit, TEST_UNIT_META[test.unit].long)}
             {multiDay ? `, day ${test.dayIndex + 1}` : ""}
           </TableSub>
         </>
       ),
     },
-    { key: "best", header: "Best mark", phone: "trailing", cell: ({ best }) => (best ? <Mark size="sm" value={best.value} /> : <span className="text-sk-mute">None yet</span>) },
+    { key: "best", header: "Best mark", phone: "trailing", cell: ({ best }) => (best ? <Mark size="sm" value={viewText(best.value)} /> : <span className="text-sk-mute">None yet</span>) },
     { key: "leader", header: "Leader", cell: ({ best }) => best?.athlete ?? "No results yet" },
     { key: "count", header: "Results in", align: "right", strong: true, cell: ({ count }) => `${count} of ${detail.athletes.length}` },
   ]
@@ -826,7 +882,9 @@ function DetailBody({
     const entry = entries[cellKey(athleteId, testId)]
     const saved = detail.athletes.find((athlete) => athlete.athleteId === athleteId)?.results[testId]
     if (entry && entry.state !== "saved") return { value: entry.text, state: entry.state, message: entry.message }
-    return { value: entryTextFor(saved), state: entry?.state ?? "idle", marked: byStaff(saved) }
+    // A weight test is typed and read in the coach's own unit; it is stored in kilograms.
+    const unit = detail.tests.find((candidate) => candidate.id === testId)?.unit
+    return { value: unit ? testEntryTextForViewer(saved, unit) : entryTextFor(saved), state: entry?.state ?? "idle", marked: byStaff(saved) }
   }
 
   const commit = (athleteId: string, testId: string, text: string) => {
@@ -834,7 +892,7 @@ function DetailBody({
     if (!test) return
     const key = cellKey(athleteId, testId)
     setEntries((current) => ({ ...current, [key]: { text, state: "saving" } }))
-    void onSaveResult({ testWeekId: week.id, testId, athleteId, unit: test.unit, value: text }).then((result) => {
+    void onSaveResult({ testWeekId: week.id, testId, athleteId, unit: test.unit, value: test.unit === "weight" ? weightEntryToMetric(text) : text }).then((result) => {
       if (!result.ok) {
         setEntries((current) => ({ ...current, [key]: { text, state: "error", message: result.message } }))
         return
@@ -917,13 +975,13 @@ function DetailBody({
                   columns={detail.tests.map((test) => ({
                     key: test.id,
                     header: test.name,
-                    sub: `${TEST_UNIT_META[test.unit].long}${multiDay ? `, day ${test.dayIndex + 1}` : ""}`,
+                    sub: `${testUnitWordForViewer(test.unit, TEST_UNIT_META[test.unit].long)}${multiDay ? `, day ${test.dayIndex + 1}` : ""}`,
                   }))}
                   cell={cell}
                   validate={(testId, text) => {
                     const test = detail.tests.find((candidate) => candidate.id === testId)
                     if (!test) return null
-                    const checked = checkTestResultEntry(text, test.unit)
+                    const checked = checkTestEntryForViewer(text, test.unit)
                     return checked.ok ? null : checked.message
                   }}
                   onCommit={commit}
@@ -1112,7 +1170,7 @@ function Builder({
                     >
                       {UNIT_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {option.value === "weight" ? `Weight (${viewUnitLabel("kg")})` : option.label}
                         </option>
                       ))}
                     </select>

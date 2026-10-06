@@ -720,3 +720,50 @@ App: data in `src/lib/data/guardian/` (mock stores included), screens under `src
 - `heights` (vertical jumps): `{ "height": 1.85, "tries": "XO" }`. The result's mark is the highest height cleared.
 
 `relay_entries` (tenant_id, competition_id, team_id, event_key, event_label, team_label, round, heat_number, lane, place, mark_value, mark_display, result_date, location, entered_by_user_id) and `relay_entry_legs` (tenant_id, relay_entry_id, leg_number 1 to 4, athlete_id nullable after deletion, split_value). View `relay_team_bests`: best time per team and relay event. Functions `save_relay_entry(jsonb)`, `get_relay_entries(uuid, uuid)`.
+
+## Global search (20261017100000_global_search.sql)
+
+No table. Functions:
+
+- `search_everything(p_query text, p_limit integer default 5)` returns `(kind text, id text, title text, subtitle text, params jsonb, rank integer, sort_date date)`, at most `p_limit` (1 to 25) rows per kind, ordered inside a kind by rank, then most recent, then name. Security invoker, `authenticated` only. Kinds: `athlete`, `team`, `plan`, `template`, `exercise`, `test_week`, `competition` (coach); `staff`, `athlete`, `guardian`, `team`, `invite`, `season`, `club_event` (club admin); `session`, `record`, `competition`, `goal`, `coach` (athlete); `child`, `competition` (guardian); `club`, `request`, `platform_admin` (platform admin). `params` carries the ids a route needs (`teamId`, `date`, `eventGroup`, `coachUserId`, `canMessage`). For `record` the id is the event group.
+- `search_fold(text)`: lower case with accents removed. `search_rank(text, folded_query)`: 0 exact, 1 starts with, 2 a word starts with, 3 inside. Both immutable.
+- `search_platform_admins()`: active platform admin contacts, for platform admins only (security definer).
+
+Indexes (only when `pg_trgm` is available): `athletes_search_name_trgm_idx` on `search_fold(first_name || ' ' || last_name)`, `sessions_search_title_trgm_idx` on `search_fold(title)`.
+
+App: `src/lib/search/` (`model.ts` is the pure part and mirrors the SQL rules; `search-data.ts` calls the function or, in mock mode, `mock-search.ts`; `recent.ts` keeps recent searches on the device), `src/components/search/global-search.tsx`. Screens are not searched in the database: they come from a static index built from the shell's own destinations.
+
+## Platform admin tools (20261017110000_platform_admin_tools.sql)
+
+`platform_admin_contacts` gains `added_by_email` and `deactivated_at`.
+
+`platform_notices` (id, title 3 to 120, body 1 to 500, link_url: null, `https://...` or an in-app path starting with `/`, audience `everyone` | `staff` | `club_admins`, expires_at, email_club_admins, reach_in_app, reach_email, sent_by_email, created_at, withdrawn_at, withdrawn_by_email). `platform_notice_dismissals` (notice_id, user_id cascade from `auth.users`, dismissed_at). Neither has a `tenant_id`: a notice is for every club. No column references `auth.users` with set null.
+
+Functions (security definer): `get_platform_club_overview(uuid) -> jsonb`, `list_platform_admins()`, `add_platform_admin(text, text) -> uuid`, `set_platform_admin_active(uuid, boolean) -> boolean`, `get_platform_usage(integer) -> jsonb` (`days`, `from`, `to`, `clubs[]`, `weeks[]` of the last 12 weeks), `send_platform_notice(text, text, text, text, timestamptz, boolean) -> jsonb` (`id`, `reach_in_app`, `reach_email`), `list_platform_notices()`, `withdraw_platform_notice(uuid) -> boolean`, `get_my_platform_notices()`, `dismiss_platform_notice(uuid) -> boolean`, `get_platform_system_status() -> jsonb`. Helpers: `platform_notice_reaches(audience, role)`, `platform_safe_club_action(action)`, `platform_email_is_club_member(email)`, `platform_admin_contact_is_caller(user_id, email)`.
+
+New notification type `platform_notice` (metadata `notice_id`, optional `link`). New platform audit actions: `platform_club_overview_opened`, `platform_admin_added`, `platform_admin_deactivated`, `platform_admin_reactivated`, `platform_notice_sent`, `platform_notice_withdrawn`.
+
+App: `src/lib/data/platform-admin/tools-logic.ts` (pure rules, mirrored by the SQL), `tools-data.ts`, `tools-mock.ts`; screens under `src/app/(authenticated)/platform-admin/` (`usage`, `notices`, `status`, `admins`, `club`); the banner is `src/components/ops/platform-notice-banner.tsx`, mounted once in the app shell.
+
+## Units of measure (20261017090000_unit_preferences.sql)
+
+Everything is stored metric and stays so: `session_row_logs.load_kg`, `athlete_lift_maxes.value_kg`, `athlete_private_details.weight_kg` and `height_cm`, kilogram rows of `athlete_results`, plan load text. This migration adds only what a person reads and types in.
+
+`unit_preferences` (user_id primary key, cascade from `auth.users`; tenant_id not null, default `current_tenant_id()`, cascade from `tenants`; weight_unit `kg` | `lb` | null; height_unit `cm` | `ft_in` | null; created_at, updated_at). Null means "same as my club". `club_unit_defaults` (tenant_id primary key, cascade from `tenants`; weight_unit `kg` | `lb` default `kg`; height_unit `cm` | `ft_in` default `cm`; updated_at). A club with no row is kilograms and centimetres.
+
+Function: `set_club_unit_defaults(p_weight_unit text, p_height_unit text) -> club_unit_defaults` (security definer, club admins only).
+
+What applies to a person: their own unit when set, otherwise the club's, otherwise `kg` and `cm`. Worked out in the app (`src/lib/data/account/unit-preferences-data.ts`), read once per sign-in by `src/lib/units-store.ts`.
+
+App: `src/lib/units.ts` is the one pure module: exact constants (1 lb = 0.45359237 kg, 1 in = 2.54 cm), rounding (a load shown in pounds to the nearest 0.5 lb; pounds typed are stored as kilograms to two decimals so they read back the same; a percentage of a best lift to the nearest 2.5 kg for a reader on kilograms and 5 lb for a reader on pounds; body weight to 0.1 kg, body height to 0.1 cm and half inches) and the text rewriting of lines that name kilograms. `useUnits()` (`src/lib/units-store.ts`) for components, `src/lib/units-view.ts` for plain text helpers, `useViewerBlocks()` (`src/lib/use-viewer-session.ts`) for session targets. Track and field marks (metres, seconds, centimetre jumps, points) never pass through it. CSV exports and the "download my data" file stay metric.
+
+
+## Edit conflicts and the guardian login hint (20261017120000)
+
+New columns: `training_plans.updated_by_user_id`, `test_weeks.updated_by_user_id`, `teams.updated_by_user_id`, `club_profiles.updated_by_user_id` (uuid, null, references `auth.users` on delete set null). Kept by the trigger `stamp_updated_by()` on insert and update; the app never writes them.
+
+Stale write check: `updated_at` (already kept by `set_updated_at()` on all four tables) is the version. A save sends `update ... where updated_at = <loaded value>`; no row updated plus a newer `updated_at` on the row means someone else saved first. The app then shows who and when and offers "See their version" or "Save mine anyway" (the same update without the `updated_at` filter). App: `src/lib/data/edit-conflict.ts` (pure), `src/lib/data/edit-conflict-data.ts` (both modes; mock mode keeps the stamps in localStorage).
+
+Function changed: `bootstrap_current_profile()` returns status `invite_pending` for a pending guardian invite as well as a coach or athlete invite.
+
+Not in the database: undo for small deletes is a delayed delete on the client (`src/lib/undo-queue.ts`); nothing is soft deleted.

@@ -1,3 +1,4 @@
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PlansNav } from "@/components/coach/training-plan/plans-nav"
@@ -46,6 +47,7 @@ export default function CoachPlanTemplatesPage() {
   const [eventGroup, setEventGroup] = useState<EventGroup | "all">("all")
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const undoableDelete = useUndoableDelete()
   const [editing, setEditing] = useState<PlanTemplateSummary | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
   // The last change, said in a line above the list (and read out).
@@ -94,6 +96,20 @@ export default function CoachPlanTemplatesPage() {
             : `"${template.name}" is back in the list.`,
     )
     await load()
+  }
+
+  // The template leaves the list at once. The delete is sent when "Undo" runs out.
+  const removeWithUndo = (template: PlanTemplateSummary) => {
+    setError(null)
+    setChanged(null)
+    undoableDelete({
+      message: "Template deleted",
+      detail: "Plans started from it are not changed.",
+      failed: `"${template.name}" was not deleted`,
+      hide: () => setTemplates((current) => current.filter((item) => item.id !== template.id)),
+      restore: () => void load(),
+      commit: () => deletePlanTemplate(template.id),
+    })
   }
 
   const lede = loading
@@ -224,7 +240,7 @@ export default function CoachPlanTemplatesPage() {
                             onCancel={() => setConfirmDeleteId(null)}
                             onConfirm={() => {
                               setConfirmDeleteId(null)
-                              void run(template, "delete")
+                              removeWithUndo(template)
                             }}
                           />
                         ) : null

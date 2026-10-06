@@ -1,3 +1,4 @@
+import { clubToday, weekdayShortOf } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { ArrowDown, ArrowUp, Minus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
@@ -39,7 +40,6 @@ import { getCurrentPlanWeekForCoachTeam, pickTeamPlanWeek, type TeamPlanWeek } f
 import { describeAvailability } from "@/lib/data/athlete/availability-data"
 import { getCoachTodaySnapshot, type CoachTodaySnapshot, type TodaySessionRow } from "@/lib/data/coach/dashboard-today"
 import { PAIN_SEVERITY_WORDS, bodyAreasSummary, painImpactLabel } from "@/lib/data/wellness/pain-report-types"
-import { dateKeyLocal } from "@/lib/athlete-session"
 import { adherenceText, averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -108,7 +108,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
   } | null>(null)
   // undefined while loading, null when no published plan covers this week.
   const [planWeek, setPlanWeek] = useState<TeamPlanWeek | null | undefined>(undefined)
-  const todayKey = dateKeyLocal(new Date())
+  const todayKey = clubToday()
   // Availability, today's session, pain reports and the next competition. Null while loading.
   const [today, setToday] = useState<CoachTodaySnapshot | null>(null)
 
@@ -189,7 +189,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
 
   // Loaded once the squad is known. Each part is optional: a failed read leaves that part empty.
   const todaySessionTitle = planWeek
-    ? (planWeek.days.find((day) => (backendMode === "supabase" ? day.date === todayKey : day.dayLabel === new Date().toLocaleDateString("en-GB", { weekday: "short" })))?.title ?? null)
+    ? (planWeek.days.find((day) => (backendMode === "supabase" ? day.date === todayKey : day.dayLabel === weekdayShortOf(todayKey)))?.title ?? null)
     : null
   const squadKey = scopedAthletes.length > 0 ? JSON.stringify(scopedAthletes.map((athlete) => [athlete.id, athlete.name, athlete.adherence])) : ""
   const planReady = planWeek !== undefined
@@ -457,7 +457,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             ) : planWeek && planWeek.days.length > 0 ? (
               <List>
                 {planWeek.days.map((day) => {
-                  const isToday = backendMode === "supabase" ? day.date === todayKey : day.dayLabel === new Date().toLocaleDateString("en-GB", { weekday: "short" })
+                  const isToday = backendMode === "supabase" ? day.date === todayKey : day.dayLabel === weekdayShortOf(todayKey)
                   return (
                     <ListRow
                       key={day.id}

@@ -1,5 +1,6 @@
 "use client"
 
+import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { Check, Play } from "@phosphor-icons/react"
 import { MyAvailabilityNotice } from "@/components/athlete/availability"
@@ -50,6 +51,7 @@ import { getCurrentAthleteWellnessEntries } from "@/lib/data/wellness/wellness-d
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import type { CurrentSession } from "@/lib/mock-data"
+import { useUnits } from "@/lib/units-store"
 
 const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-submission"
 
@@ -106,6 +108,7 @@ const SETUP_STEPS = [
 ]
 
 export default function AthleteHomePage() {
+  const units = useUnits()
   const backendMode = getBackendMode()
   const isSupabase = backendMode === "supabase"
   const [now, setNow] = useState(() => new Date())
@@ -165,7 +168,7 @@ export default function AthleteHomePage() {
                   .sort((left, right) => left.sortOrder - right.sortOrder)
                   .map((row) => ({
                     label: row.label,
-                    target: row.target,
+                    target: units.target(row.target),
                     helper: row.helper ?? undefined,
                   })),
               })),
@@ -235,7 +238,7 @@ export default function AthleteHomePage() {
         setPlanDays([])
         return
       }
-      const todayKey = dateKeyLocal(new Date())
+      const todayKey = clubToday()
       const plan =
         plansResult.data.find((item) => {
           const end = parseDateKey(item.startDate)
@@ -279,8 +282,9 @@ export default function AthleteHomePage() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const todayKey = dateKeyLocal(now)
-  const startOfWeek = new Date(now)
+  const todayKey = clubToday(now)
+  // The week of the club's day (the same as the device's unless the athlete is far from home).
+  const startOfWeek = new Date(`${todayKey}T00:00:00`)
   const dayOffset = (startOfWeek.getDay() + 6) % 7
   startOfWeek.setDate(startOfWeek.getDate() - dayOffset)
   startOfWeek.setHours(0, 0, 0, 0)
@@ -388,7 +392,7 @@ export default function AthleteHomePage() {
 
   const firstName = displayName.trim().split(/\s+/)[0] || backendSessionDetail?.athleteFirstName || ""
   const title = firstName && firstName !== "Athlete" ? `${greeting(now)}, ${firstName}` : `Good ${greeting(now).toLowerCase()}`
-  const dateLine = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
+  const dateLine = new Date(`${todayKey}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })
 
   const toggleGuide = async (dismissed: boolean) => {
     setSetupGuideSaving(true)
@@ -404,10 +408,10 @@ export default function AthleteHomePage() {
   /* Today: the one colour block, only when there is a session to do --- */
   const sessionSummary = todaySession
     ? todaySession.blocks
-        .flatMap((block) => (block.rows.length > 0 ? block.rows.map((row) => `${row.label} ${row.target}`) : [block.name]))
+        .flatMap((block) => (block.rows.length > 0 ? block.rows.map((row) => `${row.label} ${units.target(row.target)}`) : [block.name]))
         .join(", ")
     : planDayToday
-      ? planDayToday.blockPreview.join(", ") || planDayToday.focus
+      ? planDayToday.blockPreview.map((preview) => units.target(preview)).join(", ") || planDayToday.focus
       : ""
   const sessionMeta = todaySession
     ? inProgress && todaySession.blocks.length > 0

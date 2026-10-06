@@ -47,6 +47,7 @@ import { DEFAULT_REST_SECONDS, nextOpenTimeSet, restSecondsForRow } from "@/lib/
 import { MAX_SETS, logKindForBlockType } from "@/lib/data/session/session-from-plan"
 import { skipReasonLabel, skippedLabel } from "@/lib/data/session/types"
 import { todayIso } from "@/lib/data/training-plan/plan-builder-model"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 
 const HOME_REDIRECT_MS = 1800
 
@@ -72,6 +73,9 @@ export default function AthleteLogPage() {
   const [exerciseOpen, setExerciseOpen] = useState(false)
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  // True while a removed extra session waits on "Undo".
+  const [removing, setRemoving] = useState(false)
+  const undoableDelete = useUndoableDelete()
   const [busy, setBusy] = useState(false)
   const clock = useLogClock()
   // Photos and videos. They upload on their own while the athlete keeps logging.
@@ -147,16 +151,20 @@ export default function AthleteLogPage() {
     if (!result.ok) notifyError("Could not undo the skip", result.error.message)
   }
 
-  const handleRemove = async () => {
-    setBusy(true)
-    const result = await log.removeExtraSession()
-    setBusy(false)
-    if (!result.ok) {
-      notifyError("Could not remove the session", result.error.message)
-      return
-    }
-    notify("Session removed")
-    navigate(dayPath(date), { replace: true })
+  // The session leaves the screen at once. The delete is sent when "Undo" runs out.
+  const handleRemove = () => {
+    setConfirmRemove(false)
+    undoableDelete({
+      message: "Session removed",
+      failed: "Could not remove the session",
+      hide: () => setRemoving(true),
+      restore: () => setRemoving(false),
+      commit: () => log.removeExtraSession(),
+      done: () => {
+        setRemoving(false)
+        navigate(dayPath(date), { replace: true })
+      },
+    })
   }
 
   const title = !day
@@ -178,6 +186,14 @@ export default function AthleteLogPage() {
         : date === today
           ? "Nothing is planned for you today."
           : `Nothing is planned for ${formatLongDay(date)}.`
+
+  if (removing) {
+    return (
+      <Screen width="narrow">
+        <ScreenHeader fact={formatLongDay(date)} title="Session removed" lede="Changed your mind? Use Undo in the next few seconds to keep it." variant="top" />
+      </Screen>
+    )
+  }
 
   return (
     <Screen width="narrow">
@@ -492,7 +508,7 @@ export default function AthleteLogPage() {
               question="Remove this session and everything logged in it?"
               confirmLabel="Remove session"
               busy={busy}
-              onConfirm={() => void handleRemove()}
+              onConfirm={handleRemove}
               onCancel={() => setConfirmRemove(false)}
             />
           ) : null}

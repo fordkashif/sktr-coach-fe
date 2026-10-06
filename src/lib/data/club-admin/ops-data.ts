@@ -1,3 +1,4 @@
+import { CLUB_PROFILE_EDIT_ID, guardStamp, staleWriteError, type EditGuard } from "@/lib/data/edit-conflict-data"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { normaliseTeamCoachRole, type TeamCoachRole } from "@/lib/coach-permissions"
 import { listAthleteAvailability } from "@/lib/data/athlete/availability-data"
@@ -653,6 +654,8 @@ export async function getClubAdminProfileRecord(): Promise<Result<ClubAdminProfi
 
 export async function upsertClubAdminProfileRecord(
   profile: ClubAdminProfileRecord,
+  /** Refuse to save over another admin's change (see src/lib/data/edit-conflict-data.ts). */
+  guard?: EditGuard,
 ): Promise<Result<void>> {
   const clientResult = requireSupabaseClient("upsertClubAdminProfileRecord")
   if (!clientResult.ok) return clientResult
@@ -663,18 +666,33 @@ export async function upsertClubAdminProfileRecord(
   if (!profile.clubName.trim()) return err("VALIDATION", "Club name is required.")
   if (!profile.shortName.trim()) return err("VALIDATION", "Short name is required.")
 
-  const { error } = await clientResult.client.from("club_profiles").upsert(
-    {
-      tenant_id: contextResult.data.tenantId,
-      club_name: profile.clubName.trim(),
-      short_name: profile.shortName.trim(),
-      primary_color: profile.primaryColor.trim() || "#1368ff",
-      season_year: profile.seasonYear.trim(),
-      season_start: profile.seasonStart,
-      season_end: profile.seasonEnd,
-    },
-    { onConflict: "tenant_id" },
-  )
+  const fields = {
+    tenant_id: contextResult.data.tenantId,
+    club_name: profile.clubName.trim(),
+    short_name: profile.shortName.trim(),
+    primary_color: profile.primaryColor.trim() || "#1368ff",
+    season_year: profile.seasonYear.trim(),
+    season_start: profile.seasonStart,
+    season_end: profile.seasonEnd,
+  }
+
+  // With a stamp the row exists and was loaded: update only that version of it.
+  const stamp = guardStamp(guard)
+  if (typeof stamp === "string") {
+    const { data: updated, error: updateError } = await clientResult.client
+      .from("club_profiles")
+      .update(fields)
+      .eq("tenant_id", contextResult.data.tenantId)
+      .eq("updated_at", stamp)
+      .select("tenant_id")
+    if (updateError) return { ok: false, error: mapPostgrestError(updateError) }
+    if (((updated as Array<{ tenant_id: string }> | null) ?? []).length > 0) return ok(undefined)
+    const conflict = await staleWriteError("club-profile", CLUB_PROFILE_EDIT_ID, stamp)
+    if (conflict) return { ok: false, error: conflict }
+    return err("FORBIDDEN", "You do not have permission to change the club's details.")
+  }
+
+  const { error } = await clientResult.client.from("club_profiles").upsert(fields, { onConflict: "tenant_id" })
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
   return ok(undefined)
@@ -1182,6 +1200,8 @@ export async function updateClubAdminTeam(params: {
   name: string
   eventGroup?: string | null
   status: ClubAdminTeamRecord["status"]
+  /** Refuse to save over another admin's change (see src/lib/data/edit-conflict-data.ts). */
+  guard?: EditGuard
 }): Promise<Result<void>> {
   const clientResult = requireSupabaseClient("updateClubAdminTeam")
   if (!clientResult.ok) return clientResult
@@ -1192,7 +1212,9 @@ export async function updateClubAdminTeam(params: {
   const teamName = params.name.trim()
   if (!teamName) return err("VALIDATION", "Team name is required.")
 
-  const { error } = await clientResult.client
+  // With a stamp, the update only lands on the version this admin opened.
+  const stamp = guardStamp(params.guard)
+  let update = clientResult.client
     .from("teams")
     .update({
       name: teamName,
@@ -1203,8 +1225,14 @@ export async function updateClubAdminTeam(params: {
     })
     .eq("id", params.teamId)
     .eq("tenant_id", contextResult.data.tenantId)
+  if (typeof stamp === "string") update = update.eq("updated_at", stamp)
+  const { data: updated, error } = await update.select("id")
 
   if (error) return { ok: false, error: mapPostgrestError(error) }
+  if (typeof stamp === "string" && ((updated as Array<{ id: string }> | null) ?? []).length === 0) {
+    const conflict = await staleWriteError("team", params.teamId, stamp)
+    if (conflict) return { ok: false, error: conflict }
+  }
   return ok(undefined)
 }
 

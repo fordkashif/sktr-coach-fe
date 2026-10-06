@@ -1,4 +1,6 @@
 import type { ReactNode } from "react"
+import { markForViewer } from "@/lib/units"
+import { useUnits } from "@/lib/units-store"
 import { cn } from "@/lib/utils"
 
 const MARK_SIZES = {
@@ -29,6 +31,10 @@ export function Mark({
   size?: keyof typeof MARK_SIZES
   className?: string
 }) {
+  // A mark in kilograms (a strength test, a best lift) is read in the person's own unit. Every other
+  // mark is metric by rule and is shown as written.
+  const units = useUnits()
+  if (unit?.trim() === "kg" && units.weight === "lb" && typeof value === "string") ({ value, unit } = markForViewer(value, unit, "lb"))
   return (
     <span className={cn("inline-flex items-baseline whitespace-nowrap font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums", MARK_SIZES[size], className)}>
       {value}

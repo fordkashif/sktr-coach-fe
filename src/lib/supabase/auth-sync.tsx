@@ -48,7 +48,7 @@ export function SupabaseAuthSync() {
       if (!active) return
 
       if (!session) {
-        clearSessionCookies()
+        clearSessionCookies("expired")
         return
       }
 
@@ -61,7 +61,7 @@ export function SupabaseAuthSync() {
         // No club for this account (yet). Only the role cookies are cleared: the Supabase session stays,
         // because the invite claim pages sign a new user in first and accept the invite a moment later.
         // The login page is the place that signs such an account out and explains why.
-        clearSessionCookies()
+        clearSessionCookies("expired")
         return
       }
 

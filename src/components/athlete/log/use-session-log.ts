@@ -1,5 +1,6 @@
+import { clubToday } from "@/lib/club-day"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { dateKeyLocal, parseSessionCompletions, SESSION_COMPLETIONS_STORAGE_KEY } from "@/lib/athlete-session"
+import { parseSessionCompletions, SESSION_COMPLETIONS_STORAGE_KEY } from "@/lib/athlete-session"
 import {
   addExtraExercise,
   deleteExtraSession,
@@ -32,6 +33,7 @@ import type {
 } from "@/lib/data/session/types"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import { useViewerBlocks } from "@/lib/use-viewer-session"
 
 const DAY_CACHE_KEY = "pacelab:session-day-cache:v2"
 const WRAP_UP_KEY = "pacelab:session-wrap-up:v1"
@@ -369,7 +371,7 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
   const finish = useCallback(async () => {
     const session = sessionRef.current
     if (!session) return false
-    const completionDate = session.completedOn ?? dateKeyLocal(new Date())
+    const completionDate = session.completedOn ?? clubToday()
     const comment = wrapUp.comment.trim() || null
     const durationMinutes = cleanMinutes(wrapUp.minutes ?? "")
     queueCompletion(session.id, { completionDate, rpe: wrapUp.rpe, comment, durationMinutes })
@@ -466,9 +468,13 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
     return { total, done }
   }, [day?.session?.blocks, extraSets, logs])
 
+  // Targets in the athlete's own unit (kilograms or pounds). What is logged stays in kilograms.
+  const viewBlocks = useViewerBlocks(day?.session?.blocks)
+  const viewDay = useMemo(() => (day?.session && viewBlocks !== day.session.blocks ? { ...day, session: { ...day.session, blocks: viewBlocks } } : day), [day, viewBlocks])
+
   return {
-    day,
-    session: day?.session ?? null,
+    day: viewDay,
+    session: viewDay?.session ?? null,
     loadError,
     fromCache,
     reload,

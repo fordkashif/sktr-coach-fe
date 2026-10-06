@@ -1,3 +1,4 @@
+import { readEditConflict } from "@/lib/data/edit-conflict"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   TestWeekScreen,
@@ -44,7 +45,7 @@ const STARTER_TESTS: Array<{ name: string; unit: TestUnit }> = [
 ]
 
 function toAction<T, U>(result: Result<T>, map: (data: T) => U): ActionResult<U> {
-  return result.ok ? { ok: true, data: map(result.data) } : { ok: false, message: result.error.message }
+  return result.ok ? { ok: true, data: map(result.data) } : { ok: false, message: result.error.message, conflict: readEditConflict(result.error) }
 }
 
 export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCoachTeamId, coachTeamIds }: Props) {
@@ -157,6 +158,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         endDate: input.endDate,
         publish: input.publish,
         tests: input.tests,
+        guard: { expectedUpdatedAt: input.expectedUpdatedAt, overwrite: input.overwrite },
       })
       return afterWrite(toAction(result, (data) => ({ id: data.testWeekId })))
     },
@@ -224,6 +226,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
       starterTests={starterTests}
       loadDetail={loadDetail}
       onSave={onSave}
+      onReload={load}
       onPublish={onPublish}
       onSetOpen={onSetOpen}
       onSaveResult={onSaveResult}

@@ -3,6 +3,7 @@ import { Button, List, ListRow, Notice, Sheet, SkeletonRows, SubSection, SubSect
 import { getPlanTemplate } from "@/lib/data/training-plan/plan-template-data"
 import { templateOutline, type PlanTemplate, type PlanTemplateSummary } from "@/lib/data/training-plan/plan-templates"
 import { templateFacts } from "./ui"
+import { viewTarget } from "@/lib/units-view"
 
 /** A template's week by week outline, read only. */
 export function TemplatePreview({ template, onClose, onUse }: { template: PlanTemplateSummary; onClose: () => void; onUse?: () => void }) {
@@ -61,7 +62,7 @@ export function TemplatePreview({ template, onClose, onUse }: { template: PlanTe
                       className="items-start"
                       leading={<span className="w-10 text-sm font-bold text-sk-mute">{session.dayLabel}</span>}
                       title={session.title}
-                      subtitle={session.lines.length > 0 ? session.lines.join(". ") : session.sessionType}
+                      subtitle={session.lines.length > 0 ? session.lines.map((line) => viewTarget(line)).join(". ") : session.sessionType}
                     />
                   ))}
                 </List>

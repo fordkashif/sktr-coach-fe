@@ -1,3 +1,4 @@
+import { guardStamp, staleWriteError, type EditGuard } from "@/lib/data/edit-conflict-data"
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
@@ -1093,6 +1094,8 @@ export type SaveCoachTestWeekInput = {
   /** True publishes (or keeps published). False saves a new week as a draft and leaves an existing status alone. */
   publish: boolean
   tests: Array<{ id?: string | null; name: string; unit: TestDefinitionUnit; scheduledDate: string; dayIndex: number }>
+  /** Refuse to save over someone else's change (see src/lib/data/edit-conflict-data.ts). */
+  guard?: EditGuard
 }
 
 function validateTestWeekInput(input: SaveCoachTestWeekInput): DataError | null {
@@ -1193,7 +1196,10 @@ export async function saveTestWeekForCurrentCoach(input: SaveCoachTestWeekInput)
   if (existingDefinitionsError) return { ok: false, error: mapPostgrestError(existingDefinitionsError) }
   const existingIds = new Set(((existingDefinitions as Array<{ id: string }> | null) ?? []).map((row) => row.id))
 
-  const { data: updatedWeeks, error: updateWeekError } = await client
+  // With a stamp, the update only lands on the version this coach opened. The week row is written
+  // first, so a refused save has changed none of its tests.
+  const stamp = guardStamp(input.guard)
+  let updateWeek = client
     .from("test_weeks")
     .update({
       team_id: input.teamId,
@@ -1205,9 +1211,12 @@ export async function saveTestWeekForCurrentCoach(input: SaveCoachTestWeekInput)
     })
     .eq("id", testWeekId)
     .eq("tenant_id", tenantId)
-    .select("id")
+  if (typeof stamp === "string") updateWeek = updateWeek.eq("updated_at", stamp)
+  const { data: updatedWeeks, error: updateWeekError } = await updateWeek.select("id")
   if (updateWeekError) return { ok: false, error: mapPostgrestError(updateWeekError) }
   if (!updatedWeeks || updatedWeeks.length === 0) {
+    const conflict = await staleWriteError("test-week", testWeekId, stamp)
+    if (conflict) return { ok: false, error: conflict }
     return err("FORBIDDEN", "You do not have permission to edit this test week.")
   }
 

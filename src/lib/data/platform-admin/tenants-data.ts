@@ -158,6 +158,18 @@ export function auditSentence(event: PlatformAuditEventRecord, clubNames?: Map<s
     }
     case "notification_email_retry_requested":
       return name === "platform" ? "A failed notification email was sent again." : `A failed notification email for ${name} was sent again.`
+    case "platform_club_overview_opened":
+      return `The club overview of ${name} was opened for support.`
+    case "platform_admin_added":
+      return `${name} was added as a platform admin.`
+    case "platform_admin_deactivated":
+      return `Platform access for ${name} was switched off.`
+    case "platform_admin_reactivated":
+      return `Platform access for ${name} was switched back on.`
+    case "platform_notice_sent":
+      return `The notice "${name}" was sent to all clubs.`
+    case "platform_notice_withdrawn":
+      return `The notice "${name}" was withdrawn.`
     case "tenant_package_upgrade_reviewed": {
       const to = meta(event, "requestedPackage", "requested_package")
       const what = to ? `The move to ${packageLabel(to)} for ${name}` : `The package change for ${name}`

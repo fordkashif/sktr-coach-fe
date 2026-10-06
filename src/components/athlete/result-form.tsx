@@ -20,7 +20,6 @@ import {
   describeDifference,
   detailKindsFor,
   findResultEvent,
-  formatMark,
   formatMarkWithUnit,
   formatWind,
   OTHER_EVENT_KEY,
@@ -34,12 +33,19 @@ import {
   type Timing,
 } from "@/lib/data/pr/marks"
 import { addAthleteResult, addResultForCurrentAthlete, deleteAthleteResult, localToday, updateAthleteResult, type ResultInput } from "@/lib/data/pr/results-data"
+import { markEntryText, parseMarkForViewer, unitWordsForViewer, viewText, viewWeightWord } from "@/lib/units-view"
 
 /** A coach or club admin entering a result for one of their athletes. Where to go back to afterwards is theirs to say. */
 export type ResultFormAthlete = { id: string; name: string; returnTo: string }
 
 /** What to tell a coach after saving a result for an athlete. */
 function staffVerdictMessage(name: string, saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
+  // Kilogram marks in the sentence are read in the coach's own unit.
+  const message = metricStaffVerdictMessage(name, saved, verdict)
+  return { ...message, text: viewText(message.text) }
+}
+
+function metricStaffVerdictMessage(name: string, saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
   // A wind assisted series whose best legal jump is a best: the news is about that jump.
   const result = verdict.legal ?? saved
   const first = name.split(" ")[0] || name
@@ -91,7 +97,7 @@ export function ResultForm({
   const [eventKey, setEventKey] = useState(existing?.eventKey ?? (findResultEvent(initialEventKey) ? (initialEventKey as string) : ""))
   const [otherLabel, setOtherLabel] = useState(existing?.eventKey === OTHER_EVENT_KEY ? existing.eventLabel : "")
   const [otherUnit, setOtherUnit] = useState<MarkUnit>(existing?.eventKey === OTHER_EVENT_KEY ? existing.unit : "s")
-  const [mark, setMark] = useState(existing ? formatMark(existing.value, existing.unit) : "")
+  const [mark, setMark] = useState(existing ? markEntryText(existing.value, existing.unit) : "")
   const [timing, setTiming] = useState<Timing>(existing?.timing ?? "electronic")
   const [wind, setWind] = useState(existing && existing.wind !== null ? formatWind(existing.wind) : "")
   const [date, setDate] = useState(existing?.date ?? localToday())
@@ -110,7 +116,7 @@ export function ResultForm({
   const event = findResultEvent(eventKey)
   const isOther = event?.kind === "other"
   const unit: MarkUnit | null = event ? (isOther ? otherUnit : event.unit) : null
-  const words = unit ? UNIT_WORDS[unit] : null
+  const words = unit ? unitWordsForViewer(UNIT_WORDS, unit) : null
   const windApplies = Boolean(event?.windApplies) && environment === "outdoor"
   const kinds = detailKindsFor(eventKey, unit)
   const seriesKind: "attempts" | "heights" | null = kinds.attempts ? "attempts" : kinds.heights ? "heights" : null
@@ -130,7 +136,7 @@ export function ResultForm({
     const nextErrors: FieldErrors = {}
     if (!event) nextErrors.event = "Choose an event."
     if (isOther && !otherLabel.trim()) nextErrors.label = "Name the event."
-    const parsedMark = unit && !inSeries ? parseMarkInput(mark, unit) : null
+    const parsedMark = unit && !inSeries ? parseMarkForViewer(mark, unit) : null
     if (unit && parsedMark && !parsedMark.ok) nextErrors.mark = parsedMark.message
     if (parsedWind && !parsedWind.ok) nextErrors.wind = parsedWind.message
     if (!date) nextErrors.date = "Choose the date."
@@ -255,7 +261,7 @@ export function ResultForm({
                 <Select value={otherUnit} onChange={(changeEvent) => setOtherUnit(changeEvent.target.value as MarkUnit)}>
                   {OTHER_UNITS.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {option.value === "kg" ? `Weight (${viewWeightWord()})` : option.label}
                     </option>
                   ))}
                 </Select>

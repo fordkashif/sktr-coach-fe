@@ -1,6 +1,7 @@
 import type { NotificationItem, NotificationPage } from "@/lib/data/notifications-data"
 import type { NotificationRole } from "@/lib/notifications/target"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import { mockNoticeFeedItems } from "@/lib/data/platform-admin/tools-mock"
 
 /**
  * Demo mode has no backend. Each role gets a few realistic notifications so the bell, the sheet and
@@ -251,7 +252,9 @@ const MOCK_NOW = Date.now()
 function allItems(role: NotificationRole): NotificationItem[] {
   const now = MOCK_NOW
   const read = readIds(role)
-  return (SEEDS[role] ?? []).map((seed) => {
+  // Notices from the SKTR team to all clubs (demo: sent on the platform admin's Notices screen).
+  const notices: NotificationItem[] = mockNoticeFeedItems(role).map((item) => ({ ...item, state: read.has(item.id) ? "read" : "unread", readAt: read.has(item.id) ? new Date(now).toISOString() : null }))
+  const seeded: NotificationItem[] = (SEEDS[role] ?? []).map((seed) => {
     const isRead = Boolean(seed.read) || read.has(seed.id)
     return {
       id: seed.id,
@@ -264,6 +267,7 @@ function allItems(role: NotificationRole): NotificationItem[] {
       href: seed.href,
     }
   })
+  return [...notices, ...seeded].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
 export function getMockNotificationFeed(params: { role: NotificationRole; limit: number; before: string | null }): NotificationPage {
@@ -285,6 +289,6 @@ export function markMockNotificationsRead(role: NotificationRole, ids: string[])
 export function markAllMockNotificationsRead(role: NotificationRole) {
   markMockNotificationsRead(
     role,
-    (SEEDS[role] ?? []).map((seed) => seed.id),
+    allItems(role).map((item) => item.id),
   )
 }

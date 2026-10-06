@@ -85,6 +85,9 @@ import { getAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-da
 import { skippedLabel } from "@/lib/data/session/types"
 import { addDaysIso, todayIso } from "@/lib/data/training-plan/plan-builder-model"
 import { bodyAreasSummary, PAIN_SEVERITY_WORDS, painImpactLabel } from "@/lib/data/wellness/pain-report-types"
+import { viewTarget, viewText } from "@/lib/units-view"
+import { viewerUnits } from "@/lib/units-store"
+import { formatBodyWeight, formatHeight } from "@/lib/units"
 
 type DetailTab = "overview" | "wellness" | "results" | "details"
 const TABS: DetailTab[] = ["overview", "wellness", "results", "details"]
@@ -561,8 +564,8 @@ function SessionList({
                         ? session.results.exercises.map((exercise) => (
                             <span key={exercise.id} className="block">
                               <span className="font-semibold text-sk-ink">{exercise.label}</span>{" "}
-                              {exercise.sets.every((entry) => entry === "Done") ? (exercise.sets.length > 1 ? `${exercise.sets.length} done` : "done") : exercise.sets.join(", ")}
-                              {exercise.target ? <span className="text-sk-mute"> (target {exercise.target})</span> : null}
+                              {exercise.sets.every((entry) => entry === "Done") ? (exercise.sets.length > 1 ? `${exercise.sets.length} done` : "done") : viewText(exercise.sets.join(", "))}
+                              {exercise.target ? <span className="text-sk-mute"> (target {viewTarget(exercise.target)})</span> : null}
                               {exercise.efforts ? (
                                 <span className="block text-sk-mute" data-set-efforts>
                                   Effort by set: {exercise.efforts}
@@ -584,7 +587,7 @@ function SessionList({
                       ) : null}
                     </span>
                   ) : session.details && session.status === "completed" && !/^Session /.test(session.details) ? (
-                    <span className="mt-1 block text-sk-ink-2">{session.details}</span>
+                    <span className="mt-1 block text-sk-ink-2">{viewTarget(session.details)}</span>
                   ) : null}
                   {session.status === "skipped" && session.skipNote ? <span className="mt-1 block text-sk-ink-2">Their note: {session.skipNote}</span> : null}
                   {session.coachNote && !editing ? <span className="mt-1 block text-sk-ink-2">Your note: {session.coachNote}</span> : null}
@@ -1070,10 +1073,10 @@ function DetailsTab({
             {privateDetails?.preferredName}
           </Fact>
           <Fact label="Height" empty="Not added">
-            {privateDetails?.heightCm ? `${privateDetails.heightCm} cm` : null}
+            {privateDetails?.heightCm ? formatHeight(privateDetails.heightCm, viewerUnits().height) : null}
           </Fact>
           <Fact label="Weight" empty="Not added">
-            {privateDetails?.weightKg ? `${privateDetails.weightKg} kg` : null}
+            {privateDetails?.weightKg ? formatBodyWeight(privateDetails.weightKg, viewerUnits().weight) : null}
           </Fact>
           <Fact label="Bib number" empty="Not added">
             {privateDetails?.bibNumber}

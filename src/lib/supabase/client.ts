@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { withAccessPausedSignal } from "@/lib/access-paused"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
+import { isFlushingForPageHide } from "@/lib/undo-queue"
 
 let browserClient: SupabaseClient | null = null
 
@@ -18,7 +19,8 @@ export function getBrowserSupabaseClient() {
       flowType: "pkce",
     },
     // Lets the route guard react the moment the database says this member is locked out.
-    global: { fetch: withAccessPausedSignal((input, init) => fetch(input, init)) },
+    // keepalive while the tab closes with a delete still waiting on "Undo" (src/lib/undo-queue.ts).
+    global: { fetch: withAccessPausedSignal((input, init) => fetch(input, isFlushingForPageHide() ? { ...init, keepalive: true } : init)) },
   })
 
   return browserClient

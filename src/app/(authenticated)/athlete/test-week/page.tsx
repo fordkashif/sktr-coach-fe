@@ -34,6 +34,7 @@ import {
 import type { ActiveTestDefinition, AthleteTestWeekHistoryItem, CurrentAthleteTestWeekContext, TestDefinitionUnit } from "@/lib/data/test-week/types"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
+import { markEntryText, testUnitWordForViewer, viewText, weightEntryToMetric } from "@/lib/units-view"
 
 type TestSubmission = Record<string, string>
 type WeekPhase = "upcoming" | "open" | "closed"
@@ -103,10 +104,11 @@ function checkEntry(raw: string): { ok: true; value: string } | { ok: false; mes
   return { ok: true, value: String(numeric) }
 }
 
-function inputValueFor(saved: { valueText: string; valueNumeric: number | null } | undefined) {
+/** The number to start a field with. A weight test is typed and read in the athlete's own unit; it is stored in kilograms. */
+function inputValueFor(saved: { valueText: string; valueNumeric: number | null } | undefined, unit: TestDefinitionUnit) {
   if (!saved) return ""
   const numeric = saved.valueNumeric ?? numericOf(saved.valueText)
-  return numeric === null ? "" : String(numeric)
+  return numeric === null ? "" : unit === "weight" ? markEntryText(numeric, "kg") : String(numeric)
 }
 
 function groupFor(test: Pick<ActiveTestDefinition, "name" | "unit">): string {
@@ -215,7 +217,7 @@ export default function AthleteTestWeekPage() {
   const [isLoading, setIsLoading] = useState(isSupabase)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [values, setValues] = useState<TestSubmission>(() =>
-    context ? Object.fromEntries(context.tests.map((test) => [test.id, inputValueFor(context.results[test.id])])) : {},
+    context ? Object.fromEntries(context.tests.map((test) => [test.id, inputValueFor(context.results[test.id], test.unit)])) : {},
   )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [newBests, setNewBests] = useState<PersonalBestLine[]>([])
@@ -225,7 +227,7 @@ export default function AthleteTestWeekPage() {
 
   const applyContext = useCallback((next: CurrentAthleteTestWeekContext | null) => {
     setContext(next)
-    setValues(next ? Object.fromEntries(next.tests.map((test) => [test.id, inputValueFor(next.results[test.id])])) : {})
+    setValues(next ? Object.fromEntries(next.tests.map((test) => [test.id, inputValueFor(next.results[test.id], test.unit)])) : {})
     setFieldErrors({})
   }, [])
 
@@ -291,7 +293,7 @@ export default function AthleteTestWeekPage() {
     .filter((test) => {
       const typed = (values[test.id] ?? "").trim()
       if (!typed) return false
-      return typed.replace(",", ".") !== inputValueFor(context?.results[test.id])
+      return typed.replace(",", ".") !== inputValueFor(context?.results[test.id], test.unit)
     })
     .map((test) => test.id)
 
@@ -313,7 +315,7 @@ export default function AthleteTestWeekPage() {
     changedIds.forEach((id) => {
       const test = tests.find((item) => item.id === id)
       if (!test) return
-      const checked = checkEntry(values[id] ?? "")
+      const checked = checkEntry(test.unit === "weight" ? weightEntryToMetric(values[id] ?? "") : (values[id] ?? ""))
       if (!checked.ok) {
         errors[id] = checked.message
         return
@@ -471,7 +473,7 @@ export default function AthleteTestWeekPage() {
     const best = bestByTest[test.id]
     const parts = [previous ? `Last time ${previous.valueText}, ${shortDate(previous.submittedAt)}` : "No earlier result"]
     if (best && best !== previous?.valueText) parts.push(`Best ${best}`)
-    return `${parts.join(". ")}.`
+    return viewText(`${parts.join(". ")}.`)
   }
 
   return (
@@ -529,8 +531,8 @@ export default function AthleteTestWeekPage() {
                 key={best.testName}
                 leading={<StatusDot tone="green" />}
                 title={best.testName}
-                subtitle={best.previous ? `Was ${best.previous}` : "Your first result in this test"}
-                trailing={best.mark}
+                subtitle={best.previous ? `Was ${viewText(best.previous)}` : "Your first result in this test"}
+                trailing={viewText(best.mark)}
               />
             ))}
           </List>
@@ -557,10 +559,10 @@ export default function AthleteTestWeekPage() {
                         return (
                           <Field
                             key={test.id}
-                            label={`${test.name} (${meta.long})`}
+                            label={`${test.name} (${testUnitWordForViewer(test.unit, meta.long)})`}
                             optional={!test.isRequired}
                             error={fieldErrors[test.id]}
-                            hint={`${saved ? `Submitted ${saved.valueText}. ` : ""}${contextLine(test)}`}
+                            hint={`${saved ? `Submitted ${viewText(saved.valueText)}. ` : ""}${contextLine(test)}`}
                           >
                             <Input
                               type="text"
@@ -578,7 +580,7 @@ export default function AthleteTestWeekPage() {
                               onBlur={() => {
                                 // A saved result cannot be removed by the athlete, so an emptied field goes back to the saved value.
                                 if (saved && !(values[test.id] ?? "").trim()) {
-                                  setValues((current) => ({ ...current, [test.id]: inputValueFor(saved) }))
+                                  setValues((current) => ({ ...current, [test.id]: inputValueFor(saved, test.unit) }))
                                 }
                               }}
                             />
@@ -606,9 +608,9 @@ export default function AthleteTestWeekPage() {
                             subtitle={`${test.isRequired ? "" : "Optional. "}${contextLine(test)}`}
                             trailing={
                               phase === "upcoming" ? (
-                                <span className="font-normal text-sk-mute">{UNIT_META[test.unit].long}</span>
+                                <span className="font-normal text-sk-mute">{testUnitWordForViewer(test.unit, UNIT_META[test.unit].long)}</span>
                               ) : saved ? (
-                                saved.valueText
+                                viewText(saved.valueText)
                               ) : (
                                 <StatusText tone="neutral">No result</StatusText>
                               )

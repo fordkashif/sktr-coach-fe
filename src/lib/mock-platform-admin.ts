@@ -133,6 +133,24 @@ function insertAuditEvent(input: Omit<MockPlatformAuditEvent, "id" | "occurredAt
   saveStorage(PLATFORM_ADMIN_AUDIT_KEY, [nextEvent, ...events].slice(0, 500))
 }
 
+/** Writes one row to the demo platform activity log, as the signed-in demo platform admin. For the platform admin tools. */
+export function recordMockPlatformAudit(input: { action: string; target: string; detail?: string | null; metadata?: Record<string, unknown> }) {
+  insertAuditEvent({
+    actorUserId: null,
+    actorEmail: getCurrentActorEmail(),
+    actorRole: "platform-admin",
+    action: input.action,
+    target: input.target,
+    detail: input.detail ?? null,
+    metadata: input.metadata ?? {},
+  })
+}
+
+/** The email of whoever is signed in to the demo. */
+export function getMockActorEmail() {
+  return getCurrentActorEmail()
+}
+
 export function loadMockPlatformAdminRequests(): MockPlatformAdminRequest[] {
   const requests = loadStorage<MockPlatformAdminRequest[]>(PLATFORM_ADMIN_REQUESTS_KEY, [])
   return [...requests].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
