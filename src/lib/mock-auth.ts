@@ -30,6 +30,15 @@ export const MOCK_CREDENTIALS = {
     tenantId: "elite-track-club",
     teamScope: "all-teams" as TeamScope,
   },
+  // A parent or guardian of two athletes of the demo club (see src/lib/data/guardian/mock-guardian-store.ts).
+  guardian: {
+    email: "guardian@pacelab.local",
+    password: "Password123!",
+    role: "guardian" as Role,
+    redirectTo: "/guardian/home",
+    tenantId: "elite-track-club",
+    teamScope: "single-team" as TeamScope,
+  },
   platformAdmin: {
     email: "platformadmin@pacelab.local",
     password: "Password123!",

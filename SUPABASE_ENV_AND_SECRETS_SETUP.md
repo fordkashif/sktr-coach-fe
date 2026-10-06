@@ -176,6 +176,21 @@ The "Request access for your club" form is protected inside the database by migr
 - A captcha is not used. One can be added later in front of the same function without changing these limits.
 - Shared edge function code lives in `supabase/functions/_shared/` (`club-access.ts`, and `notification-target.ts`, which the app imports too so emails and the app open the same screens). It is bundled into the functions that import it by `supabase functions deploy`; it is not a function itself and is not listed in the workflow or in `supabase/config.toml`. Tests: `deno test supabase/functions/_shared/`.
 
+### Push Notifications (web push, optional)
+
+Push needs one key pair per environment (VAPID). Without it everything else works: admins see "Push is not set up for this app yet" in notification settings, nobody else sees anything about push, and the dispatch function skips push.
+
+1. Make a pair: `node scripts/generate-vapid-keys.mjs` (run it once for dev and once for prod; nothing is saved).
+2. GitHub, repository Settings, Environments, `dev` (then `prod`), Environment secrets:
+   - `VAPID_PUBLIC_KEY`: the public key
+   - `VAPID_PRIVATE_KEY`: the private key (secret)
+   - `VAPID_SUBJECT`: `mailto:` and an address someone reads, for example `mailto:owner@example.com`
+   The "Sync Edge Function Secrets" step of `.github/workflows/supabase-migrations.yml` copies all three to the Supabase function secrets on its next run (all three or none). They can also be set by hand: `supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:...`.
+3. Vercel, Project, Settings, Environment Variables, for the matching environment: `VITE_VAPID_PUBLIC_KEY` = the same public key. Redeploy the web app (the value is built in).
+4. Check: sign in on a phone or in Chrome, open Notification settings, "Turn on push", then "Send a test".
+
+The private key never goes in a `VITE_*` variable. Replacing the pair later ends every device's subscription: each person turns push on again. Delivery uses the same `dispatch-notification-emails` function and the same database scheduler as email (jobs `sktr-dispatch-push`, every minute, and `sktr-trim-push-history`, daily).
+
 ## Rotation Policy
 
 - Rotate anon and service-role keys on:

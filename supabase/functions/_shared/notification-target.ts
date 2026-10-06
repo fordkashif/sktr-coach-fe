@@ -9,7 +9,7 @@
 // person typed: ids are checked before they go into a path, and anything unknown falls back to the
 // notifications page.
 
-export type NotificationRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type NotificationRole = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 export type NotificationMetadata = Record<string, unknown> | null | undefined
 
@@ -94,6 +94,31 @@ export function notificationTargetPath(eventType: string, metadata: Notification
     case "athlete_invite_created":
       // The invited athlete sees this one; the person who sent the invite is told below when it is accepted.
       return role === "athlete" ? "/athlete/join" : teamPath(metadata, role)
+
+    // Parent or guardian (20261016090000). Their screens are read only and live under /guardian.
+    case "guardian_plan_published": {
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/guardian/plan?child=${athleteId}` : "/guardian/plan"
+    }
+    case "guardian_test_week_published":
+    case "guardian_report_shared": {
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/guardian/results?child=${athleteId}` : "/guardian/results"
+    }
+    case "guardian_pain_reported": {
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId ? `/guardian/health?child=${athleteId}` : "/guardian/health"
+    }
+    case "guardian_announcement_posted":
+      return "/guardian/news"
+    case "guardian_linked":
+    case "guardian_unlinked":
+      return "/guardian/home"
+    case "guardian_invite_accepted": {
+      // The coach who sent the invite: the athlete it was for.
+      const athleteId = id(metadata, "athlete_id")
+      return athleteId && role !== "club-admin" ? `/coach/athletes/${athleteId}` : role === "club-admin" ? "/club-admin/users" : NOTIFICATIONS_PATH
+    }
 
     // Coach
     case "athlete_session_completed": {
@@ -232,6 +257,16 @@ export function notificationActionLabel(eventType: string): string {
       return "Review the message"
     case "tenant_provision_request_submitted":
       return "Review the request"
+    case "guardian_plan_published":
+      return "Open the plan"
+    case "guardian_test_week_published":
+      return "Open results"
+    case "guardian_report_shared":
+      return "Open the report"
+    case "guardian_pain_reported":
+      return "Open health"
+    case "guardian_announcement_posted":
+      return "Read the announcement"
     default:
       return "Open SKTR Coach"
   }

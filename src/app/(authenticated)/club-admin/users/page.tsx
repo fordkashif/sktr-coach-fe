@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { AddAthletesToTeam, ClubAthletesView } from "@/components/club-admin/athletes-view"
+import { ClubGuardiansView } from "@/components/club-admin/guardians-view"
 import { CoachHandoverDialog } from "@/components/club-admin/coach-handover-dialog"
 import { InviteStaffDialog, type InviteStaffView, type StaffInviteCheck, type StaffInviteCreated } from "@/components/club-admin/invite-staff-dialog"
 import { UpgradeRequestDialog } from "@/components/club-admin/upgrade-request-dialog"
@@ -76,8 +77,8 @@ import {
   persistUsers,
 } from "../state"
 
-type View = "staff" | "athletes" | "invites" | "requests"
-const VIEWS: View[] = ["staff", "athletes", "invites", "requests"]
+type View = "staff" | "athletes" | "guardians" | "invites" | "requests"
+const VIEWS: View[] = ["staff", "athletes", "guardians", "invites", "requests"]
 
 type Confirm =
   | { kind: "role"; userId: string; role: UserRole }
@@ -1030,6 +1031,7 @@ export default function ClubAdminUsersPage() {
         options={[
           { value: "staff", label: "Staff", count: backendLoading ? undefined : staffCount },
           { value: "athletes", label: "Athletes", count: athletes ? currentAthletes.length : undefined },
+          { value: "guardians", label: "Guardians" },
           { value: "invites", label: "Invites", count: pendingInvites.length > 0 ? pendingInvites.length : undefined },
           { value: "requests", label: "Requests", count: pendingRequests.length > 0 ? pendingRequests.length : undefined },
         ]}
@@ -1158,6 +1160,8 @@ export default function ClubAdminUsersPage() {
           onAddAthletes={() => setAddAthletesOpen(true)}
         />
       ) : null}
+
+      {view === "guardians" ? <ClubGuardiansView /> : null}
 
       {view === "invites" ? (
         <Section

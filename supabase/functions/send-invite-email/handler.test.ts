@@ -20,6 +20,8 @@ type World = {
   coachTeamIds: string[]
   /** Makes the is_team_coach call fail, as it would before the coach team scope migration has run. */
   teamCoachRpcFails?: boolean
+  /** What can_send_guardian_invite() answers for the caller. Undefined: the call fails. */
+  canSendGuardianInvite?: boolean
   rpcCalls: Array<{ name: string; args: unknown }>
   prefEnabled: boolean
   env: Record<string, string | undefined>
@@ -30,7 +32,8 @@ type World = {
 function makeWorld(over: Partial<World> = {}, invite: Record<string, unknown> = {}, table = "coach_invites"): World {
   const w: World = {
     tables: {
-      coach_invites: [], athlete_invites: [],
+      coach_invites: [], athlete_invites: [], guardian_invites: [],
+      athletes: [{ id: "athlete-1", first_name: "Maya" }],
       tenants: [{ id: TENANT_A, name: "Elite Track Club" }],
       teams: [{ id: "team-1", name: "Sprints <A>" }],
       profiles: [{ user_id: "user-1", display_name: "Dana Admin", role: "club-admin" }],
@@ -83,6 +86,10 @@ function deps(w: World): HandlerDeps {
         if (name === "is_team_coach") {
           if (w.teamCoachRpcFails) return Promise.resolve({ data: null, error: { message: "function is_team_coach does not exist" } })
           return Promise.resolve({ data: w.coachTeamIds.includes(args?.p_team_id), error: null })
+        }
+        if (name === "can_send_guardian_invite") {
+          if (w.canSendGuardianInvite === undefined) return Promise.resolve({ data: null, error: { message: "function does not exist" } })
+          return Promise.resolve({ data: w.canSendGuardianInvite, error: null })
         }
         return Promise.resolve({ data: null, error: { message: "unexpected rpc " + name } })
       },
@@ -347,4 +354,47 @@ Deno.test("batch: email not configured is reported per invite", async () => {
   const w = batchWorld(); w.env.RESEND_API_KEY = undefined
   const r = await call(w, { kind: "athlete", inviteIds: [INVITE, I2] })
   assertEquals([r.status, r.body.sent, r.body.results.map((x: any) => x.code)], [200, 0, ["email_not_configured", "email_not_configured"]])
+})
+
+// Guardian invites (20261016090000_guardian_access.sql): the database says who may send one.
+const GUARDIAN = { team_id: undefined, athlete_id: "athlete-1", email: "Parent@Example.com" }
+Deno.test("guardian: a coach the database says yes to sends it, with the athlete's first name and the guardian claim link", async () => {
+  const w = makeWorld({ isClubAdmin: false, canSendGuardianInvite: true }, GUARDIAN, "guardian_invites")
+  const r = await call(w, { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.ok, r.body.recipientEmail], [200, true, "parent@example.com"])
+  const sent = w.fetchCalls[0].body
+  assert(sent.subject.includes("follow Maya at Elite Track Club"), sent.subject)
+  assert(sent.text.includes("https://app.sktr.test/guardian/claim/" + INVITE), "claim link")
+  assert(sent.text.includes("You cannot change anything"), "read only wording")
+  assert(w.rpcCalls.some((c) => c.name === "can_send_guardian_invite" && (c.args as any).p_invite_id === INVITE), "asked the database")
+  assertEquals(w.tables.audit_events[0].action, "guardian_invite_email_sent")
+  assertEquals(w.tables.guardian_invites[0].email_send_count, 1)
+})
+Deno.test("guardian: not allowed when the database says no (assistant coach, another team), even for a club admin flag", async () => {
+  for (const isClubAdmin of [false, true]) {
+    const w = makeWorld({ isClubAdmin, canSendGuardianInvite: false }, GUARDIAN, "guardian_invites")
+    const r = await call(w, { kind: "guardian", inviteId: INVITE })
+    assertEquals([r.status, r.body.code, w.fetchCalls.length], [403, "not_allowed", 0])
+  }
+})
+Deno.test("guardian: a check that cannot be answered counts as no", async () => {
+  const w = makeWorld({ isClubAdmin: true }, GUARDIAN, "guardian_invites")
+  const r = await call(w, { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.code, w.fetchCalls.length], [403, "not_allowed", 0])
+})
+Deno.test("guardian: an invite of another club is refused without asking about it; unknown looks the same", async () => {
+  const w = makeWorld({ canSendGuardianInvite: true }, { ...GUARDIAN, tenant_id: TENANT_B }, "guardian_invites")
+  let r = await call(w, { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.code], [403, "not_allowed"])
+  assert(!w.rpcCalls.some((c) => c.name === "can_send_guardian_invite"), "never asked for another club's invite")
+  r = await call(makeWorld({ canSendGuardianInvite: true }), { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.code], [403, "not_allowed"])
+})
+Deno.test("guardian: revoked or accepted invites are not sent, and the cooldown applies", async () => {
+  let r = await call(makeWorld({ canSendGuardianInvite: true }, { ...GUARDIAN, status: "revoked" }, "guardian_invites"), { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.reason], [409, "revoked"])
+  r = await call(makeWorld({ canSendGuardianInvite: true }, { ...GUARDIAN, status: "accepted" }, "guardian_invites"), { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.reason], [409, "accepted"])
+  r = await call(makeWorld({ canSendGuardianInvite: true }, { ...GUARDIAN, last_email_attempt_at: "2026-10-06T11:59:30.000Z", email_send_count: 1 }, "guardian_invites"), { kind: "guardian", inviteId: INVITE })
+  assertEquals([r.status, r.body.reason], [429, "cooldown"])
 })

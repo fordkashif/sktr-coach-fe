@@ -21,6 +21,7 @@ const EMPTY_BODY: Record<NotificationRole, string> = {
   coach: "You will hear here when athletes finish sessions, submit test results or report low readiness.",
   "club-admin": "You will hear here when a coach accepts an invite or something changes on your club's account.",
   "platform-admin": "You will hear here when a club asks to join.",
+  guardian: "You will hear here when the coach publishes a plan, opens a test week, shares a report or posts an announcement.",
 }
 
 /** The full history, grouped by day, for every signed-in role. The bell's sheet links here with "See all". */

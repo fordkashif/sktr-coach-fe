@@ -181,7 +181,7 @@ export function fileSlug(...parts: Array<string | null | undefined>): string {
    Download your data
 --------------------------------------------------------------------------- */
 
-export type ExportRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type ExportRole = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 export type PersonalExportArea = {
   /** Key in the file's "data" object, for example "wellness_check_ins". */
@@ -226,6 +226,9 @@ export function buildPersonalExport(input: {
 
   const notIncluded = ["Your password. It is stored in scrambled form and nobody can read it."]
   if (input.role === "athlete") notIncluded.push("Private notes your coaches wrote for themselves. They are the coach's own working notes.")
+  if (input.role === "guardian") {
+    notIncluded.push("The training, results and health information of the athletes you follow. That is their data and the club's, not yours.")
+  }
   if (input.role === "coach" || input.role === "club-admin") {
     notIncluded.push("Your athletes' training, results and health information. That is their data and the club's, not yours. A club admin can export the whole club.")
   }
@@ -355,6 +358,7 @@ export type CoachedTeam = {
  *   club owner       must transfer ownership or close the club first
  *   coach or admin   not while they lead a team, or are the only coach of a team with athletes
  *   athlete          nothing blocks it
+ *   guardian         nothing blocks it
  */
 export function evaluateDeletion(input: { role: ExportRole | "none"; email: string | null; isClubOwner?: boolean; teams?: CoachedTeam[] }): DeletionCheck {
   const email = input.email?.trim().toLowerCase() || null

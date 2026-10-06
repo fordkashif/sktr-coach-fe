@@ -97,8 +97,8 @@ test.describe("notification centre on desktop", () => {
     await expect(page).toHaveURL(/\/settings\/notifications$/)
     // Finished sessions are never emailed, so there is no email switch for them.
     const finished = page.getByRole("group", { name: "Finished sessions" })
-    await expect(finished.getByRole("switch")).toHaveCount(1)
-    await expect(finished.getByText("In app only")).toBeVisible()
+    await expect(finished.getByRole("switch", { name: /email/ })).toHaveCount(0)
+    await expect(finished.getByText("No email")).toBeVisible()
     // Low readiness: in the app by default, email only when switched on.
     const readiness = page.getByRole("group", { name: "Low readiness" })
     await expect(readiness.getByRole("switch", { name: "Low readiness, in app" })).toHaveAttribute("aria-checked", "true")

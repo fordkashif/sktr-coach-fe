@@ -109,6 +109,8 @@ const CLUB_TABLES: TableSpec[] = [
   { file: "attendance", label: "Attendance", table: "athlete_attendance" },
   { file: "competitions", label: "Competitions", table: "competitions" },
   { file: "competition-entries", label: "Competition entries", table: "competition_entries" },
+  { file: "relay-teams", label: "Relay teams", table: "relay_entries" },
+  { file: "relay-legs", label: "Relay legs", table: "relay_entry_legs" },
   { file: "goals", label: "Athlete goals", table: "athlete_goals" },
   { file: "announcements", label: "Announcements", table: "announcements" },
   { file: "activity-log", label: "Activity log", table: "audit_events", orderBy: "occurred_at" },

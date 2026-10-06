@@ -13,6 +13,10 @@ verify_jwt = false
 [functions.claim-athlete-invite-account]
 verify_jwt = false
 
+# Public like the two above: the invited parent or guardian is not signed in yet.
+[functions.claim-guardian-invite-account]
+verify_jwt = false
+
 # Verifies the caller itself (auth.getUser with the caller's JWT), like the functions above.
 [functions.send-invite-email]
 verify_jwt = false

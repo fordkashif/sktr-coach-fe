@@ -9,10 +9,12 @@ import {
   ChatCircle,
   ClipboardText,
   DotsThree,
+  Heartbeat,
   House,
   type Icon,
   ListChecks,
   Medal,
+  Megaphone,
   Plus,
   Receipt,
   SquaresFour,
@@ -26,6 +28,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
+import { GuardianChildSwitcher } from "@/components/guardian/child-switcher"
+import { useGuardianChildren } from "@/lib/guardian/children-store"
 import { useCoachTeams } from "@/lib/coach-teams"
 import { NotificationBell, NotificationSheet } from "@/components/notifications/notification-center"
 import { MessagesButton, MessagesCount, MessageUnreadKeeper, useMessagesLabel } from "@/components/messages/messages-button"
@@ -39,6 +43,7 @@ import {
   MOCK_ROLE_STORAGE_KEY,
 } from "@/lib/mock-auth"
 import { getBackendMode } from "@/lib/supabase/config"
+import { removePushOnSignOut } from "@/lib/push/push-client"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import {
   DropdownMenu,
@@ -108,6 +113,16 @@ const clubAdminLinks: ShellLink[] = [
   { id: MESSAGES_ID, href: "/club-admin/messages", label: "Messages", icon: ChatCircle, desktop: "icon", phone: "more" },
 ]
 
+/** A parent or guardian: read only screens about the athletes they follow. No messages. */
+const guardianLinks: ShellLink[] = [
+  { id: "home", href: "/guardian/home", label: "Home", icon: House },
+  { id: "plan", href: "/guardian/plan", label: "Plan", icon: CalendarBlank },
+  { id: "results", href: "/guardian/results", label: "Results", icon: Medal },
+  { id: "health", href: "/guardian/health", label: "Health", icon: Heartbeat, phone: "more" },
+  { id: "calendar", href: "/guardian/calendar", label: "Calendar", icon: ListChecks, phone: "more" },
+  { id: "news", href: "/guardian/news", label: "Announcements", short: "News", icon: Megaphone, phone: "more" },
+]
+
 const platformAdminLinks: ShellLink[] = [
   { id: "dashboard", href: "/platform-admin/dashboard", label: "Dashboard", icon: SquaresFour },
   { id: "requests", href: "/platform-admin/requests", label: "Requests", icon: Tray },
@@ -124,6 +139,7 @@ function getRoleLabel(role: string) {
   if (role === "platform-admin") return "Platform Admin"
   if (role === "club-admin") return "Club Admin"
   if (role === "coach") return "Coach"
+  if (role === "guardian") return "Parent or guardian"
   return "Athlete"
 }
 
@@ -178,6 +194,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
   // An assistant coach does not build plans, keep competitions or export reports, so those tabs are not shown to them.
   const coachIsAssistant = role === "coach" && coachTeams.find((team) => team.id === coachTeamId)?.role === "assistant"
+  const { children: guardianChildren } = useGuardianChildren()
+  const showChildSwitcher = role === "guardian" && guardianChildren.length > 1
   const showTeamSwitcher = role === "coach" && coachTeams.length > 1
   const isRestrictedClubAdminSetupRoute =
     pathname === "/club-admin/setup/billing" || pathname === "/club-admin/get-started"
@@ -201,6 +219,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         .map((link) => (link.href === "/coach/teams" ? { ...link, href: coachTeamsHref } : link))
     }
     if (role === "platform-admin") return platformAdminLinks
+    if (role === "guardian") return guardianLinks
     return clubAdminLinks
   }, [coachIsAssistant, coachTeamsHref, role])
 
@@ -211,7 +230,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? pathname.startsWith("/coach/teams") || pathname.startsWith("/coach/athletes")
       : role === "athlete" && link.id === "progress"
         ? ATHLETE_PROGRESS_PATHS.some((prefix) => pathname.startsWith(prefix))
-        : pathname.startsWith(link.href)
+        : role === "guardian" && link.id === "results"
+          ? pathname.startsWith("/guardian/results") || pathname.startsWith("/guardian/reports")
+          : role === "guardian" && link.id === "home"
+            ? pathname.startsWith("/guardian/home") || pathname.startsWith("/guardian/contact")
+            : pathname.startsWith(link.href)
 
   const homeHref = links[0]?.href ?? "/"
   const accountHref = role === "athlete" ? "/athlete/profile" : "/account"
@@ -262,6 +285,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleSignOut = async () => {
     const backendMode = getBackendMode()
+    // Stops push for this device first (needs the sign-in). Never throws, never blocks sign out.
+    await removePushOnSignOut()
 
     if (backendMode === "supabase") {
       const supabase = getBrowserSupabaseClient()
@@ -361,8 +386,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="hidden h-[69px] shrink-0 items-center gap-5 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
         >
           {brand}
-          <ShellClubBrand compact={showTeamSwitcher} />
+          <ShellClubBrand compact={showTeamSwitcher || showChildSwitcher} />
           {showTeamSwitcher ? <CoachTeamSwitcher variant="topbar" onSwitched={handleTeamSwitched} /> : null}
+          {showChildSwitcher ? <GuardianChildSwitcher variant="topbar" /> : null}
           <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
             {desktopTabs.map((link) => {
               const isActive = isLinkActive(link)
@@ -407,6 +433,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           ) : showTeamSwitcher ? (
             <CoachTeamSwitcher variant="bar" onSwitched={handleTeamSwitched} />
+          ) : showChildSwitcher ? (
+            <GuardianChildSwitcher variant="bar" />
           ) : (
             brand
           )}

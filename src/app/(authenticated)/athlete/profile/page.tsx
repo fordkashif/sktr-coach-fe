@@ -1,5 +1,6 @@
 "use client"
 
+import { GuardianSharingSection } from "@/components/athlete/guardian-sharing-section"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { PencilSimple, SignOut } from "@phosphor-icons/react"
@@ -60,6 +61,7 @@ import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-a
 import { useRole } from "@/lib/role-context"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { removePushOnSignOut } from "@/lib/push/push-client"
 
 type ProfileView = {
   firstName: string
@@ -284,6 +286,7 @@ export default function AthleteProfilePage() {
   }
 
   const handleSignOut = async () => {
+    await removePushOnSignOut()
     if (isSupabaseMode) {
       const supabase = getBrowserSupabaseClient()
       if (supabase) await supabase.auth.signOut({ scope: "local" })
@@ -541,6 +544,8 @@ export default function AthleteProfilePage() {
                   )}
                 </Section>
               ) : null}
+
+              <GuardianSharingSection />
 
               <Section title="Training" hint="From your coach and your own logging.">
                 <FactList>

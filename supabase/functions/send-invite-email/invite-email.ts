@@ -2,7 +2,7 @@
 // Everything that decides something (who may send, whether an invite can still be sent,
 // the rate limit, the link, the email itself) lives here so it can be tested on its own.
 
-export type InviteKind = "coach" | "athlete"
+export type InviteKind = "coach" | "athlete" | "guardian"
 
 export type InviteEmailErrorCode =
   | "method_not_allowed"
@@ -33,7 +33,7 @@ export function parseInvitePayload(value: unknown): { kind: InviteKind; inviteId
   const record = value as Record<string, unknown>
   const kind = record.kind
   const inviteId = typeof record.inviteId === "string" ? record.inviteId.trim() : ""
-  if (kind !== "coach" && kind !== "athlete") return null
+  if (kind !== "coach" && kind !== "athlete" && kind !== "guardian") return null
   if (!UUID_PATTERN.test(inviteId)) return null
   return { kind, inviteId: inviteId.toLowerCase() }
 }
@@ -46,7 +46,7 @@ export function parseInviteBatchPayload(value: unknown): { kind: InviteKind; inv
   if (!value || typeof value !== "object") return null
   const record = value as Record<string, unknown>
   const kind = record.kind
-  if (kind !== "coach" && kind !== "athlete") return null
+  if (kind !== "coach" && kind !== "athlete" && kind !== "guardian") return null
   if (!Array.isArray(record.inviteIds) || record.inviteIds.length === 0 || record.inviteIds.length > MAX_INVITES_PER_BATCH) return null
   const inviteIds: string[] = []
   for (const item of record.inviteIds) {
@@ -65,6 +65,8 @@ export function isValidRecipientEmail(value: string | null | undefined): value i
  * Mirrors the RLS insert policies on the invite tables:
  *   coach_invites    club admin of the invite's club
  *   athlete_invites  club admin of the invite's club, or a coach assigned to the invite's team
+ *   guardian_invites whoever can_send_guardian_invite(invite) says yes to: a club admin, or a lead or
+ *                    coach (not an assistant) of the athlete's team (20261016090000_guardian_access.sql)
  * (athlete invites were open to every coach of the club until 20261006120000_coach_team_scope.sql).
  * The inputs come from the database's own helper functions, called as the signed-in user, so an
  * inactive member or a member of a suspended club is refused here exactly as the database refuses them.
@@ -75,10 +77,14 @@ export function canSendInvite(params: {
   callerIsClubAdmin: boolean
   /** is_team_coach(invite.team_id) asked as the caller. Only looked at for athlete invites. */
   callerIsTeamCoach: boolean
+  /** can_send_guardian_invite(invite.id) asked as the caller. Only looked at for guardian invites. */
+  callerCanSendGuardianInvite?: boolean
   inviteTenantId: string | null
 }): boolean {
   if (!params.callerTenantId || !params.inviteTenantId) return false
   if (params.callerTenantId !== params.inviteTenantId) return false
+  // The database is the only judge for a guardian invite: being a club admin is part of its answer.
+  if (params.kind === "guardian") return params.callerCanSendGuardianInvite === true
   if (params.callerIsClubAdmin) return true
   return params.kind === "athlete" && params.callerIsTeamCoach
 }
@@ -160,7 +166,12 @@ export function isLocalBaseUrl(origin: string | null): boolean {
 
 /** The page the invited person has to land on. The base is always the server-side configured app URL. */
 export function buildClaimLink(baseUrl: string, kind: InviteKind, inviteId: string): string {
-  const path = kind === "coach" ? `/invite/coach/${encodeURIComponent(inviteId)}` : `/athlete/claim/${encodeURIComponent(inviteId)}`
+  const path =
+    kind === "coach"
+      ? `/invite/coach/${encodeURIComponent(inviteId)}`
+      : kind === "guardian"
+        ? `/guardian/claim/${encodeURIComponent(inviteId)}`
+        : `/athlete/claim/${encodeURIComponent(inviteId)}`
   return `${baseUrl}${path}`
 }
 
@@ -197,6 +208,8 @@ export type InviteEmailInput = {
   inviterName: string | null
   clubName: string | null
   teamName: string | null
+  /** Guardian invites only: the first name of the athlete the guardian will follow. */
+  athleteName?: string | null
   claimLink: string
   expiresAt: string | null
 }
@@ -214,7 +227,10 @@ export function renderInviteEmail(input: InviteEmailInput): RenderedInviteEmail 
   const expiry = formatExpiryDate(input.expiresAt)
   const isCoach = input.kind === "coach"
 
-  const fallbackInviter = isCoach ? `A club admin at ${club}` : `Your coach at ${club}`
+  const isGuardian = input.kind === "guardian"
+  const athlete = cleanName(input.athleteName) || "your child"
+
+  const fallbackInviter = isCoach ? `A club admin at ${club}` : isGuardian ? `A coach at ${club}` : `Your coach at ${club}`
   const who = inviter || fallbackInviter
 
   let headline: string
@@ -233,6 +249,10 @@ export function renderInviteEmail(input: InviteEmailInput): RenderedInviteEmail 
     intro = team
       ? `${who} invited you to join ${club} on ${APP_NAME} as a coach for ${team}.`
       : `${who} invited you to join ${club} on ${APP_NAME} as a coach.`
+  } else if (isGuardian) {
+    headline = `You are invited to follow ${athlete} at ${club}`
+    subject = inviter ? `${inviter} invited you to follow ${athlete} at ${club}` : `You are invited to follow ${athlete} at ${club}`
+    intro = `${who} invited you to ${APP_NAME} as a parent or guardian of ${athlete}.`
   } else {
     const teamLabel = team || "the team"
     headline = `You are invited to join ${teamLabel}`
@@ -244,6 +264,8 @@ export function renderInviteEmail(input: InviteEmailInput): RenderedInviteEmail 
     ? "Accept the invite to set up your account. As a club admin you manage the club's people, teams and billing."
     : isCoach
     ? "Accept the invite to set up your account, then start building plans and managing your athletes."
+    : isGuardian
+    ? "Accept the invite to set up your account. You will see their training plan, results and team news. You cannot change anything, and the club can end this access at any time."
     : "Accept the invite to set up your account, then see your training plan and log your sessions."
   const buttonLabel = "Accept invite"
   const validity = expiry

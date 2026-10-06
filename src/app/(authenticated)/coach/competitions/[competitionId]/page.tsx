@@ -1,10 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DownloadSimple, PencilSimple, Plus } from "@phosphor-icons/react"
 import { Link, useLocation, useParams } from "react-router-dom"
-import { meetDatesText, ordinal, ResultMark } from "@/components/athlete/results-parts"
+import { EntryResultDialog, type EntryResultOutcome } from "@/components/athlete/entry-result-dialog"
+import { RelayList } from "@/components/athlete/relay-parts"
+import { markText, meetDatesText, ordinal, ResultMark } from "@/components/athlete/results-parts"
 import { COMPETITIONS_PATH, competitionPath, plural, scopeText, whereText } from "@/components/coach/competitions/competition-parts"
+import { RelayDialog, type RelayDialogOutcome } from "@/components/coach/competitions/relay-dialog"
 import { ResultsGrid } from "@/components/coach/competitions/results-grid"
 import {
   Avatar,
@@ -24,6 +27,7 @@ import {
   ScreenHeader,
   Section,
   Segmented,
+  Select,
   SkeletonRows,
   StatusText,
   Tag,
@@ -38,15 +42,45 @@ import {
   getCompetitionForStaff,
   getEntryStandings,
   removeCompetitionEntry,
+  saveCompetitionEntryResultForStaff,
   updateCompetitionEntry,
   type EntryStanding,
 } from "@/lib/data/competition/competition-data"
-import { COMPETITION_LEVELS, type CompetitionEntryWithResult, type CompetitionWithEntries } from "@/lib/data/competition/types"
-import { formatWind } from "@/lib/data/pr/marks"
+import { getRelaysForStaff } from "@/lib/data/competition/relay-data"
+import { relayTeamRecords } from "@/lib/data/competition/relay-logic"
+import { getStaffAthletes, getStaffTeams, type StaffAthlete, type StaffTeam } from "@/lib/data/competition/staff-roster"
+import { COMPETITION_LEVELS, type CompetitionEntryWithResult, type CompetitionWithEntries, type RelayEntry } from "@/lib/data/competition/types"
+import { formatMarkWithUnit, formatWind, headlineResult, roundLabel, sortRounds, type AthleteResult, type RoundSlot } from "@/lib/data/pr/marks"
 import { localDayKey, parseLocalDay } from "@/lib/data/pr/pr-display"
+import { getResultsSeason, localToday, type SeriesVerdict } from "@/lib/data/pr/results-data"
+import { ok } from "@/lib/data/result"
 
 type SavedNotice = { tone: "success" | "warning" | "info"; text: string }
 type Mode = "entries" | "results"
+
+const GRID_ROUNDS: Array<{ value: RoundSlot; label: string }> = [
+  { value: "final", label: "Final or only round" },
+  { value: "heat", label: "Heats" },
+  { value: "quarter_final", label: "Quarter finals" },
+  { value: "semi_final", label: "Semi finals" },
+]
+
+/** An entry with one of its rounds added, replaced or (with `removedId`) taken away. */
+function withRound(entry: CompetitionEntryWithResult, result: AthleteResult | null, removedId?: string): CompetitionEntryWithResult {
+  const others = (entry.rounds ?? (entry.result ? [entry.result] : [])).filter((round) => round.id !== (result?.id ?? removedId))
+  const rounds = sortRounds(result ? [...others, result] : others)
+  return { ...entry, rounds, result: headlineResult(rounds) }
+}
+
+/** What a result saved from the detail dialog means, in one line for the coach. */
+function savedNotice(name: string, result: AthleteResult, verdict: SeriesVerdict | null): SavedNotice {
+  const shown = verdict?.legal ?? result
+  const mark = markText(shown)
+  if (verdict?.kind === "personal-best" || verdict?.kind === "first") return { tone: "success", text: `Saved. Personal best for ${name} in the ${result.eventLabel}: ${mark}.` }
+  if (verdict?.kind === "season-best") return { tone: "success", text: `Saved. Season best for ${name} in the ${result.eventLabel}: ${mark}.` }
+  if (verdict?.kind === "wind-assisted") return { tone: "warning", text: `Saved. ${name}'s ${mark} is wind assisted (over +2.0). It is kept, but does not count as a best.` }
+  return { tone: "info", text: `Saved. ${name}, ${result.eventLabel}${result.round ? ` (${roundLabel(result.round).toLowerCase()})` : ""}: ${mark}.` }
+}
 
 /** The athlete's availability period that covers a day of the meet, if any. */
 function unavailableOn(periods: AthleteAvailability[], athleteId: string, competition: Pick<CompetitionWithEntries, "startDate" | "endDate">) {
@@ -110,26 +144,56 @@ export default function CoachCompetitionDetailPage() {
   const [noteEntryId, setNoteEntryId] = useState<string | null>(null)
   const [removeEntryId, setRemoveEntryId] = useState<string | null>(null)
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null)
+  // Rounds and detail of one entry, and the round the grid is typing.
+  const [detailEntryId, setDetailEntryId] = useState<string | null>(null)
+  const [gridSlot, setGridSlot] = useState<RoundSlot>("final")
+  const [gridVersion, setGridVersion] = useState(0)
+  // Relay teams at this meet, and who can be named in one.
+  const [relays, setRelays] = useState<RelayEntry[]>([])
+  const [relayDialog, setRelayDialog] = useState<RelayEntry | "new" | null>(null)
+  const [roster, setRoster] = useState<StaffAthlete[]>([])
+  const [teams, setTeams] = useState<StaffTeam[]>([])
+  // What the last save from the detail dialog meant for the athlete, so the notice can say it.
+  const lastVerdict = useRef<SeriesVerdict | null>(null)
 
-  const load = useCallback(async () => {
-    const result = await getCompetitionForStaff(competitionId, { teamId: coachTeamId })
+  const load = useCallback(async (): Promise<CompetitionWithEntries | null> => {
+    const [result, relaysResult] = await Promise.all([getCompetitionForStaff(competitionId, { teamId: coachTeamId }), getRelaysForStaff({ competitionId })])
+    if (relaysResult.ok) setRelays(relaysResult.data)
     if (!result.ok) {
       setError(result.error.message)
-      return
+      return null
     }
     setError(null)
     setCompetition(result.data)
-    if (!result.data) return
+    if (!result.data) return null
     const athleteIds = [...new Set(result.data.entries.map((entry) => entry.athleteId))]
     const [standingsResult, availabilityResult] = await Promise.all([getEntryStandings(result.data), listAthleteAvailability(athleteIds, { from: result.data.startDate })])
     if (standingsResult.ok) setStandings(standingsResult.data)
     if (availabilityResult.ok) setAvailability(availabilityResult.data)
+    return result.data
   }, [competitionId, coachTeamId])
 
   useEffect(() => {
     if (coachTeamsLoading) return
     void load()
   }, [coachTeamsLoading, load])
+
+  // The team a relay runs for: this meet's team, or the coach's selected team for a club wide meet.
+  const relayTeamId = competition ? (competition.scope === "team" ? competition.teamId : coachTeamId) : null
+  useEffect(() => {
+    if (coachTeamsLoading || !competition) return
+    let cancelled = false
+    void Promise.all([getStaffAthletes({ teamId: relayTeamId }), getStaffTeams()]).then(([athletes, teamList]) => {
+      if (cancelled) return
+      if (athletes.ok) setRoster(athletes.data)
+      if (teamList.ok) setTeams(relayTeamId ? teamList.data.filter((team) => team.id === relayTeamId) : teamList.data)
+    })
+    return () => {
+      cancelled = true
+    }
+    // Only the identity of the competition matters here, not every change to its entries.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coachTeamsLoading, competition?.id, relayTeamId])
 
   const today = useMemo(() => localDayKey(new Date()), [])
 
@@ -176,6 +240,46 @@ export default function CoachCompetitionDetailPage() {
   const withResult = entered.filter((entry) => entry.result).length
   const activeMode: Mode = started ? (mode ?? "results") : "entries"
   const noteEntry = competition.entries.find((entry) => entry.id === noteEntryId) ?? null
+  const detailEntry = competition.entries.find((entry) => entry.id === detailEntryId) ?? null
+
+  const afterDetail = async ({ notice: outcomeNotice, resultId }: EntryResultOutcome) => {
+    const entry = detailEntry
+    setDetailEntryId(null)
+    const verdict = lastVerdict.current
+    lastVerdict.current = null
+    const fresh = await load()
+    // The grid keeps its own copy of what is saved: start it again from the fresh results.
+    setGridVersion((version) => version + 1)
+    const saved = resultId ? (fresh?.entries.flatMap((item) => item.rounds ?? []).find((round) => round.id === resultId) ?? null) : null
+    setNotice(saved && entry ? savedNotice(entry.athleteName ?? "The athlete", saved, verdict) : (outcomeNotice ?? { tone: "success", text: "Result saved." }))
+  }
+
+  const afterRelay = async ({ relay, deleted, label }: RelayDialogOutcome) => {
+    setRelayDialog(null)
+    const [here, all, season] = await Promise.all([getRelaysForStaff({ competitionId }), getRelaysForStaff(), getResultsSeason()])
+    if (here.ok) setRelays(here.data)
+    if (deleted || !relay) {
+      setNotice({ tone: "info", text: `${label} deleted.` })
+      return
+    }
+    if (relay.value === null || relay.display === null) {
+      setNotice({ tone: "success", text: `${label} is entered. Add the time once they have run.` })
+      return
+    }
+    // Is it the team's fastest in this relay?
+    const today = localToday()
+    const record = all.ok ? relayTeamRecords(all.data, season.ok ? season.data : { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` }).find((item) => item.teamId === relay.teamId && item.eventKey === relay.eventKey) : null
+    const mark = formatMarkWithUnit(relay.display, "s")
+    setNotice({
+      tone: "success",
+      text:
+        record && record.best.id === relay.id
+          ? record.count > 1
+            ? `${label}: ${mark}. That is the fastest ${relay.eventLabel} on record for ${record.teamName}.`
+            : `${label}: ${mark}. It is the first ${relay.eventLabel} on record for ${record.teamName}.`
+          : `${label}: ${mark} saved.`,
+    })
+  }
   // By athlete, then by event, the same order as the results grid.
   const sortedEntries = [...competition.entries].sort((a, b) => (a.athleteName ?? "").localeCompare(b.athleteName ?? "") || a.eventLabel.localeCompare(b.eventLabel, undefined, { numeric: true }))
 
@@ -207,7 +311,7 @@ export default function CoachCompetitionDetailPage() {
     setNotice({ tone: "info", text: `${entry.athleteName ?? "The athlete"} is no longer entered in the ${entry.eventLabel}.` })
   }
 
-  const exportResults = () => downloadCsv(csvFileName(competition.name, competition.startDate, "results"), competitionResultsRows(competition, standings))
+  const exportResults = () => downloadCsv(csvFileName(competition.name, competition.startDate, "results"), competitionResultsRows(competition, standings, relays))
 
   const columns: Array<DataTableColumn<CompetitionEntryWithResult>> = [
     {
@@ -283,6 +387,7 @@ export default function CoachCompetitionDetailPage() {
                 ? { label: "Scratch from this event", onSelect: () => void setStatus(entry, "scratched"), disabled: busyEntryId === entry.id }
                 : { label: "Enter again", onSelect: () => void setStatus(entry, "entered"), disabled: busyEntryId === entry.id },
               { label: "Edit heat, lane or flight", onSelect: () => setNoteEntryId(entry.id) },
+              ...(started && entry.status === "entered" ? [{ label: "Rounds and detail", onSelect: () => setDetailEntryId(entry.id) }] : []),
               { label: "Remove entry", danger: true, disabled: Boolean(entry.result), onSelect: () => setRemoveEntryId(entry.id) },
             ]}
           />
@@ -332,21 +437,33 @@ export default function CoachCompetitionDetailPage() {
       {activeMode === "results" ? (
         <Section
           title="Results"
-          hint="Type a mark like 10.84, 1:52.30 or 7.42. Tab goes across to wind and place, Enter goes down. Each cell saves as you leave it and the result goes straight into the athlete's records."
+          hint="Type a mark like 10.84, 1:52.30 or 7.42. Tab goes across to wind and place, Enter goes down. Each cell saves as you leave it and the result goes straight into the athlete's records. For splits, every attempt or every height, open Rounds and detail on a row."
           meta={entered.length > 0 ? `${withResult} of ${entered.length} in` : undefined}
         >
           {entered.length > 0 ? (
             <>
+              <Field label="Round to type" className="mb-1 sm:max-w-xs" hint={gridSlot === "final" ? undefined : "Marks typed now are saved as this round. The final stays its own result."}>
+                <Select value={gridSlot} onChange={(event) => setGridSlot(event.target.value as RoundSlot)}>
+                  {GRID_ROUNDS.map((round) => (
+                    <option key={round.value} value={round.value}>
+                      {round.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <ResultsGrid
-                key={competition.id}
+                key={`${competition.id}:${gridSlot}:${gridVersion}`}
                 competition={competition}
                 standings={standings}
+                slot={gridSlot}
                 avatarFor={(athleteId) => avatarOf({ athleteId })}
-                onSaved={(entryId, result, standing) => {
+                onOpenDetail={setDetailEntryId}
+                onSaved={(entryId, result, standing, removedResultId) => {
                   // The grid speaks for itself from here on: one message at a time on the screen.
                   setNotice(null)
-                  patchEntry(entryId, { result })
-                  setStandings((current) => ({ ...current, [entryId]: standing }))
+                  setCompetition((current) => (current ? { ...current, entries: current.entries.map((entry) => (entry.id === entryId ? withRound(entry, result, removedResultId) : entry)) } : current))
+                  // The entry is known by its last round; an earlier round only adds a best, it never takes one away.
+                  setStandings((current) => ({ ...current, ...(result ? { [result.id]: standing } : {}), [entryId]: gridSlot === "final" ? standing : (standing ?? current[entryId] ?? null) }))
                 }}
               />
               <Button className="mt-4 self-start" size="sm" onClick={exportResults}>
@@ -384,6 +501,32 @@ export default function CoachCompetitionDetailPage() {
         </Section>
       )}
 
+      <Section
+        title="Relays"
+        meta={relays.length > 0 ? plural(relays.length, "team", "teams") : undefined}
+        hint="A relay team is four athletes in running order and one time. It counts for the team's relay records, never as an athlete's own record."
+      >
+        {relays.length > 0 ? (
+          <RelayList
+            aria-label={`Relay teams at ${competition.name}`}
+            relays={relays}
+            actions={(relay) =>
+              relay.canManage ? (
+                <Button size="sm" aria-label={`Change ${relay.teamLabel}, ${relay.eventLabel}`} onClick={() => setRelayDialog(relay)}>
+                  {relay.value === null && started ? "Add time" : "Change"}
+                </Button>
+              ) : null
+            }
+          />
+        ) : (
+          <p className="sk-list-sub">No relay teams yet.</p>
+        )}
+        <Button className="mt-3 self-start" size="sm" onClick={() => setRelayDialog("new")}>
+          <Plus className="size-[18px]" weight="bold" aria-hidden />
+          Add a relay team
+        </Button>
+      </Section>
+
       <Section title="Details">
         <FactList aria-label="Competition details">
           <Fact label="Date">{meetDatesText(competition.startDate, competition.endDate)}</Fact>
@@ -406,6 +549,36 @@ export default function CoachCompetitionDetailPage() {
         </FactList>
       </Section>
 
+      {detailEntry ? (
+        <EntryResultDialog
+          key={detailEntry.id}
+          entry={detailEntry}
+          competition={competition}
+          audience="staff"
+          canEdit={(result) => result.source !== "test_week"}
+          save={async (entry, input) => {
+            const saved = await saveCompetitionEntryResultForStaff(entry, competition, input)
+            if (!saved.ok) return saved
+            lastVerdict.current = saved.data.verdict
+            return ok(saved.data.result)
+          }}
+          onClose={() => setDetailEntryId(null)}
+          onSaved={(outcome) => void afterDetail(outcome)}
+        />
+      ) : null}
+      {relayDialog ? (
+        <RelayDialog
+          key={relayDialog === "new" ? "new" : relayDialog.id}
+          competition={competition}
+          relay={relayDialog === "new" ? null : relayDialog}
+          roster={roster}
+          teams={teams}
+          defaultTeamId={relayTeamId}
+          started={started}
+          onClose={() => setRelayDialog(null)}
+          onDone={(outcome) => void afterRelay(outcome)}
+        />
+      ) : null}
       {noteEntry ? (
         <NoteDialog
           key={noteEntry.id}

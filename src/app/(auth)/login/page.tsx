@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strategy, type Icon } from "@phosphor-icons/react"
+import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strategy, UsersThree, type Icon } from "@phosphor-icons/react"
 import { InviteSteps } from "@/components/auth/invite-frame"
 import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, ListRow, Notice, PasswordInput, RadioRow, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
 import { AuthSplit } from "@/layouts/auth-layout"
@@ -19,13 +19,13 @@ import { REQUEST_REVIEW_TIME } from "@/lib/support"
 type DemoCredential = {
   email: string
   password: string
-  role: "athlete" | "coach" | "club-admin" | "platform-admin"
+  role: "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
   redirectTo: string
   tenantId: string
   defaultTeamId?: string
 }
 
-type DemoCredentialMap = Record<"athlete" | "coach" | "clubAdmin" | "platformAdmin", DemoCredential>
+type DemoCredentialMap = Record<"athlete" | "coach" | "clubAdmin" | "platformAdmin" | "guardian", DemoCredential>
 type DemoAccountKey = keyof DemoCredentialMap
 type AuthMode = "signin" | "request"
 
@@ -96,6 +96,7 @@ const packageCopy: Record<PackageId, string> = {
 const demoAccounts: Array<{ key: DemoAccountKey; label: string; hint: string; icon: Icon }> = [
   { key: "coach", label: "Coach", hint: "Plans, roster, test weeks", icon: Strategy },
   { key: "athlete", label: "Athlete", hint: "Today's session, check-ins", icon: PersonSimpleRun },
+  { key: "guardian", label: "Parent or guardian", hint: "Follow your child, read only", icon: UsersThree },
   { key: "clubAdmin", label: "Club admin", hint: "Teams, coaches, invites", icon: Buildings },
   { key: "platformAdmin", label: "Platform admin", hint: "Club requests, audit", icon: ShieldCheck },
 ]
@@ -239,6 +240,10 @@ export default function LoginPage() {
       }
       if (actor.role === "coach") {
         navigate("/coach/dashboard", { replace: true })
+        return
+      }
+      if (actor.role === "guardian") {
+        navigate("/guardian/home", { replace: true })
         return
       }
       if (actor.role === "platform-admin") {
@@ -386,6 +391,10 @@ export default function LoginPage() {
     }
     if (actor.role === "coach") {
       navigate("/coach/dashboard")
+      return
+    }
+    if (actor.role === "guardian") {
+      navigate("/guardian/home")
       return
     }
     if (actor.role === "platform-admin") {

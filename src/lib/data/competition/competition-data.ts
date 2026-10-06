@@ -10,20 +10,28 @@ import type {
   CompetitionResultInput,
   CompetitionScope,
   CompetitionWithEntries,
+  RelayEntry,
 } from "@/lib/data/competition/types"
+import { relayLegsText } from "@/lib/data/competition/relay-logic"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import {
   cleanLabel,
   eventGroupKey,
   findResultEvent,
   formatMarkWithUnit,
+  formatReaction,
   formatWind,
+  headlineResult,
   OTHER_EVENT_KEY,
+  roundLabel,
+  roundSlot,
   seasonFor,
   selectBests,
-  verdictForNewResult,
+  seriesText,
+  sortRounds,
+  splitsText,
   type AthleteResult,
-  type NewResultVerdict,
+  type MarkUnit,
   type ResultEnvironment,
 } from "@/lib/data/pr/marks"
 import {
@@ -34,8 +42,22 @@ import {
   MOCK_COACH_USER_ID,
   mockId,
   updateMockResultsState,
+  withSeriesLegalMark,
 } from "@/lib/data/pr/mock-results-store"
-import { getAthleteResults, getCurrentAthleteIdentity, getCurrentUserId, getResultsSeason, localToday, mapResultRow, RESULT_COLUMNS, type ResultRow } from "@/lib/data/pr/results-data"
+import {
+  getAthleteResults,
+  getCurrentAthleteIdentity,
+  getCurrentUserId,
+  getResultsSeason,
+  localToday,
+  mapResultRow,
+  resolveResultDetail,
+  RESULT_COLUMNS,
+  validateRoundFields,
+  verdictForSeries,
+  type ResultRow,
+  type SeriesVerdict,
+} from "@/lib/data/pr/results-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -165,6 +187,24 @@ function sortEntries<T extends CompetitionEntry>(entries: T[]): T[] {
   return [...entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.eventLabel.localeCompare(b.eventLabel))
 }
 
+/** Results by the entry they belong to. An entry can hold one per round. */
+function groupByEntry(results: AthleteResult[]): Map<string, AthleteResult[]> {
+  const byEntry = new Map<string, AthleteResult[]>()
+  for (const result of results) {
+    if (!result.competitionEntryId) continue
+    byEntry.set(result.competitionEntryId, [...(byEntry.get(result.competitionEntryId) ?? []), result])
+  }
+  return byEntry
+}
+
+/** An entry with its rounds in running order and the result it is known by (its last round). */
+function withRounds<T extends CompetitionEntry>(entry: T, results: AthleteResult[] | undefined): T & { result: AthleteResult | null; rounds: AthleteResult[] } {
+  const rounds = sortRounds(results ?? [])
+  return { ...entry, rounds, result: headlineResult(rounds) }
+}
+
+const ROUND_TAKEN_MESSAGE = "This entry already has a result for that round. Change that one instead of adding another."
+
 /** Upcoming first (soonest at the top), then past (most recent at the top). */
 export function splitCompetitions<T extends Competition>(competitions: T[], onDay = today()): { upcoming: T[]; past: T[] } {
   const upcoming = competitions.filter((item) => item.endDate >= onDay).sort((a, b) => a.startDate.localeCompare(b.startDate))
@@ -176,13 +216,14 @@ export function splitCompetitions<T extends Competition>(competitions: T[], onDa
 
 function mockAssemble(athleteId: string | null): CompetitionWithEntries[] {
   const state = loadMockResultsState()
+  const byEntry = groupByEntry(state.results)
   return state.competitions.map((competition) => ({
     ...competition,
     canManage: competition.scope === "athlete" && competition.ownerAthleteId === MOCK_ATHLETE_ID,
     entries: sortEntries(
       state.entries
         .filter((entry) => entry.competitionId === competition.id && (athleteId === null || entry.athleteId === athleteId))
-        .map((entry) => ({ ...entry, result: state.results.find((result) => result.competitionEntryId === entry.id) ?? null })),
+        .map((entry) => withRounds(entry, byEntry.get(entry.id))),
     ),
   }))
 }
@@ -203,10 +244,7 @@ async function readForAthlete(client: SupabaseClient, athleteId: string, userId:
   if (entries.error) return { ok: false, error: mapPostgrestError(entries.error) }
   if (results.error) return { ok: false, error: mapPostgrestError(results.error) }
 
-  const resultByEntry = new Map<string, AthleteResult>()
-  for (const row of (results.data as ResultRow[] | null) ?? []) {
-    if (row.competition_entry_id) resultByEntry.set(row.competition_entry_id, mapResultRow(row))
-  }
+  const resultsByEntry = groupByEntry(((results.data as ResultRow[] | null) ?? []).map(mapResultRow))
   const entryRows = ((entries.data as EntryRow[] | null) ?? []).map(mapEntry)
 
   return ok(
@@ -215,10 +253,7 @@ async function readForAthlete(client: SupabaseClient, athleteId: string, userId:
       return {
         ...competition,
         canManage: competition.scope === "athlete" && competition.ownerAthleteId === athleteId && Boolean(userId),
-        entries: sortEntries(entryRows.filter((entry) => entry.competitionId === competition.id)).map((entry) => ({
-          ...entry,
-          result: resultByEntry.get(entry.id) ?? null,
-        })),
+        entries: sortEntries(entryRows.filter((entry) => entry.competitionId === competition.id)).map((entry) => withRounds(entry, resultsByEntry.get(entry.id))),
       }
     }),
   )
@@ -343,6 +378,8 @@ export async function deleteCompetition(competitionId: string): Promise<Result<{
       competitions: state.competitions.filter((item) => item.id !== competitionId),
       entries: state.entries.filter((entry) => entry.competitionId !== competitionId),
       results: state.results.map((result) => (result.competitionId === competitionId ? { ...result, competitionId: null, competitionEntryId: null } : result)),
+      // A relay that was run stays for the team's record list; a team that never ran goes with the meet.
+      relays: state.relays.filter((relay) => relay.competitionId !== competitionId || relay.value !== null).map((relay) => (relay.competitionId === competitionId ? { ...relay, competitionId: null } : relay)),
     }))
     return ok({ competitionId })
   }
@@ -469,28 +506,52 @@ export async function removeCompetitionEntry(entryId: string): Promise<Result<{ 
 }
 
 /**
- * Record (or correct) the result of an entry: the final mark, with wind and place where they apply.
- * The result joins the athlete's history, so it counts for personal and season bests.
+ * Record (or correct) a result of an entry: the mark, with wind and place where they apply, the
+ * round it was (an entry can hold a heat, a quarter final, a semi final and a final) and its
+ * detail (splits, an attempt series, heights). `entry.result` is the result being corrected; pass
+ * the entry with `result: null` to add another round. With a series the mark is worked out from
+ * the attempts. Every round joins the athlete's history, so the best one counts for their bests.
  */
 export async function saveCompetitionEntryResult(
   entry: CompetitionEntryWithResult,
   competition: Competition,
-  input: CompetitionResultInput,
+  rawInput: CompetitionResultInput,
   /** Mock mode only: the demo user who typed it (the coach, on the staff screens). */
   mockEnteredBy: string = MOCK_ATHLETE_USER_ID,
 ): Promise<Result<AthleteResult>> {
+  const event = findResultEvent(entry.eventKey)
+  const other = !event || event.kind === "other"
+  if (other && !rawInput.unit && !entry.result) return err("VALIDATION", "Choose what the mark is measured in.")
+  const unit: MarkUnit | null = other ? (rawInput.unit ?? entry.result?.unit ?? null) : event.unit
+
+  // Detail left out (the results grid types marks only): the result keeps the detail it has.
+  const resolved = resolveResultDetail(
+    { ...rawInput, detail: rawInput.detail === undefined ? (entry.result?.detail ?? null) : rawInput.detail },
+    { eventKey: entry.eventKey, unit, environment: competition.environment },
+  )
+  if (!resolved.ok) return err("VALIDATION", resolved.message)
+  const input = resolved.input
+
   if (!(input.value > 0)) return err("VALIDATION", "Enter the mark.")
-  if (input.place !== null && input.place !== undefined && (!Number.isInteger(input.place) || input.place < 1 || input.place > 999)) {
-    return err("VALIDATION", "Place must be a whole number from 1 to 999.")
-  }
+  const roundProblem = validateRoundFields(input)
+  if (roundProblem) return err("VALIDATION", roundProblem)
   const date = input.date || competition.startDate
   if (date < competition.startDate || date > competition.endDate) return err("VALIDATION", "The date must be a day of the competition.")
   if (date > today()) return err("VALIDATION", "This competition has not happened yet.")
-  const event = findResultEvent(entry.eventKey)
-  const other = !event || event.kind === "other"
-  if (other && !input.unit && !entry.result) return err("VALIDATION", "Choose what the mark is measured in.")
+
+  const round = rawInput.round === undefined ? (entry.result?.round ?? null) : rawInput.round
+  const heat = rawInput.heat === undefined ? (entry.result?.heat ?? null) : rawInput.heat
+  const lane = rawInput.lane === undefined ? (entry.result?.lane ?? null) : rawInput.lane
+  const qualifier = rawInput.qualifier === undefined ? (entry.result?.qualifier ?? null) : rawInput.qualifier
+  if ((entry.rounds ?? []).some((item) => item.id !== entry.result?.id && roundSlot(item.round) === roundSlot(round))) {
+    return err("CONFLICT", ROUND_TAKEN_MESSAGE)
+  }
 
   if (isMock()) {
+    const state = loadMockResultsState()
+    if (state.results.some((item) => item.competitionEntryId === entry.id && item.id !== entry.result?.id && roundSlot(item.round) === roundSlot(round))) {
+      return err("CONFLICT", ROUND_TAKEN_MESSAGE)
+    }
     const result = buildMockResult({
       id: entry.result?.id,
       athleteId: entry.athleteId,
@@ -511,10 +572,15 @@ export async function saveCompetitionEntryResult(
       competitionEntryId: entry.id,
       enteredBy: entry.result?.enteredByUserId ?? mockEnteredBy,
       createdAt: entry.result?.createdAt ?? new Date().toISOString(),
+      round,
+      heat,
+      lane,
+      qualifier,
+      detail: input.detail ?? null,
     })
-    updateMockResultsState((state) => ({
-      ...state,
-      results: entry.result ? state.results.map((item) => (item.id === result.id ? result : item)) : [result, ...state.results],
+    updateMockResultsState((current) => ({
+      ...current,
+      results: withSeriesLegalMark(entry.result ? current.results.map((item) => (item.id === result.id ? result : item)) : [result, ...current.results], result),
     }))
     return ok(result)
   }
@@ -528,11 +594,20 @@ export async function saveCompetitionEntryResult(
     place: input.place ?? null,
     result_date: date,
     notes: input.notes?.trim() || null,
+    ...(rawInput.round !== undefined || !entry.result ? { round } : {}),
+    ...(rawInput.heat !== undefined || !entry.result ? { heat_number: heat } : {}),
+    ...(rawInput.lane !== undefined || !entry.result ? { lane } : {}),
+    ...(rawInput.qualifier !== undefined || !entry.result ? { qualifier } : {}),
+    ...(rawInput.detail !== undefined || !entry.result ? { detail: input.detail ?? null } : {}),
+  }
+  const roundConflict = (error: Parameters<typeof mapPostgrestError>[0]) => {
+    const mapped = mapPostgrestError(error)
+    return { ok: false as const, error: mapped.code === "CONFLICT" ? { ...mapped, message: ROUND_TAKEN_MESSAGE } : mapped }
   }
 
   if (entry.result) {
     const { data, error } = await clientResult.client.from("athlete_results").update(fields).eq("id", entry.result.id).select(RESULT_COLUMNS)
-    if (error) return { ok: false, error: mapPostgrestError(error) }
+    if (error) return roundConflict(error)
     const row = ((data as ResultRow[] | null) ?? [])[0]
     if (!row) return err("FORBIDDEN", "You cannot change this result. Only the person who entered it, or a coach, can.")
     return ok(mapResultRow(row))
@@ -545,17 +620,14 @@ export async function saveCompetitionEntryResult(
       athlete_id: entry.athleteId,
       event_key: entry.eventKey,
       event_label: entry.eventLabel,
-      mark_unit: other ? input.unit : event.unit,
+      mark_unit: unit,
       source: "competition",
       competition_id: competition.id,
       competition_entry_id: entry.id,
     })
     .select(RESULT_COLUMNS)
     .single()
-  if (error) {
-    const mapped = mapPostgrestError(error)
-    return { ok: false, error: mapped.code === "CONFLICT" ? { ...mapped, message: "This entry already has a result. Reload to see it." } : mapped }
-  }
+  if (error) return roundConflict(error)
   return ok(mapResultRow(data as ResultRow))
 }
 
@@ -663,20 +735,16 @@ export async function getCompetitionsForStaff(params?: { teamId?: string | null;
   if (entries.error) return { ok: false, error: mapPostgrestError(entries.error) }
   if (results.error) return { ok: false, error: mapPostgrestError(results.error) }
 
-  const resultByEntry = new Map<string, AthleteResult>()
-  for (const row of (results.data as ResultRow[] | null) ?? []) {
-    if (row.competition_entry_id) resultByEntry.set(row.competition_entry_id, mapResultRow(row))
-  }
+  const resultsByEntry = groupByEntry(((results.data as ResultRow[] | null) ?? []).map(mapResultRow))
   type EmbeddedAthlete = { first_name: string | null; last_name: string | null; team_id: string | null }
   type StaffEntryRow = EntryRow & { athletes: EmbeddedAthlete | EmbeddedAthlete[] | null }
   const entryRows = ((entries.data as unknown as StaffEntryRow[] | null) ?? [])
     .map((row) => {
       const athlete = Array.isArray(row.athletes) ? (row.athletes[0] ?? null) : row.athletes
       return {
-        ...mapEntry(row),
+        ...withRounds(mapEntry(row), resultsByEntry.get(row.id)),
         athleteName: [athlete?.first_name, athlete?.last_name].filter(Boolean).join(" ").trim() || "Unnamed athlete",
         athleteTeamId: athlete?.team_id ?? null,
-        result: resultByEntry.get(row.id) ?? null,
       }
     })
     .filter((entry) => !params?.teamId || entry.athleteTeamId === params.teamId)
@@ -783,7 +851,7 @@ export async function enterAthletesInCompetition(
 export type SavedStaffResult = {
   result: AthleteResult
   /** What the mark is for the athlete: a personal best, a season best, wind assisted, or neither. */
-  verdict: NewResultVerdict
+  verdict: SeriesVerdict
 }
 
 /**
@@ -802,14 +870,15 @@ export async function saveCompetitionEntryResultForStaff(
   if (!history.ok) return ok({ result: saved.data, verdict: { kind: "none", beat: null } })
   const sameEvent = history.data.filter((item) => item.eventGroup === saved.data.eventGroup)
   const withSaved = sameEvent.some((item) => item.id === saved.data.id) ? sameEvent : [...sameEvent, saved.data]
-  return ok({ result: saved.data, verdict: verdictForNewResult(saved.data, withSaved, season.ok ? season.data : seasonFor(localToday())) })
+  return ok({ result: saved.data, verdict: verdictForSeries(saved.data, withSaved, season.ok ? season.data : seasonFor(localToday())) })
 }
 
 export type EntryStanding = "personal-best" | "season-best" | null
 
 /**
- * For every entry of a competition that has a result: is that result the athlete's personal best
- * or season best right now? One read for the whole meet.
+ * For every entry of a competition that has a result: is one of its rounds the athlete's personal
+ * best or season best right now? One read for the whole meet. Keyed by entry id and, for meets
+ * with rounds, by the id of each result too.
  */
 export async function getEntryStandings(competition: CompetitionWithEntries): Promise<Result<Record<string, EntryStanding>>> {
   const withResult = competition.entries.filter((entry) => entry.result)
@@ -832,25 +901,36 @@ export async function getEntryStandings(competition: CompetitionWithEntries): Pr
 
   const standings: Record<string, EntryStanding> = {}
   for (const entry of withResult) {
-    const result = entry.result as AthleteResult
+    const headline = entry.result as AthleteResult
     const bests = selectBests(
-      history.filter((item) => item.athleteId === result.athleteId && item.eventGroup === result.eventGroup),
+      history.filter((item) => item.athleteId === headline.athleteId && item.eventGroup === headline.eventGroup),
       season,
     )
-    standings[entry.id] = bests.personalBest?.id === result.id ? "personal-best" : bests.seasonBest?.id === result.id ? "season-best" : null
+    const rounds = entry.rounds?.length ? entry.rounds : [headline]
+    let best: EntryStanding = null
+    for (const result of rounds) {
+      const standing: EntryStanding = bests.personalBest?.id === result.id ? "personal-best" : bests.seasonBest?.id === result.id ? "season-best" : null
+      standings[result.id] = standing
+      if (standing === "personal-best" || (standing === "season-best" && best === null)) best = standing
+    }
+    standings[entry.id] = best
   }
   return ok(standings)
 }
 
-/** The rows of a meet's results sheet: a header, then one line per entry. For a CSV file. */
-export function competitionResultsRows(competition: CompetitionWithEntries, standings: Record<string, EntryStanding> = {}): string[][] {
-  const header = ["Athlete", "Event", "Status", "Mark", "Wind", "Wind legal", "Place", "Best", "Date", "Note"]
+/**
+ * The rows of a meet's results sheet: a header, then one line per result (an entry with a heat
+ * and a final has two lines), then the relay teams. For a CSV file. The first ten columns are the
+ * ones the file has always had; rounds, splits, attempts and relay legs come after them.
+ */
+export function competitionResultsRows(competition: CompetitionWithEntries, standings: Record<string, EntryStanding> = {}, relays: RelayEntry[] = []): string[][] {
+  const header = ["Athlete", "Event", "Status", "Mark", "Wind", "Wind legal", "Place", "Best", "Date", "Note", "Round", "Heat", "Lane", "Qualifier", "Reaction", "Splits", "Attempts or heights", "Relay legs"]
+  const bestText = (standing: EntryStanding | undefined) => (standing === "personal-best" ? "Personal best" : standing === "season-best" ? "Season best" : "")
   const lines = [...competition.entries]
     .sort((a, b) => a.eventLabel.localeCompare(b.eventLabel) || (a.result?.place ?? 999) - (b.result?.place ?? 999) || (a.athleteName ?? "").localeCompare(b.athleteName ?? ""))
-    .map((entry) => {
-      const result = entry.result
-      const standing = standings[entry.id]
-      return [
+    .flatMap((entry) => {
+      const rounds: Array<AthleteResult | null> = entry.rounds?.length ? entry.rounds : [entry.result]
+      return rounds.map((result) => [
         entry.athleteName ?? "",
         entry.eventLabel,
         entry.status === "scratched" ? "Scratched" : result ? "Competed" : "Entered",
@@ -858,10 +938,40 @@ export function competitionResultsRows(competition: CompetitionWithEntries, stan
         result && result.wind !== null ? formatWind(result.wind) : "",
         result ? (result.windLegal ? "Yes" : "No") : "",
         result?.place ? String(result.place) : "",
-        standing === "personal-best" ? "Personal best" : standing === "season-best" ? "Season best" : "",
+        result ? bestText(result.id in standings ? standings[result.id] : standings[entry.id]) : "",
         result?.date ?? "",
         entry.notes ?? "",
-      ]
+        result ? roundLabel(result.round) : "",
+        result?.heat ? String(result.heat) : "",
+        result?.lane ? String(result.lane) : "",
+        result?.qualifier ?? "",
+        result?.detail?.reaction !== undefined ? formatReaction(result.detail.reaction) : "",
+        result ? splitsText(result.detail) : "",
+        result ? seriesText(result.detail) : "",
+        "",
+      ])
     })
-  return [header, ...lines]
+  const relayLines = [...relays]
+    .sort((a, b) => a.eventLabel.localeCompare(b.eventLabel) || a.teamLabel.localeCompare(b.teamLabel) || (a.place ?? 999) - (b.place ?? 999))
+    .map((relay) => [
+      `${relay.teamLabel} (relay team)`,
+      relay.eventLabel,
+      relay.value !== null ? "Competed" : "Entered",
+      relay.display ? formatMarkWithUnit(relay.display, "s") : "",
+      "",
+      "",
+      relay.place ? String(relay.place) : "",
+      "",
+      relay.date,
+      relay.notes ?? "",
+      roundLabel(relay.round),
+      relay.heat ? String(relay.heat) : "",
+      relay.lane ? String(relay.lane) : "",
+      relay.qualifier ?? "",
+      "",
+      "",
+      "",
+      relayLegsText(relay, true),
+    ])
+  return [header, ...lines, ...relayLines]
 }

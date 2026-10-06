@@ -63,6 +63,7 @@ function roleLabel(role: string) {
   if (role === "platform-admin") return "Platform admin"
   if (role === "club-admin") return "Club admin"
   if (role === "coach") return "Coach"
+  if (role === "guardian") return "Guardian"
   return "Athlete"
 }
 

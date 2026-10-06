@@ -17,7 +17,16 @@ import ClubAdminClaimPage from "@/app/(auth)/club-admin/claim/page"
 import CreateClubAccountPage from "@/app/(auth)/create-club-account/page"
 import CoachInviteAcceptPage from "@/app/(auth)/invite/coach/[inviteId]/page"
 import TeamJoinCodePage from "@/app/(auth)/join/[code]/page"
+import GuardianClaimPage from "@/app/(auth)/guardian/claim/[inviteId]/page"
 import { AssistantGate, type AssistantGateNeed } from "@/components/coach/assistant-gate"
+const GuardianHomePage = lazy(() => import("@/app/(authenticated)/guardian/home/page"))
+const GuardianPlanPage = lazy(() => import("@/app/(authenticated)/guardian/plan/page"))
+const GuardianResultsPage = lazy(() => import("@/app/(authenticated)/guardian/results/page"))
+const GuardianReportPage = lazy(() => import("@/app/(authenticated)/guardian/reports/[reportId]/page"))
+const GuardianHealthPage = lazy(() => import("@/app/(authenticated)/guardian/health/page"))
+const GuardianCalendarPage = lazy(() => import("@/app/(authenticated)/guardian/calendar/page"))
+const GuardianNewsPage = lazy(() => import("@/app/(authenticated)/guardian/news/page"))
+const GuardianContactPage = lazy(() => import("@/app/(authenticated)/guardian/contact/page"))
 const AthleteHomePage = lazy(() => import("@/app/(authenticated)/athlete/home/page"))
 const AthleteJoinTeamPage = lazy(() => import("@/app/(authenticated)/athlete/join/page"))
 const AthleteJoinTeamCodePage = lazy(() => import("@/app/(authenticated)/athlete/join/[code]/page"))
@@ -134,6 +143,7 @@ export function AppRouter() {
           <Route path="/terms" element={routeElement(TermsPage)} />
           <Route path="/invite/coach/:inviteId" element={<CoachInviteAcceptPage />} />
           <Route path="/join/:code" element={<TeamJoinCodePage />} />
+          <Route path="/guardian/claim/:inviteId" element={<GuardianClaimPage />} />
         </Route>
 
         <Route element={<GuardedAuthenticatedLayout />}>
@@ -214,6 +224,16 @@ export function AppRouter() {
             <Route path="/club-admin/messages/a/new" element={routeElement(ClubAdminNewAnnouncementPage)} />
             <Route path="/club-admin/messages/a/:announcementId" element={routeElement(ClubAdminAnnouncementPage)} />
             <Route path="/club-admin/billing" element={routeElement(ClubAdminBillingPage)} />
+
+            <Route path="/guardian" element={<Navigate to="/guardian/home" replace />} />
+            <Route path="/guardian/home" element={routeElement(GuardianHomePage)} />
+            <Route path="/guardian/plan" element={routeElement(GuardianPlanPage)} />
+            <Route path="/guardian/results" element={routeElement(GuardianResultsPage)} />
+            <Route path="/guardian/reports/:reportId" element={routeElement(GuardianReportPage)} />
+            <Route path="/guardian/health" element={routeElement(GuardianHealthPage)} />
+            <Route path="/guardian/calendar" element={routeElement(GuardianCalendarPage)} />
+            <Route path="/guardian/news" element={routeElement(GuardianNewsPage)} />
+            <Route path="/guardian/contact" element={routeElement(GuardianContactPage)} />
 
             <Route path="/platform-admin" element={<PlatformAdminRedirectPage />} />
             <Route path="/platform-admin/dashboard" element={routeElement(PlatformAdminDashboardPage)} />

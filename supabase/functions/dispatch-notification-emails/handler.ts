@@ -8,6 +8,10 @@
 //                                 sent (deactivated recipient, suspended club, switched off, too old).
 //   complete_notification_email   records sent / failed and schedules the retry.
 // This file only decides who may start a run, sends what it is handed, and reports back.
+//
+// Push notifications ride in the same run (push-dispatch.ts): their own queue and claimed state,
+// worked BEFORE the email settings are looked at, so push goes out where email is not set up and a
+// failing push never holds an email back. Every answer carries a "push" summary.
 
 import {
   APP_NAME,
@@ -21,6 +25,7 @@ import {
   type ProviderOutcome,
   type QueuedEmail,
 } from "./notification-email.ts"
+import { runPushDispatch } from "./push-dispatch.ts"
 
 // The Supabase client is used structurally so tests can pass a small fake.
 // deno-lint-ignore no-explicit-any
@@ -53,6 +58,13 @@ const RUN_LIMITS: Record<Mode, { maxEmails: number; budgetMs: number }> = {
   scheduler: { maxEmails: 200, budgetMs: 25_000 },
   "platform-admin": { maxEmails: 100, budgetMs: 25_000 },
   member: { maxEmails: 60, budgetMs: 20_000 },
+}
+
+/** How many pushes one run may send, and for how long the push part may keep going. */
+const PUSH_RUN_LIMITS: Record<Mode, { maxPushes: number; budgetMs: number }> = {
+  scheduler: { maxPushes: 400, budgetMs: 12_000 },
+  "platform-admin": { maxPushes: 200, budgetMs: 12_000 },
+  member: { maxPushes: 120, budgetMs: 8_000 },
 }
 
 type DispatchResult = {
@@ -169,6 +181,9 @@ export async function handleDispatchNotificationEmails(request: Request, deps: H
     // The scheduler simply stays unregistered; this run still sends.
   }
 
+  // 2b. Push first. It never throws and never stops what follows.
+  const push = await runPushDispatch(serviceClient, deps, { tenantId, ...PUSH_RUN_LIMITS[mode] })
+
   // 3. Can email be sent at all? Checked before anything is claimed, so a missing setting does not
   //    use up delivery attempts.
   const appBaseUrl = normalizeAppBaseUrl(deps.getEnv("PUBLIC_APP_URL"))
@@ -185,6 +200,7 @@ export async function handleDispatchNotificationEmails(request: Request, deps: H
         ...(resendApiKey ? [] : ["RESEND_API_KEY"]),
         ...(fromEmail ? [] : ["NOTIFICATION_FROM_EMAIL"]),
       ],
+      push,
     })
   }
 
@@ -239,7 +255,7 @@ export async function handleDispatchNotificationEmails(request: Request, deps: H
       p_ignore_backoff: mode === "platform-admin",
     })
     if (claimError) {
-      if (results.length === 0) return fail(500, "queue_unavailable", "The email queue could not be read.")
+      if (results.length === 0) return fail(500, "queue_unavailable", "The email queue could not be read.", { push })
       stopped = "queue_unavailable"
       break
     }
@@ -290,7 +306,7 @@ export async function handleDispatchNotificationEmails(request: Request, deps: H
   const summary = { processed: results.length, sent, failed, stopped, preview: isLocalPreview }
 
   try {
-    await serviceClient.rpc("record_notification_dispatch_run", { p_mode: mode, p_summary: summary })
+    await serviceClient.rpc("record_notification_dispatch_run", { p_mode: mode, p_summary: { ...summary, push } })
   } catch {
     // Bookkeeping for the platform admin dashboard only.
   }
@@ -300,6 +316,7 @@ export async function handleDispatchNotificationEmails(request: Request, deps: H
     ok: true,
     mode,
     ...summary,
+    push,
     results: mode === "platform-admin" ? results : [],
   })
 }

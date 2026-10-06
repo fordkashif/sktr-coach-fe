@@ -17,6 +17,7 @@ import {
 } from "@/components/athlete/log/log-parts"
 import { ClockBar, useLogClock, type RestSuggestion } from "@/components/athlete/log/log-clock"
 import { MyAttendanceLine, SessionEnteredBy } from "@/components/athlete/log/log-extras"
+import { SessionMediaSection, exerciseMedia, rowLabels, useSessionMedia } from "@/components/athlete/log/session-media"
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
   ActionBar,
@@ -73,6 +74,9 @@ export default function AthleteLogPage() {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, setBusy] = useState(false)
   const clock = useLogClock()
+  // Photos and videos. They upload on their own while the athlete keeps logging.
+  const media = useSessionMedia(session?.id ?? null)
+  const mediaLabels = useMemo(() => rowLabels(session?.blocks ?? []), [session?.blocks])
   const [rest, setRest] = useState<RestSuggestion>({ seconds: DEFAULT_REST_SECONDS, prescribed: false, label: null })
   // The timed exercise the athlete last touched: where a stopwatch time goes.
   const [timedRowId, setTimedRowId] = useState<string | null>(null)
@@ -310,6 +314,8 @@ export default function AthleteLogPage() {
             {totals.total > 0 ? <LoggedSummary blocks={session.blocks} logs={log.logs} /> : <p className="py-3.5 text-sk-mute">No exercises were logged for this session.</p>}
           </Section>
 
+          <SessionMediaSection media={media} mode="read" labels={mediaLabels} />
+
           {session.athleteComment ? (
             <Section title="Your comment">
               <p className="pt-1 text-base leading-relaxed text-sk-ink">{session.athleteComment}</p>
@@ -385,6 +391,7 @@ export default function AthleteLogPage() {
                           clock.openStopwatch(row.id)
                         }}
                         hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
+                        media={exerciseMedia(media, row)}
                       />
                     )
                   })}
@@ -403,6 +410,8 @@ export default function AthleteLogPage() {
               )}
             </Section>
           ))}
+
+          <SessionMediaSection media={media} mode="log" labels={mediaLabels} />
 
           <Section title="How hard was it?" hint="1 is very easy, 10 is everything you had.">
             <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />

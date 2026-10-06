@@ -58,6 +58,10 @@ jobs:
           # Where the app is hosted for this environment, for example https://app.example.com.
           # Not a secret: set it as an environment variable (or as a secret, either works).
           PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
+          # Push notifications (made with scripts/generate-vapid-keys.mjs). Optional: push stays off without them.
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \
@@ -73,6 +77,16 @@ jobs:
           else
             echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
           fi
+          # Push keys: all three or nothing, so values set by hand in the Supabase dashboard are never overwritten with nothing.
+          if [ -n "$VAPID_PUBLIC_KEY" ] && [ -n "$VAPID_PRIVATE_KEY" ] && [ -n "$VAPID_SUBJECT" ]; then
+            supabase secrets set \
+              VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
+              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
+              VAPID_SUBJECT="$VAPID_SUBJECT" \
+              --project-ref "$SUPABASE_PROJECT_REF"
+          else
+            echo "::notice::VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set for this environment. Push notifications stay off; everything else works."
+          fi
 
       - name: Deploy Edge Functions (dev)
         env:
@@ -85,6 +99,7 @@ jobs:
           supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"
@@ -147,6 +162,10 @@ jobs:
           # Where the app is hosted for this environment, for example https://app.example.com.
           # Not a secret: set it as an environment variable (or as a secret, either works).
           PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
+          # Push notifications (made with scripts/generate-vapid-keys.mjs). Optional: push stays off without them.
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \
@@ -162,6 +181,16 @@ jobs:
           else
             echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
           fi
+          # Push keys: all three or nothing, so values set by hand in the Supabase dashboard are never overwritten with nothing.
+          if [ -n "$VAPID_PUBLIC_KEY" ] && [ -n "$VAPID_PRIVATE_KEY" ] && [ -n "$VAPID_SUBJECT" ]; then
+            supabase secrets set \
+              VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
+              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
+              VAPID_SUBJECT="$VAPID_SUBJECT" \
+              --project-ref "$SUPABASE_PROJECT_REF"
+          else
+            echo "::notice::VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set for this environment. Push notifications stay off; everything else works."
+          fi
 
       - name: Deploy Edge Functions (prod)
         env:
@@ -174,6 +203,7 @@ jobs:
           supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"

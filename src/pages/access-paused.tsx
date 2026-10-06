@@ -9,6 +9,7 @@ import { getMyClubClosure, type ClubClosure } from "@/lib/data/club-admin/club-e
 import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { removePushOnSignOut } from "@/lib/push/push-client"
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 
 /**
@@ -74,6 +75,7 @@ export function AccessPausedPage({ block, isClubAdmin }: { block: AccessBlock; i
 
   const handleSignOut = async () => {
     setSigningOut(true)
+    await removePushOnSignOut()
     const backendMode = getBackendMode()
     if (backendMode === "supabase") {
       const supabase = getBrowserSupabaseClient()

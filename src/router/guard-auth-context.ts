@@ -29,7 +29,7 @@ const SIGNED_OUT: GuardAuthContext = {
 }
 
 function isAppRole(value: unknown): value is AppRole {
-  return value === "athlete" || value === "coach" || value === "club-admin" || value === "platform-admin"
+  return value === "athlete" || value === "coach" || value === "club-admin" || value === "platform-admin" || value === "guardian"
 }
 
 function getRoleFromCookie() {

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 
-export type Role = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type Role = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 const BASE_URL = "http://127.0.0.1:3007"
 
@@ -28,7 +28,9 @@ export async function seedMockSession(
         ? "coach@pacelab.local"
         : params.role === "club-admin"
           ? "clubadmin@pacelab.local"
-          : "platformadmin@pacelab.local")
+          : params.role === "guardian"
+            ? "guardian@pacelab.local"
+            : "platformadmin@pacelab.local")
 
   await page.addInitScript(
     ({ roleValue, emailValue, coachTeamIdValue, coachTeamIdsValue }) => {

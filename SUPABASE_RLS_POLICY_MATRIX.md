@@ -909,3 +909,80 @@ No new table and no new policy. New columns ride on the policies their tables al
 Both are security definer with `search_path = public` and call `assert_caller_active()` first. Load is effort times minutes: training data, not health data. Every coach of the athlete's team reads it, and the functions keep that rule whatever happens to the row policies of the health tables.
 
 Verified on a throwaway Postgres 16 (every earlier migration, then this one twice): 72 assertions. The numbers against hand-worked examples (weekly, acute, chronic, ratio, a week with no sessions, sessions with no minutes or no effort, under 4 weeks of history, the running day), and access as the athlete, a team mate, the team's coach, another team's coach, a coach of both teams, the club admin, another club's admin and coach, a deactivated coach, a suspended club and a token with no user.
+
+## Session photos and videos (20261016110000)
+
+| Object | Athlete (own) | Lead coach, coach of the athlete's team | Assistant of the team | Club admin | Other athlete, other team's coach, other club, guardian |
+|---|---|---|---|---|---|
+| `session_media` select | yes | yes | yes (sees training) | yes | no |
+| `session_media` insert | yes | yes, when logging for the athlete | yes, when logging for the athlete | yes | no |
+| `session_media` update (caption only, by trigger) | yes | only items they added | only items they added | only items they added | no |
+| `session_media` delete | yes | only items they added | only items they added | yes | no |
+| `set_session_media_comment()` | no | yes | no | yes | no |
+| `storage.objects` in `session-media` select, insert | as the table | as the table | as the table | as the table | no |
+| `storage.objects` in `session-media` delete | yes | files they uploaded | files they uploaded | yes | no |
+| `get_session_media_usage()` | platform admins only | | | | |
+
+One rule decides visibility for both the table and the bucket: `can_view_session_media_of(tenant, athlete)`. The bucket is private, there is no update policy, and paths must be `<tenant>/<athlete>/<session>/<file id>.<ext>`. Limits (6 per session, 200 per athlete, 50 MB, 30 seconds) are enforced by constraints and `session_media_before_insert`. Every deleted row queues its file in `storage_deletion_queue`. Guardians have no access.
+
+## Push notifications (20261016120000_push_notifications.sql)
+
+| Table | Select | Insert / update | Delete |
+|---|---|---|---|
+| `push_subscriptions` | Own rows only (`user_id = auth.uid()`), any role. No anon. A coach or club admin sees nobody else's devices. | Function only: `register_push_subscription` (signed in and active; the endpoint must be a known push service; takes the endpoint over from another account that used the same browser). | Own rows, also for a deactivated member or a paused club (it only removes something of their own). `remove_push_subscription(endpoint)` does the same by endpoint. |
+| `push_deliveries` (the queue) | Nobody through the API. | Trigger on `notification_events` (in-app rows) and `send_test_push(own device)`. | Cascade. |
+| `notification_preferences` | Unchanged policies; the channel check now also accepts `push`. | | |
+
+Service role only: `claim_push_deliveries`, `complete_push_delivery`, `release_push_delivery`, `suppress_pending_push_deliveries`, `push_queue_due`, `push_notification_enabled`. Not callable from the browser: `request_push_dispatch`, `trim_push_history`, the trigger functions.
+
+Held back at delivery time (marked suppressed with the reason): a paused or closed club, a member who is no longer active, push switched off for that kind of update, a device that was turned off, a notification already read in the app, anything older than 24 hours.
+
+Deletion: both tables have `tenant_id` (cascade) and cascade from `auth.users`, so `delete_my_account` and `delete_closed_club` remove them with no change to those functions.
+
+Verified on a throwaway Postgres 16 (every earlier migration, then this one twice): 155 assertions as athlete, team mate, the team's coach, another team's coach, club admin, another club's coach and athlete, a deactivated member, a suspended club, a platform admin and signed out, plus two sessions claiming at the same moment (no row handed out twice).
+
+## Parent or guardian access (20261016090000_guardian_access.sql)
+
+Rule: access is by invite from the club only. A lead or coach of the athlete's team, or a club admin, invites and revokes (`can_manage_athlete`). An assistant coach does not. A guardian cannot add or remove themselves. `profiles.role` now also accepts `guardian`; a guardian is never staff (`is_coach_or_admin`, `is_club_admin`, every `current_staff_*` and `current_coach_*` helper stay false or empty for them), never an athlete, takes no athlete or coach seat, and a profile cannot change to or from `guardian` (trigger `guard_guardian_role`), nor can an athlete record be linked to a guardian login (`guard_athlete_is_not_guardian`).
+
+Scope helpers: `current_guardian_athlete_ids()` (active guardian profile, open club, active link, athlete still active in the club), `current_guardian_health_athlete_ids()` (the subset where `guardian_health_rule(athlete)` is `minor` or `adult_opted_in`; an adult who has not switched sharing on and an athlete with no date of birth are left out), `current_guardian_team_ids()`, `current_guardian_plan_ids()`, `current_guardian_test_week_ids()`, `current_guardian_competition_ids()`.
+
+| Object | Guardian of the athlete | Guardian, health hidden | Lead or coach of the team | Assistant | Club admin | Athlete (own) | Anyone else, other club |
+|---|---|---|---|---|---|---|---|
+| `athlete_guardians` select | own links | own links | links of their athletes | no | whole club | links to themselves | no |
+| `guardian_invites` select | no | no | invites of their athletes | no | whole club | no | no |
+| both tables insert, update, delete | no (functions only) | no | no (functions only) | no | no (functions only) | no | no |
+| `athletes`, `teams` (the child's rows only, no roster) | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `training_plans` (published, assigned to the child), `training_plan_weeks`, `_days`, `_blocks` | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `competitions`, `competition_entries`, `athlete_results`, `pr_records`, `athlete_goals` | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `test_weeks`, `test_definitions`, `test_results` | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `athlete_reports` shared with the athlete | select | select, except reports with a wellness or injuries section | unchanged | unchanged | unchanged | unchanged | no |
+| `announcements` (the child's team, whole club; never "coaches") | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `club_events`, `club_event_teams` (the child's team; whole club events were already open to members) | select | select | unchanged | unchanged | unchanged | unchanged | no |
+| `wellness_entries`, `pain_reports`, `athlete_availability` | select | no | unchanged | unchanged | unchanged | unchanged | no |
+| `sessions`, `athlete_attendance`, `athlete_private_details` | no policy. Read through `get_guardian_child_sessions`, `get_guardian_child_attendance`, `get_guardian_child_details`, which blank the skip reason, the attendance reason and the medical notes | same functions, health parts null | unchanged | unchanged | unchanged | unchanged | no |
+| `coach_athlete_notes`, `message_threads`, `messages`, `team_coaches`, other `profiles`, `audit_events`, invites, every other table | no | no | unchanged | unchanged | unchanged | unchanged | no |
+| any write to athlete data | no. Only `update_guardian_contact(athlete, name, phone, email)` | same | unchanged | unchanged | unchanged | unchanged | no |
+
+Functions. Staff: `invite_guardian(athlete, email, name, relationship)` (links an existing guardian of the same club straight away, otherwise makes or refreshes one pending invite; refuses an email that is a coach, club admin, athlete, platform admin, approved club requestor or member of another club), `can_send_guardian_invite(invite)` (asked by `send-invite-email`), `revoke_guardian_link(link)`, `cancel_guardian_invite(invite)`, `get_athlete_guardians(athlete)`, `get_club_guardians()` (club admin). Invited person: `get_public_guardian_invite(invite)` (anon), `accept_guardian_invite(invite)` (confirmed, matching email; creates the guardian profile; accepts every open invite the club sent to that email). Guardian: `get_guardian_children()`, `guardian_athlete_plan_ids(athlete)`, `guardian_athlete_test_week_ids(athlete)`, `get_guardian_child_coaches(athlete)` (email only when the coach shows it to athletes), and the three read functions above. Athlete: `get_my_guardian_sharing()`, `set_my_guardian_health_sharing(on)` (the only way `athlete_private_details.share_health_with_guardians` changes). Internal, not callable from the browser: `guardian_email_standing` (service role only), `guardian_health_rule`, `notify_athlete_guardians`, `notify_guardians_of_plan`, the trigger functions.
+
+Lifecycle: every helper goes through the same checks as the rest of the schema, so a deactivated guardian, a guardian of a paused, cancelled or closed club and a guardian whose link was revoked read nothing, at once. Deletion: `delete_my_account` has a guardian branch (links and invites to their email removed, athletes untouched, club admins not told); `purge_athlete_personal_data` and `delete_closed_club` need no change because both tables carry `athlete_id` and `tenant_id`; `install_deleted_account_triggers()` is run again for the three "on delete set null" columns.
+
+Verified on a throwaway Postgres 16 (every earlier migration, then this one twice, and again with the later wave 4 migrations applied after it): 154 assertions as lead coach, assistant, another team's coach, club admin, another club, athlete, guardian of a minor, of an adult (opted in and not), of an athlete with no date of birth, a revoked guardian, a deactivated guardian, a paused club, signed out. One assertion lists every table of the schema a guardian can read a row from and compares it with the allowed list, so a table added later is closed unless it gets its own guardian policy.
+
+## Result detail and relays (20261016100000_result_detail_splits_attempts_relays_rounds.sql)
+
+Result detail (round, heat, lane, qualifier, and the `detail` jsonb with splits, reaction time, attempts or heights) is columns of `athlete_results`. It has no policy of its own: whoever reads or writes the result reads or writes its detail. The row trigger `athlete_results_apply_detail` checks it and computes the mark of a series, so a client cannot store a mark that disagrees with its attempts. A row with `derived_from_result_id` (the best wind legal attempt of a wind assisted series) is written by trigger only and follows its series.
+
+| Table | Athlete | Coach or lead coach | Assistant coach | Club admin | Guardian | Other club, signed out |
+| --- | --- | --- | --- | --- | --- | --- |
+| `athlete_results` detail columns | same as the result (own rows) | same as the result (athletes of their teams) | reads, cannot write (as for results) | whole club | reads with the child's result through the existing `athlete_results_select_guardian`, mirrored on purpose, never writes | no |
+| `relay_entries` | select the relays they ran a leg of | select relays of their teams and relays an athlete of theirs ran in; delete relays of a team they coach | select only | select and delete, whole club | no policy, no access | no |
+| `relay_entry_legs` | select the legs of the relays they ran in | select with the relay | select only | select | no policy, no access | no |
+| `relay_team_bests` (view, security invoker) | follows `relay_entries` | follows | follows | follows | nothing | no |
+
+No insert or update grant on the relay tables. `save_relay_entry(jsonb)` is the only way to write one: club admin, or a lead coach or coach of the relay's team naming athletes they coach; four different athletes of the club; no leg split larger than the time; caller active. `get_relay_entries(competition, athlete)` returns the relays the caller may see with leg names ("Former member" for a leg whose athlete was deleted) and `can_manage`. `current_athlete_competition_ids()` now also includes competitions where the athlete runs a relay leg. A relay is never a row of `athlete_results` or `pr_records`.
+
+Deletion: both tables carry `tenant_id` and go with the catalogue driven club deletion. Deleting an athlete (their own account or by a club admin) keeps the relay; `relay_entry_legs_keep_on_delete` turns the delete of the leg into a leg with no athlete. Deleting a competition keeps relays that were run (competition set to null) and drops teams that never ran. `install_deleted_account_triggers()` is run again for `entered_by_user_id`.
+
+Verified on a throwaway Postgres 16 (every migration in order including the other wave 4 files, then this one twice more): 151 assertions as athlete, team mate, lead coach, assistant, another team's coach, club admin, another club, a deactivated coach, a paused club, signed out, a guardian (of a relay runner, of a runner from another team, and after the link is revoked).

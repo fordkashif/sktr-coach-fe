@@ -2,13 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
-import { meetDatesText } from "@/components/athlete/results-parts"
+import { RelayMark } from "@/components/athlete/relay-parts"
+import { dayText, meetDatesText } from "@/components/athlete/results-parts"
 import { COMPETITIONS_PATH, competitionPath, countdownText, plural, scopeText, whereText } from "@/components/coach/competitions/competition-parts"
 import { DayLabel, EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getCompetitionsForStaff, splitCompetitions } from "@/lib/data/competition/competition-data"
-import type { CompetitionWithEntries } from "@/lib/data/competition/types"
+import { getRelaysForStaff } from "@/lib/data/competition/relay-data"
+import { relayLegsText, relayTeamRecords } from "@/lib/data/competition/relay-logic"
+import type { CompetitionWithEntries, RelayEntry } from "@/lib/data/competition/types"
+import { formatMarkWithUnit, seasonFor, type Season } from "@/lib/data/pr/marks"
 import { parseLocalDay } from "@/lib/data/pr/pr-display"
+import { getResultsSeason, localToday } from "@/lib/data/pr/results-data"
 
 function dayLabel(date: string) {
   const day = parseLocalDay(date) ?? new Date()
@@ -31,6 +36,8 @@ export default function CoachCompetitionsPage() {
 function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamName: string | null; waiting: boolean }) {
   const [competitions, setCompetitions] = useState<CompetitionWithEntries[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [relays, setRelays] = useState<RelayEntry[]>([])
+  const [season, setSeason] = useState<Season>(() => seasonFor(localToday()))
   const today = useMemo(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -44,11 +51,18 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
       if (result.ok) setCompetitions(result.data)
       else setError(result.error.message)
     })
+    // Relay records are a quiet extra: the calendar does not wait for them or fail with them.
+    void Promise.all([getRelaysForStaff({ teamId }), getResultsSeason()]).then(([relayResult, seasonResult]) => {
+      if (cancelled) return
+      if (relayResult.ok) setRelays(relayResult.data)
+      if (seasonResult.ok) setSeason(seasonResult.data)
+    })
     return () => {
       cancelled = true
     }
   }, [teamId, waiting])
 
+  const relayRecords = useMemo(() => relayTeamRecords(relays, season), [relays, season])
   const { upcoming, past } = splitCompetitions(competitions ?? [])
   const loading = competitions === null && !error
   const toEnter = past.reduce((sum, competition) => sum + competition.entries.filter((entry) => entry.status === "entered" && !entry.result).length, 0)
@@ -141,6 +155,32 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
           <EmptyState title="No past competitions" body="Once a meet is over it moves here, ready for you to type in the results." />
         )}
       </Section>
+
+      {relayRecords.length > 0 ? (
+        <Section title="Relay records" hint="The fastest time of each team in each relay, from the relay teams entered at your competitions.">
+          <List aria-label="Relay records">
+            {relayRecords.map((record) => (
+              <ListRow
+                key={`${record.teamId}:${record.eventKey}`}
+                to={record.best.competitionId ? competitionPath(record.best.competitionId) : undefined}
+                title={`${record.eventLabel}, ${record.teamName}`}
+                subtitle={
+                  <>
+                    {[dayText(record.best.date), record.best.competitionName ?? record.best.location].filter(Boolean).join(", ")}
+                    <span className="block">{relayLegsText(record.best)}</span>
+                    {record.seasonBest && record.seasonBest.display ? (
+                      <span className="block">
+                        Season best {formatMarkWithUnit(record.seasonBest.display, "s")}, {dayText(record.seasonBest.date)}
+                      </span>
+                    ) : null}
+                  </>
+                }
+                trailing={<RelayMark relay={record.best} />}
+              />
+            ))}
+          </List>
+        </Section>
+      ) : null}
     </Screen>
   )
 }

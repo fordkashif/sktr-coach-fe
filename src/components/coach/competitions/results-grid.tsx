@@ -13,12 +13,13 @@ import {
   formatWind,
   parseMarkInput,
   parseWindInput,
+  roundSlot,
   type AthleteResult,
   type MarkUnit,
-  type NewResultVerdict,
+  type RoundSlot,
   type Timing,
 } from "@/lib/data/pr/marks"
-import { deleteAthleteResult } from "@/lib/data/pr/results-data"
+import { deleteAthleteResult, type SeriesVerdict } from "@/lib/data/pr/results-data"
 
 type ColumnKey = "mark" | "wind" | "place"
 type CellState = { value: string; state: SaveStateValue; message: string | null }
@@ -40,7 +41,9 @@ function rowFromResult(result: AthleteResult | null): RowState {
 }
 
 /** What the saved mark means for the athlete, as one sentence for the coach. Null when it is nothing to call out. */
-function calloutFor(name: string, result: AthleteResult, verdict: NewResultVerdict): Callout | null {
+function calloutFor(name: string, saved: AthleteResult, verdict: SeriesVerdict): Callout | null {
+  // A wind assisted series whose best legal jump is a best: the news is about that jump.
+  const result = verdict.legal ?? saved
   const mark = markText(result)
   const gain = verdict.beat ? describeDifference(result, verdict.beat) : null
   const beat = gain && verdict.beat ? `, ${gain.text} than ${formatMarkWithUnit(verdict.beat.display, verdict.beat.unit)}` : ""
@@ -51,21 +54,33 @@ function calloutFor(name: string, result: AthleteResult, verdict: NewResultVerdi
   return null
 }
 
+/** The result an entry has for one round of the grid. */
+function slotResult(entry: CompetitionEntryWithResult, slot: RoundSlot): AthleteResult | null {
+  return (entry.rounds ?? (entry.result ? [entry.result] : [])).find((result) => roundSlot(result.round) === slot) ?? null
+}
+
 /**
  * The results of a meet, typed down a grid: mark, wind where the event takes it, and place for
  * every entry. Each cell saves as you leave it; a personal or season best is called out as it is
- * saved. `onSaved` hands the fresh result (or null when it was removed) back to the screen.
+ * saved. The grid shows one round at a time (`slot`: the final or only round unless the coach
+ * picks heats, quarter finals or semi finals). Splits, attempts and heights are typed in the
+ * detail of a row (`onOpenDetail`). `onSaved` hands the fresh result (or null when it was removed,
+ * with the id of the one that went) back to the screen.
  */
 export function ResultsGrid({
   competition,
   standings,
+  slot = "final",
   avatarFor,
   onSaved,
+  onOpenDetail,
 }: {
   competition: CompetitionWithEntries
   standings: Record<string, EntryStanding>
+  slot?: RoundSlot
   avatarFor: (athleteId: string) => string | null
-  onSaved: (entryId: string, result: AthleteResult | null, standing: EntryStanding) => void
+  onSaved: (entryId: string, result: AthleteResult | null, standing: EntryStanding, removedResultId?: string) => void
+  onOpenDetail?: (entryId: string) => void
 }) {
   // By athlete, then by event, so the grid reads like the roster.
   const entries = useMemo(
@@ -75,7 +90,7 @@ export function ResultsGrid({
         .sort((a, b) => (a.athleteName ?? "").localeCompare(b.athleteName ?? "") || a.eventLabel.localeCompare(b.eventLabel, undefined, { numeric: true })),
     [competition.entries],
   )
-  const [rows, setRows] = useState<Record<string, RowState>>(() => Object.fromEntries(entries.map((entry) => [entry.id, rowFromResult(entry.result)])))
+  const [rows, setRows] = useState<Record<string, RowState>>(() => Object.fromEntries(entries.map((entry) => [entry.id, rowFromResult(slotResult(entry, slot))])))
   // The latest thing worth saying about a saved mark. One line: the rows keep "Personal best" for the rest.
   const [callout, setCallout] = useState<Callout | null>(null)
   const [saving, setSaving] = useState(0)
@@ -88,8 +103,8 @@ export function ResultsGrid({
   const queueRef = useRef<Record<string, Promise<void>>>({})
   for (const entry of entries) {
     if (!(entry.id in resultsRef.current)) {
-      resultsRef.current[entry.id] = entry.result
-      const row = rowFromResult(entry.result)
+      resultsRef.current[entry.id] = slotResult(entry, slot)
+      const row = rowFromResult(slotResult(entry, slot))
       valuesRef.current[entry.id] = { mark: row.mark.value, wind: row.wind.value, place: row.place.value }
     }
   }
@@ -98,14 +113,19 @@ export function ResultsGrid({
   useEffect(() => {
     setRows((current) => {
       const missing = entries.filter((entry) => !current[entry.id])
-      return missing.length === 0 ? current : { ...current, ...Object.fromEntries(missing.map((entry) => [entry.id, rowFromResult(entry.result)])) }
+      return missing.length === 0 ? current : { ...current, ...Object.fromEntries(missing.map((entry) => [entry.id, rowFromResult(slotResult(entry, slot))])) }
     })
-  }, [entries])
+  }, [entries, slot])
 
   const windApplies = (entry: CompetitionEntryWithResult) => Boolean(findResultEvent(entry.eventKey)?.windApplies) && competition.environment === "outdoor"
   const unitOf = (entry: CompetitionEntryWithResult): MarkUnit | null => {
     const event = findResultEvent(entry.eventKey)
     return event && event.kind !== "other" ? event.unit : ((resultsRef.current[entry.id] ?? entry.result)?.unit ?? null)
+  }
+  /** True when the mark of this row is worked out from an attempt series or heights. */
+  const fromSeries = (entryId: string) => {
+    const detail = resultsRef.current[entryId]?.detail
+    return Boolean(detail?.attempts?.length || detail?.heights?.length)
   }
 
   const setCell = (entryId: string, column: ColumnKey, cell: Partial<CellState>) => {
@@ -160,6 +180,14 @@ export function ResultsGrid({
       return
     }
 
+    // A mark that comes from attempts or heights is changed there, never typed over.
+    if (fromSeries(entryId) && next.mark.trim() && (column === "mark" || column === "wind")) {
+      const shown = rowFromResult(existing)
+      setCell(entryId, column, { value: shown[column].value, state: "error", message: `This ${column} comes from the ${existing?.detail?.heights ? "heights" : "attempts"} typed for this result. Open Rounds and detail to change them.` })
+      setFailed(true)
+      return
+    }
+
     // Wind or place typed before the mark: kept in the row, saved together with the mark.
     if (!next.mark.trim()) {
       if (column === "mark" && entry.result) {
@@ -173,7 +201,7 @@ export function ResultsGrid({
         }
         setRow(entryId, null)
         setSavedOnce(true)
-        onSaved(entryId, null, null)
+        onSaved(entryId, null, null, entry.result.id)
         return
       }
       setCell(entryId, column, { value: text, state: "idle", message: null })
@@ -211,6 +239,8 @@ export function ResultsGrid({
       wind: parsedWind.value,
       place,
       date: entry.result?.date ?? null,
+      // A new result takes the round the grid is on; a correction keeps the round it has.
+      ...(entry.result ? {} : { round: slot === "final" ? null : slot }),
     })
     setSaving((count) => count - 1)
     if (!saved.ok) {
@@ -256,8 +286,10 @@ export function ResultsGrid({
         caption={`Results of ${competition.name}`}
         rowHeader="Athlete and event"
         rows={entries.map((entry) => {
-          const standing = standings[entry.id]
+          const shown = rows[entry.id] ? (resultsRef.current[entry.id] ?? null) : slotResult(entry, slot)
+          const standing = shown ? (shown.id in standings ? standings[shown.id] : slot === "final" ? standings[entry.id] : null) : null
           const unit = unitOf(entry)
+          const roundCount = entry.rounds?.length ?? 0
           return {
             key: entry.id,
             label: `${entry.athleteName ?? "Athlete"}, ${entry.eventLabel}`,
@@ -274,10 +306,15 @@ export function ResultsGrid({
                     <span className="mt-0.5 block text-sm">
                       <StatusText tone={standing === "personal-best" ? "green" : "blue"}>{standing === "personal-best" ? "Personal best" : "Season best"}</StatusText>
                     </span>
-                  ) : entry.result && !entry.result.windLegal ? (
+                  ) : shown && !shown.windLegal ? (
                     <span className="mt-0.5 block text-sm">
                       <StatusText tone="amber">Wind assisted</StatusText>
                     </span>
+                  ) : null}
+                  {onOpenDetail ? (
+                    <button type="button" className="sk-link mt-0.5 block text-sm" aria-label={`Rounds and detail for ${entry.athleteName ?? "athlete"}, ${entry.eventLabel}`} onClick={() => onOpenDetail(entry.id)}>
+                      {roundCount > 1 ? `${roundCount} rounds, detail` : "Rounds and detail"}
+                    </button>
                   ) : null}
                 </span>
               </span>
