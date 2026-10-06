@@ -9,7 +9,8 @@ import {
   setCoachTeamCookie,
   USER_COOKIE,
 } from "@/lib/auth-session"
-import { resolveMockCoachTeamIds } from "@/lib/coach-scope"
+import { coachTeamPermissions, FULL_TEAM_PERMISSIONS, type CoachTeamPermissions, type TeamCoachRole } from "@/lib/coach-permissions"
+import { resolveMockCoachTeamIds, resolveMockCoachTeamRole, resolveMockTeamAssistantSettings } from "@/lib/coach-scope"
 import { getAssignedCoachTeamsForCurrentUser } from "@/lib/data/coach/teams-data"
 import { MOCK_COACH_TEAM_STORAGE_KEY } from "@/lib/mock-auth"
 import type { EventGroup } from "@/lib/mock-data"
@@ -32,6 +33,11 @@ export type CoachTeam = {
   id: string
   name: string
   eventGroup: EventGroup
+  /** The coach's role on this team: lead, coach or assistant. */
+  role: TeamCoachRole
+  /** The team's two assistant switches. They only matter when the role is assistant. */
+  assistantsCanMessage: boolean
+  assistantsSeeHealth: boolean
 }
 
 /** Returns a question to ask before leaving (unsaved work), or null when it is safe to switch. */
@@ -106,7 +112,7 @@ async function loadTeams(): Promise<{ ok: true; teams: CoachTeam[] } | { ok: fal
       ok: true,
       teams: assigned.flatMap((id) => {
         const team = module.mockTeams.find((candidate) => candidate.id === id)
-        return team ? [{ id: team.id, name: team.name, eventGroup: team.eventGroup }] : []
+        return team ? [{ id: team.id, name: team.name, eventGroup: team.eventGroup, role: resolveMockCoachTeamRole(team.id), ...resolveMockTeamAssistantSettings(team.id) }] : []
       }),
     }
   }
@@ -280,4 +286,19 @@ export function useTeamSwitchGuard(question: string | null) {
     if (!question) return
     return registerSwitchGuard(() => question)
   }, [question, registerSwitchGuard])
+}
+
+/**
+ * What the signed-in person may do on a team: the team given, or the selected team. A club admin,
+ * and a coach whose teams have not loaded, get full rights here (the database decides in the end).
+ * `authorsClubContent` is false for a coach who is an assistant on every team they are on.
+ */
+export function useCoachPermissions(teamId?: string | null): CoachTeamPermissions & { teamName: string | null; authorsClubContent: boolean } {
+  const { isCoach, teams, selectedTeamId } = useCoachTeams()
+  return useMemo(() => {
+    const team = isCoach ? teams.find((item) => item.id === (teamId ?? selectedTeamId)) : undefined
+    const permissions = team ? coachTeamPermissions(team.role, team) : FULL_TEAM_PERMISSIONS
+    const authorsClubContent = !isCoach || teams.length === 0 || teams.some((item) => item.role !== "assistant")
+    return { ...permissions, teamName: team?.name ?? null, authorsClubContent }
+  }, [isCoach, selectedTeamId, teamId, teams])
 }

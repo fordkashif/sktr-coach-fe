@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { ArrowDown, ArrowUp, Minus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
-import { useCoachTeamScope } from "@/lib/coach-teams"
+import { useCoachPermissions, useCoachTeamScope } from "@/lib/coach-teams"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import {
   Button,
@@ -91,6 +91,8 @@ export default function CoachDashboardPage() {
 }
 
 function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamId: string | null }) {
+  // An assistant coach sees and records, and does not plan, invite or (unless the team allows it) see health.
+  const permissions = useCoachPermissions(coachTeamId)
   const backendMode = getBackendMode()
   const [backendSnapshot, setBackendSnapshot] = useState<CoachDashboardSnapshot | null>(() =>
     backendMode === "supabase" ? peekCachedCoachDashboardSnapshot(role === "coach" ? coachTeamId : null) : null,
@@ -223,7 +225,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
 
   const rosterHref = role === "coach" && coachTeamId ? `/coach/teams/${coachTeamId}` : "/coach/teams"
   const coachNeedsGuide =
-    backendMode === "supabase" && (sourceTeams.length === 0 || scopedAthletes.length === 0 || scopedTests.length === 0)
+    !permissions.isAssistant && backendMode === "supabase" && (sourceTeams.length === 0 || scopedAthletes.length === 0 || scopedTests.length === 0)
 
   const toggleGuide = async (dismissed: boolean) => {
     setSetupGuideSaving(true)
@@ -244,12 +246,18 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
     : loading
       ? "Getting your squad..."
       : athleteTotal === 0
-        ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
+        ? permissions.canManageRoster
+          ? "No athletes on your roster yet. Invite your squad to start seeing readiness and adherence here."
+          : "No athletes on this team yet."
+        : !permissions.canSeeHealth
+          ? `${weekLine}${athleteTotal} ${athleteTotal === 1 ? "athlete" : "athletes"} on the team.`
         : needLookCount === 0
           ? `${weekLine}${athleteTotal} ${athleteTotal === 1 ? "athlete" : "athletes"}, all on track today.`
           : `${weekLine}${needLookCount} ${needLookCount === 1 ? "athlete needs" : "athletes need"} a look today.`
 
-  const athleteColumns: Array<DataTableColumn<Athlete>> = [
+  // Readiness, availability (injured, sick) and check-ins are health information.
+  const healthColumnKeys = new Set(["readiness", "availability", "checkin"])
+  const allAthleteColumns: Array<DataTableColumn<Athlete>> = [
     {
       key: "athlete",
       header: "Athlete",
@@ -277,6 +285,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
     { key: "checkin", header: "Last check-in", phone: "hide", cell: (athlete) => athlete.lastWellness || "None yet" },
     { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
   ]
+  const athleteColumns = permissions.canSeeHealth ? allAthleteColumns : allAthleteColumns.filter((column) => !healthColumnKeys.has(column.key))
 
   const testColumns: Array<DataTableColumn<TestWeekResult>> = [
     {
@@ -312,18 +321,26 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         title={scopedTeam?.name ?? "Your squad"}
         lede={lede}
         actions={
-          <>
-            <LinkButton to="/coach/test-week">New test week</LinkButton>
-            <LinkButton to="/coach/training-plan" variant="primary">
-              Build a plan
-            </LinkButton>
-          </>
+          permissions.canEditPlans ? (
+            <>
+              <LinkButton to="/coach/test-week">New test week</LinkButton>
+              <LinkButton to="/coach/training-plan" variant="primary">
+                Build a plan
+              </LinkButton>
+            </>
+          ) : undefined
         }
       />
 
+      {permissions.isAssistant ? (
+        <p className="text-sm text-sk-mute" data-assistant-line>
+          You are an assistant coach on this team.
+        </p>
+      ) : null}
+
       {backendError ? <Notice tone="error">Could not load the latest data: {backendError}</Notice> : null}
 
-      {today && today.painReports.length > 0 ? (
+      {permissions.canSeeHealth && today && today.painReports.length > 0 ? (
         <Section title="Needs you" hint="Open pain reports that change training." meta={`${today.painReports.length} open`}>
           <List>
             {today.painReports.slice(0, 5).map((report) => (
@@ -380,8 +397,8 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         ) : (
           <Stat label="Plan adherence" value={adherenceAverage} unit="%" />
         )}
-        <Stat label="Ready to train" value={readyCount} of={athleteTotal} />
-        <Stat label="Need a look" value={needLookCount} />
+        {permissions.canSeeHealth ? <Stat label="Ready to train" value={readyCount} of={athleteTotal} /> : null}
+        {permissions.canSeeHealth ? <Stat label="Need a look" value={needLookCount} /> : <Stat label="Athletes" value={athleteTotal} />}
         <Stat label="Personal records" value={scopedPrs.length} />
       </StatStrip>
 
@@ -395,11 +412,13 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             ) : (
               <EmptyState
                 title="No athletes yet"
-                body="Readiness and adherence show up here once athletes are on your roster."
+                body={permissions.canManageRoster ? "Readiness and adherence show up here once athletes are on your roster." : "Athletes show up here once the lead coach has added them to the team."}
                 action={
-                  <LinkButton to={rosterHref} size="sm">
-                    Invite athletes
-                  </LinkButton>
+                  permissions.canManageRoster ? (
+                    <LinkButton to={rosterHref} size="sm">
+                      Invite athletes
+                    </LinkButton>
+                  ) : undefined
                 }
               />
             )}
@@ -432,7 +451,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
               <EmptyState title="No session planned today" body="A rest day, or the plan has nothing on this date." />
             )}
           </Section>
-          <Section title="This week's plan" action={<Link to="/coach/training-plan/calendar" className="sk-link">Calendar</Link>}>
+          <Section title="This week's plan" action={permissions.canEditPlans ? <Link to="/coach/training-plan/calendar" className="sk-link">Calendar</Link> : undefined}>
             {planWeek === undefined ? (
               <SkeletonRows rows={4} label="Loading this week's plan" />
             ) : planWeek && planWeek.days.length > 0 ? (
@@ -454,16 +473,18 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             ) : (
               <EmptyState
                 title="No plan this week"
-                body="Publish a training plan and the week's sessions are listed here."
+                body={permissions.canEditPlans ? "Publish a training plan and the week's sessions are listed here." : "Once the lead coach publishes a plan, the week's sessions are listed here."}
                 action={
-                  <LinkButton to="/coach/training-plan" size="sm">
-                    Open plans
-                  </LinkButton>
+                  permissions.canEditPlans ? (
+                    <LinkButton to="/coach/training-plan" size="sm">
+                      Open plans
+                    </LinkButton>
+                  ) : undefined
                 }
               />
             )}
           </Section>
-          {today?.nextCompetition ? (
+          {permissions.canEditAthleteRecords && today?.nextCompetition ? (
             <Section title="Next competition" action={<Link to={COMPETITIONS_PATH} className="sk-link">All competitions</Link>}>
               <List>
                 <ListRow

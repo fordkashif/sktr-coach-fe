@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { normaliseTeamCoachRole, type TeamCoachRole } from "@/lib/coach-permissions"
 import { listAthleteAvailability } from "@/lib/data/athlete/availability-data"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { adherenceCounts, adherencePercent, type AdherenceSession } from "@/lib/data/session/adherence"
@@ -67,6 +68,10 @@ export type ClubAdminTeamRecord = {
   leadCoachUserId?: string
   leadCoachLabel?: string
   currentUserAssignedAsCoach?: boolean
+  /** Assistant coaches of this team may message its athletes. */
+  assistantsCanMessage?: boolean
+  /** Assistant coaches of this team may see health information. */
+  assistantsSeeHealth?: boolean
 }
 
 type ClientResolution =
@@ -806,7 +811,7 @@ export async function getClubAdminTeamsSnapshot(): Promise<Result<ClubAdminTeamR
   const [teamsResult, membershipsResult] = await Promise.all([
     clientResult.client
       .from("teams")
-      .select("id, name, event_group, status")
+      .select("*")
       .eq("tenant_id", contextResult.data.tenantId)
       .order("created_at", { ascending: false }),
     clientResult.client
@@ -874,6 +879,8 @@ export async function getClubAdminTeamsSnapshot(): Promise<Result<ClubAdminTeamR
       name: string
       event_group: string | null
       status: ClubAdminTeamRecord["status"]
+      assistants_can_message?: boolean | null
+      assistants_see_health?: boolean | null
     }> | null) ?? []).map((row) => ({
       ...(function () {
         const leadMembership = leadMembershipByTeamId.get(row.id)
@@ -900,6 +907,8 @@ export async function getClubAdminTeamsSnapshot(): Promise<Result<ClubAdminTeamR
       eventGroup: row.event_group,
       status: row.status,
       currentUserAssignedAsCoach: assignedTeamIds.has(row.id),
+      assistantsCanMessage: row.assistants_can_message === true,
+      assistantsSeeHealth: row.assistants_see_health === true,
     })),
   )
 }
@@ -1372,7 +1381,7 @@ export async function getClubAdminPeopleDirectory(): Promise<Result<ClubAdminPeo
 }
 
 export type ClubAdminTeamMembers = {
-  coaches: Array<{ userId: string; name: string; isPrimary: boolean; isSelf: boolean }>
+  coaches: Array<{ userId: string; name: string; isPrimary: boolean; isSelf: boolean; role: TeamCoachRole; active: boolean }>
   athletes: Array<{ id: string; name: string; primaryEvent: string | null; hasLogin: boolean }>
 }
 
@@ -1388,10 +1397,10 @@ export async function getClubAdminTeamMembers(): Promise<Result<Record<string, C
   const [coachesResult, profilesResult, athletesResult] = await Promise.all([
     clientResult.client
       .from("team_coaches")
-      .select("team_id, user_id, is_primary, created_at")
+      .select("*")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: true }),
-    clientResult.client.from("profiles").select("user_id, display_name").eq("tenant_id", tenantId),
+    clientResult.client.from("profiles").select("user_id, display_name, is_active").eq("tenant_id", tenantId),
     clientResult.client
       .from("athletes")
       .select("id, team_id, user_id, first_name, last_name, primary_event")
@@ -1406,22 +1415,27 @@ export async function getClubAdminTeamMembers(): Promise<Result<Record<string, C
   if (athletesResult.error) return { ok: false, error: mapPostgrestError(athletesResult.error) }
 
   const nameByUserId = new Map<string, string>()
-  for (const row of (profilesResult.data as Array<{ user_id: string; display_name: string | null }> | null) ?? []) {
+  const inactiveUserIds = new Set<string>()
+  for (const row of (profilesResult.data as Array<{ user_id: string; display_name: string | null; is_active: boolean | null }> | null) ?? []) {
     if (row.display_name) nameByUserId.set(row.user_id, row.display_name)
+    if (row.is_active === false) inactiveUserIds.add(row.user_id)
   }
 
   const byTeam: Record<string, ClubAdminTeamMembers> = {}
   const entry = (teamId: string) => (byTeam[teamId] ??= { coaches: [], athletes: [] })
 
-  for (const row of (coachesResult.data as Array<{ team_id: string; user_id: string; is_primary: boolean }> | null) ?? []) {
+  for (const row of (coachesResult.data as Array<{ team_id: string; user_id: string; is_primary: boolean; role?: string | null }> | null) ?? []) {
     const team = entry(row.team_id)
     // Only the earliest primary row counts as lead, matching getClubAdminTeamsSnapshot.
     const isPrimary = row.is_primary && !team.coaches.some((coach) => coach.isPrimary)
+    const stored = normaliseTeamCoachRole(row.role, row.is_primary)
     team.coaches.push({
       userId: row.user_id,
       name: nameByUserId.get(row.user_id) ?? (row.user_id === userId ? "You" : "Coach"),
       isPrimary,
       isSelf: row.user_id === userId,
+      role: stored === "lead" && !isPrimary ? "coach" : stored,
+      active: !inactiveUserIds.has(row.user_id),
     })
   }
 
@@ -1452,6 +1466,8 @@ export async function setClubAdminTeamCoaches(params: {
   teamId: string
   leadCoachUserId?: string | null
   coachUserIds: string[]
+  /** Role of each additional coach by user id. Missing means coach. The lead is always lead. */
+  roles?: Record<string, "coach" | "assistant">
 }): Promise<Result<void>> {
   const clientResult = requireSupabaseClient("setClubAdminTeamCoaches")
   if (!clientResult.ok) return clientResult
@@ -1500,6 +1516,8 @@ export async function setClubAdminTeamCoaches(params: {
         team_id: teamId,
         user_id: coachUserId,
         is_primary: coachUserId === leadCoachUserId,
+        // Only sent when the screen chose roles, so a database without the role column still saves.
+        ...(params.roles ? { role: coachUserId === leadCoachUserId ? "lead" : (params.roles[coachUserId] ?? "coach") } : {}),
         created_by_user_id: userId,
       })),
       { onConflict: "team_id,user_id" },

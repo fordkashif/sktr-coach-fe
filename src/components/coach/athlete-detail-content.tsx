@@ -50,8 +50,10 @@ import {
 } from "@/components/sk"
 import { AthleteAttendanceSection } from "@/components/coach/athlete-attendance-section"
 import { CoachNotesSection } from "@/components/coach/coach-notes-section"
+import { AthleteLoadSection } from "@/components/load/athlete-load-section"
+import { AthleteReportsSection } from "@/components/reports/athlete-reports-section"
 import { CoachAthleteGoals } from "@/components/goals/coach-athlete-goals"
-import { useCoachTeamScope } from "@/lib/coach-teams"
+import { useCoachPermissions, useCoachTeamScope } from "@/lib/coach-teams"
 import {
   AVAILABILITY_KINDS,
   currentAvailability,
@@ -484,9 +486,12 @@ function SessionList({
   athleteId,
   onNoteSaved,
   onLog,
+  canAddNote = true,
 }: {
   sessions: CoachAthleteSessionRow[]
   athleteId: string
+  /** False for an assistant coach: they log sessions, the note to the athlete is the coach's. */
+  canAddNote?: boolean
   onNoteSaved: (sessionId: string, note: string | null) => void
   /** Opens the log for that day, to enter the session for the athlete. */
   onLog: (isoDate: string) => void
@@ -571,27 +576,29 @@ function SessionList({
               }
               trailing={<StatusText tone={state.tone}>{state.label}</StatusText>}
               className="[&_.sk-list-row]:items-start"
-              actions={
-                editing ? undefined : (
-                  <RowMenu
-                    label={`More for ${session.title}, ${shortDay(session.isoDate)}`}
-                    items={[
-                      {
-                        label: session.coachNote ? "Edit note" : "Add note",
-                        onSelect: () => {
-                          setEditingId(session.id)
-                          setDraft(session.coachNote ?? "")
-                          setError(null)
+              actions={(() => {
+                if (editing) return undefined
+                const items = [
+                  ...(canAddNote
+                    ? [
+                        {
+                          label: session.coachNote ? "Edit note" : "Add note",
+                          onSelect: () => {
+                            setEditingId(session.id)
+                            setDraft(session.coachNote ?? "")
+                            setError(null)
+                          },
                         },
-                      },
-                      // Entering results for the athlete: a planned session, today or earlier.
-                      ...(session.origin === "plan" && session.isoDate <= todayIso()
-                        ? [{ label: session.status === "completed" ? "Edit their log" : "Log it for them", onSelect: () => onLog(session.isoDate) }]
-                        : []),
-                    ]}
-                  />
-                )
-              }
+                      ]
+                    : []),
+                  // Entering results for the athlete: a planned session, today or earlier.
+                  ...(session.origin === "plan" && session.isoDate <= todayIso()
+                    ? [{ label: session.status === "completed" ? "Edit their log" : "Log it for them", onSelect: () => onLog(session.isoDate) }]
+                    : []),
+                ]
+                // No menu at all rather than an empty one.
+                return items.length > 0 ? <RowMenu label={`More for ${session.title}, ${shortDay(session.isoDate)}`} items={items} /> : undefined
+              })()}
               below={
                 editing ? (
                   <div className="flex flex-col gap-3">
@@ -639,6 +646,7 @@ function OverviewTab({
 }) {
   const { athlete, sessions, availability, openPainReports, wellness } = detail
   const navigate = useNavigate()
+  const permissions = useCoachPermissions(athlete.teamId)
   const [confirmEnd, setConfirmEnd] = useState(false)
   const [ending, setEnding] = useState(false)
   const [endError, setEndError] = useState<string | null>(null)
@@ -675,7 +683,7 @@ function OverviewTab({
 
   return (
     <>
-      {detail.hasPainAffectingTraining ? (
+      {permissions.canSeeHealth && detail.hasPainAffectingTraining ? (
         <Notice
           tone="warning"
           action={
@@ -690,10 +698,12 @@ function OverviewTab({
 
       <StatStrip aria-label="At a glance">
         {adherence === null ? <Stat label="Plan adherence" value="None" hint="No sessions due in the last 4 weeks" /> : <Stat label="Plan adherence" value={adherence} unit="%" hint={`${done} of ${due.length} sessions, last 4 weeks`} />}
-        {latest ? <Stat label="Readiness" value={latest.readinessScore} of={100} hint={`Checked in ${shortDay(latest.date)}`} /> : <Stat label="Readiness" value="None" hint="No check-ins yet" />}
-        <Stat label="Open pain reports" value={detail.openPainReportCount} hint={detail.openPainReportCount > 0 ? "See Wellness" : "Nothing reported"} />
+        {!permissions.canSeeHealth ? null : latest ? <Stat label="Readiness" value={latest.readinessScore} of={100} hint={`Checked in ${shortDay(latest.date)}`} /> : <Stat label="Readiness" value="None" hint="No check-ins yet" />}
+        {permissions.canSeeHealth ? <Stat label="Open pain reports" value={detail.openPainReportCount} hint={detail.openPainReportCount > 0 ? "See Wellness" : "Nothing reported"} /> : null}
       </StatStrip>
 
+      {/* Injured, sick or away is health information, and setting it is the coach's call. */}
+      {permissions.canSeeHealth && permissions.canEditAthleteRecords ? (
       <Section
         title="Availability"
         action={
@@ -738,20 +748,23 @@ function OverviewTab({
           <p className="text-[0.9375rem] text-sk-mute">Available. If {first} is injured, sick or away, set it here and their planned sessions are excused instead of counting as missed.</p>
         )}
       </Section>
+      ) : null}
 
       <Split
         main={
-          <Section title="Recent sessions" hint="What was planned and what was logged, set by set. A note you add to a session is shown to the athlete.">
+          <Section title="Recent sessions" hint={permissions.canEditPlans ? "What was planned and what was logged, set by set. A note you add to a session is shown to the athlete." : "What was planned and what was logged, set by set."}>
             {sessions.length > 0 ? (
-              <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} />
+              <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} canAddNote={permissions.canEditPlans} />
             ) : (
               <EmptyState
                 title="No sessions yet"
                 body="Sessions appear here once a training plan is published to this athlete's team."
                 action={
-                  <LinkButton to="/coach/training-plan" size="sm">
-                    Open plans
-                  </LinkButton>
+                  permissions.canEditPlans ? (
+                    <LinkButton to="/coach/training-plan" size="sm">
+                      Open plans
+                    </LinkButton>
+                  ) : undefined
                 }
               />
             )}
@@ -759,11 +772,14 @@ function OverviewTab({
         }
         side={
           <>
-            <CoachNotesSection athleteId={athlete.id} athleteName={athlete.name} />
+            {permissions.canSeeHealth ? <CoachNotesSection athleteId={athlete.id} athleteName={athlete.name} /> : null}
             <AthleteAttendanceSection athleteId={athlete.id} athleteName={athlete.name} teamId={athlete.teamId} />
+            {permissions.canExportReports ? <AthleteReportsSection athleteId={athlete.id} athleteName={athlete.name} /> : null}
           </>
         }
       />
+
+      <AthleteLoadSection athleteId={athlete.id} athleteName={athlete.name} availability={period && period.startsOn <= today ? period : null} />
     </>
   )
 }
@@ -865,6 +881,7 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
 
 function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; records: AthleteRecords | null; error: string | null }) {
   const { athlete } = detail
+  const permissions = useCoachPermissions(athlete.teamId)
   const first = athlete.name.split(" ")[0] || athlete.name
   const addPath = `/coach/athletes/${athlete.id}/results/new`
   const standings = useMemo(() => {
@@ -889,9 +906,11 @@ function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; re
           title="No results yet"
           body={`Marks from meets, training and test weeks build ${first}'s history. Personal and season bests are worked out from it.`}
           action={
-            <LinkButton to={addPath} size="sm">
-              Add a result
-            </LinkButton>
+            permissions.canEditAthleteRecords ? (
+              <LinkButton to={addPath} size="sm">
+                Add a result
+              </LinkButton>
+            ) : undefined
           }
         />
       </Section>
@@ -953,7 +972,13 @@ function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; re
       </Section>
 
       <Section title="All results" meta={`${records.results.length} ${records.results.length === 1 ? "result" : "results"}`}>
-        <DataTable caption={`Every result of ${athlete.name}, newest first`} columns={columns} rows={records.results} rowKey={(result) => result.id} />
+        <DataTable
+          caption={`Every result of ${athlete.name}, newest first`}
+          // Correcting a result is for the lead coach and coaches.
+          columns={permissions.canEditAthleteRecords ? columns : columns.filter((column) => column.key !== "edit")}
+          rows={records.results}
+          rowKey={(result) => result.id}
+        />
       </Section>
     </>
   )
@@ -971,6 +996,7 @@ function DetailsTab({
   onGone: (message: string) => void
 }) {
   const { athlete, privateDetails } = detail
+  const permissions = useCoachPermissions(athlete.teamId)
   const [moveOpen, setMoveOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -1011,7 +1037,7 @@ function DetailsTab({
     <>
       <Notice>Private details. Only {first}'s coaches and your club admins can see this, never other athletes.</Notice>
 
-      <Section title="About" action={athlete.hasLogin ? undefined : <Button variant="quiet" size="sm" onClick={() => setEditOpen(true)}>Edit details</Button>}>
+      <Section title="About" action={athlete.hasLogin || !permissions.canManageRoster ? undefined : <Button variant="quiet" size="sm" onClick={() => setEditOpen(true)}>Edit details</Button>}>
         <FactList aria-label="About this athlete">
           <Fact label="Login">{athlete.hasLogin ? "Has their own login" : "No login. You enter results and availability for them"}</Fact>
           <Fact label="Date of birth" empty="Not added">
@@ -1039,6 +1065,8 @@ function DetailsTab({
         </FactList>
       </Section>
 
+      {/* Contacts sit with the medical notes in the athlete's private details, which an assistant sees only when the team allows it. */}
+      {permissions.canSeeHealth ? (
       <Section title="Contacts">
         <FactList aria-label="Emergency and guardian contacts">
           <Fact label="Emergency contact" empty="Not added">
@@ -1073,7 +1101,9 @@ function DetailsTab({
           </Fact>
         </FactList>
       </Section>
+      ) : null}
 
+      {permissions.canManageRoster ? (
       <Section title="Team and access" hint={athlete.teamName ? `${first} is on ${athlete.teamName}.` : `${first} is not on a team.`}>
         {error ? <Notice tone="error">{error}</Notice> : null}
         {confirm === "team" ? (
@@ -1112,6 +1142,7 @@ function DetailsTab({
           </div>
         )}
       </Section>
+      ) : null}
 
       <MoveTeamDialog open={moveOpen} onOpenChange={setMoveOpen} athleteId={athlete.id} athleteName={athlete.name} teamId={athlete.teamId} teamName={athlete.teamName} onMoved={onMoved} />
       {athlete.teamId ? <LoginInviteDialog open={loginOpen} onOpenChange={setLoginOpen} athleteId={athlete.id} athleteName={athlete.name} teamId={athlete.teamId} /> : null}
@@ -1134,6 +1165,8 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
   const [recordsError, setRecordsError] = useState<string | null>(null)
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
   const [notice, setNotice] = useState<SavedNotice | null>((location.state as { saved?: SavedNotice } | null)?.saved ?? null)
+  // An assistant coach sees training, results and attendance. Health, plans and the roster are not theirs.
+  const permissions = useCoachPermissions(detail?.athlete.teamId)
 
   const requestedTab = searchParams.get("tab") as DetailTab | null
   const tab: DetailTab = requestedTab && TABS.includes(requestedTab) ? requestedTab : "overview"
@@ -1219,19 +1252,24 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
           <>
             {about}
             <span className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.9375rem]" data-athlete-status>
-              {athlete.readiness ? <ReadinessText status={athlete.readiness} /> : <StatusText tone="neutral">No check-ins yet</StatusText>}
-              {unavailableNow ? <StatusText tone="amber">{sentenceCase(describeAvailability(unavailableNow, today))}</StatusText> : <StatusText tone="green">Available</StatusText>}
+              {!permissions.canSeeHealth ? null : athlete.readiness ? <ReadinessText status={athlete.readiness} /> : <StatusText tone="neutral">No check-ins yet</StatusText>}
+              {!permissions.canSeeHealth ? null : unavailableNow ? <StatusText tone="amber">{sentenceCase(describeAvailability(unavailableNow, today))}</StatusText> : <StatusText tone="green">Available</StatusText>}
             </span>
           </>
         }
         actions={
           <>
-            <Button onClick={() => setAvailabilityOpen(true)}>{period ? "Change availability" : "Set availability"}</Button>
-            <LinkButton to={logPath(athlete.id)}>Log a session</LinkButton>
-            <LinkButton to={`/coach/athletes/${athlete.id}/results/new`} variant="primary">
-              <Plus className="size-[18px]" weight="bold" aria-hidden />
-              Add result
+            {permissions.canEditAthleteRecords ? <Button onClick={() => setAvailabilityOpen(true)}>{period ? "Change availability" : "Set availability"}</Button> : null}
+            <LinkButton to={logPath(athlete.id)} variant={permissions.canEditAthleteRecords ? "secondary" : "primary"}>
+              Log a session
             </LinkButton>
+            {permissions.canExportReports ? <LinkButton to={`/coach/athletes/${athlete.id}/report`}>Create report</LinkButton> : null}
+            {permissions.canEditAthleteRecords ? (
+              <LinkButton to={`/coach/athletes/${athlete.id}/results/new`} variant="primary">
+                <Plus className="size-[18px]" weight="bold" aria-hidden />
+                Add result
+              </LinkButton>
+            ) : null}
           </>
         }
       />
@@ -1245,7 +1283,7 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
         onChange={setTab}
         options={[
           { value: "overview", label: "Overview" },
-          { value: "wellness", label: "Wellness", count: detail.openPainReportCount > 0 ? detail.openPainReportCount : undefined },
+          ...(permissions.canSeeHealth ? [{ value: "wellness" as const, label: "Wellness", count: detail.openPainReportCount > 0 ? detail.openPainReportCount : undefined }] : []),
           { value: "results", label: "Results" },
           { value: "details", label: "Details" },
         ]}
@@ -1262,8 +1300,8 @@ export function CoachAthleteDetailContent({ athleteId, fallbackBackTo = "/coach/
           }
         />
       ) : null}
-      {tab === "wellness" ? <WellnessTab detail={detail} /> : null}
-      {tab === "results" ? <CoachAthleteGoals athleteId={athlete.id} athleteName={athlete.name} /> : null}
+      {tab === "wellness" && permissions.canSeeHealth ? <WellnessTab detail={detail} /> : null}
+      {tab === "results" && permissions.canEditAthleteRecords ? <CoachAthleteGoals athleteId={athlete.id} athleteName={athlete.name} /> : null}
       {tab === "results" ? <ResultsTab detail={detail} records={records} error={recordsError} /> : null}
       {tab === "details" ? (
         <DetailsTab

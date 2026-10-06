@@ -27,6 +27,7 @@ import {
   type DataTableColumn,
 } from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
+import { ReportsNav } from "@/components/load/reports-nav"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { csvFileName, downloadCsv } from "@/lib/csv"
 import { describeAvailability } from "@/lib/data/athlete/availability-data"
@@ -291,6 +292,8 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
           </span>
         }
       />
+
+      <ReportsNav />
 
       {error ? <Notice tone="error">We could not load your reports. {error}</Notice> : null}
 

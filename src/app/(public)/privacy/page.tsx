@@ -98,6 +98,7 @@ export default function PrivacyPage() {
             "Club admins see the same for every athlete in their own club, and manage the club's coaches, teams and invites.",
             "Club admins can read (but not write in) every direct message thread between a coach and an athlete in their club. A person in a conversation can report a message to the club admins, and a club admin can hide a message.",
             "Other athletes, coaches of other teams and other clubs cannot see your health information, private details or messages.",
+            "A coach can write a report about an athlete and share it with that athlete in the app, or with a parent or guardian through a private link. The link opens that one report without signing in, ends after 7, 30 or 90 days, and the coach can stop it sooner. A report never contains a coach's private notes, and contains health information only when the coach chose to include it, which needs the consent described below.",
             "A coach's email address is shown to their athletes only if the coach switches that on.",
             "Emails about a new message or a pain report say that there is something to read. They do not contain the message text or any health detail.",
           ]}

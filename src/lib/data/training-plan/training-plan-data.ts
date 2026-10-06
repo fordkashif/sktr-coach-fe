@@ -246,6 +246,8 @@ async function replaceTrainingPlanStructure(
         plan_id: planId,
         week_number: week.weekNumber,
         emphasis: week.emphasis,
+        week_type: week.weekType ?? null,
+        phase_name: week.phaseName ?? null,
         status: week.status,
       })),
     )
@@ -880,6 +882,8 @@ type WeekRow = {
   id: string
   week_number: number
   emphasis: string | null
+  week_type?: string | null
+  phase_name?: string | null
   status: "completed" | "current" | "up-next"
 }
 
@@ -911,7 +915,7 @@ export async function getTrainingPlanDetail(planId: string): Promise<Result<Trai
 
   const { data: weeks, error: weeksError } = await clientResult.client
     .from("training_plan_weeks")
-    .select("id, week_number, emphasis, status")
+    .select("id, week_number, emphasis, week_type, phase_name, status")
     .eq("plan_id", planId)
     .order("week_number", { ascending: true })
 
@@ -948,6 +952,8 @@ export async function getTrainingPlanDetail(planId: string): Promise<Result<Trai
       id: week.id,
       weekNumber: week.week_number,
       emphasis: week.emphasis,
+      weekType: week.week_type ?? null,
+      phaseName: week.phase_name ?? null,
       status: week.status,
       days: normalizedDays
         .filter((day) => day.plan_week_id === week.id)

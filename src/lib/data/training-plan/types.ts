@@ -26,6 +26,10 @@ export type TrainingPlanWeek = {
   id: string
   weekNumber: number
   emphasis: string | null
+  /** build, hold, deload, test or competition. Missing or null when the coach did not say. */
+  weekType?: string | null
+  /** The plan phase the week is in ("Specific prep"). */
+  phaseName?: string | null
   status: "completed" | "current" | "up-next"
   days: TrainingPlanDay[]
 }
@@ -39,6 +43,8 @@ export type TrainingPlanDetail = {
 export type PublishPlanStructure = Array<{
   weekNumber: number
   emphasis: string | null
+  weekType?: string | null
+  phaseName?: string | null
   status: "completed" | "current" | "up-next"
   days: Array<{
     dayIndex: number

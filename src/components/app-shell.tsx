@@ -84,7 +84,7 @@ const coachLinks: ShellLink[] = [
 ]
 
 /** Everything under the athlete's Progress tab. Each is its own screen, with the tab bar showing. */
-const ATHLETE_PROGRESS_PATHS = ["/athlete/trends", "/athlete/prs", "/athlete/competitions", "/athlete/test-week", "/athlete/goals", "/athlete/history"]
+const ATHLETE_PROGRESS_PATHS = ["/athlete/trends", "/athlete/prs", "/athlete/competitions", "/athlete/test-week", "/athlete/goals", "/athlete/history", "/athlete/reports"]
 
 /** The athlete's third item is the log action: a raised round button in the phone tab bar. */
 const ATHLETE_LOG_ID = "log"
@@ -176,6 +176,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
+  // An assistant coach does not build plans, keep competitions or export reports, so those tabs are not shown to them.
+  const coachIsAssistant = role === "coach" && coachTeams.find((team) => team.id === coachTeamId)?.role === "assistant"
   const showTeamSwitcher = role === "coach" && coachTeams.length > 1
   const isRestrictedClubAdminSetupRoute =
     pathname === "/club-admin/setup/billing" || pathname === "/club-admin/get-started"
@@ -194,11 +196,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const links = useMemo(() => {
     if (role === "athlete") return athleteLinks
     if (role === "coach") {
-      return coachLinks.map((link) => (link.href === "/coach/teams" ? { ...link, href: coachTeamsHref } : link))
+      return coachLinks
+        .filter((link) => !coachIsAssistant || (link.id !== "plans" && link.id !== "reports" && link.id !== "competitions"))
+        .map((link) => (link.href === "/coach/teams" ? { ...link, href: coachTeamsHref } : link))
     }
     if (role === "platform-admin") return platformAdminLinks
     return clubAdminLinks
-  }, [coachTeamsHref, role])
+  }, [coachIsAssistant, coachTeamsHref, role])
 
   // A coach's Athletes tab points at one team, so it stays lit on any team or athlete page.
   // The athlete's Progress tab covers its four sections: overview, records, competitions and tests.

@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom"
 import { AnnouncementRows, ThreadRows, useMessagesTab } from "@/components/messages/lists"
 import { Button, EmptyState, LinkButton, Notice, PersonPicker, Screen, ScreenHeader, Section, Sheet, SkeletonRows, Tabs } from "@/components/sk"
 import { useAvatarLookup } from "@/lib/account-store"
-import { useCoachTeamScope } from "@/lib/coach-teams"
+import { useCoachPermissions, useCoachTeamScope } from "@/lib/coach-teams"
 import { getStaffAthletes, type StaffAthlete } from "@/lib/data/competition/staff-roster"
 import { messageAthleteHref, newAnnouncementHref } from "@/lib/data/messages/links"
 import { getAnnouncements, getMessageThreads } from "@/lib/data/messages/messages-data"
@@ -21,6 +21,8 @@ export default function CoachMessagesPage() {
 }
 
 function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; teamName: string | null; waiting: boolean }) {
+  // An assistant coach reads the team's announcements. Direct messages only when the team allows it.
+  const permissions = useCoachPermissions(teamId)
   const navigate = useNavigate()
   const avatarOf = useAvatarLookup()
   const [tab, setTab] = useMessagesTab(TABS, "direct")
@@ -73,14 +75,18 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
         lede={lede}
         actions={
           <>
-            <Button onClick={() => setPicking(true)}>
-              <ChatCircle className="size-[18px]" weight="bold" aria-hidden />
-              Message an athlete
-            </Button>
-            <LinkButton to={newAnnouncementHref("coach")} variant="primary">
-              <Megaphone className="size-[18px]" weight="bold" aria-hidden />
-              New announcement
-            </LinkButton>
+            {permissions.canMessageAthletes ? (
+              <Button onClick={() => setPicking(true)} variant={permissions.canPostAnnouncements ? "secondary" : "primary"}>
+                <ChatCircle className="size-[18px]" weight="bold" aria-hidden />
+                Message an athlete
+              </Button>
+            ) : null}
+            {permissions.canPostAnnouncements ? (
+              <LinkButton to={newAnnouncementHref("coach")} variant="primary">
+                <Megaphone className="size-[18px]" weight="bold" aria-hidden />
+                New announcement
+              </LinkButton>
+            ) : null}
           </>
         }
       />
@@ -106,11 +112,17 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
           ) : (
             <EmptyState
               title="No conversations yet"
-              body="Pick an athlete to ask how a session went or to sort out a change. They are told in the app and by email."
+              body={
+                permissions.canMessageAthletes
+                  ? "Pick an athlete to ask how a session went or to sort out a change. They are told in the app and by email."
+                  : "On this team assistant coaches do not message athletes directly. The lead coach or a club admin can turn that on."
+              }
               action={
-                <Button size="sm" onClick={() => setPicking(true)}>
-                  Message an athlete
-                </Button>
+                permissions.canMessageAthletes ? (
+                  <Button size="sm" onClick={() => setPicking(true)}>
+                    Message an athlete
+                  </Button>
+                ) : undefined
               }
             />
           )}
@@ -124,11 +136,13 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
           ) : (
             <EmptyState
               title="No announcements yet"
-              body="Tell the whole team something once: training moved, kit to bring, where to meet."
+              body={permissions.canPostAnnouncements ? "Tell the whole team something once: training moved, kit to bring, where to meet." : "Announcements the lead coach sends to the team show up here."}
               action={
-                <LinkButton to={newAnnouncementHref("coach")} size="sm">
-                  New announcement
-                </LinkButton>
+                permissions.canPostAnnouncements ? (
+                  <LinkButton to={newAnnouncementHref("coach")} size="sm">
+                    New announcement
+                  </LinkButton>
+                ) : undefined
               }
             />
           )}

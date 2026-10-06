@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ClockCounterClockwise, Plus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
+import { MyLoadSection } from "@/components/load/my-load-section"
 import { BestStatus, eventHistoryPath, meetDatesText, ProgressTabs, ResultMark, whenAndWhere } from "@/components/athlete/results-parts"
 import {
   DayLabel,
@@ -35,6 +36,7 @@ import { getCurrentAthleteTestWeekHistory } from "@/lib/data/test-week/test-week
 import type { AthleteTestWeekHistoryItem } from "@/lib/data/test-week/types"
 import { getCurrentAthleteWellnessTrend } from "@/lib/data/wellness/wellness-data"
 import type { WellnessTrendPoint } from "@/lib/data/wellness/types"
+import { MyReportsSection } from "@/components/reports/my-reports-section"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
@@ -322,6 +324,8 @@ export default function AthleteTrendsPage() {
         />
       </StatStrip>
 
+      <MyReportsSection />
+
       <Split
         main={
           <Section
@@ -522,6 +526,8 @@ export default function AthleteTrendsPage() {
           </Section>
         }
       />
+
+      <MyLoadSection />
     </Screen>
   )
 }

@@ -38,6 +38,7 @@ import {
   type PlanDraft,
   type SessionDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import { phaseForWeek } from "@/lib/data/training-plan/plan-phases"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
 /**
@@ -61,6 +62,8 @@ type StoredSession = {
   completedOn: string | null
   rpe: number | null
   comment: string | null
+  /** How long it took, in minutes. Missing on sessions finished before this was asked. */
+  durationMinutes?: number | null
   /** Set while the session is skipped. */
   skip?: { reason: SkipReason; note: string | null } | null
   /** "athlete" for a session the athlete added themselves. Missing means planned. */
@@ -87,7 +90,7 @@ function exercise(name: string, sets: string, reps: string, load = ""): Exercise
   return { id: `demo-${name}`, name, sets, reps, load }
 }
 
-type DemoTemplate = Pick<SessionDraft, "title" | "sessionType" | "location" | "durationMinutes" | "notes" | "blocks">
+type DemoTemplate = Pick<SessionDraft, "title" | "sessionType" | "location" | "durationMinutes" | "intendedEffort" | "notes" | "blocks">
 
 const DEMO_TEMPLATES: Record<string, DemoTemplate> = {
   acceleration: {
@@ -95,6 +98,7 @@ const DEMO_TEMPLATES: Record<string, DemoTemplate> = {
     sessionType: "Mixed",
     location: "Track and weight room",
     durationMinutes: "75",
+    intendedEffort: "7",
     notes: "Stay crisp on the starts. Keep the lifts fast, never grinding.",
     blocks: [
       { id: "demo-a-1", title: "Warm up", notes: "10 min jog, drills, 3 build ups", exercises: [] },
@@ -117,6 +121,7 @@ const DEMO_TEMPLATES: Record<string, DemoTemplate> = {
     sessionType: "Recovery",
     location: "Track",
     durationMinutes: "50",
+    intendedEffort: "4",
     notes: "Easy rhythm. You should finish feeling better than you started.",
     blocks: [
       { id: "demo-b-1", title: "Tempo", notes: "Walk back recovery.", exercises: [exercise("200m tempo", "6", "200m", "32s")] },
@@ -128,6 +133,7 @@ const DEMO_TEMPLATES: Record<string, DemoTemplate> = {
     sessionType: "Mixed",
     location: "Track and weight room",
     durationMinutes: "70",
+    intendedEffort: "7",
     notes: "Sharp contacts. Stop a set early if the bounce goes.",
     blocks: [
       { id: "demo-c-1", title: "Warm up", notes: "10 min jog, drills, 3 build ups", exercises: [] },
@@ -244,10 +250,10 @@ function blueprintBlocks(sessionId: string, blueprint: SessionBlueprint): Loggab
 }
 
 /* Demo history: what "last week" looks like before the athlete has touched anything. */
-const DEMO_HISTORY: Array<{ daysAgo: number; outcome: "done" | "skipped"; rpe?: number; comment?: string; reason?: SkipReason }> = [
-  { daysAgo: 7, outcome: "done", rpe: 7, comment: "Starts felt sharp." },
-  { daysAgo: 6, outcome: "done", rpe: 4 },
-  { daysAgo: 4, outcome: "done", rpe: 6 },
+const DEMO_HISTORY: Array<{ daysAgo: number; outcome: "done" | "skipped"; rpe?: number; minutes?: number; comment?: string; reason?: SkipReason }> = [
+  { daysAgo: 7, outcome: "done", rpe: 7, minutes: 80, comment: "Starts felt sharp." },
+  { daysAgo: 6, outcome: "done", rpe: 4, minutes: 50 },
+  { daysAgo: 4, outcome: "done", rpe: 6, minutes: 70 },
   { daysAgo: 2, outcome: "skipped", reason: "competing" },
 ]
 
@@ -290,6 +296,7 @@ function demoHistory(calendar: Calendar): Store {
       completedOn: entry.outcome === "done" ? date : null,
       rpe: entry.rpe ?? null,
       comment: entry.comment ?? null,
+      durationMinutes: entry.minutes ?? null,
       skip: entry.outcome === "skipped" ? { reason: entry.reason ?? "other", note: null } : null,
     }
   }
@@ -321,6 +328,7 @@ function toSession(blueprint: SessionBlueprint, stored: StoredSession | undefine
     location: blueprint.location,
     completedOn: stored?.completedOn ?? null,
     overallRpe: stored?.rpe ?? null,
+    durationMinutes: stored?.durationMinutes ?? null,
     athleteComment: stored?.comment ?? null,
     origin: "plan",
     skipReason: stored?.completedOn ? null : (stored?.skip?.reason ?? null),
@@ -341,6 +349,7 @@ function extraToSession(id: string, stored: StoredSession): AthleteSession {
     location: null,
     completedOn: stored.completedOn,
     overallRpe: stored.rpe,
+    durationMinutes: stored.durationMinutes ?? null,
     athleteComment: stored.comment,
     origin: "athlete",
     skipReason: null,
@@ -459,12 +468,15 @@ export function saveMockCompletion(params: {
   completionDate: string
   rpe: number | null
   comment: string | null
+  durationMinutes?: number | null
 }): Result<null> {
   return updateStored(params.sessionId, (stored) => ({
     ...stored,
     completedOn: stored.completedOn ?? params.completionDate,
     rpe: params.rpe,
     comment: params.comment,
+    // Left as it was when the caller does not say (an older queued completion).
+    ...(params.durationMinutes === undefined ? {} : { durationMinutes: params.durationMinutes }),
     // Finishing a skipped session means it was done after all.
     skip: null,
   }))
@@ -608,9 +620,25 @@ export function mockAthletePlans(): Array<{ summary: TrainingPlanSummary; detail
   const today = todayIso()
   const calendar = buildCalendar()
   const demo = demoPlan()
-  const sources: Array<{ id: string; name: string; plan: Pick<PlanDraft, "startDate" | "weeks" | "sessions">; emphasis: string[]; demo: boolean }> = [
-    ...coachPlansForMockAthlete().map((plan) => ({ id: plan.id || `plan-${plan.name}`, name: plan.name || "Training plan", plan, emphasis: Array.from({ length: plan.weeks }, (_, index) => plan.weekFocus?.[String(index + 1)] ?? ""), demo: false })),
-    { id: "demo-plan", name: "General performance block", plan: demo, emphasis: ["Getting back into rhythm", "Speed and strength", "Sharpen up", "Taper"], demo: true },
+  const sources: Array<{ id: string; name: string; plan: Pick<PlanDraft, "startDate" | "weeks" | "sessions">; emphasis: string[]; weekTypes: Array<string | null>; phaseNames: Array<string | null>; demo: boolean }> = [
+    ...coachPlansForMockAthlete().map((plan) => ({
+      id: plan.id || `plan-${plan.name}`,
+      name: plan.name || "Training plan",
+      plan,
+      emphasis: Array.from({ length: plan.weeks }, (_, index) => plan.weekFocus?.[String(index + 1)] ?? ""),
+      weekTypes: Array.from({ length: plan.weeks }, (_, index) => plan.weekTypes?.[String(index + 1)] ?? null),
+      phaseNames: Array.from({ length: plan.weeks }, (_, index) => phaseForWeek(plan.phases, index + 1)?.name ?? null),
+      demo: false,
+    })),
+    {
+      id: "demo-plan",
+      name: "General performance block",
+      plan: demo,
+      emphasis: ["Getting back into rhythm", "Speed and strength", "Sharpen up", "Taper"],
+      weekTypes: ["build", "build", "hold", "deload"],
+      phaseNames: ["Specific prep", "Specific prep", "Specific prep", "Taper"],
+      demo: true,
+    },
   ]
   return sources.map((source) => {
     const blueprints = planBlueprints(source.plan)
@@ -624,6 +652,8 @@ export function mockAthletePlans(): Array<{ summary: TrainingPlanSummary; detail
         id: `${source.id}-week-${weekNumber}`,
         weekNumber,
         emphasis: source.emphasis[index] || null,
+        weekType: source.weekTypes[index] ?? null,
+        phaseName: source.phaseNames[index] ?? null,
         status: end < today ? ("completed" as const) : start <= today ? ("current" as const) : ("up-next" as const),
         days: blueprints
           .filter((blueprint) => blueprint.week === weekNumber)
@@ -704,3 +734,19 @@ export function listMockLoggedSessions(athleteId: string): MockLoggedSession[] {
     .sort((left, right) => right.date.localeCompare(left.date))
 }
 
+
+/** The mock athlete's finished sessions with what the load is worked out from, for the load screens. */
+export function listMockDoneSessions(athleteId: string): Array<{ id: string; date: string; title: string; effort: number | null; minutes: number | null }> {
+  if (athleteId !== MOCK_ATHLETE_ID || typeof window === "undefined") return []
+  return Object.entries(loadStore(buildCalendar()))
+    .filter(([, stored]) => stored && stored.completedOn)
+    .map(([id, stored]) => ({ id, date: stored.completedOn as string, title: stored.title, effort: stored.rpe ?? null, minutes: stored.durationMinutes ?? null }))
+}
+
+/** The mock athlete's planned sessions (minutes and intended effort) between two days. */
+export function listMockPlannedSessions(athleteId: string, from: string, to: string): Array<{ date: string; minutes: number | null; effort: number | null }> {
+  if (athleteId !== MOCK_ATHLETE_ID || typeof window === "undefined") return []
+  return [...buildCalendar().byDate.values()]
+    .filter((blueprint) => blueprint.date >= from && blueprint.date <= to)
+    .map((blueprint) => ({ date: blueprint.date, minutes: blueprint.durationMinutes, effort: blueprint.plannedEffort ?? null }))
+}

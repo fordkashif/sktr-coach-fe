@@ -171,7 +171,7 @@ type MessageRow = {
   id: string
   thread_id: string
   sender_user_id: string | null
-  sender_role: "coach" | "athlete"
+  sender_role: "coach" | "athlete" | "system"
   body: string | null
   hidden_at: string | null
   created_at: string
@@ -346,11 +346,14 @@ export async function getMessageableCoaches(): Promise<Result<MessageableCoach[]
   const { data, error } = await clientResult.client.rpc("get_current_athlete_team_coaches")
   if (error) return { ok: false, error: mapMessagingError(error) }
   return ok(
-    ((data as Array<{ user_id: string; display_name: string | null; is_primary: boolean | null }> | null) ?? []).map((row) => ({
-      userId: row.user_id,
-      name: row.display_name?.trim() || "Coach",
-      isLead: Boolean(row.is_primary),
-    })),
+    // can_message is false for an assistant coach on a team that has not switched assistant messaging on.
+    ((data as Array<{ user_id: string; display_name: string | null; is_primary: boolean | null; can_message?: boolean | null }> | null) ?? [])
+      .filter((row) => row.can_message !== false)
+      .map((row) => ({
+        userId: row.user_id,
+        name: row.display_name?.trim() || "Coach",
+        isLead: Boolean(row.is_primary),
+      })),
   )
 }
 

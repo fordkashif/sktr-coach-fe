@@ -1,5 +1,15 @@
 import type { EventGroup } from "@/lib/mock-data"
 import type { PublishPlanStructure, TrainingPlanDetail } from "@/lib/data/training-plan/types"
+import {
+  cleanIntendedEffort,
+  clipPhases,
+  phaseForWeek,
+  sanitizePhases,
+  sanitizeWeekTargets,
+  sanitizeWeekTypes,
+  type PlanPhase,
+  type WeekType,
+} from "./plan-phases"
 
 /**
  * The coach plan builder model. One plain draft object that both the mock and the
@@ -58,6 +68,8 @@ export type SessionDraft = {
   sessionType: SessionType
   location: string
   durationMinutes: string
+  /** The effort the coach intends, "1" to "10". With the minutes it gives the planned load. Missing or empty when not set. */
+  intendedEffort?: string
   notes: string
   blocks: BlockDraft[]
 }
@@ -83,6 +95,12 @@ export type PlanDraft = {
   notes: string
   /** Optional focus line per week, keyed by week number. */
   weekFocus: Record<string, string>
+  /** Named phases, each on consecutive weeks. Missing on a plan made before phases existed. */
+  phases?: PlanPhase[]
+  /** Build, hold, deload, test or competition, keyed by week number. */
+  weekTypes?: Record<string, WeekType>
+  /** Optional target load (effort x minutes summed over the week), keyed by week number. */
+  weekTargetLoad?: Record<string, number>
   /** Only days with a session are stored. Any other day is a rest day. */
   sessions: SessionDraft[]
   assign: PlanAssignDraft
@@ -92,6 +110,9 @@ export type PlanDraft = {
 export type PlanBuilderState = {
   version: 1
   weekFocus: Record<string, string>
+  phases?: PlanPhase[]
+  weekTypes?: Record<string, WeekType>
+  weekTargetLoad?: Record<string, number>
   sessions: SessionDraft[]
   assign: PlanAssignDraft
 }
@@ -299,8 +320,11 @@ export function duplicatePreviousWeek(plan: PlanDraft, week: number): PlanDraft 
   if (week <= 1 || week > plan.weeks) return plan
   const copies = weekSessions(plan, week - 1).map((session) => cloneSessionTo(session, week, session.dayIndex))
   const previousFocus = plan.weekFocus[String(week - 1)]
+  const previousType = plan.weekTypes?.[String(week - 1)]
   return {
     ...plan,
+    // The kind of week comes along when this week has none yet. The target load does not: it is a number for one week.
+    ...(previousType && !plan.weekTypes?.[String(week)] ? { weekTypes: { ...plan.weekTypes, [String(week)]: previousType } } : {}),
     sessions: [...plan.sessions.filter((session) => session.week !== week), ...copies],
     weekFocus:
       previousFocus && !plan.weekFocus[String(week)] ? { ...plan.weekFocus, [String(week)]: previousFocus } : plan.weekFocus,
@@ -330,6 +354,7 @@ export function applyABPattern(
         sessionType: sourceA.sessionType,
         location: sourceA.location,
         durationMinutes: sourceA.durationMinutes,
+        ...(sourceA.intendedEffort ? { intendedEffort: sourceA.intendedEffort } : {}),
       })
 
   const targets = [...new Set(targetDayIndexes)].filter((index) => index >= 0 && index <= 6).sort((a, b) => a - b)
@@ -345,7 +370,16 @@ export function applyABPattern(
 export function setPlanWeeks(plan: PlanDraft, weeks: number): PlanDraft {
   const next = Math.max(1, Math.min(MAX_WEEKS, Math.round(weeks) || 1))
   const weekFocus = Object.fromEntries(Object.entries(plan.weekFocus).filter(([week]) => Number(week) <= next))
-  return { ...plan, weeks: next, weekFocus, sessions: plan.sessions.filter((session) => session.week <= next) }
+  const inPlan = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(Object.entries(record ?? {}).filter(([week]) => Number(week) <= next))
+  return {
+    ...plan,
+    weeks: next,
+    weekFocus,
+    ...(plan.phases ? { phases: clipPhases(plan.phases, next) } : {}),
+    ...(plan.weekTypes ? { weekTypes: inPlan(plan.weekTypes) } : {}),
+    ...(plan.weekTargetLoad ? { weekTargetLoad: inPlan(plan.weekTargetLoad) } : {}),
+    sessions: plan.sessions.filter((session) => session.week <= next),
+  }
 }
 
 export function sessionsBeyondWeek(plan: PlanDraft, weeks: number) {
@@ -380,6 +414,9 @@ export function duplicateAsDraft(plan: PlanDraft): PlanDraft {
     status: "draft",
     name: plan.name ? `${plan.name} (copy)` : "",
     weekFocus: { ...plan.weekFocus },
+    ...(plan.phases ? { phases: plan.phases.map((phase) => ({ ...phase })) } : {}),
+    ...(plan.weekTypes ? { weekTypes: { ...plan.weekTypes } } : {}),
+    ...(plan.weekTargetLoad ? { weekTargetLoad: { ...plan.weekTargetLoad } } : {}),
     sessions: plan.sessions.map((session) => cloneSessionTo(session, session.week, session.dayIndex)),
     assign: { ...plan.assign, athleteIds: [...plan.assign.athleteIds], squadIds: [...plan.assign.squadIds] },
   }
@@ -428,6 +465,8 @@ export function toPublishStructure(plan: PlanDraft): PublishPlanStructure {
   return Array.from({ length: plan.weeks }, (_, index) => index + 1).map((weekNumber) => ({
     weekNumber,
     emphasis: plan.weekFocus[String(weekNumber)]?.trim() || null,
+    weekType: plan.weekTypes?.[String(weekNumber)] ?? null,
+    phaseName: phaseForWeek(plan.phases, weekNumber)?.name ?? null,
     status: weekNumber === 1 ? ("current" as const) : ("up-next" as const),
     days: weekSessions(plan, weekNumber).map((session) => {
       const date = slotDate(plan, weekNumber, session.dayIndex)
@@ -454,7 +493,19 @@ export function toPublishStructure(plan: PlanDraft): PublishPlanStructure {
 }
 
 export function toBuilderState(plan: PlanDraft): PlanBuilderState {
-  return { version: 1, weekFocus: plan.weekFocus, sessions: plan.sessions, assign: plan.assign }
+  return { version: 1, weekFocus: plan.weekFocus, ...planStructureExtras(plan), sessions: plan.sessions, assign: plan.assign }
+}
+
+/** Phases, week types and target loads, each only when the plan has any. A plan without them stores exactly what it did before. */
+export function planStructureExtras(plan: Pick<PlanDraft, "weeks" | "phases" | "weekTypes" | "weekTargetLoad">): Pick<PlanDraft, "phases" | "weekTypes" | "weekTargetLoad"> {
+  const phases = clipPhases(plan.phases ?? [], plan.weeks)
+  const weekTypes = sanitizeWeekTypes(plan.weekTypes, plan.weeks)
+  const weekTargetLoad = sanitizeWeekTargets(plan.weekTargetLoad, plan.weeks)
+  return {
+    ...(phases.length > 0 ? { phases } : {}),
+    ...(Object.keys(weekTypes).length > 0 ? { weekTypes } : {}),
+    ...(Object.keys(weekTargetLoad).length > 0 ? { weekTargetLoad } : {}),
+  }
 }
 
 function asString(value: unknown, fallback = "") {
@@ -513,6 +564,7 @@ function sanitizeSession(value: unknown, maxWeeks: number): SessionDraft | null 
     sessionType,
     location: asString(raw.location),
     durationMinutes: asString(raw.durationMinutes),
+    ...(cleanIntendedEffort(asString(raw.intendedEffort)) !== null ? { intendedEffort: String(cleanIntendedEffort(asString(raw.intendedEffort))) } : {}),
     notes: asString(raw.notes),
     blocks: blocks.flatMap((blockValue) => {
       const block = asRecord(blockValue)
@@ -578,6 +630,12 @@ export function planFromBuilderState(header: PlanHeader, state: unknown): PlanDr
     weekFocus: Object.fromEntries(
       Object.entries(focus).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
     ),
+    ...planStructureExtras({
+      weeks: header.weeks,
+      phases: sanitizePhases(raw.phases, header.weeks),
+      weekTypes: sanitizeWeekTypes(raw.weekTypes, header.weeks),
+      weekTargetLoad: sanitizeWeekTargets(raw.weekTargetLoad, header.weeks),
+    }),
     sessions,
     assign: sanitizeAssign(raw.assign),
   }

@@ -252,7 +252,10 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
   const weekSquadNames = (week: Pick<TestWeekRow, "squadIds">) =>
     joinNames(squads.filter((squad) => (week.squadIds ?? []).includes(squad.id)).map((squad) => squad.name))
   const defaultTeamId = props.defaultTeamId ?? null
-  const { syncSelectedTeam } = useCoachTeams()
+  const { syncSelectedTeam, isCoach, teams: myTeams, selectedTeamId: mySelectedTeamId } = useCoachTeams()
+  // An assistant coach enters results. Setting up, publishing, closing and exporting are for the lead coach and coaches.
+  const assistantOn = (teamId: string | null | undefined) => isCoach && myTeams.find((team) => team.id === (teamId ?? mySelectedTeamId))?.role === "assistant"
+  const canCreateWeek = !assistantOn(lockedTeamId ?? mySelectedTeamId)
   // "?week=<id>" opens that test week straight away (the calendar links here).
   const [view, setView] = useState<View>(() => {
     const linked = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("week")
@@ -419,10 +422,12 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
           title="Test weeks"
           lede={lede}
           actions={
-            <Button variant="primary" onClick={openNew} disabled={isLoading}>
-              <Plus className="size-5" weight="bold" aria-hidden />
-              New test week
-            </Button>
+            canCreateWeek ? (
+              <Button variant="primary" onClick={openNew} disabled={isLoading}>
+                <Plus className="size-5" weight="bold" aria-hidden />
+                New test week
+              </Button>
+            ) : undefined
           }
         />
 
@@ -450,11 +455,17 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
           ) : shownWeeks.length === 0 ? (
             <EmptyState
               title="No test weeks yet"
-              body="A test week is a set of tests, such as 30m or squat 1RM, that your athletes do over a few days. Results land here as they come in, or you type them in yourself."
+              body={
+                canCreateWeek
+                  ? "A test week is a set of tests, such as 30m or squat 1RM, that your athletes do over a few days. Results land here as they come in, or you type them in yourself."
+                  : "A test week is a set of tests, such as 30m or squat 1RM, that the athletes do over a few days. Once the lead coach sets one up, you can enter results here."
+              }
               action={
-                <Button size="sm" onClick={openNew}>
-                  Set up a test week
-                </Button>
+                canCreateWeek ? (
+                  <Button size="sm" onClick={openNew}>
+                    Set up a test week
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -571,6 +582,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         title={week.name}
         lede={`${teamName(week.teamId)}${weekSquadNames(week) ? ` (${weekSquadNames(week)})` : ""}, ${dateWindow(week.startDate, week.endDate)}.`}
         actions={
+          assistantOn(week.teamId) ? undefined : (
           <>
             {week.isArchived ? (
               <Button disabled={busy} onClick={() => void run(() => props.onSetArchived(week.id, false), () => setNotice("Restored from the archive."))}>
@@ -616,6 +628,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
               ]}
             />
           </>
+          )
         }
       />
 
@@ -657,7 +670,7 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         <DetailBody
           week={week}
           detail={detail}
-          onExport={exportCsv}
+          onExport={assistantOn(week.teamId) ? undefined : exportCsv}
           onSaveResult={props.onSaveResult}
           onResultSaved={(athleteId, testId, saved) =>
             setDetailState((current) => {
@@ -699,7 +712,8 @@ function DetailBody({
 }: {
   week: TestWeekRow
   detail: TestWeekDetail
-  onExport: () => void
+  /** Left out for an assistant coach: exports are for the lead coach and coaches. */
+  onExport?: () => void
   onSaveResult: TestWeekScreenProps["onSaveResult"]
   onResultSaved: (athleteId: string, testId: string, saved: TestWeekSavedResult | null) => void
 }) {
@@ -920,12 +934,14 @@ function DetailBody({
                 </p>
               </>
             )}
-            <div className="-ml-2.5 mt-2">
-              <Button variant="quiet" size="sm" onClick={onExport}>
-                <DownloadSimple className="size-4" weight="bold" aria-hidden />
-                Download results as CSV
-              </Button>
-            </div>
+            {onExport ? (
+              <div className="-ml-2.5 mt-2">
+                <Button variant="quiet" size="sm" onClick={onExport}>
+                  <DownloadSimple className="size-4" weight="bold" aria-hidden />
+                  Download results as CSV
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </Section>

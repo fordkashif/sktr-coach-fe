@@ -52,6 +52,8 @@ import { SQUADS_CHANGED_EVENT, listTeamSquads } from "@/lib/data/coach/squads-da
 import { sendInviteEmail } from "@/lib/data/invites/invite-email-data"
 import { adherenceText } from "@/lib/data/session/adherence"
 import type { EventGroup } from "@/lib/mock-data"
+import { HandoverRequestSection } from "@/components/coach/handover-request"
+import { useCoachPermissions, useCoachTeams } from "@/lib/coach-teams"
 
 function absoluteLink(path: string) {
   return typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path
@@ -107,6 +109,9 @@ export function InviteAthleteDialog({
  * still out. `teamName` is shown while the roster loads.
  */
 export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; teamName?: string | null }) {
+  // An assistant coach sees the roster and takes attendance. Inviting, moving and squads are not theirs.
+  const permissions = useCoachPermissions(teamId)
+  const { isCoach } = useCoachTeams()
   const [roster, setRoster] = useState<TeamRoster | null>(null)
   const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
   const [invites, setInvites] = useState<TeamAthleteInvite[] | null>(null)
@@ -252,7 +257,11 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
   const lede = !roster
     ? "Getting your roster..."
     : athletes.length === 0
-      ? "Nobody on the roster yet. Add your athletes to start seeing readiness and adherence here."
+      ? permissions.canManageRoster
+        ? "Nobody on the roster yet. Add your athletes to start seeing readiness and adherence here."
+        : "Nobody on the roster yet."
+      : !permissions.canSeeHealth
+        ? `${athletes.length} ${athletes.length === 1 ? "athlete" : "athletes"}.`
       : `${athletes.length} ${athletes.length === 1 ? "athlete" : "athletes"}. ${
           needLook === 0 ? "Everyone is on track" : `${needLook} ${needLook === 1 ? "needs" : "need"} a look`
         }${unavailable > 0 ? `, ${unavailable} unavailable` : ""}.`
@@ -382,11 +391,17 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         lede={lede}
         actions={
           <>
-            {athletes.length > 0 ? <LinkButton to={`/coach/teams/${teamId}/attendance`}>Take attendance</LinkButton> : null}
-            <Button variant="primary" onClick={() => openAdd("email")}>
-              <UserPlus className="size-5" weight="bold" aria-hidden />
-              Add athletes
-            </Button>
+            {athletes.length > 0 ? (
+              <LinkButton to={`/coach/teams/${teamId}/attendance`} variant={permissions.canManageRoster ? "secondary" : "primary"}>
+                Take attendance
+              </LinkButton>
+            ) : null}
+            {permissions.canManageRoster ? (
+              <Button variant="primary" onClick={() => openAdd("email")}>
+                <UserPlus className="size-5" weight="bold" aria-hidden />
+                Add athletes
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -400,7 +415,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         options={[
           { value: "athletes", label: "Athletes", count: roster ? athletes.length : undefined },
           { value: "squads", label: "Squads", count: squads && squads.length > 0 ? squads.length : undefined },
-          { value: "invites", label: "Invites", count: pendingInvites.length > 0 ? pendingInvites.length : undefined },
+          ...(permissions.canManageRoster ? [{ value: "invites" as const, label: "Invites", count: pendingInvites.length > 0 ? pendingInvites.length : undefined }] : []),
         ]}
       />
 
@@ -411,8 +426,13 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
           ) : athletes.length === 0 ? (
             <EmptyState
               title="No athletes yet"
-              body="Athletes show up here with their readiness, availability and adherence as soon as they join. Invite them by email, show the squad a QR code, or add an athlete who has no login."
+              body={
+                permissions.canManageRoster
+                  ? "Athletes show up here with their readiness, availability and adherence as soon as they join. Invite them by email, show the squad a QR code, or add an athlete who has no login."
+                  : "Athletes show up here once the lead coach has added them to the team."
+              }
               action={
+                !permissions.canManageRoster ? undefined : (
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => openAdd("list")}>
                     Invite a list
@@ -421,6 +441,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                     Show a QR code
                   </Button>
                 </div>
+                )
               }
             />
           ) : (
@@ -430,6 +451,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                 activeCount={activeFilters}
                 onClear={clearFilters}
               >
+                {permissions.canSeeHealth ? (
                 <FilterChips
                   label="Readiness"
                   value={readiness}
@@ -441,6 +463,8 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                     { value: "red", label: "Review" },
                   ]}
                 />
+                ) : null}
+                {permissions.canSeeHealth ? (
                 <FilterChips
                   label="Availability"
                   value={availability}
@@ -451,6 +475,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                     { value: "unavailable", label: "Unavailable" },
                   ]}
                 />
+                ) : null}
                 {groupsOnTeam.length > 1 ? (
                   <FilterChips
                     label="Event group"
@@ -474,7 +499,13 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
               </FilterBar>
 
               {filtered.length > 0 ? (
-                <DataTable caption={`Athletes on ${name}`} columns={columns} rows={filtered} rowKey={(athlete) => athlete.id} />
+                <DataTable
+                  caption={`Athletes on ${name}`}
+                  // Readiness and availability (injured, sick) are health information.
+                  columns={permissions.canSeeHealth ? columns : columns.filter((column) => column.key !== "readiness" && column.key !== "availability")}
+                  rows={filtered}
+                  rowKey={(athlete) => athlete.id}
+                />
               ) : (
                 <EmptyState
                   title="No athletes match"
@@ -501,7 +532,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
           )}
         </Section>
       ) : view === "squads" ? (
-        <TeamSquadsSection teamId={teamId} teamName={name} squads={roster ? squads : null} athletes={athletes} loadError={squadsError} onChanged={() => void loadSquads()} />
+        <TeamSquadsSection teamId={teamId} teamName={name} squads={roster ? squads : null} athletes={athletes} loadError={squadsError} onChanged={() => void loadSquads()} canManage={permissions.canManageSquads} />
       ) : (
         <Section aria-label="Invites" title="Invites" hint="Every invite for this team, newest first. Open the menu on a waiting invite to email it again, copy its link or cancel it.">
           {invitesError ? <Notice tone="error">Could not load invites: {invitesError}</Notice> : null}
@@ -603,6 +634,8 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         }}
         onAthleteAdded={() => void loadRoster()}
       />
+
+      {isCoach ? <HandoverRequestSection teamId={teamId} teamName={name} /> : null}
     </Screen>
   )
 }

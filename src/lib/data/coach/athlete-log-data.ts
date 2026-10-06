@@ -32,14 +32,14 @@ export type CoachLogDay = {
   loggedBy: SessionLoggedBy | null
 }
 
-export type CoachCompletionInput = { completionDate: string; rpe: number | null; comment: string | null }
+export type CoachCompletionInput = { completionDate: string; rpe: number | null; comment: string | null; durationMinutes?: number | null }
 
 /* Mock mode ------------------------------------------------------------------------------------- */
 
 const MOCK_KEY = "pacelab:coach-entered-sessions:v1"
 const STORAGE_BLOCKED = "Could not save in this browser. Storage may be full or blocked."
 
-type MockEntered = { athleteId: string; date: string; title: string; blocks: LoggableBlock[]; logs: SessionRowLog[]; completedOn: string | null; rpe: number | null; comment: string | null }
+type MockEntered = { athleteId: string; date: string; title: string; blocks: LoggableBlock[]; logs: SessionRowLog[]; completedOn: string | null; rpe: number | null; comment: string | null; durationMinutes?: number | null }
 
 function readMock(): Record<string, MockEntered> {
   if (typeof window === "undefined") return {}
@@ -81,6 +81,7 @@ function mockSessionFor(athleteId: string, date: string): AthleteSession | null 
     location: planned?.location ?? null,
     completedOn: entered?.completedOn ?? null,
     overallRpe: entered?.rpe ?? null,
+    durationMinutes: entered?.durationMinutes ?? null,
     athleteComment: entered?.comment ?? null,
     origin: "plan",
     skipReason: null,
@@ -244,7 +245,7 @@ export async function saveAthleteCompletionForCoach(athleteId: string, sessionId
     const result =
       athleteId === MOCK_ATHLETE_ID
         ? saveMockCompletion({ sessionId, ...input })
-        : updateMockEntered(athleteId, sessionId, (entered) => ({ ...entered, completedOn: entered.completedOn ?? input.completionDate, rpe: input.rpe, comment: input.comment }))
+        : updateMockEntered(athleteId, sessionId, (entered) => ({ ...entered, completedOn: entered.completedOn ?? input.completionDate, rpe: input.rpe, comment: input.comment, ...(input.durationMinutes === undefined ? {} : { durationMinutes: input.durationMinutes }) }))
     if (result.ok) await stampMock(athleteId, sessionId)
     return result
   }
@@ -255,7 +256,7 @@ export async function saveAthleteCompletionForCoach(athleteId: string, sessionId
     const { data: existing, error: existingError } = await client.from("session_completions").select("id").eq("session_id", sessionId).eq("athlete_id", athleteId).maybeSingle()
     if (existingError) return { ok: false, error: mapPostgrestError(existingError) }
     if (existing) {
-      const { error } = await client.from("session_completions").update({ rpe: input.rpe, athlete_comment: input.comment }).eq("id", existing.id as string)
+      const { error } = await client.from("session_completions").update({ rpe: input.rpe, athlete_comment: input.comment, ...(input.durationMinutes === undefined ? {} : { duration_minutes: input.durationMinutes }) }).eq("id", existing.id as string)
       if (error) return { ok: false, error: mapPostgrestError(error) }
       return ok(null)
     }
@@ -270,6 +271,7 @@ export async function saveAthleteCompletionForCoach(athleteId: string, sessionId
       completed_by_user_id: userId,
       rpe: input.rpe,
       athlete_comment: input.comment,
+      ...(input.durationMinutes === undefined ? {} : { duration_minutes: input.durationMinutes }),
     })
     if (error && error.code !== "23505") return { ok: false, error: mapPostgrestError(error) }
     return ok(null)

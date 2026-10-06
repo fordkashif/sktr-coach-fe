@@ -19,6 +19,7 @@ import {
 } from "@/lib/data/session/session-log-sync"
 import type { Result } from "@/lib/data/result"
 import { cleanEffort, lastTimeForRow, NOTE_MAX_LENGTH, repeatFill } from "@/lib/data/session/log-assist"
+import { cleanMinutes } from "@/lib/data/load/training-load"
 import { MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
 import type {
   AthleteSession,
@@ -37,7 +38,8 @@ const WRAP_UP_KEY = "pacelab:session-wrap-up:v1"
 const LAST_TIME_CACHE_KEY = "pacelab:session-last-time:v1"
 
 type LogMap = Record<string, SessionRowLog>
-type WrapUp = { rpe: number | null; comment: string }
+/** `minutes` is what is in the "How long did it take?" field, as typed. */
+type WrapUp = { rpe: number | null; comment: string; minutes?: string }
 export type LogField = "reps" | "loadKg" | "timeSeconds" | "mark"
 
 function readJson<T>(key: string, fallback: T): T {
@@ -97,6 +99,7 @@ function withPending(day: AthleteSessionDay): AthleteSessionDay {
           status: "completed" as const,
           completedOn: day.session.completedOn ?? pending.completion.completionDate,
           overallRpe: pending.completion.rpe,
+          ...(pending.completion.durationMinutes === undefined ? {} : { durationMinutes: pending.completion.durationMinutes }),
           athleteComment: pending.completion.comment,
         }
       : {}),
@@ -144,7 +147,7 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fromCache, setFromCache] = useState(false)
   const [logs, setLogs] = useState<LogMap>({})
-  const [wrapUp, setWrapUp] = useState<WrapUp>({ rpe: null, comment: "" })
+  const [wrapUp, setWrapUp] = useState<WrapUp>({ rpe: null, comment: "", minutes: "" })
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [reloadToken, setReloadToken] = useState(0)
   const [lastTime, setLastTime] = useState<Record<string, LastTimeResult>>({})
@@ -191,6 +194,8 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
       setWrapUp({
         rpe: draft?.rpe ?? merged.session?.overallRpe ?? null,
         comment: draft?.comment ?? merged.session?.athleteComment ?? "",
+        // What they said last time, else what the coach planned: when that is right, finishing takes no extra tap.
+        minutes: draft?.minutes ?? String(merged.session?.durationMinutes ?? merged.session?.estimatedDurationMinutes ?? ""),
       })
     })
 
@@ -366,13 +371,15 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
     if (!session) return false
     const completionDate = session.completedOn ?? dateKeyLocal(new Date())
     const comment = wrapUp.comment.trim() || null
-    queueCompletion(session.id, { completionDate, rpe: wrapUp.rpe, comment })
+    const durationMinutes = cleanMinutes(wrapUp.minutes ?? "")
+    queueCompletion(session.id, { completionDate, rpe: wrapUp.rpe, comment, durationMinutes })
 
     const finished: AthleteSession = {
       ...session,
       status: "completed",
       completedOn: completionDate,
       overallRpe: wrapUp.rpe,
+      durationMinutes,
       athleteComment: comment,
     }
     sessionRef.current = finished
@@ -396,7 +403,7 @@ export function useSessionLog(date: string, sessionId: string | null = null) {
       if (!dates.includes(completionDate)) window.localStorage.setItem(key, JSON.stringify([...dates, completionDate]))
     }
     return flushSessionOutbox()
-  }, [wrapUp.comment, wrapUp.rpe])
+  }, [wrapUp.comment, wrapUp.minutes, wrapUp.rpe])
 
   const reload = useCallback(() => setReloadToken((value) => value + 1), [])
 

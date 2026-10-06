@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { repeatTarget, setCount, setKey, type LogField } from "@/components/athlete/log/use-session-log"
 import { dateKeyLocal } from "@/lib/athlete-session"
+import { cleanMinutes } from "@/lib/data/load/training-load"
 import { loadAthleteSessionForCoach, saveAthleteCompletionForCoach, saveAthleteRowLogsForCoach, type CoachLogDay } from "@/lib/data/coach/athlete-log-data"
 import { cleanEffort, NOTE_MAX_LENGTH } from "@/lib/data/session/log-assist"
 import { MAX_SETS, targetValues } from "@/lib/data/session/session-from-plan"
@@ -26,7 +27,7 @@ export function useCoachSessionLog(athleteId: string, date: string) {
   const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
   const [logs, setLogs] = useState<LogMap>({})
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
-  const [wrapUp, setWrapUp] = useState<{ rpe: number | null; comment: string }>({ rpe: null, comment: "" })
+  const [wrapUp, setWrapUp] = useState<{ rpe: number | null; comment: string; minutes: string }>({ rpe: null, comment: "", minutes: "" })
   const [save, setSave] = useState<CoachLogSaveState>({ status: "idle", message: null })
   const [reloadToken, setReloadToken] = useState(0)
   const logsRef = useRef<LogMap>({})
@@ -52,7 +53,11 @@ export function useCoachSessionLog(athleteId: string, date: string) {
       logsRef.current = Object.fromEntries((result.data.session?.logs ?? []).map((log) => [setKey(log.rowId, log.setIndex), log]))
       setLogs(logsRef.current)
       setExtraSets({})
-      setWrapUp({ rpe: result.data.session?.overallRpe ?? null, comment: result.data.session?.athleteComment ?? "" })
+      setWrapUp({
+        rpe: result.data.session?.overallRpe ?? null,
+        comment: result.data.session?.athleteComment ?? "",
+        minutes: String(result.data.session?.durationMinutes ?? result.data.session?.estimatedDurationMinutes ?? ""),
+      })
       setSave({ status: "idle", message: null })
     })
     return () => {
@@ -214,6 +219,7 @@ export function useCoachSessionLog(athleteId: string, date: string) {
       completionDate: session.completedOn ?? dateKeyLocal(new Date()),
       rpe: wrapUp.rpe,
       comment: wrapUp.comment.trim() || null,
+      durationMinutes: cleanMinutes(wrapUp.minutes),
     })
     if (!result.ok) {
       setSave({ status: "error", message: result.error.message })
@@ -221,7 +227,7 @@ export function useCoachSessionLog(athleteId: string, date: string) {
     }
     setSave({ status: "saved", message: null })
     return true
-  }, [athleteId, day?.session, flush, wrapUp.comment, wrapUp.rpe])
+  }, [athleteId, day?.session, flush, wrapUp.comment, wrapUp.minutes, wrapUp.rpe])
 
   const totals = useMemo(() => {
     let total = 0
@@ -244,7 +250,7 @@ export function useCoachSessionLog(athleteId: string, date: string) {
     logs,
     extraSets,
     wrapUp,
-    updateWrapUp: (patch: Partial<{ rpe: number | null; comment: string }>) => setWrapUp((current) => ({ ...current, ...patch })),
+    updateWrapUp: (patch: Partial<{ rpe: number | null; comment: string; minutes: string }>) => setWrapUp((current) => ({ ...current, ...patch })),
     toggleSet,
     setValue,
     setEffort,

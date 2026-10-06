@@ -50,6 +50,7 @@ export async function insertSessionsFromBlueprints(client: SupabaseClient, seeds
           status: "scheduled",
           scheduled_for: seed.blueprint.date,
           estimated_duration_minutes: seed.blueprint.durationMinutes,
+          planned_effort: seed.blueprint.plannedEffort ?? null,
           coach_note: seed.blueprint.coachNote,
           created_by_user_id: seed.createdByUserId,
           plan_id: seed.planId,

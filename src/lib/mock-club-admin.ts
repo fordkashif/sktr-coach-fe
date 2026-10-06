@@ -32,6 +32,12 @@ export interface ClubTeam {
   coachUserId?: string
   /** Additional coaches on the team, not counting the lead in coachUserId. */
   coachUserIds?: string[]
+  /** Role of each additional coach, by user id. Missing means coach. */
+  coachRoles?: Record<string, "coach" | "assistant">
+  /** Assistant coaches of this team may message its athletes. Off unless set. */
+  assistantsCanMessage?: boolean
+  /** Assistant coaches of this team may see health information. Off unless set. */
+  assistantsSeeHealth?: boolean
 }
 
 export interface CoachInvite {

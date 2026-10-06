@@ -1,4 +1,6 @@
 import { COACH_TEAM_COOKIE, getCookieValue } from "@/lib/auth-session"
+import { normaliseTeamCoachRole, type TeamAssistantSettings, type TeamCoachRole } from "@/lib/coach-permissions"
+import { loadClubTeams } from "@/lib/mock-club-admin"
 import {
   getMockCoachConfig,
   MOCK_COACH_TEAM_STORAGE_KEY,
@@ -33,4 +35,28 @@ export function resolveMockCoachTeamIds(allTeamIds: string[]): string[] {
   if (single && known.has(single)) return [single]
   // An unknown stored id keeps the old behaviour: the team page says "Team not found".
   return single ? [] : allTeamIds.slice(0, 1)
+}
+
+/**
+ * Mock mode: the role of the demo coach on each team. localStorage "pacelab:mock-coach-team-roles"
+ * holds JSON such as {"t4":"assistant"}. A team not listed is coached as lead, as before. Set it
+ * from the browser console or a test to see the app as an assistant coach.
+ */
+export const MOCK_COACH_TEAM_ROLES_STORAGE_KEY = "pacelab:mock-coach-team-roles"
+
+export function resolveMockCoachTeamRole(teamId: string): TeamCoachRole {
+  if (typeof window === "undefined") return "lead"
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MOCK_COACH_TEAM_ROLES_STORAGE_KEY) ?? "{}") as Record<string, unknown>
+    return normaliseTeamCoachRole(parsed?.[teamId], true)
+  } catch {
+    return "lead"
+  }
+}
+
+/** Mock mode: the two assistant switches of a team, from the demo club's team list in this browser. */
+export function resolveMockTeamAssistantSettings(teamId: string): TeamAssistantSettings {
+  if (typeof window === "undefined") return { assistantsCanMessage: false, assistantsSeeHealth: false }
+  const team = loadClubTeams().find((item) => item.id === teamId)
+  return { assistantsCanMessage: team?.assistantsCanMessage === true, assistantsSeeHealth: team?.assistantsSeeHealth === true }
 }
