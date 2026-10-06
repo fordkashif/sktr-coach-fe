@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4"
+import { chooseAppBaseUrl, renderClubApprovalEmail } from "../_shared/club-approval-email.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,13 +50,7 @@ function isLocalOrigin(origin: string | null) {
   }
 }
 
-async function sendWithResend(params: {
-  apiKey: string
-  fromEmail: string
-  toEmail: string
-  subject: string
-  body: string
-}) {
+async function sendWithResend(params: { apiKey: string; fromEmail: string; toEmail: string; subject: string; text: string; html: string }) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -65,25 +60,16 @@ async function sendWithResend(params: {
     body: JSON.stringify({
       from: params.fromEmail,
       to: [params.toEmail],
+      reply_to: "support@thesktr.com",
       subject: params.subject,
-      text: params.body,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;">
-        <h2 style="margin:0 0 16px;">Your SKTR Coach club is approved</h2>
-        <p style="margin:0 0 12px;">Your request to join SKTR Coach has been approved.</p>
-        <p style="margin:0 0 12px;">Open the link below, press Set up my account, choose a password and finish setting up your club. The link works one time.</p>
-        <p style="margin:16px 0;"><a href="${params.body.match(/https?:\/\/\S+/)?.[0] ?? "#"}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#2152ff;color:#ffffff;text-decoration:none;font-weight:600;">Set up my account</a></p>
-        <p style="margin:16px 0 0;">If the button does not work, use this link:</p>
-        <p style="word-break:break-all;">${params.body.match(/https?:\/\/\S+/)?.[0] ?? ""}</p>
-      </div>`,
+      text: params.text,
+      html: params.html,
     }),
   })
 
   const payload = await response.json()
   if (!response.ok) {
-    const message =
-      typeof payload?.message === "string"
-        ? payload.message
-        : `Resend request failed with status ${response.status}`
+    const message = typeof payload?.message === "string" ? payload.message : `Resend request failed with status ${response.status}`
     throw new Error(message)
   }
 
@@ -158,9 +144,13 @@ Deno.serve(async (request) => {
   const tenantId = payload.tenantId?.trim()
   const requestorEmail = payload.requestorEmail?.trim().toLowerCase()
   const requestorName = payload.requestorName?.trim()
-  const redirectBaseUrl =
-    normalizeRedirectBaseUrl(payload.appBaseUrl) ??
-    normalizeRedirectBaseUrl(Deno.env.get("PUBLIC_APP_URL"))
+  // The server's own address wins, so the link in the email is on the app's domain whatever address
+  // the platform admin is browsing from.
+  const redirectBaseUrl = chooseAppBaseUrl(
+    normalizeRedirectBaseUrl(Deno.env.get("PUBLIC_APP_URL")),
+    normalizeRedirectBaseUrl(payload.appBaseUrl),
+    isLocalOrigin,
+  )
 
   if (!requestId || !tenantId || !requestorEmail || !requestorName) {
     return new Response(JSON.stringify({ error: "Missing required payload fields." }), {
@@ -273,13 +263,14 @@ Deno.serve(async (request) => {
   }
 
   try {
-    await sendWithResend({
-      apiKey: resendApiKey,
-      fromEmail,
-      toEmail: requestorEmail,
-      subject: "Your SKTR Coach club is approved",
-      body: `Your request to join SKTR Coach has been approved.\n\nSet up your account here:\n${appLink}\n\nYou will choose a password and finish setting up your club. The link works one time. Questions: support@thesktr.com`,
+    const { data: requestRow } = await serviceClient.from("tenant_provision_requests").select("organization_name").eq("id", requestId).maybeSingle()
+    const email = renderClubApprovalEmail({
+      clubName: (requestRow as { organization_name?: string } | null)?.organization_name ?? null,
+      recipientName: requestorName,
+      recipientEmail: requestorEmail,
+      link: appLink,
     })
+    await sendWithResend({ apiKey: resendApiKey!, fromEmail: fromEmail!, toEmail: requestorEmail, subject: email.subject, text: email.text, html: email.html })
   } catch (dispatchError) {
     const message = dispatchError instanceof Error ? dispatchError.message : "Invite email dispatch failed."
 
