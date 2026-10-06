@@ -20,22 +20,29 @@ export type SessionAccess =
   | { actor: null; noAccessReason: ProfileBootstrapReason }
 
 export async function resolveSessionAccess(supabase: SupabaseClient, session: Session): Promise<SessionAccess> {
-  const { profile, reason } = await ensureProfileForSession(supabase, session)
-  if (profile && isProfileRole(profile.role)) {
-    return {
-      actor: {
-        userId: session.user.id,
-        userEmail: session.user.email ?? null,
-        role: profile.role,
-        tenantId: profile.tenant_id,
-      },
-      noAccessReason: null,
+  // "error" means the check itself could not be made (no network, a server hiccup). Callers must not
+  // treat that as "this account has no access": the person is still signed in.
+  try {
+    const { profile, reason } = await ensureProfileForSession(supabase, session)
+    if (profile && isProfileRole(profile.role)) {
+      return {
+        actor: {
+          userId: session.user.id,
+          userEmail: session.user.email ?? null,
+          role: profile.role,
+          tenantId: profile.tenant_id,
+        },
+        noAccessReason: null,
+      }
     }
-  }
 
-  const platformAdmin = await resolvePlatformAdminActor(supabase, session)
-  if (platformAdmin) return { actor: platformAdmin, noAccessReason: null }
-  return { actor: null, noAccessReason: reason ?? "none" }
+    const platformAdmin = await resolvePlatformAdminActor(supabase, session)
+    if (platformAdmin === "error") return { actor: null, noAccessReason: "error" }
+    if (platformAdmin) return { actor: platformAdmin, noAccessReason: null }
+    return { actor: null, noAccessReason: reason ?? "none" }
+  } catch {
+    return { actor: null, noAccessReason: "error" }
+  }
 }
 
 export async function resolveSessionActor(
@@ -45,7 +52,7 @@ export async function resolveSessionActor(
   return (await resolveSessionAccess(supabase, session)).actor
 }
 
-async function resolvePlatformAdminActor(supabase: SupabaseClient, session: Session): Promise<SessionActor | null> {
+async function resolvePlatformAdminActor(supabase: SupabaseClient, session: Session): Promise<SessionActor | null | "error"> {
   const normalizedEmail = session.user.email?.trim().toLowerCase() ?? null
   if (!normalizedEmail) return null
 
@@ -66,7 +73,7 @@ async function resolvePlatformAdminActor(supabase: SupabaseClient, session: Sess
       .maybeSingle(),
   ])
 
-  if (byUserId.error || byEmail.error) return null
+  if (byUserId.error || byEmail.error) return "error"
   if (!byUserId.data && !byEmail.data) return null
 
   return {

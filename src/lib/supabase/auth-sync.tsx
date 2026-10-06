@@ -2,11 +2,7 @@ import { useEffect } from "react"
 import { clearSessionCookies, getCookieValue, COACH_TEAM_COOKIE, setSessionCookies } from "@/lib/auth-session"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { isSupabaseEnabled } from "@/lib/supabase/config"
-import { resolveSessionActor } from "@/lib/supabase/actor"
-
-function isTenantRole(value: string): value is "athlete" | "coach" | "club-admin" {
-  return value === "athlete" || value === "coach" || value === "club-admin"
-}
+import { resolveSessionAccess } from "@/lib/supabase/actor"
 
 async function resolveCoachTeamId(
   supabase: NonNullable<ReturnType<typeof getBrowserSupabaseClient>>,
@@ -42,22 +38,30 @@ export function SupabaseAuthSync() {
     let active = true
 
     const syncSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      const session = data.session
+      let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>
+      try {
+        sessionResult = await supabase.auth.getSession()
+      } catch {
+        return
+      }
+      const session = sessionResult.data.session
 
       if (!active) return
 
       if (!session) {
+        // No answer from the server is not a sign out. Leave everything as it is.
+        if (sessionResult.error || (typeof navigator !== "undefined" && navigator.onLine === false)) return
         clearSessionCookies("expired")
         return
       }
 
       // The role and club come from the database (the profile row, or bootstrap_current_profile() for a
       // first sign-in). Nothing here reads them from the user's auth metadata, which the user can edit.
-      const actor = await resolveSessionActor(supabase, session)
+      const { actor, noAccessReason } = await resolveSessionAccess(supabase, session)
 
       if (!active) return
-      if (!actor || !isTenantRole(actor.role) || !actor.tenantId) {
+      if (!actor) {
+        if (noAccessReason === "error") return
         // No club for this account (yet). Only the role cookies are cleared: the Supabase session stays,
         // because the invite claim pages sign a new user in first and accept the invite a moment later.
         // The login page is the place that signs such an account out and explains why.
@@ -66,11 +70,12 @@ export function SupabaseAuthSync() {
       }
 
       const coachTeamId =
-        actor.role === "coach" ? await resolveCoachTeamId(supabase, session.user.id, actor.tenantId) : undefined
+        actor.role === "coach" && actor.tenantId ? await resolveCoachTeamId(supabase, session.user.id, actor.tenantId) : undefined
 
       if (!active) return
 
-      setSessionCookies(actor.role, actor.tenantId, session.user.email ?? session.user.id, coachTeamId)
+      // A platform admin has no club. The login page writes the same placeholder.
+      setSessionCookies(actor.role, actor.tenantId ?? "platform-admin", session.user.email ?? session.user.id, coachTeamId)
     }
 
     void syncSession()

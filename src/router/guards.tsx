@@ -5,18 +5,38 @@ import { ACCESS_PAUSED_EVENT } from "@/lib/access-paused"
 import { SESSION_UPDATED_EVENT, signedOutOnPurpose } from "@/lib/auth-session"
 import { loginPathWithReturn } from "@/lib/return-path"
 import { AccessPausedPage } from "@/pages/access-paused"
-import { getCurrentGuardAuthContext } from "@/router/guard-auth-context"
+import { getCurrentGuardAuthContext, GuardCheckUnavailable, type GuardAuthContext } from "@/router/guard-auth-context"
 
 export function GuardedAuthenticatedLayout() {
   const location = useLocation()
   const [access, setAccess] = useState<AccessResult | null>(null)
   const [role, setRole] = useState<string | null>(null)
+  // Only matters before the first answer: with a screen already showing, a failed check changes nothing.
+  const [unreachable, setUnreachable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
+    let retryTimer: number | undefined
+    let attempts = 0
+
     const resolveAccess = async () => {
-      const authContext = await getCurrentGuardAuthContext()
+      let authContext: GuardAuthContext
+      try {
+        authContext = await getCurrentGuardAuthContext()
+        attempts = 0
+      } catch (error) {
+        if (!(error instanceof GuardCheckUnavailable)) throw error
+        // The check could not be made (no network just after the phone woke, a server hiccup).
+        // Nobody is signed out for that: keep the screen that is showing and look again shortly.
+        if (cancelled) return
+        attempts += 1
+        setUnreachable(attempts >= 3)
+        window.clearTimeout(retryTimer)
+        retryTimer = window.setTimeout(() => void resolveAccess(), Math.min(1000 * 2 ** (attempts - 1), 15_000))
+        return
+      }
+      if (!cancelled) setUnreachable(false)
       const nextAccess = evaluateAccess({
         pathname: location.pathname,
         ...authContext,
@@ -45,6 +65,7 @@ export function GuardedAuthenticatedLayout() {
     }
 
     window.addEventListener("focus", handleWindowFocus)
+    window.addEventListener("online", handleWindowFocus)
     document.addEventListener("visibilitychange", handleVisibilityChange)
     window.addEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated as EventListener)
     // The database refused a request because this member was deactivated or the club was paused
@@ -53,7 +74,9 @@ export function GuardedAuthenticatedLayout() {
 
     return () => {
       cancelled = true
+      window.clearTimeout(retryTimer)
       window.removeEventListener("focus", handleWindowFocus)
+      window.removeEventListener("online", handleWindowFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
       window.removeEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated as EventListener)
       window.removeEventListener(ACCESS_PAUSED_EVENT, handleSessionUpdated)
@@ -61,7 +84,13 @@ export function GuardedAuthenticatedLayout() {
   }, [location.pathname])
 
   if (!access) {
-    return null
+    if (!unreachable) return null
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-3 px-6">
+        <h1 className="text-2xl font-extrabold tracking-tight text-sk-ink">Trying to reach SKTR Coach</h1>
+        <p className="text-base text-sk-ink-2">You are still signed in. This screen opens as soon as you are back online.</p>
+      </main>
+    )
   }
 
   if (!access.allowed && access.blocked) {
