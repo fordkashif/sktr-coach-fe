@@ -59,9 +59,9 @@ jobs:
           # Not a secret: set it as an environment variable (or as a secret, either works).
           PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
           # Push notifications (made with scripts/generate-vapid-keys.mjs). Optional: push stays off without them.
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY || 'BEvdbHtgctRC2_Vyptf9mjDWWTjhhC0G09CJONkXhsePt8KjBa5eUWP7IaL5rNYAipWbHaIYdGRaTecgsdfKD6c' }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT || 'mailto:support@thesktr.com' }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \
@@ -163,9 +163,9 @@ jobs:
           # Not a secret: set it as an environment variable (or as a secret, either works).
           PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
           # Push notifications (made with scripts/generate-vapid-keys.mjs). Optional: push stays off without them.
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || vars.VAPID_PUBLIC_KEY || 'BEvdbHtgctRC2_Vyptf9mjDWWTjhhC0G09CJONkXhsePt8KjBa5eUWP7IaL5rNYAipWbHaIYdGRaTecgsdfKD6c' }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT || vars.VAPID_SUBJECT || 'mailto:support@thesktr.com' }}
         run: |
           supabase secrets set \
             SUPABASE_URL="$SUPABASE_URL" \

@@ -84,9 +84,16 @@ function announceChange() {
   }
 }
 
+/**
+ * The app's own public push key. It is public by design (every browser that subscribes is given it),
+ * so it lives in the code and the web host needs no setting. VITE_VAPID_PUBLIC_KEY overrides it.
+ * Its private half is the VAPID_PRIVATE_KEY secret of the server function.
+ */
+const APP_PUSH_PUBLIC_KEY = "BEvdbHtgctRC2_Vyptf9mjDWWTjhhC0G09CJONkXhsePt8KjBa5eUWP7IaL5rNYAipWbHaIYdGRaTecgsdfKD6c"
+
 /** The app's public push key, or null when push is not set up for this build. */
 export function pushPublicKey(): string | null {
-  const key = (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined)?.trim()
+  const key = (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined)?.trim() || APP_PUSH_PUBLIC_KEY
   return key && vapidKeyBytes(key) ? key : null
 }
 
