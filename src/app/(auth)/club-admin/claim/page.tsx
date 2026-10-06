@@ -90,7 +90,11 @@ export default function ClubAdminClaimPage() {
   const [onboardingCompleted, setOnboardingCompleted] = useState(false)
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [loading, setLoading] = useState(isSupabaseMode)
+  // A link from the email is opened only when the person presses the button. Mail scanners and link
+  // previews load the page too, and a link that opened itself would be used up before its owner saw it.
+  const needsStart = isSupabaseMode && Boolean(tokenHash && tokenType)
+  const [started, setStarted] = useState(!needsStart)
+  const [loading, setLoading] = useState(isSupabaseMode && !needsStart)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -98,6 +102,7 @@ export default function ClubAdminClaimPage() {
   useEffect(() => {
     // Mock mode has no claim tokens. The page still walks through the same step.
     if (!isSupabaseMode) return
+    if (!started) return
     if (!isSupabaseEnabled()) {
       setError("Supabase mode is enabled but URL/key are missing in environment.")
       setLoading(false)
@@ -181,7 +186,7 @@ export default function ClubAdminClaimPage() {
     return () => {
       cancelled = true
     }
-  }, [isSupabaseMode, navigate, tokenHash, tokenType])
+  }, [isSupabaseMode, navigate, started, tokenHash, tokenType])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -210,6 +215,26 @@ export default function ClubAdminClaimPage() {
     navigate(nextRouteAfterPassword(lifecycleStatus, onboardingCompleted), { replace: true })
   }
 
+  if (!started) {
+    return (
+      <FirstAccessFrame outside title="Your club is approved" lede="Next you will set a password, then we walk you through setting up your club.">
+        <div>
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => {
+              setLoading(true)
+              setStarted(true)
+            }}
+          >
+            Set up my account
+            <ArrowRight className="size-5" weight="bold" aria-hidden />
+          </Button>
+        </div>
+      </FirstAccessFrame>
+    )
+  }
+
   if (loading) {
     return (
       <FirstAccessFrame outside title="Opening your claim link" lede="Checking your link and finding your club.">
@@ -223,7 +248,9 @@ export default function ClubAdminClaimPage() {
       <FirstAccessFrame outside title="This claim link could not be opened" lede="Nothing has been changed on your account.">
         <Notice tone="error">
           {error}
-          <span className="mt-0.5 block font-normal">Claim links are sent once your club request is approved, and each link works one time.</span>
+          <span className="mt-0.5 block font-normal">
+            Each link works one time. If you have not set a password yet, go to the sign-in screen, press Forgot password and enter the email this link was sent to. You will get a new link to set one.
+          </span>
         </Notice>
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" onClick={() => window.location.reload()}>
