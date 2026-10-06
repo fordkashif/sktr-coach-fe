@@ -52,6 +52,7 @@ export function isProtectedPath(pathname: string) {
     pathname.startsWith("/athlete") ||
     pathname.startsWith("/coach") ||
     pathname.startsWith("/club-admin") ||
+    pathname.startsWith("/guardian") ||
     pathname.startsWith("/platform-admin")
   )
 }
@@ -100,7 +101,7 @@ export function evaluateAccess(input: AccessInput): AccessResult {
 
   // Checked before any role or onboarding redirect: a blocked member gets the same notice on every
   // tenant route, and is never bounced to setup screens whose data the database no longer returns.
-  if (role === "athlete" || role === "coach" || role === "club-admin") {
+  if (role === "athlete" || role === "coach" || role === "club-admin" || role === "guardian") {
     if (!memberActive) {
       return { allowed: false, reason: "member-inactive", blocked: "member-inactive" }
     }
@@ -117,6 +118,11 @@ export function evaluateAccess(input: AccessInput): AccessResult {
   }
 
   if (pathname.startsWith("/athlete") && role !== "athlete") {
+    return { allowed: false, reason: "forbidden-role", redirectTo: "/login" }
+  }
+
+  // A parent or guardian has their own read only screens and nothing else.
+  if (pathname.startsWith("/guardian") && role !== "guardian") {
     return { allowed: false, reason: "forbidden-role", redirectTo: "/login" }
   }
 

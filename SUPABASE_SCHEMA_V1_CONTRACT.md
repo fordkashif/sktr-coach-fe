@@ -673,3 +673,39 @@ Session load = `rpe` x `duration_minutes`. A completion missing either has no lo
 Phases, week types, target loads and a session's intended effort live in `training_plans.builder_state` and `plan_templates.structure` as optional keys (`phases`, `weekTypes`, `weekTargetLoad`, `sessions[].intendedEffort`). A plan or template without them reads and saves exactly as before.
 
 App: pure logic in `src/lib/data/load/training-load.ts` and `src/lib/data/training-plan/plan-phases.ts` (unit tested in `tests/training-load.test.ts` and `tests/plan-phases.test.ts` with the same hand-worked examples as the database test), data in `src/lib/data/load/training-load-data.ts`. Bands on the ratio: under 0.8 well below usual, 0.8 to 1.3 in the usual range, over 1.3 to 1.5 above usual, over 1.5 well above usual.
+
+## Session photos and videos (20261016110000)
+
+`session_media`: `id`, `tenant_id`, `athlete_id`, `session_id`, `session_block_row_id` (null for the whole session), `kind` (photo, video), `storage_path` (unique, `<tenant>/<athlete>/<session>/<file id>.<ext>` in the private bucket `session-media`), `content_type`, `bytes`, `duration_seconds` (videos, at most 30.5), `width`, `height`, `caption` (200), `coach_comment` (500), `coach_comment_by_user_id`, `coach_comment_at`, `created_by_user_id`, `created_at`, `updated_at`.
+
+Functions: `set_session_media_comment(media, text)` (coach or club admin, notifies the athlete with the existing `session_note_added` event), `get_session_media_usage()` (platform admin: items and bytes per club), `queue_orphan_session_media()` and `run_session_media_cleanup()` (service role, daily pg_cron job `sktr-session-media-cleanup`). The edge function `purge-deleted-storage` removes queued files from `session-media` as it does for avatars and logos.
+
+## Push notifications (20261016120000_push_notifications.sql)
+
+`push_subscriptions`: `id`, `user_id` (cascade), `tenant_id` (cascade, null for a platform admin), `endpoint` (unique, https, one of the known push services), `p256dh`, `auth`, `device_label` (up to 80 characters), `created_at`, `last_used_at`, `last_success_at`, `failure_count`, `disabled_at`, `disabled_reason` (`gone` after a 404 or 410, `failing` after 8 refusals in a row). At most 10 per person.
+
+`push_deliveries`: `id`, `tenant_id`, `recipient_user_id`, `subscription_id` (cascade), `event_id` (the in-app `notification_events` row, null for a test), `event_type`, `status` (pending, sent, failed, suppressed, gone), `attempt_count` (3 at most), `processing_started_at`, `next_attempt_at`, `last_error`, `created_at`, `completed_at`. Unique on (`event_id`, `subscription_id`).
+
+`notification_preferences.channel` accepts `push`. Defaults are in `push_default_enabled(type)`, mirrored in `src/lib/notifications/push-defaults.ts` (a unit test compares the two).
+
+How a push is made: a trigger on `notification_events` queues one row per active device for every in-app notification whose kind is pushed for that person. So push follows the bell: same recipients, same dedupe, no role list. Delivery: `dispatch-notification-emails` works the push queue first, then email (`push-dispatch.ts`); called by pg_cron job `sktr-dispatch-push` every minute, straight after a push is queued (pg_net), and by the app. A claimed row is never handed out twice; one that never reported back is closed as failed, not resent.
+
+The message: fixed sentences per event type (`supabase/functions/_shared/push-message.ts`), the sender's name for a direct message, never message text, health details or anything typed. Encryption and VAPID are in `supabase/functions/_shared/web-push.ts` (Web Crypto, checked against the RFC 8291 example in `tests/push-notifications.test.ts`).
+
+Settings: `VITE_VAPID_PUBLIC_KEY` in the web app; `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` as function secrets. See SUPABASE_ENV_AND_SECRETS_SETUP.md. Without them push is off and nothing else changes.
+
+## Parent or guardian access (20261016090000_guardian_access.sql)
+
+`profiles.role` accepts `guardian` (one club per guardian, like every member).
+
+`athlete_guardians`: `id`, `tenant_id`, `athlete_id` (cascade), `guardian_user_id` (cascade from `auth.users`), `relationship` (up to 40 characters, default "Guardian"), `status` (active, revoked), `invited_by_user_id`, `revoked_by_user_id` (both set null), `revoked_at`, `created_at`, `updated_at`. Unique on (`athlete_id`, `guardian_user_id`): revoking and linking again reuses the row.
+
+`guardian_invites`: `id`, `tenant_id`, `athlete_id` (cascade), `email` (lower case), `invitee_name`, `relationship`, `status` (pending, accepted, revoked), `invited_by_user_id`, `accepted_by_user_id` (set null), `expires_at` (14 days), `accepted_at`, the four email delivery columns the other invite tables have (`last_email_attempt_at`, `last_email_sent_at`, `email_send_count`, `last_email_error`), `created_at`, `updated_at`. At most one pending invite per athlete and email.
+
+`athlete_private_details.share_health_with_guardians` (boolean, default false): the adult athlete's own switch. Health visibility rule (`guardian_health_rule`): under 18 by `athletes.date_of_birth` is visible, 18 or older needs the switch, no date of birth is hidden. The same rule in the app: `src/lib/guardian/health-visibility.ts` (unit tested in `tests/guardian-access.test.ts`).
+
+Notification event types, queued for guardians through the existing `enqueue_notification` (bell and email, per person preferences): `guardian_plan_published`, `guardian_test_week_published`, `guardian_pain_reported` (health visible only, no health detail in the text), `guardian_report_shared` (a report with a health section only when health is visible), `guardian_announcement_posted` (team and whole club, once per guardian), `guardian_linked`, `guardian_unlinked`; and `guardian_invite_accepted` for the person who invited (bell only). Where each one opens: `supabase/functions/_shared/notification-target.ts`.
+
+Edge functions: `send-invite-email` accepts `kind: "guardian"` (table `guardian_invites`, link `/guardian/claim/<id>`, permission from `can_send_guardian_invite`); new `claim-guardian-invite-account` (public, creates the confirmed sign-in for an invited email with no account, after asking `guardian_email_standing`; handler tests beside it).
+
+App: data in `src/lib/data/guardian/` (mock stores included), screens under `src/app/(authenticated)/guardian/`, the claim page at `src/app/(auth)/guardian/claim/[inviteId]/page.tsx`.

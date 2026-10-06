@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
+import { RelayList } from "@/components/athlete/relay-parts"
 import { dayText, eventHistoryPath, markText, ProgressTabs, ResultMark } from "@/components/athlete/results-parts"
 import { EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
 import { SeasonPicker } from "@/components/seasons/season-picker"
 import { pickableSeasons, type ClubSeason } from "@/lib/data/club-admin/season-logic"
 import { listClubSeasons } from "@/lib/data/club-admin/seasons-data"
+import { getRelaysForCurrentAthlete, type AthleteRelays } from "@/lib/data/competition/relay-data"
 import { formatWind, groupResultsByEvent, type EventHistory } from "@/lib/data/pr/marks"
 import { getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
 
@@ -56,6 +58,17 @@ export default function AthleteRecordsPage() {
   const [error, setError] = useState<string | null>(null)
   const [seasons, setSeasons] = useState<ClubSeason[]>([])
   const [seasonId, setSeasonId] = useState<string | null>(null)
+  const [relays, setRelays] = useState<AthleteRelays | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getRelaysForCurrentAthlete().then((result) => {
+      if (!cancelled && result.ok) setRelays(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -86,6 +99,8 @@ export default function AthleteRecordsPage() {
     [records, chosen],
   )
   const categories = [...new Set(events.map((event) => event.category))]
+  // Relays that were run. A team that is entered and has no time yet shows on the competition's own screen.
+  const relaysRun = (relays?.relays ?? []).filter((relay) => relay.value !== null)
   const seasonYear = chosen ? chosen.name : records ? `${records.season.start.slice(0, 4)}${records.season.end.slice(0, 4) !== records.season.start.slice(0, 4) ? ` to ${records.season.end.slice(0, 4)}` : ""}` : ""
 
   return (
@@ -151,6 +166,15 @@ export default function AthleteRecordsPage() {
         )
       })}
 
+      {relaysRun.length > 0 ? (
+        <Section
+          title="Relay teams"
+          meta={`${relaysRun.length} ${relaysRun.length === 1 ? "relay" : "relays"}`}
+          hint="Relays you ran a leg of. A relay time belongs to the team, so it is not one of your own records."
+        >
+          <RelayList aria-label="Relays you ran in" relays={relaysRun} ownAthleteId={relays?.athleteId} showMeet />
+        </Section>
+      ) : null}
     </Screen>
   )
 }

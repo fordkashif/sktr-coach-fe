@@ -12,7 +12,7 @@ function notifySessionUpdated() {
 }
 
 export function setSessionCookies(
-  role: "athlete" | "coach" | "club-admin" | "platform-admin",
+  role: "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian",
   tenantId: string,
   userEmail: string,
   coachTeamId?: string

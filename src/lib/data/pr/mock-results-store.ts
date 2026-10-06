@@ -1,5 +1,6 @@
-import type { Competition, CompetitionEntry } from "@/lib/data/competition/types"
+import type { Competition, CompetitionEntry, RelayEntry } from "@/lib/data/competition/types"
 import {
+  applyResultDetail,
   compareValueFor,
   eventGroupKey,
   findResultEvent,
@@ -7,6 +8,9 @@ import {
   isWindLegal,
   type AthleteResult,
   type MarkUnit,
+  type Qualifier,
+  type ResultDetail,
+  type ResultRound,
   type ResultSource,
   type Timing,
 } from "@/lib/data/pr/marks"
@@ -31,7 +35,12 @@ export type MockResultsState = {
   competitions: Competition[]
   entries: CompetitionEntry[]
   testWeeks: MockTestWeek[]
+  /** Relay teams. Leg athletes are roster ids ("a1" is the demo athlete). */
+  relays: RelayEntry[]
 }
+
+/** The demo athlete on the coach's roster. The results demo knows them as MOCK_ATHLETE_ID. */
+export const MOCK_ROSTER_SELF_ID = "a1"
 
 function dayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
@@ -65,6 +74,12 @@ type ResultSeed = {
   enteredBy?: string | null
   notes?: string | null
   environment?: "outdoor" | "indoor"
+  round?: ResultRound | null
+  heat?: number | null
+  lane?: number | null
+  qualifier?: Qualifier | null
+  detail?: ResultDetail | null
+  derivedFromResultId?: string | null
 }
 
 /** Builds a stored result the way the database trigger would: label, unit, direction and display from the event. */
@@ -75,8 +90,15 @@ export function buildMockResult(seed: ResultSeed & { date?: string; athleteId?: 
   const label = listed?.name ?? (seed.label ?? "Other").replace(/\s+/g, " ").trim()
   const timing = unit === "s" ? (seed.timing ?? null) : null
   const environment = seed.environment ?? "outdoor"
-  const wind = listed?.windApplies && environment === "outdoor" && seed.wind !== undefined ? seed.wind : null
+  const windApplies = Boolean(listed?.windApplies) && environment === "outdoor"
+  // The same as the database trigger: with a series the mark and its wind come from the detail.
+  const applied = seed.derivedFromResultId || seed.source === "test_week" || seed.source === "imported" ? null : applyResultDetail(seed.detail, { eventKey: listed?.key ?? "other", unit, windApplies, mark: seed.value })
+  const detail = applied?.ok ? applied.detail : null
+  const value = applied?.ok && applied.series && applied.mark !== null ? applied.mark : seed.value
+  const seedWind = applied?.ok && applied.series ? applied.wind : seed.wind
+  const wind = windApplies && seedWind !== undefined ? seedWind : null
   const date = seed.date ?? mockDay(seed.day)
+  const plain = seed.source === "test_week" || seed.source === "imported"
   return {
     id: seed.id ?? mockId("result"),
     athleteId: seed.athleteId ?? MOCK_ATHLETE_ID,
@@ -85,16 +107,16 @@ export function buildMockResult(seed: ResultSeed & { date?: string; athleteId?: 
     eventGroup: eventGroupKey(listed?.key ?? "other", label),
     unit,
     lowerIsBetter: listed?.lowerIsBetter ?? unit === "s",
-    value: seed.value,
-    compareValue: compareValueFor(seed.value, timing, listed),
-    display: formatMark(seed.value, unit, timing),
+    value,
+    compareValue: compareValueFor(value, timing, listed),
+    display: formatMark(value, unit, timing),
     timing,
     date,
     source: seed.source,
     competitionId: seed.competitionId ?? null,
     competitionEntryId: seed.competitionEntryId ?? null,
     testResultId: seed.testResultId ?? null,
-    place: seed.competitionId ? (seed.place ?? null) : null,
+    place: seed.competitionId && !seed.derivedFromResultId ? (seed.place ?? null) : null,
     wind,
     windLegal: isWindLegal(wind),
     environment,
@@ -103,7 +125,53 @@ export function buildMockResult(seed: ResultSeed & { date?: string; athleteId?: 
     notes: seed.notes ?? null,
     enteredByUserId: seed.enteredBy === undefined ? MOCK_ATHLETE_USER_ID : seed.enteredBy,
     createdAt: seed.createdAt ?? new Date(`${date}T12:00:00`).toISOString(),
+    round: plain ? null : (seed.round ?? null),
+    heat: plain ? null : (seed.heat ?? null),
+    lane: plain || seed.derivedFromResultId ? null : (seed.lane ?? null),
+    qualifier: plain || seed.derivedFromResultId ? null : (seed.qualifier ?? null),
+    detail,
+    derivedFromResultId: seed.derivedFromResultId ?? null,
   }
+}
+
+/**
+ * The same as the database trigger: when the best attempt of a series was wind assisted and
+ * another attempt was wind legal, that legal attempt is its own row of the history, so it counts
+ * for records. Returns the history with that row added, replaced or removed for `parent`.
+ */
+export function withSeriesLegalMark(results: AthleteResult[], parent: AthleteResult): AthleteResult[] {
+  const existing = results.find((result) => result.derivedFromResultId === parent.id) ?? null
+  const others = results.filter((result) => result.derivedFromResultId !== parent.id)
+  if (parent.derivedFromResultId || !parent.detail?.attempts || parent.windLegal) return others
+  const applied = applyResultDetail(parent.detail, { eventKey: parent.eventKey, unit: parent.unit, windApplies: true, mark: parent.value })
+  if (!applied.ok || !applied.legal) return others
+  const legal = buildMockResult({
+    id: existing?.id ?? mockId("result"),
+    athleteId: parent.athleteId,
+    eventKey: parent.eventKey,
+    label: parent.eventLabel,
+    unit: parent.unit,
+    value: applied.legal.mark,
+    wind: applied.legal.wind,
+    day: 0,
+    date: parent.date,
+    source: parent.source === "competition" && !parent.competitionId ? "manual" : parent.source,
+    competitionId: parent.competitionId,
+    environment: parent.environment,
+    altitude: parent.altitude,
+    location: parent.location,
+    round: parent.round ?? null,
+    heat: parent.heat ?? null,
+    enteredBy: parent.enteredByUserId,
+    createdAt: existing?.createdAt ?? new Date(new Date(parent.createdAt).getTime() + 1).toISOString(),
+    derivedFromResultId: parent.id,
+  })
+  return [legal, ...others]
+}
+
+/** Removes a result and, with it, the legal mark of its series. */
+export function withoutResult(results: AthleteResult[], resultId: string): AthleteResult[] {
+  return results.filter((result) => result.id !== resultId && result.derivedFromResultId !== resultId)
 }
 
 function competition(id: string, name: string, startOffset: number, extra: Partial<Competition> = {}): Competition {
@@ -180,16 +248,34 @@ function seedState(): MockResultsState {
     { eventKey: "100m", value: 11.45, day: -205, wind: -0.6, source: "manual", location: "Season Opener" },
     { eventKey: "100m", value: 11.31, day: -163, wind: 1.1, place: 3, ...meet("mock-comp-early", "mock-entry-early-100", "Early Season Meet") },
     { eventKey: "100m", value: 11.21, day: -121, wind: 2.6, source: "manual", location: "Twilight Meet" },
-    { eventKey: "100m", value: 11.28, day: -86, wind: 0.9, place: 2, ...meet("mock-comp-summer", "mock-entry-summer-100", "Summer Open") },
+    { eventKey: "100m", value: 11.28, day: -86, wind: 0.9, place: 2, round: "final", lane: 4, detail: { reaction: 0.148 }, ...meet("mock-comp-summer", "mock-entry-summer-100", "Summer Open") },
     { eventKey: "100m", value: 11.35, day: -30, wind: -1.2, place: 4, ...meet("mock-comp-relays", "mock-entry-relays-100", "Autumn Open") },
     // 200m
     { eventKey: "200m", value: 23.4, day: -470, wind: 0.2, source: "manual", location: "Spring Open" },
     { eventKey: "200m", value: 23.12, day: -163, wind: 1.8, place: 2, ...meet("mock-comp-early", "mock-entry-early-200", "Early Season Meet") },
-    { eventKey: "200m", value: 22.96, day: -86, wind: 0.4, place: 1, ...meet("mock-comp-summer", "mock-entry-summer-200", "Summer Open") },
+    { eventKey: "200m", value: 22.96, day: -86, wind: 0.4, place: 1, round: "final", lane: 5, detail: { reaction: 0.162, splits: { every: 100, times: [11.58] } }, ...meet("mock-comp-summer", "mock-entry-summer-200", "Summer Open") },
     // Long jump
     { eventKey: "long_jump", value: 6.42, day: -450, wind: 0.9, source: "manual", location: "National Juniors" },
     { eventKey: "long_jump", value: 6.58, day: -150, wind: 1.4, source: "training", location: "Riverside Track" },
-    { eventKey: "long_jump", value: 6.71, day: -86, wind: 2.9, place: 4, ...meet("mock-comp-summer", "mock-entry-summer-lj", "Summer Open") },
+    // Every measured jump of this series had too much wind, so the series has no legal mark of its own.
+    {
+      eventKey: "long_jump",
+      value: 6.71,
+      day: -86,
+      wind: 2.9,
+      place: 4,
+      detail: {
+        attempts: [
+          { result: "foul" },
+          { result: "mark", mark: 6.48, wind: 2.4 },
+          { result: "mark", mark: 6.71, wind: 2.9 },
+          { result: "foul" },
+          { result: "mark", mark: 6.55, wind: 2.3 },
+          { result: "pass" },
+        ],
+      },
+      ...meet("mock-comp-summer", "mock-entry-summer-lj", "Summer Open"),
+    },
     { eventKey: "long_jump", value: 6.63, day: -60, wind: 0, source: "training", location: "Riverside Track" },
     // Test weeks
     { eventKey: "other", label: "30m", unit: "s", value: 4.1, day: -322, ...test("fallback-test-week-autumn", "30m") },
@@ -212,7 +298,43 @@ function seedState(): MockResultsState {
     }),
   )
 
-  return { results, competitions, entries, testWeeks }
+  // One relay the demo athlete ran in: second leg of the 4x100m at the Autumn Open.
+  const relayDate = mockDay(-30)
+  const relays: RelayEntry[] = [
+    {
+      id: "mock-relay-autumn-4x100",
+      competitionId: "mock-comp-relays",
+      competitionName: "Autumn Open",
+      teamId: "t1",
+      teamName: "Sprint Group",
+      teamLabel: "Sprint Group A",
+      eventKey: "4x100m",
+      eventLabel: "4x100m relay",
+      round: "final",
+      heat: null,
+      lane: 5,
+      place: 2,
+      qualifier: null,
+      value: 42.86,
+      compareValue: 42.86,
+      display: "42.86",
+      timing: "electronic",
+      date: relayDate,
+      environment: "outdoor",
+      location: "Autumn Open",
+      notes: null,
+      createdAt: new Date(`${relayDate}T15:00:00`).toISOString(),
+      legs: [
+        { leg: 1, athleteId: "a2", name: "Sarah Chen", split: 11.21 },
+        { leg: 2, athleteId: MOCK_ROSTER_SELF_ID, name: "Marcus Johnson", split: 10.38 },
+        { leg: 3, athleteId: "a10", name: "Sophia Kim", split: 10.84 },
+        { leg: 4, athleteId: "a3", name: "David Okafor", split: 10.43 },
+      ],
+      canManage: true,
+    },
+  ]
+
+  return { results, competitions, entries, testWeeks, relays }
 }
 
 let memoryState: MockResultsState | null = null
@@ -224,7 +346,7 @@ export function loadMockResultsState(): MockResultsState {
     if (raw) {
       const parsed = JSON.parse(raw) as MockResultsState
       if (parsed && Array.isArray(parsed.results) && Array.isArray(parsed.competitions) && Array.isArray(parsed.entries)) {
-        return { ...parsed, testWeeks: parsed.testWeeks ?? [] }
+        return { ...parsed, testWeeks: parsed.testWeeks ?? [], relays: parsed.relays ?? [] }
       }
     }
   } catch {

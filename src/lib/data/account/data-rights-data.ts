@@ -3,6 +3,7 @@ import { ACCESS_PAUSED_MESSAGE, isAccessPausedError } from "@/lib/access-paused"
 import { clearSessionCookies, COACH_TEAM_COOKIE, getCookieValue, ROLE_COOKIE, USER_COOKIE } from "@/lib/auth-session"
 import { getCurrentAccount, removeAvatar } from "@/lib/data/account/account-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
+import { addMediaExportLinks } from "@/lib/data/session/session-media-data"
 import {
   COACH_NOTES_AREA_KEY,
   buildPersonalExport,
@@ -127,6 +128,8 @@ async function readByIds(client: SupabaseClient, table: string, select: string, 
 
 export type PersonalExport = { fileName: string; json: string; file: PersonalExportFile }
 
+const SESSION_MEDIA_AREA_KEY = "session_photos_and_videos"
+
 type AreaSpec = { key: string; label: string; table: string; select?: string; column: string; ids: string[]; orderBy?: string; tieBreak?: string }
 
 async function readAreas(client: SupabaseClient, specs: AreaSpec[]): Promise<PersonalExportArea[]> {
@@ -148,6 +151,7 @@ function athleteSpecs(userId: string, athleteIds: string[], threadIds: string[])
     { key: "training_sessions", label: "Training sessions", table: "sessions", select: "*, session_blocks(*, session_block_rows(*))", column: "athlete_id", ids: athleteIds },
     { key: "session_logs", label: "Session logs", table: "session_row_logs", column: "athlete_id", ids: athleteIds },
     { key: "sessions_finished", label: "Finished sessions", table: "session_completions", column: "athlete_id", ids: athleteIds },
+    { key: SESSION_MEDIA_AREA_KEY, label: "Photos and videos on session logs", table: "session_media", column: "athlete_id", ids: athleteIds },
     { key: "wellness_check_ins", label: "Wellness check-ins", table: "wellness_entries", column: "athlete_id", ids: athleteIds },
     { key: "pain_reports", label: "Pain and injury reports", table: "pain_reports", column: "athlete_id", ids: athleteIds },
     { key: "availability", label: "Injured, sick and away", table: "athlete_availability", column: "athlete_id", ids: athleteIds },
@@ -158,6 +162,7 @@ function athleteSpecs(userId: string, athleteIds: string[], threadIds: string[])
     { key: "goals", label: "Goals", table: "athlete_goals", column: "athlete_id", ids: athleteIds },
     { key: "attendance", label: "Attendance", table: "athlete_attendance", column: "athlete_id", ids: athleteIds },
     { key: "competition_entries", label: "Competition entries", table: "competition_entries", select: "*, competitions(name, start_date, venue)", column: "athlete_id", ids: athleteIds },
+    { key: "relay_legs", label: "Relays you ran in", table: "relay_entry_legs", select: "*, relay_entries(event_label, team_label, round, place, mark_display, result_date, location)", column: "athlete_id", ids: athleteIds },
     { key: "competitions_you_added", label: "Competitions you added", table: "competitions", column: "owner_athlete_id", ids: athleteIds },
     { key: "conversations", label: "Conversations with coaches", table: "message_threads", column: "athlete_id", ids: athleteIds },
     { key: "messages", label: "Messages sent and received", table: "messages", column: "thread_id", ids: threadIds },
@@ -190,6 +195,8 @@ function everyoneSpecs(userId: string): AreaSpec[] {
   const me = [userId]
   return [
     { key: "notification_choices", label: "Notification choices", table: "notification_preferences", column: "user_id", ids: me },
+    // The device's name and dates only: the push address and keys are of no use to a person.
+    { key: "push_devices", label: "Devices with push notifications on", table: "push_subscriptions", select: "device_label, created_at, last_used_at", column: "user_id", ids: me },
     {
       key: "announcements_received",
       label: "Announcements you received",
@@ -248,9 +255,19 @@ async function collectSupabaseExport(client: SupabaseClient): Promise<Result<Per
     const athleteIds = athletes.rows.map((row) => String(row.id))
     const threads = athleteIds.length ? await readByIds(client, "message_threads", "id", "athlete_id", athleteIds) : { rows: [] }
     areas.push(...(await readAreas(client, athleteSpecs(user.id, athleteIds, threads.rows.map((row) => String(row.id))))))
+    // Each photo and video is listed with a link to its file that works for an hour (the files are too large to put inside this one).
+    const mediaArea = areas.find((area) => area.key === SESSION_MEDIA_AREA_KEY)
+    if (mediaArea && mediaArea.rows.length > 0) mediaArea.rows = await addMediaExportLinks(client, mediaArea.rows as Array<Record<string, unknown>>)
   } else if (role === "coach" || role === "club-admin") {
     const threads = await readAllRows(client, "message_threads", "id", (query) => query.eq("coach_user_id", user.id))
     areas.push(...(await readAreas(client, staffSpecs(user.id, threads.rows.map((row) => String(row.id)), role === "club-admin"))))
+  } else if (role === "guardian") {
+    // A guardian's own data: who they follow. The athletes' records are the athletes' data, not theirs.
+    areas.push(
+      ...(await readAreas(client, [
+        { key: "athletes_you_follow", label: "Athletes you follow", table: "athlete_guardians", select: "athlete_id, relationship, status, created_at, athletes(first_name, last_name)", column: "guardian_user_id", ids: [user.id] },
+      ])),
+    )
   } else if (role === "platform-admin") {
     areas.push(
       ...(await readAreas(client, [
@@ -273,7 +290,7 @@ function mockEmail() {
 
 function mockRole(): ExportRole | null {
   const role = getCookieValue(ROLE_COOKIE)
-  return role === "athlete" || role === "coach" || role === "club-admin" || role === "platform-admin" ? role : null
+  return role === "athlete" || role === "coach" || role === "club-admin" || role === "platform-admin" || role === "guardian" ? role : null
 }
 
 async function collectMockExport(): Promise<Result<PersonalExport>> {
@@ -309,6 +326,10 @@ async function collectMockExport(): Promise<Result<PersonalExport>> {
       { key: COACH_NOTES_AREA_KEY, label: "Notes you wrote about athletes", rows: [{ athlete: "Sample athlete", body: "Sample note", written_on: "2026-02-25" }] },
       { key: "messages", label: "Messages sent and received", rows: [{ to: "Sample athlete", body: "Sample message", sent_at: "2026-02-25T08:00:00.000Z" }] },
     )
+  }
+  if (role === "guardian") {
+    const { listMockGuardianChildren } = await import("@/lib/data/guardian/mock-guardian-store")
+    areas.push({ key: "athletes_you_follow", label: "Athletes you follow", rows: listMockGuardianChildren(email).map((child) => ({ athlete: child.name, relationship: child.relationship })) })
   }
   areas.push({ key: "notification_choices", label: "Notification choices", rows: [] }, { key: "notifications", label: "Notifications", rows: [] })
 
@@ -392,7 +413,7 @@ export async function getAccountDeletionCheck(): Promise<Result<DeletionCheck>> 
     blocking_teams?: Array<{ team_id: string; team_name: string; reason: string; athletes: number }>
   } | null
   if (!row) return err("UNAUTHORIZED", "You are not signed in.")
-  const role = row.role === "athlete" || row.role === "coach" || row.role === "club-admin" || row.role === "platform-admin" ? row.role : "none"
+  const role = row.role === "athlete" || row.role === "coach" || row.role === "club-admin" || row.role === "platform-admin" || row.role === "guardian" ? row.role : "none"
   const reason: DeletionBlockReason | null = row.reason === "platform_admin" || row.reason === "club_owner" || row.reason === "teams" ? row.reason : null
   return ok({
     role,
@@ -418,7 +439,8 @@ export async function deleteMyAccount(typedEmail: string): Promise<Result<{ conv
   if (isMockMode()) {
     const email = check.data.email as string
     if (!markMockAccountDeleted(email)) return err("UNKNOWN", "Could not save in this browser. Storage may be full or blocked.")
-    if (check.data.role !== "athlete") saveClubUsers(loadClubUsers().filter((user) => user.email.toLowerCase() !== email))
+    if (check.data.role === "guardian") (await import("@/lib/data/guardian/mock-guardian-store")).removeMockGuardian(email)
+    if (check.data.role !== "athlete" && check.data.role !== "guardian") saveClubUsers(loadClubUsers().filter((user) => user.email.toLowerCase() !== email))
     window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
     window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
     clearSessionCookies()

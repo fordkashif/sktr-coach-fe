@@ -85,3 +85,51 @@ export async function prepareAvatarImage(
     decoded.close()
   }
 }
+
+/** Largest original a session photo may be before we try to open it. */
+export const PHOTO_MAX_INPUT_BYTES = 30 * 1024 * 1024
+
+export type PreparedPhoto = { blob: Blob; width: number; height: number; contentType: "image/jpeg" }
+
+/**
+ * Scales a photo so its longer side is at most `maxEdge` pixels and re-encodes it as a JPEG, with
+ * the proportions kept (no crop). For photos attached to a session log. Like the avatar path it
+ * runs in the browser, so the original never leaves the device and any location data in it is dropped.
+ */
+export async function preparePhoto(
+  file: File | Blob,
+  maxEdge = 1600,
+): Promise<{ ok: true; data: PreparedPhoto } | { ok: false; error: AvatarImageError }> {
+  const type = file.type.toLowerCase()
+  if (type && !type.startsWith("image/")) return { ok: false, error: "wrong-type" }
+  if (type === "image/svg+xml" || type === "image/gif") return { ok: false, error: "wrong-type" }
+  if (file.size > PHOTO_MAX_INPUT_BYTES) return { ok: false, error: "too-large" }
+
+  let decoded: Awaited<ReturnType<typeof decode>>
+  try {
+    decoded = await decode(file)
+  } catch {
+    return { ok: false, error: type ? "unreadable" : "wrong-type" }
+  }
+
+  try {
+    if (!decoded.width || !decoded.height) return { ok: false, error: "unreadable" }
+    const scale = Math.min(1, maxEdge / Math.max(decoded.width, decoded.height))
+    const width = Math.max(1, Math.round(decoded.width * scale))
+    const height = Math.max(1, Math.round(decoded.height * scale))
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext("2d")
+    if (!context) return { ok: false, error: "unreadable" }
+    context.fillStyle = "#ffffff"
+    context.fillRect(0, 0, width, height)
+    context.imageSmoothingQuality = "high"
+    context.drawImage(decoded.source, 0, 0, decoded.width, decoded.height, 0, 0, width, height)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85))
+    if (!blob) return { ok: false, error: "unreadable" }
+    return { ok: true, data: { blob, width, height, contentType: "image/jpeg" } }
+  } finally {
+    decoded.close()
+  }
+}

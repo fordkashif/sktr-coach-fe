@@ -715,6 +715,42 @@ export async function listMyReports(): Promise<Result<MyReport[]>> {
   }
 }
 
+/**
+ * The reports about one athlete that were shared with the athlete, newest first. For a parent or
+ * guardian (20261016090000): row level security returns only the reports of an athlete they
+ * follow, and leaves out a report with a health section when health is hidden from them.
+ */
+export async function listSharedReportsOfAthlete(athleteId: string): Promise<Result<MyReport[]>> {
+  if (isMock()) {
+    return ok(
+      readMockReports()
+        .filter((report) => report.athleteId === athleteId && report.sharedWithAthleteAt)
+        .sort((left, right) => (right.sharedWithAthleteAt ?? "").localeCompare(left.sharedWithAthleteAt ?? ""))
+        .map((report) => ({ id: report.id, authorName: report.authorName, period: report.period, sharedAt: report.sharedWithAthleteAt as string, snapshot: report.snapshot })),
+    )
+  }
+  const supabase = client()
+  if (!supabase) return err("UNKNOWN", NO_CLIENT)
+  try {
+    const { data, error } = await supabase
+      .from("athlete_reports")
+      .select(REPORT_COLUMNS)
+      .eq("athlete_id", athleteId)
+      .not("shared_with_athlete_at", "is", null)
+      .order("shared_with_athlete_at", { ascending: false })
+      .limit(100)
+    if (error) return isMissing(error) ? ok([]) : { ok: false, error: mapPostgrestError(error) }
+    return ok(
+      ((data as ReportRow[] | null) ?? []).flatMap((row) => {
+        const report = fromRow(row, [])
+        return report && report.sharedWithAthleteAt ? [{ id: report.id, authorName: report.authorName, period: report.period, sharedAt: report.sharedWithAthleteAt, snapshot: report.snapshot }] : []
+      }),
+    )
+  } catch (cause) {
+    return err("UNKNOWN", UNREACHABLE, cause)
+  }
+}
+
 export async function getMyReport(reportId: string): Promise<Result<MyReport>> {
   const all = await listMyReports()
   if (!all.ok) return all

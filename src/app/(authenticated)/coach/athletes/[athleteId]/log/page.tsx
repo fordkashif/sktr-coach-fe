@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Check } from "@phosphor-icons/react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { EFFORT_WORDS, ExerciseLog, LogProgress } from "@/components/athlete/log/log-parts"
+import { SessionMediaSection, exerciseMedia, rowLabels, useSessionMedia } from "@/components/athlete/log/session-media"
 import { setCount } from "@/components/athlete/log/use-session-log"
 import { useCoachSessionLog } from "@/components/coach/athlete-log/use-coach-session-log"
 import {
@@ -59,6 +60,9 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
   const log = useCoachSessionLog(athleteId, date)
   const { day, session, save, totals } = log
   const [finishing, setFinishing] = useState(false)
+  // A coach adds a photo or video for the athlete only here, while logging their session for them.
+  const media = useSessionMedia(session?.id ?? null, { athleteId })
+  const mediaLabels = useMemo(() => rowLabels(session?.blocks ?? []), [session?.blocks])
 
   const athlete = day?.athlete ?? null
   const first = athlete ? athlete.name.split(" ")[0] || athlete.name : "the athlete"
@@ -196,6 +200,7 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
                         onRepeatLast={() => undefined}
                         onAddSet={() => log.addSet(row)}
                         hideLabel={block.rows.length === 1 && row.kind === "check" && row.label === block.name}
+                        media={exerciseMedia(media, row, true)}
                       />
                     )
                   })}
@@ -205,6 +210,8 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
               )}
             </Section>
           ))}
+
+          <SessionMediaSection media={media} mode="log" labels={mediaLabels} hint={`Add a photo or video of ${first} to their log.`} staff />
 
           <Section title="How hard was it?" hint={`Ask ${first}, or leave it empty. 1 is very easy, 10 is everything they had.`}>
             <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />

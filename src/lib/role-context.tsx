@@ -14,7 +14,7 @@ interface RoleContextValue {
 }
 
 function isAppRole(value: unknown): value is AppRole {
-  return value === "coach" || value === "athlete" || value === "club-admin" || value === "platform-admin"
+  return value === "coach" || value === "athlete" || value === "club-admin" || value === "platform-admin" || value === "guardian"
 }
 
 const RoleContext = createContext<RoleContextValue>({

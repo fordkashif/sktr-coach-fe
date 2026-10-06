@@ -1,4 +1,5 @@
 import { Bell } from "@phosphor-icons/react"
+import { useEffect } from "react"
 import { useLocation } from "react-router-dom"
 import { NotificationRows } from "@/components/notifications/notification-rows"
 import { Button, EmptyState, LinkButton, Notice, Sheet, SkeletonRows } from "@/components/sk"
@@ -11,6 +12,7 @@ import {
   useNotificationRefresh,
 } from "@/lib/notifications/store"
 import { NOTIFICATIONS_PATH, type NotificationRole } from "@/lib/notifications/target"
+import { startPushSync } from "@/lib/push/push-client"
 import { useRole } from "@/lib/role-context"
 
 /**
@@ -44,6 +46,7 @@ const EMPTY_BODY: Record<NotificationRole, string> = {
   coach: "Finished sessions, test results and low readiness check-ins show up here.",
   "club-admin": "Accepted invites and changes to your club's account show up here.",
   "platform-admin": "New club requests show up here.",
+  guardian: "New plans, test weeks, reports and announcements for the athletes you follow show up here.",
 }
 
 /**
@@ -56,6 +59,9 @@ export function NotificationSheet({ open, onOpenChange }: { open: boolean; onOpe
   const { pathname } = useLocation()
   const center = useNotificationCenter()
   useNotificationRefresh(appRole, true, pathname)
+  // Push is an extra on top of the bell: keep this device's subscription in step while signed in.
+  // It never asks for permission; that only happens from the button in notification settings.
+  useEffect(() => startPushSync(), [])
 
   const openItem = (item: NotificationItem) => {
     onOpenChange(false)

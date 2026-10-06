@@ -164,6 +164,33 @@ const SEEDS: Record<NotificationRole, MockSeed[]> = {
       read: true,
     },
   ],
+  guardian: [
+    {
+      id: "mock-guardian-plan",
+      eventType: "guardian_plan_published",
+      subject: "New training plan for Maya: Speed block",
+      body: "The coach published a plan that starts on Monday. Open it to see the week.",
+      minutesAgo: 40,
+      href: "/guardian/plan",
+    },
+    {
+      id: "mock-guardian-announcement",
+      eventType: "guardian_announcement_posted",
+      subject: "Sprint Group: announcement",
+      body: "Saturday's session moves to 9 in the morning. Bring spikes.",
+      minutesAgo: 5 * 60,
+      href: "/guardian/news",
+    },
+    {
+      id: "mock-guardian-report",
+      eventType: "guardian_report_shared",
+      subject: "The coach shared a report about Maya",
+      body: "It covers the last four weeks. Open it to read it or print it.",
+      minutesAgo: 2 * DAY,
+      href: "/guardian/results",
+      read: true,
+    },
+  ],
   "platform-admin": [
     {
       id: "mock-platform-request",

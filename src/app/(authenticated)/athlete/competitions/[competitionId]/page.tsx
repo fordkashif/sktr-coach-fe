@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { PencilSimple, Plus } from "@phosphor-icons/react"
 import { useLocation, useParams } from "react-router-dom"
-import { BestStatus, meetDatesText, meetDayText, ordinal, ResultMark, UNIT_WORDS, verdictMessage } from "@/components/athlete/results-parts"
+import { EntryResultDialog, type EntryResultOutcome } from "@/components/athlete/entry-result-dialog"
+import { RelayList } from "@/components/athlete/relay-parts"
+import { roundLine } from "@/components/athlete/result-detail"
+import { BestStatus, markText, meetDatesText, ordinal, ResultMark, verdictMessage } from "@/components/athlete/results-parts"
 import {
   Button,
-  Choices,
   Dialog,
   EmptyState,
   Fact,
@@ -31,235 +33,40 @@ import {
   saveCompetitionEntryResult,
   updateCompetitionEntry,
 } from "@/lib/data/competition/competition-data"
+import { getRelaysForCurrentAthlete, type AthleteRelays } from "@/lib/data/competition/relay-data"
 import { COMPETITION_LEVELS, type CompetitionEntryWithResult, type CompetitionWithEntries } from "@/lib/data/competition/types"
-import {
-  findResultEvent,
-  formatMark,
-  formatWind,
-  OTHER_EVENT_KEY,
-  parseMarkInput,
-  parseWindInput,
-  RESULT_EVENTS,
-  verdictForNewResult,
-  WIND_LEGAL_LIMIT,
-  type MarkUnit,
-  type Timing,
-} from "@/lib/data/pr/marks"
-import { addDays, localDayKey, parseLocalDay } from "@/lib/data/pr/pr-display"
-import { canViewerEditResult, deleteAthleteResult, getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
+import { formatWind, OTHER_EVENT_KEY, RESULT_EVENTS, roundLabel, type AthleteResult } from "@/lib/data/pr/marks"
+import { localDayKey, parseLocalDay } from "@/lib/data/pr/pr-display"
+import { canViewerEditResult, getCurrentAthleteRecords, verdictForSeries, type AthleteRecords } from "@/lib/data/pr/results-data"
 
 type SavedNotice = { tone: "success" | "warning" | "info"; text: string }
 
 const CATEGORY_GROUPS = [...new Set(RESULT_EVENTS.filter((event) => event.kind !== "other").map((event) => event.category))]
 
-const OTHER_UNITS: Array<{ value: MarkUnit; label: string }> = [
-  { value: "s", label: "Time (seconds)" },
-  { value: "m", label: "Distance (metres)" },
-  { value: "cm", label: "Height (centimetres)" },
-  { value: "kg", label: "Weight (kilograms)" },
-  { value: "pts", label: "Points or a score" },
-]
-
-function competitionDays(startDate: string, endDate: string): string[] {
-  const start = parseLocalDay(startDate)
-  const end = parseLocalDay(endDate)
-  if (!start || !end) return [startDate]
-  const days: string[] = []
-  for (let day = start; day.getTime() <= end.getTime() && days.length < 31; day = addDays(day, 1)) days.push(localDayKey(day))
-  return days
+function sentenceCase(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : ""
 }
 
-/* ---------- Enter or correct the result of one entry ---------- */
-
-function ResultDialog({
-  entry,
-  competition,
-  canEdit,
-  onClose,
-  onSaved,
-}: {
-  entry: CompetitionEntryWithResult
-  competition: CompetitionWithEntries
-  canEdit: boolean
-  onClose: () => void
-  onSaved: (notice: SavedNotice | null, created: boolean, resultId: string | null) => void
-}) {
-  const event = findResultEvent(entry.eventKey)
-  const isOther = !event || event.kind === "other"
-  const existing = entry.result
-  const todayKey = localDayKey(new Date())
-  const days = competitionDays(competition.startDate, competition.endDate).filter((day) => day <= todayKey)
-
-  const [otherUnit, setOtherUnit] = useState<MarkUnit>(existing?.unit ?? "s")
-  const unit: MarkUnit = isOther ? otherUnit : (event.unit ?? "s")
-  const [mark, setMark] = useState(existing ? formatMark(existing.value, existing.unit) : "")
-  const [timing, setTiming] = useState<Timing>(existing?.timing ?? "electronic")
-  const [wind, setWind] = useState(existing && existing.wind !== null ? formatWind(existing.wind) : "")
-  const [place, setPlace] = useState(existing?.place ? String(existing.place) : "")
-  const [date, setDate] = useState(existing?.date ?? days[0] ?? competition.startDate)
-  const [errors, setErrors] = useState<{ mark?: string; wind?: string; place?: string }>({})
-  const [formError, setFormError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const windApplies = Boolean(event?.windApplies) && competition.environment === "outdoor"
-  const parsedWind = windApplies ? parseWindInput(wind) : null
-  const windAssisted = Boolean(parsedWind?.ok && parsedWind.value !== null && parsedWind.value > WIND_LEGAL_LIMIT)
-  const words = UNIT_WORDS[unit]
-
-  const save = async () => {
-    setFormError(null)
-    const nextErrors: typeof errors = {}
-    const parsedMark = parseMarkInput(mark, unit)
-    if (!parsedMark.ok) nextErrors.mark = parsedMark.message
-    if (parsedWind && !parsedWind.ok) nextErrors.wind = parsedWind.message
-    const placeNumber = place.trim() ? Number(place.trim()) : null
-    if (placeNumber !== null && (!Number.isInteger(placeNumber) || placeNumber < 1 || placeNumber > 999)) nextErrors.place = "A whole number, like 2."
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0 || !parsedMark.ok) return
-
-    setBusy(true)
-    const result = await saveCompetitionEntryResult(entry, competition, {
-      value: parsedMark.value,
-      timing: unit === "s" ? timing : null,
-      wind: parsedWind && parsedWind.ok ? parsedWind.value : null,
-      place: placeNumber,
-      date,
-      unit: isOther ? otherUnit : undefined,
-    })
-    setBusy(false)
-    if (!result.ok) {
-      setFormError(result.error.message)
-      return
-    }
-    onSaved(existing ? { tone: "info", text: `${entry.eventLabel} result updated.` } : null, !existing, result.data.id)
-  }
-
-  const remove = async () => {
-    if (!existing) return
-    setBusy(true)
-    const result = await deleteAthleteResult(existing.id)
-    setBusy(false)
-    if (!result.ok) {
-      setFormError(result.error.message)
-      return
-    }
-    onSaved({ tone: "info", text: `${entry.eventLabel} result deleted.` }, false, null)
-  }
-
-  const scratch = async () => {
-    setBusy(true)
-    const result = await updateCompetitionEntry(entry.id, { status: "scratched" })
-    setBusy(false)
-    if (!result.ok) {
-      setFormError(result.error.message)
-      return
-    }
-    onSaved({ tone: "info", text: `Marked as scratched from the ${entry.eventLabel}.` }, false, null)
-  }
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-      title={`${entry.eventLabel} result`}
-      description={`${competition.name}. One final mark for the event.`}
-      footer={
-        canEdit ? (
-          <>
-            {existing ? (
-              <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-                Delete result
-              </Button>
-            ) : (
-              <Button variant="quiet" disabled={busy} onClick={() => void scratch()}>
-                I did not compete
-              </Button>
-            )}
-            <Button variant="primary" disabled={busy} onClick={() => void save()}>
-              {busy ? "Saving..." : "Save result"}
-            </Button>
-          </>
-        ) : undefined
-      }
-    >
-      {canEdit ? (
-        <div className="flex flex-col gap-4">
-          {isOther && !existing ? (
-            <Field label="Measured in">
-              <Select value={otherUnit} onChange={(changeEvent) => setOtherUnit(changeEvent.target.value as MarkUnit)}>
-                {OTHER_UNITS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null}
-          <Field label={words.field} hint={words.hint} error={errors.mark}>
-            <Input
-              value={mark}
-              inputMode={unit === "s" ? "text" : "decimal"}
-              autoComplete="off"
-              placeholder={words.placeholder}
-              onChange={(changeEvent) => {
-                setMark(changeEvent.target.value)
-                if (errors.mark) setErrors((current) => ({ ...current, mark: undefined }))
-              }}
-            />
-          </Field>
-          {unit === "s" ? (
-            <Choices
-              label="How was it timed"
-              value={timing}
-              onChange={setTiming}
-              options={[
-                { value: "electronic", label: "Electronic" },
-                { value: "hand", label: "Hand (stopwatch)" },
-              ]}
-            />
-          ) : null}
-          {windApplies ? (
-            <Field
-              label="Wind"
-              optional
-              error={errors.wind}
-              hint={windAssisted ? "Over +2.0 is wind assisted. It is kept but does not count as a best." : "With its sign, like +1.2 or -0.4. Leave it empty if there was no reading."}
-            >
-              <Input
-                value={wind}
-                inputMode="text"
-                autoComplete="off"
-                placeholder="+1.2"
-                onChange={(changeEvent) => {
-                  setWind(changeEvent.target.value)
-                  if (errors.wind) setErrors((current) => ({ ...current, wind: undefined }))
-                }}
-              />
-            </Field>
-          ) : null}
-          <Field label="Place" optional hint="Where you finished in the final standings." error={errors.place}>
-            <Input value={place} inputMode="numeric" autoComplete="off" placeholder="2" onChange={(changeEvent) => setPlace(changeEvent.target.value)} />
-          </Field>
-          {days.length > 1 ? (
-            <Field label="Day">
-              <Select value={date} onChange={(changeEvent) => setDate(changeEvent.target.value)}>
-                {days.map((day) => (
-                  <option key={day} value={day}>
-                    {meetDayText(day)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null}
-          {formError ? <Notice tone="error">{formError}</Notice> : null}
-        </div>
-      ) : (
-        <Notice tone="info">Your coach entered this result. Ask them if it needs to change.</Notice>
-      )}
-    </Dialog>
+/** The one result of an entry: "Final, lane 4, wind +0.9, 2nd place". */
+function resultSummary(result: AthleteResult): string {
+  return sentenceCase(
+    [
+      roundLine({ round: result.round, heat: result.heat, lane: result.lane, qualifier: null, place: null }).toLowerCase(),
+      result.wind !== null ? `wind ${formatWind(result.wind)}` : "",
+      !result.windLegal ? "wind assisted" : "",
+      result.place ? `${ordinal(result.place)} place` : "",
+      result.qualifier ? (result.qualifier === "Q" ? "qualified on place (Q)" : "qualified on time (q)") : "",
+    ]
+      .filter(Boolean)
+      .join(", "),
   )
+}
+
+/** One of several rounds, on its own line: "Heat 2: 11.02s (+1.0), lane 5, 1st place, Q". */
+function roundSummary(result: AthleteResult): string {
+  const name = `${roundLabel(result.round) || "Result"}${result.heat ? ` ${result.heat}` : ""}`
+  const facts = [result.lane ? `lane ${result.lane}` : "", !result.windLegal ? "wind assisted" : "", result.place ? `${ordinal(result.place)} place` : "", result.qualifier ?? ""].filter(Boolean).join(", ")
+  return `${name}: ${markText(result)}${facts ? `, ${facts}` : ""}`
 }
 
 /* ---------- Manage an entry before the meet ---------- */
@@ -407,6 +214,7 @@ export default function AthleteCompetitionDetailPage() {
   const location = useLocation()
   const [competition, setCompetition] = useState<CompetitionWithEntries | null | undefined>(undefined)
   const [records, setRecords] = useState<AthleteRecords | null>(null)
+  const [relays, setRelays] = useState<AthleteRelays | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<SavedNotice | null>((location.state as { saved?: SavedNotice } | null)?.saved ?? null)
   const [resultEntryId, setResultEntryId] = useState<string | null>(null)
@@ -414,7 +222,12 @@ export default function AthleteCompetitionDetailPage() {
   const [adding, setAdding] = useState(false)
 
   const load = useCallback(async () => {
-    const [competitionResult, recordsResult] = await Promise.all([getCompetitionForCurrentAthlete(competitionId), getCurrentAthleteRecords()])
+    const [competitionResult, recordsResult, relaysResult] = await Promise.all([
+      getCompetitionForCurrentAthlete(competitionId),
+      getCurrentAthleteRecords(),
+      getRelaysForCurrentAthlete({ competitionId }),
+    ])
+    if (relaysResult.ok) setRelays(relaysResult.data)
     if (competitionResult.ok) {
       setCompetition(competitionResult.data)
       setError(null)
@@ -484,7 +297,7 @@ export default function AthleteCompetitionDetailPage() {
   const resultEntry = competition.entries.find((entry) => entry.id === resultEntryId) ?? null
   const manageEntry = competition.entries.find((entry) => entry.id === manageEntryId) ?? null
 
-  const afterResult = async (savedNotice: SavedNotice | null, created: boolean, resultId: string | null) => {
+  const afterResult = async ({ notice: savedNotice, created, resultId }: EntryResultOutcome) => {
     setResultEntryId(null)
     const fresh = await load()
     if (savedNotice) {
@@ -494,7 +307,9 @@ export default function AthleteCompetitionDetailPage() {
     const added = created && resultId ? fresh?.results.find((result) => result.id === resultId) : null
     if (added && fresh) {
       const sameEvent = fresh.results.filter((result) => result.eventGroup === added.eventGroup)
-      setNotice(verdictMessage(added, verdictForNewResult(added, sameEvent, fresh.season)))
+      // A wind assisted series can hold a legal jump that is a best in its own right: say that.
+      const verdict = verdictForSeries(added, sameEvent, fresh.season)
+      setNotice(verdictMessage(added, verdict))
     } else {
       setNotice({ tone: "success", text: "Result saved." })
     }
@@ -536,9 +351,10 @@ export default function AthleteCompetitionDetailPage() {
           <List>
             {competition.entries.map((entry) => {
               const result = entry.result
+              const rounds = entry.rounds ?? (result ? [result] : [])
               const scratched = entry.status === "scratched"
               const openResult = started && !scratched
-              const details = result ? [result.wind !== null ? `Wind ${formatWind(result.wind)}` : null, !result.windLegal ? "wind assisted" : null, result.place ? `${ordinal(result.place)} place` : null].filter(Boolean).join(", ") : ""
+              const best = rounds.find((round) => bestIds.personal.has(round.id)) ? "pb" : rounds.find((round) => bestIds.season.has(round.id)) ? "sb" : null
               return (
                 <ListRow
                   key={entry.id}
@@ -548,14 +364,19 @@ export default function AthleteCompetitionDetailPage() {
                   subtitle={
                     result ? (
                       <>
-                        {details || "No wind or place recorded"}
-                        {bestIds.personal.has(result.id) ? (
+                        {rounds.length > 1
+                          ? rounds.map((round) => (
+                              <span key={round.id} className="block">
+                                {roundSummary(round)}
+                              </span>
+                            ))
+                          : resultSummary(result) || "No wind or place recorded"}
+                        {result.detail?.attempts || result.detail?.heights || result.detail?.splits ? (
+                          <span className="block">{result.detail.attempts ? "With every attempt" : result.detail.heights ? "With every height" : "With splits"}</span>
+                        ) : null}
+                        {best ? (
                           <span className="mt-0.5 block">
-                            <BestStatus kind="pb" />
-                          </span>
-                        ) : bestIds.season.has(result.id) ? (
-                          <span className="mt-0.5 block">
-                            <BestStatus kind="sb" />
+                            <BestStatus kind={best} />
                           </span>
                         ) : null}
                       </>
@@ -590,6 +411,12 @@ export default function AthleteCompetitionDetailPage() {
         </Button>
       </Section>
 
+      {relays && relays.relays.length > 0 ? (
+        <Section title="Relays" hint="A relay counts for the team, not as your own record. You see the legs of the relays you run in.">
+          <RelayList aria-label="Your relays at this competition" relays={relays.relays} ownAthleteId={relays.athleteId} />
+        </Section>
+      ) : null}
+
       <Section title="Details">
         <FactList aria-label="Competition details">
           <Fact label="Date">{meetDatesText(competition.startDate, competition.endDate)}</Fact>
@@ -613,13 +440,16 @@ export default function AthleteCompetitionDetailPage() {
       </Section>
 
       {resultEntry ? (
-        <ResultDialog
+        <EntryResultDialog
           key={resultEntry.id}
           entry={resultEntry}
           competition={competition}
-          canEdit={!resultEntry.result || canViewerEditResult(resultEntry.result, viewerUserId)}
+          audience="athlete"
+          canEdit={(result) => canViewerEditResult(result, viewerUserId)}
+          save={(entry, input) => saveCompetitionEntryResult(entry, competition, input)}
+          scratch={() => updateCompetitionEntry(resultEntry.id, { status: "scratched" })}
           onClose={() => setResultEntryId(null)}
-          onSaved={(savedNotice, created, resultId) => void afterResult(savedNotice, created, resultId)}
+          onSaved={(outcome) => void afterResult(outcome)}
         />
       ) : null}
       {manageEntry ? (

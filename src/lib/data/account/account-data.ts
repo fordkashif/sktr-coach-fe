@@ -20,7 +20,7 @@ export const AVATAR_BUCKET = "avatars"
 export const DISPLAY_NAME_MAX_LENGTH = 120
 export const MIN_PASSWORD_LENGTH = 8
 
-export type AccountRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type AccountRole = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 export type CurrentAccount = {
   role: AccountRole | null
@@ -45,7 +45,7 @@ function publicAvatarUrl(client: SupabaseClient, path: string | null | undefined
 }
 
 function isAccountRole(value: unknown): value is AccountRole {
-  return value === "athlete" || value === "coach" || value === "club-admin" || value === "platform-admin"
+  return value === "athlete" || value === "coach" || value === "club-admin" || value === "platform-admin" || value === "guardian"
 }
 
 export function cleanDisplayName(value: string) {
@@ -100,6 +100,7 @@ function mockDefaultName(email: string): string | null {
     return `${edits.firstName ?? "Marcus"} ${edits.lastName ?? "Johnson"}`.trim()
   }
   if (email === MOCK_CREDENTIALS.coach.email) return MOCK_COACH_NAME
+  if (email === MOCK_CREDENTIALS.guardian.email) return "Dana Anderson"
   return null
 }
 

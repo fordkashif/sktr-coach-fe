@@ -202,6 +202,8 @@ export async function completePasswordReset(params: { password: string; token?: 
         ? "/athlete/home"
         : actor?.role === "coach"
           ? "/coach/dashboard"
+          : actor?.role === "guardian"
+            ? "/guardian/home"
           : actor?.role === "platform-admin"
             ? "/platform-admin/dashboard"
             : "/club-admin/dashboard",

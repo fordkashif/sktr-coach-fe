@@ -49,6 +49,8 @@ import {
   type StateTone,
 } from "@/components/sk"
 import { AthleteAttendanceSection } from "@/components/coach/athlete-attendance-section"
+import { SessionMediaForCoach, useAthleteSessionMedia } from "@/components/coach/athlete-log/session-media-for-coach"
+import { AthleteGuardiansSection } from "@/components/coach/athlete-guardians-section"
 import { CoachNotesSection } from "@/components/coach/coach-notes-section"
 import { AthleteLoadSection } from "@/components/load/athlete-load-section"
 import { AthleteReportsSection } from "@/components/reports/athlete-reports-section"
@@ -487,9 +489,12 @@ function SessionList({
   onNoteSaved,
   onLog,
   canAddNote = true,
+  athleteFirstName = "the athlete",
 }: {
   sessions: CoachAthleteSessionRow[]
   athleteId: string
+  /** For the photos and videos the athlete attached ("2 videos from Maya"). */
+  athleteFirstName?: string
   /** False for an assistant coach: they log sessions, the note to the athlete is the coach's. */
   canAddNote?: boolean
   onNoteSaved: (sessionId: string, note: string | null) => void
@@ -502,6 +507,8 @@ function SessionList({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const visible = showAll ? sessions : sessions.slice(0, ROW_LIMIT)
+  // Photos and videos the athlete attached to these sessions. Commenting is the coach's, like the session note.
+  const media = useAthleteSessionMedia(athleteId, visible.map((session) => session.id))
 
   const save = async (sessionId: string) => {
     setSaving(true)
@@ -530,6 +537,15 @@ function SessionList({
             session.status === "completed" && session.completedOn && session.completedOn !== session.isoDate ? `done ${shortDay(session.completedOn)}` : null,
           ].filter(Boolean)
           const editing = editingId === session.id
+          const mediaRows = media.bySession.has(session.id) ? (
+            <SessionMediaForCoach
+              media={media}
+              sessionId={session.id}
+              athleteFirstName={athleteFirstName}
+              labels={Object.fromEntries((session.results?.exercises ?? []).map((exercise) => [exercise.id, exercise.label]))}
+              canComment={canAddNote}
+            />
+          ) : null
           return (
             <ActionRow
               key={session.id}
@@ -600,8 +616,11 @@ function SessionList({
                 return items.length > 0 ? <RowMenu label={`More for ${session.title}, ${shortDay(session.isoDate)}`} items={items} /> : undefined
               })()}
               below={
-                editing ? (
+                mediaRows && !editing ? (
+                  mediaRows
+                ) : editing ? (
                   <div className="flex flex-col gap-3">
+                    {mediaRows}
                     <Field label="Note for this session" hint="The athlete sees it when they open the session." error={error ? `Could not save the note: ${error}` : undefined}>
                       <Textarea rows={3} maxLength={1000} value={draft} onChange={(event) => setDraft(event.target.value)} />
                     </Field>
@@ -754,7 +773,7 @@ function OverviewTab({
         main={
           <Section title="Recent sessions" hint={permissions.canEditPlans ? "What was planned and what was logged, set by set. A note you add to a session is shown to the athlete." : "What was planned and what was logged, set by set."}>
             {sessions.length > 0 ? (
-              <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} canAddNote={permissions.canEditPlans} />
+              <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} canAddNote={permissions.canEditPlans} athleteFirstName={first} />
             ) : (
               <EmptyState
                 title="No sessions yet"
@@ -1102,6 +1121,8 @@ function DetailsTab({
         </FactList>
       </Section>
       ) : null}
+
+      <AthleteGuardiansSection athleteId={athlete.id} athleteName={athlete.name} />
 
       {permissions.canManageRoster ? (
       <Section title="Team and access" hint={athlete.teamName ? `${first} is on ${athlete.teamName}.` : `${first} is not on a team.`}>

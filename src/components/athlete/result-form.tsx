@@ -1,11 +1,24 @@
 "use client"
 
 import { useState, type FormEvent } from "react"
+import { Plus } from "@phosphor-icons/react"
 import { useNavigate } from "react-router-dom"
+import {
+  detailDraftFrom,
+  HeightsEditor,
+  ReactionField,
+  readDetailDraft,
+  RoundFields,
+  SeriesEditor,
+  SplitsEditor,
+  type DetailDraft,
+  type DetailErrors,
+} from "@/components/athlete/result-detail"
 import { eventHistoryPath, UNIT_WORDS, verdictMessage } from "@/components/athlete/results-parts"
 import { Button, Choices, Field, Input, InlineConfirm, LinkButton, Notice, Section, Select, Textarea } from "@/components/sk"
 import {
   describeDifference,
+  detailKindsFor,
   findResultEvent,
   formatMark,
   formatMarkWithUnit,
@@ -26,7 +39,9 @@ import { addAthleteResult, addResultForCurrentAthlete, deleteAthleteResult, loca
 export type ResultFormAthlete = { id: string; name: string; returnTo: string }
 
 /** What to tell a coach after saving a result for an athlete. */
-function staffVerdictMessage(name: string, result: AthleteResult, verdict: NewResultVerdict): { tone: "success" | "warning" | "info"; text: string } {
+function staffVerdictMessage(name: string, saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
+  // A wind assisted series whose best legal jump is a best: the news is about that jump.
+  const result = verdict.legal ?? saved
   const first = name.split(" ")[0] || name
   const mark = formatMarkWithUnit(result.display, result.unit)
   if (verdict.kind === "wind-assisted") return { tone: "warning", text: `Saved as wind assisted. ${mark} is in ${first}'s ${result.eventLabel} history, but a wind over +2.0 does not count as a best.` }
@@ -52,7 +67,7 @@ const OTHER_UNITS: Array<{ value: MarkUnit; label: string }> = [
   { value: "pts", label: "Points or a score" },
 ]
 
-type FieldErrors = Partial<Record<"event" | "label" | "mark" | "wind" | "date", string>>
+type FieldErrors = Partial<Record<"event" | "label" | "mark" | "wind" | "date", string>> & DetailErrors
 
 /**
  * The "Add a result" and "Edit result" form. `existing` switches it to editing (and adds delete).
@@ -84,6 +99,8 @@ export function ResultForm({
   const [environment, setEnvironment] = useState<"outdoor" | "indoor">(existing?.environment ?? "outdoor")
   const [place, setPlace] = useState(existing?.location ?? "")
   const [notes, setNotes] = useState(existing?.notes ?? "")
+  const [draft, setDraft] = useState<DetailDraft>(() => detailDraftFrom(existing, existing?.eventKey ?? initialEventKey ?? ""))
+  const [showSplits, setShowSplits] = useState(Boolean(existing?.detail?.splits || existing?.detail?.reaction !== undefined))
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -95,8 +112,17 @@ export function ResultForm({
   const unit: MarkUnit | null = event ? (isOther ? otherUnit : event.unit) : null
   const words = unit ? UNIT_WORDS[unit] : null
   const windApplies = Boolean(event?.windApplies) && environment === "outdoor"
-  const parsedWind = windApplies ? parseWindInput(wind) : null
+  const kinds = detailKindsFor(eventKey, unit)
+  const seriesKind: "attempts" | "heights" | null = kinds.attempts ? "attempts" : kinds.heights ? "heights" : null
+  const inSeries = draft.series && seriesKind !== null
+  const parsedWind = windApplies && !inSeries ? parseWindInput(wind) : null
   const windAssisted = Boolean(parsedWind?.ok && parsedWind.value !== null && parsedWind.value > WIND_LEGAL_LIMIT)
+  const typedTime = unit === "s" ? parseMarkInput(mark, "s") : null
+
+  const patchDraft = (change: Partial<DetailDraft>) => {
+    setDraft((current) => ({ ...current, ...change }))
+    setErrors((current) => ({ ...current, series: undefined, splits: undefined, reaction: undefined, heat: undefined, lane: undefined }))
+  }
 
   const handleSubmit = async (submitEvent: FormEvent<HTMLFormElement>) => {
     submitEvent.preventDefault()
@@ -104,13 +130,21 @@ export function ResultForm({
     const nextErrors: FieldErrors = {}
     if (!event) nextErrors.event = "Choose an event."
     if (isOther && !otherLabel.trim()) nextErrors.label = "Name the event."
-    const parsedMark = unit ? parseMarkInput(mark, unit) : null
+    const parsedMark = unit && !inSeries ? parseMarkInput(mark, unit) : null
     if (unit && parsedMark && !parsedMark.ok) nextErrors.mark = parsedMark.message
     if (parsedWind && !parsedWind.ok) nextErrors.wind = parsedWind.message
     if (!date) nextErrors.date = "Choose the date."
     else if (date > localToday()) nextErrors.date = "A result cannot be dated in the future."
+    // Rounds belong to a competition; splits and a reaction time only count once they are shown.
+    const reading = unit
+      ? readDetailDraft(
+          { ...draft, ...(setting === "manual" ? {} : { round: "", heat: "", lane: "", qualifier: "" }), ...(showSplits ? {} : { splits: [], reaction: "" }) },
+          { eventKey, unit, windApplies, finalTime: unit === "s" && parsedMark?.ok ? parsedMark.value : null },
+        )
+      : null
+    if (reading && !reading.ok) Object.assign(nextErrors, reading.errors)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0 || !event || !unit || !parsedMark || !parsedMark.ok) {
+    if (Object.keys(nextErrors).length > 0 || !event || !unit || !reading || !reading.ok || (!reading.series && (!parsedMark || !parsedMark.ok))) {
       setFormError("Check the highlighted fields, then save again.")
       return
     }
@@ -119,14 +153,20 @@ export function ResultForm({
       eventKey: event.key,
       eventLabel: isOther ? otherLabel : null,
       unit: isOther ? otherUnit : null,
-      value: parsedMark.value,
+      // With a series the mark and its wind are worked out from the attempts when it is saved.
+      value: !reading.series && parsedMark?.ok ? parsedMark.value : 0,
       timing: unit === "s" ? timing : null,
       date,
       source: setting,
-      wind: parsedWind && parsedWind.ok ? parsedWind.value : null,
+      wind: !reading.series && parsedWind && parsedWind.ok ? parsedWind.value : null,
       environment,
       location: place,
       notes,
+      round: reading.round,
+      heat: reading.heat,
+      lane: reading.lane,
+      qualifier: reading.qualifier,
+      detail: reading.detail,
     }
 
     setSaving(true)
@@ -184,7 +224,10 @@ export function ResultForm({
               value={eventKey}
               onChange={(changeEvent) => {
                 setEventKey(changeEvent.target.value)
-                setErrors((current) => ({ ...current, event: undefined, mark: undefined }))
+                // Another event takes other detail (attempts are not splits): start it clean, keep the round.
+                setDraft((current) => ({ ...detailDraftFrom(null, changeEvent.target.value), round: current.round, heat: current.heat, lane: current.lane, qualifier: current.qualifier }))
+                setShowSplits(false)
+                setErrors((current) => ({ ...current, event: undefined, mark: undefined, series: undefined, splits: undefined, reaction: undefined }))
               }}
             >
               <option value="">Choose an event</option>
@@ -220,19 +263,28 @@ export function ResultForm({
             </>
           ) : null}
 
-          <Field label={words?.field ?? "Mark"} hint={words?.hint ?? "Choose the event first."} error={errors.mark}>
-            <Input
-              value={mark}
-              inputMode={unit === "s" ? "text" : "decimal"}
-              autoComplete="off"
-              placeholder={words?.placeholder ?? ""}
-              disabled={!unit}
-              onChange={(changeEvent) => {
-                setMark(changeEvent.target.value)
-                if (errors.mark) setErrors((current) => ({ ...current, mark: undefined }))
-              }}
-            />
-          </Field>
+          {inSeries && seriesKind === "attempts" ? <SeriesEditor draft={draft} onChange={patchDraft} windApplies={windApplies} error={errors.series} /> : null}
+          {inSeries && seriesKind === "heights" ? <HeightsEditor draft={draft} onChange={patchDraft} error={errors.series} /> : null}
+          {!inSeries ? (
+            <Field label={words?.field ?? "Mark"} hint={words?.hint ?? "Choose the event first."} error={errors.mark}>
+              <Input
+                value={mark}
+                inputMode={unit === "s" ? "text" : "decimal"}
+                autoComplete="off"
+                placeholder={words?.placeholder ?? ""}
+                disabled={!unit}
+                onChange={(changeEvent) => {
+                  setMark(changeEvent.target.value)
+                  if (errors.mark) setErrors((current) => ({ ...current, mark: undefined }))
+                }}
+              />
+            </Field>
+          ) : null}
+          {seriesKind ? (
+            <Button variant="quiet" size="sm" className="-mt-2 self-start" onClick={() => patchDraft({ series: !draft.series })}>
+              {inSeries ? (seriesKind === "heights" ? "Type the best height only" : "Type the best mark only") : seriesKind === "heights" ? "Enter every height" : "Enter every attempt"}
+            </Button>
+          ) : null}
 
           {unit === "s" ? (
             <Choices
@@ -257,7 +309,7 @@ export function ResultForm({
             ]}
           />
 
-          {windApplies ? (
+          {windApplies && !inSeries ? (
             <Field
               label="Wind"
               optional
@@ -298,6 +350,22 @@ export function ResultForm({
           <Field label={setting === "manual" ? "Meet or place" : "Place"} optional>
             <Input value={place} maxLength={160} placeholder={setting === "manual" ? "County Championships" : "Home track"} onChange={(changeEvent) => setPlace(changeEvent.target.value)} />
           </Field>
+
+          {setting === "manual" && unit ? <RoundFields draft={draft} onChange={patchDraft} errors={errors} timed={unit === "s"} /> : null}
+
+          {kinds.splits || kinds.reaction ? (
+            showSplits ? (
+              <>
+                {kinds.reaction ? <ReactionField draft={draft} onChange={patchDraft} error={errors.reaction} /> : null}
+                {kinds.splits ? <SplitsEditor draft={draft} onChange={patchDraft} eventKey={eventKey} finalTime={typedTime?.ok ? typedTime.value : null} error={errors.splits} /> : null}
+              </>
+            ) : (
+              <Button variant="quiet" size="sm" className="self-start" onClick={() => setShowSplits(true)}>
+                <Plus className="size-[18px]" weight="bold" aria-hidden />
+                {kinds.splits && kinds.reaction ? "Add splits or a reaction time" : kinds.splits ? "Add splits" : "Add a reaction time"}
+              </Button>
+            )
+          ) : null}
 
           <Field label="Note" optional>
             <Textarea value={notes} maxLength={1000} onChange={(changeEvent) => setNotes(changeEvent.target.value)} />

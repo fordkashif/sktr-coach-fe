@@ -3,7 +3,7 @@ import { invokeSignedIn } from "@/lib/supabase/invoke"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
-export type InviteEmailKind = "coach" | "athlete"
+export type InviteEmailKind = "coach" | "athlete" | "guardian"
 
 /** Machine codes returned by the send-invite-email edge function, plus "unreachable" for network trouble. */
 export type InviteEmailFailureCode =

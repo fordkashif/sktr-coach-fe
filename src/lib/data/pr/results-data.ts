@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import {
+  applyResultDetail,
   cleanLabel,
   findResultEvent,
   groupResultsByEvent,
@@ -11,7 +12,10 @@ import {
   type EventHistory,
   type MarkUnit,
   type NewResultVerdict,
+  type Qualifier,
+  type ResultDetail,
   type ResultEnvironment,
+  type ResultRound,
   type Season,
   type Timing,
 } from "@/lib/data/pr/marks"
@@ -21,6 +25,8 @@ import {
   MOCK_ATHLETE_ID,
   MOCK_ATHLETE_USER_ID,
   updateMockResultsState,
+  withoutResult,
+  withSeriesLegalMark,
 } from "@/lib/data/pr/mock-results-store"
 import { mockSeasonBestWindow } from "@/lib/data/club-admin/seasons-data"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -56,6 +62,16 @@ export type ResultInput = {
   /** Where it was set. */
   location?: string | null
   notes?: string | null
+  /** Heat, semi final, final. Null or left out when there was one round. */
+  round?: ResultRound | null
+  heat?: number | null
+  lane?: number | null
+  qualifier?: Qualifier | null
+  /**
+   * Splits, reaction time, an attempt series or heights. With a series (attempts or heights) the
+   * mark is worked out from it and `value` and `wind` are ignored.
+   */
+  detail?: ResultDetail | null
 }
 
 export type AthleteRecords = {
@@ -67,9 +83,12 @@ export type AthleteRecords = {
   viewerUserId: string | null
 }
 
+/** What a saved result means. `legal` is set when the news is about the wind legal attempt of a wind assisted series. */
+export type SeriesVerdict = NewResultVerdict & { legal?: AthleteResult }
+
 export type AddedResult = {
   result: AthleteResult
-  verdict: NewResultVerdict
+  verdict: SeriesVerdict
 }
 
 type ClientResolution = { ok: true; client: SupabaseClient } | { ok: false; error: DataError }
@@ -92,7 +111,7 @@ export function localToday(): string {
 }
 
 export const RESULT_COLUMNS =
-  "id, athlete_id, event_key, event_label, event_group, mark_unit, lower_is_better, mark_value, compare_value, mark_display, timing, result_date, source, competition_id, competition_entry_id, test_result_id, place, wind, is_wind_legal, environment, is_altitude, location, notes, entered_by_user_id, created_at"
+  "id, athlete_id, event_key, event_label, event_group, mark_unit, lower_is_better, mark_value, compare_value, mark_display, timing, result_date, source, competition_id, competition_entry_id, test_result_id, place, wind, is_wind_legal, environment, is_altitude, location, notes, entered_by_user_id, created_at, round, heat_number, lane, qualifier, detail, derived_from_result_id"
 
 export type ResultRow = {
   id: string
@@ -120,6 +139,12 @@ export type ResultRow = {
   notes: string | null
   entered_by_user_id: string | null
   created_at: string
+  round?: ResultRound | null
+  heat_number?: number | null
+  lane?: number | null
+  qualifier?: Qualifier | null
+  detail?: ResultDetail | null
+  derived_from_result_id?: string | null
 }
 
 export function mapResultRow(row: ResultRow): AthleteResult {
@@ -149,6 +174,12 @@ export function mapResultRow(row: ResultRow): AthleteResult {
     notes: row.notes,
     enteredByUserId: row.entered_by_user_id,
     createdAt: row.created_at,
+    round: row.round ?? null,
+    heat: row.heat_number ?? null,
+    lane: row.lane ?? null,
+    qualifier: row.qualifier ?? null,
+    detail: row.detail ?? null,
+    derivedFromResultId: row.derived_from_result_id ?? null,
   }
 }
 
@@ -182,7 +213,43 @@ export function validateResultInput(input: ResultInput): string | null {
   }
   if ((input.location ?? "").length > 160) return "Keep where it was to 160 characters."
   if ((input.notes ?? "").length > 1000) return "Keep the note to 1000 characters."
+  return validateRoundFields(input)
+}
+
+/** Heat number, lane and place as typed. A message, or null when fine. */
+export function validateRoundFields(input: { heat?: number | null; lane?: number | null; place?: number | null }): string | null {
+  const whole = (value: number | null | undefined, max: number) => value === null || value === undefined || (Number.isInteger(value) && value >= 1 && value <= max)
+  if (!whole(input.heat, 99)) return "The heat is a whole number, like 2."
+  if (!whole(input.lane, 20)) return "The lane is a whole number, like 4."
+  if (!whole(input.place, 999)) return "Place must be a whole number from 1 to 999."
   return null
+}
+
+/**
+ * Works the detail into the input the way the database will: the detail in its canonical form
+ * and, with an attempt series or heights, the mark and wind that follow from it.
+ */
+export function resolveResultDetail<T extends { value: number; wind?: number | null; detail?: ResultDetail | null }>(
+  input: T,
+  context: { eventKey: string; unit: MarkUnit | null; environment: ResultEnvironment },
+): { ok: true; input: T } | { ok: false; message: string } {
+  if (!input.detail || !context.unit) return { ok: true, input: { ...input, detail: null } }
+  const event = findResultEvent(context.eventKey)
+  const applied = applyResultDetail(input.detail, {
+    eventKey: context.eventKey,
+    unit: context.unit,
+    windApplies: Boolean(event?.windApplies) && context.environment === "outdoor",
+    mark: input.value > 0 ? input.value : null,
+  })
+  if (!applied.ok) return applied
+  if (!applied.series) return { ok: true, input: { ...input, detail: applied.detail } }
+  return { ok: true, input: { ...input, detail: applied.detail, value: applied.mark ?? input.value, wind: applied.wind } }
+}
+
+function resolveInput<T extends ResultInput>(input: T): { ok: true; input: T } | { ok: false; message: string } {
+  const event = findResultEvent(input.eventKey)
+  const unit = event ? (event.kind === "other" ? (input.unit ?? null) : event.unit) : null
+  return resolveResultDetail(input, { eventKey: input.eventKey, unit, environment: input.environment ?? "outdoor" })
 }
 
 function toInsertPayload(athleteId: string, input: ResultInput) {
@@ -202,6 +269,11 @@ function toInsertPayload(athleteId: string, input: ResultInput) {
     is_altitude: Boolean(input.altitude),
     location: input.location?.trim() || null,
     notes: input.notes?.trim() || null,
+    round: input.round ?? null,
+    heat_number: input.heat ?? null,
+    lane: input.lane ?? null,
+    qualifier: input.qualifier ?? null,
+    detail: input.detail ?? null,
   }
 }
 
@@ -271,17 +343,32 @@ export async function getCurrentAthleteRecords(): Promise<Result<AthleteRecords>
 
 /** True when the viewer entered this result by hand, so they may change or delete it. */
 export function canViewerEditResult(result: AthleteResult, viewerUserId: string | null): boolean {
+  // The legal mark of a series belongs to the series: it is changed there.
+  if (result.derivedFromResultId) return false
   return Boolean(viewerUserId) && result.enteredByUserId === viewerUserId && result.source !== "test_week" && result.source !== "imported"
 }
 
 /* ---------- Writing ----------------------------------------------------------------------------- */
 
-async function verdictFor(result: AthleteResult): Promise<NewResultVerdict> {
+async function verdictFor(result: AthleteResult): Promise<SeriesVerdict> {
   const [resultsResult, seasonResult] = await Promise.all([getAthleteResults(result.athleteId), getResultsSeason()])
   if (!resultsResult.ok) return { kind: "none", beat: null }
   const season = seasonResult.ok ? seasonResult.data : seasonFor(localToday())
   const sameEvent = resultsResult.data.filter((item) => item.eventGroup === result.eventGroup)
-  return verdictForNewResult(result, sameEvent.some((item) => item.id === result.id) ? sameEvent : [...sameEvent, result], season)
+  return verdictForSeries(result, sameEvent.some((item) => item.id === result.id) ? sameEvent : [...sameEvent, result], season)
+}
+
+/**
+ * What a new result means, given the event's history with it in. A wind assisted series may hold
+ * a wind legal attempt that is a best in its own right: then that is what there is to say.
+ */
+export function verdictForSeries(result: AthleteResult, eventResults: AthleteResult[], season: Season): SeriesVerdict {
+  const verdict = verdictForNewResult(result, eventResults, season)
+  if (verdict.kind !== "wind-assisted") return verdict
+  const legal = eventResults.find((item) => item.derivedFromResultId === result.id)
+  if (!legal) return verdict
+  const legalVerdict = verdictForNewResult(legal, eventResults, season)
+  return legalVerdict.kind === "personal-best" || legalVerdict.kind === "season-best" || legalVerdict.kind === "first" ? { ...legalVerdict, legal } : verdict
 }
 
 /**
@@ -289,7 +376,10 @@ async function verdictFor(result: AthleteResult): Promise<NewResultVerdict> {
  * a personal or season best; the athlete's coaches are told in-app by the database when it beats
  * an earlier best.
  */
-export async function addAthleteResult(athleteId: string, input: ResultInput): Promise<Result<AddedResult>> {
+export async function addAthleteResult(athleteId: string, rawInput: ResultInput): Promise<Result<AddedResult>> {
+  const resolved = resolveInput(rawInput)
+  if (!resolved.ok) return err("VALIDATION", resolved.message)
+  const input = resolved.input
   const invalid = validateResultInput(input)
   if (invalid) return err("VALIDATION", invalid)
 
@@ -312,8 +402,13 @@ export async function addAthleteResult(athleteId: string, input: ResultInput): P
       notes: input.notes?.trim() || null,
       enteredBy: MOCK_ATHLETE_USER_ID,
       createdAt: new Date().toISOString(),
+      round: input.round ?? null,
+      heat: input.heat ?? null,
+      lane: input.lane ?? null,
+      qualifier: input.qualifier ?? null,
+      detail: input.detail ?? null,
     })
-    updateMockResultsState((state) => ({ ...state, results: [result, ...state.results] }))
+    updateMockResultsState((state) => ({ ...state, results: withSeriesLegalMark([result, ...state.results], result) }))
     return ok({ result, verdict: await verdictFor(result) })
   }
 
@@ -343,16 +438,18 @@ export async function addResultForCurrentAthlete(input: ResultInput): Promise<Re
  * athlete they manage except test week results (those are corrected in the test week).
  * A competition result keeps its competition; only the mark, wind, place, date and notes change.
  */
-export async function updateAthleteResult(resultId: string, input: ResultInput & { place?: number | null }): Promise<Result<AthleteResult>> {
+export async function updateAthleteResult(resultId: string, rawInput: ResultInput & { place?: number | null }): Promise<Result<AthleteResult>> {
+  const resolved = resolveInput(rawInput)
+  if (!resolved.ok) return err("VALIDATION", resolved.message)
+  const input = resolved.input
   const invalid = validateResultInput(input)
   if (invalid) return err("VALIDATION", invalid)
 
   if (isMock()) {
     let updated: AthleteResult | null = null
-    updateMockResultsState((state) => ({
-      ...state,
-      results: state.results.map((existing) => {
-        if (existing.id !== resultId) return existing
+    updateMockResultsState((state) => {
+      const results = state.results.map((existing) => {
+        if (existing.id !== resultId || existing.derivedFromResultId) return existing
         const linked = Boolean(existing.competitionEntryId)
         updated = buildMockResult({
           id: existing.id,
@@ -376,10 +473,16 @@ export async function updateAthleteResult(resultId: string, input: ResultInput &
           place: input.place ?? existing.place,
           enteredBy: existing.enteredByUserId,
           createdAt: existing.createdAt,
+          round: input.round === undefined ? existing.round : input.round,
+          heat: input.heat === undefined ? existing.heat : input.heat,
+          lane: input.lane === undefined ? existing.lane : input.lane,
+          qualifier: input.qualifier === undefined ? existing.qualifier : input.qualifier,
+          detail: input.detail === undefined ? existing.detail : input.detail,
         })
         return updated
-      }),
-    }))
+      })
+      return { ...state, results: updated ? withSeriesLegalMark(results, updated) : results }
+    })
     return updated ? ok(updated) : err("NOT_FOUND", "This result no longer exists.")
   }
 
@@ -401,6 +504,11 @@ export async function updateAthleteResult(resultId: string, input: ResultInput &
       location: payload.location,
       notes: payload.notes,
       ...(input.place !== undefined ? { place: input.place } : {}),
+      ...(input.round !== undefined ? { round: input.round } : {}),
+      ...(input.heat !== undefined ? { heat_number: input.heat } : {}),
+      ...(input.lane !== undefined ? { lane: input.lane } : {}),
+      ...(input.qualifier !== undefined ? { qualifier: input.qualifier } : {}),
+      ...(input.detail !== undefined ? { detail: input.detail } : {}),
     })
     .eq("id", resultId)
     .select(RESULT_COLUMNS)
@@ -412,7 +520,7 @@ export async function updateAthleteResult(resultId: string, input: ResultInput &
 
 export async function deleteAthleteResult(resultId: string): Promise<Result<{ resultId: string }>> {
   if (isMock()) {
-    updateMockResultsState((state) => ({ ...state, results: state.results.filter((result) => result.id !== resultId) }))
+    updateMockResultsState((state) => ({ ...state, results: withoutResult(state.results, resultId) }))
     return ok({ resultId })
   }
   const clientResult = requireSupabaseClient("deleteAthleteResult")

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
 import { Link, useLocation, useParams } from "react-router-dom"
+import { hasDetailToShow, ResultDetailView } from "@/components/athlete/result-detail"
 import { dayText, markText, ordinal, StandingTag, whenAndWhere } from "@/components/athlete/results-parts"
 import { GoalList, useGoals } from "@/components/goals/goals-parts"
 import {
@@ -28,6 +29,7 @@ import {
   formatWind,
   markUnitLabel,
   RESULT_SOURCE_LABELS,
+  roundLabel,
   standingsOverTime,
   type AthleteResult,
 } from "@/lib/data/pr/marks"
@@ -43,6 +45,8 @@ export default function AthleteEventHistoryPage() {
   const saved = (location.state as { saved?: SavedNotice } | null)?.saved ?? null
   const [records, setRecords] = useState<AthleteRecords | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The one result whose detail (round, splits, attempts) is open under its row.
+  const [openDetailId, setOpenDetailId] = useState<string | null>(null)
   const goals = useGoals(getCurrentAthleteGoals)
 
   useEffect(() => {
@@ -62,6 +66,7 @@ export default function AthleteEventHistoryPage() {
   const listed = event ? findResultEvent(event.eventKey) : null
   const showWind = Boolean(listed?.windApplies) || Boolean(event?.results.some((result) => result.wind !== null))
   const showPlace = Boolean(event?.results.some((result) => result.place !== null))
+  const showDetail = Boolean(event?.results.some(hasDetailToShow))
   const addPath = event && event.eventKey !== "other" ? `/athlete/prs/add?event=${event.eventKey}` : "/athlete/prs/add"
 
   if (records === null && !error) {
@@ -111,7 +116,9 @@ export default function AthleteEventHistoryPage() {
       cell: (result) => (
         <>
           {dayText(result.date)}
-          <TableSub>{[result.location, RESULT_SOURCE_LABELS[result.source]].filter(Boolean).join(", ")}</TableSub>
+          <TableSub>
+            {[result.location, RESULT_SOURCE_LABELS[result.source], result.derivedFromResultId ? "best wind legal jump of a series" : roundLabel(result.round).toLowerCase()].filter(Boolean).join(", ")}
+          </TableSub>
         </>
       ),
     },
@@ -145,6 +152,27 @@ export default function AthleteEventHistoryPage() {
       phone: "plain",
       cell: (result) => <StandingTag standing={standings.get(result.id) ?? null} />,
     },
+    ...(showDetail
+      ? [
+          {
+            key: "detail",
+            header: "Detail",
+            phone: "plain" as const,
+            cell: (result: AthleteResult) =>
+              hasDetailToShow(result) ? (
+                <button
+                  type="button"
+                  className="sk-link"
+                  aria-expanded={openDetailId === result.id}
+                  aria-label={`${openDetailId === result.id ? "Hide" : "Show"} the detail of ${markText(result)} from ${dayText(result.date)}`}
+                  onClick={() => setOpenDetailId(openDetailId === result.id ? null : result.id)}
+                >
+                  {openDetailId === result.id ? "Hide detail" : "Show detail"}
+                </button>
+              ) : null,
+          },
+        ]
+      : []),
     {
       key: "edit",
       header: "Change",
@@ -250,7 +278,15 @@ export default function AthleteEventHistoryPage() {
       ) : null}
 
       <Section title="All results" meta="Newest first">
-        <DataTable caption={`Every ${event.label} result, newest first`} columns={columns} rows={event.results} rowKey={(result) => result.id} />
+        <DataTable
+          caption={`Every ${event.label} result, newest first`}
+          columns={columns}
+          rows={event.results}
+          rowKey={(result) => result.id}
+          rowBelow={(result) =>
+            openDetailId === result.id ? <ResultDetailView result={result} legalMark={event.results.find((item) => item.derivedFromResultId === result.id) ?? null} className="max-w-xl" /> : null
+          }
+        />
       </Section>
     </Screen>
   )

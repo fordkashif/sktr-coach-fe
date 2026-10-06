@@ -23,6 +23,7 @@ import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-a
 import { useRole } from "@/lib/role-context"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { removePushOnSignOut } from "@/lib/push/push-client"
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
 
 /**
@@ -443,6 +444,7 @@ export function DevicesSection() {
   }
 
   const handleSignOut = async () => {
+    await removePushOnSignOut()
     if (getBackendMode() === "supabase") {
       const supabase = getBrowserSupabaseClient()
       if (supabase) await supabase.auth.signOut({ scope: "local" })

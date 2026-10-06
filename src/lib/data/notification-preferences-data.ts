@@ -1,9 +1,22 @@
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
 import { NOTIFICATION_PREFERENCE_CATEGORIES } from "@/lib/notification-categories"
+import { pushDefaultForEventTypes } from "@/lib/notifications/push-defaults"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
-export type NotificationChannel = "email" | "in-app"
+/** "push" is the third channel (20261016120000): a notification on the devices a person turned on. */
+export type NotificationChannel = "email" | "in-app" | "push"
+
+export const NOTIFICATION_CHANNELS: readonly NotificationChannel[] = ["in-app", "email", "push"]
+
+/** What each kind of update does on each channel when the person has not chosen. */
+export function defaultNotificationCategoryPreferences(): Record<string, Record<NotificationChannel, boolean>> {
+  const categories: Record<string, Record<NotificationChannel, boolean>> = {}
+  for (const category of NOTIFICATION_PREFERENCE_CATEGORIES) {
+    categories[category.key] = { ...category.defaults, push: pushDefaultForEventTypes(category.eventTypes) }
+  }
+  return categories
+}
 
 export type NotificationPreferenceRecord = {
   channel: NotificationChannel
@@ -94,6 +107,7 @@ export async function getCurrentNotificationPreferenceMatrix(): Promise<Result<N
   const global: Record<NotificationChannel, boolean> = {
     email: true,
     "in-app": true,
+    push: true,
   }
 
   for (const item of result.data) {
@@ -102,12 +116,10 @@ export async function getCurrentNotificationPreferenceMatrix(): Promise<Result<N
     }
   }
 
-  const categories: Record<string, Record<NotificationChannel, boolean>> = {}
+  const categories = defaultNotificationCategoryPreferences()
   for (const category of NOTIFICATION_PREFERENCE_CATEGORIES) {
-    categories[category.key] = { ...category.defaults }
-
     for (const eventType of category.eventTypes) {
-      for (const channel of ["email", "in-app"] as const) {
+      for (const channel of NOTIFICATION_CHANNELS) {
         const override = result.data.find((item) => item.channel === channel && item.eventType === eventType)
         if (override) {
           categories[category.key][channel] = override.enabled

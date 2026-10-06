@@ -253,7 +253,10 @@ export async function getClubAdminOpsSnapshot(): Promise<Result<ClubAdminOpsSnap
     role: ClubAdminUser["role"]
     display_name: string | null
     is_active: boolean
-  }> | null) ?? []).map((row) => ({
+  }> | null) ?? [])
+    // Parents and guardians are not staff or athletes: People lists them on their own (get_club_guardians).
+    .filter((row) => (row.role as string) !== "guardian")
+    .map((row) => ({
     id: row.user_id,
     name: row.display_name || "User",
     email: row.user_id,

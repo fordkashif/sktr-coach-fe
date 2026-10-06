@@ -32,6 +32,9 @@ export function deletionRulesText(role: string | null): string {
   if (role === "club-admin") {
     return `Deleting your account removes your sign-in and your profile. What you set up for the club stays with the club. ${messages} The club owner cannot delete their account: transfer ownership to another club admin, or close the club, first. This cannot be undone.`
   }
+  if (role === "guardian") {
+    return "Deleting your account removes your sign-in, your profile and your link to the athletes you follow. Nothing about the athletes is deleted: their records belong to them and to the club. This cannot be undone."
+  }
   return "A platform admin account is not deleted in the app."
 }
 
@@ -64,7 +67,9 @@ export function YourDataSection() {
     <Section
       title="Your data"
       hint={
-        role === "athlete"
+        role === "guardian"
+          ? "A copy of everything SKTR Coach stores about you: your account, which athletes you follow and your notifications. The athletes' own records are not yours to download."
+          : role === "athlete"
           ? "A copy of everything SKTR Coach stores about you: your profile, private details, sessions and logs, check-ins, pain reports, results, goals, attendance, messages and notifications."
           : "A copy of everything SKTR Coach stores about you: your account, the plans, templates, exercises and notes you wrote, your messages and your notifications."
       }

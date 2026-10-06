@@ -1,7 +1,7 @@
 import type { Session, SupabaseClient } from "@supabase/supabase-js"
 import { ensureProfileForSession, type ProfileBootstrapReason } from "@/lib/supabase/profile-bootstrap"
 
-export type AppRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type AppRole = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 export type SessionActor = {
   userId: string
@@ -11,7 +11,7 @@ export type SessionActor = {
 }
 
 function isProfileRole(value: unknown): value is Exclude<AppRole, "platform-admin"> {
-  return value === "athlete" || value === "coach" || value === "club-admin"
+  return value === "athlete" || value === "coach" || value === "club-admin" || value === "guardian"
 }
 
 /** The actor for a session, or the reason the signed-in account has nothing to open. */

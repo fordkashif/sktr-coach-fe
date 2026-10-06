@@ -94,8 +94,16 @@ export function BestStatus({ kind }: { kind: "pb" | "sb" }) {
   return kind === "pb" ? <StatusText tone="green">Personal best</StatusText> : <StatusText tone="blue">Season best</StatusText>
 }
 
-/** What to tell the athlete after a result is saved. */
-export function verdictMessage(result: AthleteResult, verdict: NewResultVerdict): { tone: "success" | "warning" | "info"; text: string } {
+/**
+ * What to tell the athlete after a result is saved. When the news is about the wind legal jump of
+ * a wind assisted series (`verdict.legal`), it says so first and then speaks about that jump.
+ */
+export function verdictMessage(saved: AthleteResult, verdict: NewResultVerdict & { legal?: AthleteResult }): { tone: "success" | "warning" | "info"; text: string } {
+  if (verdict.legal) {
+    const message = verdictMessage(verdict.legal, { kind: verdict.kind, beat: verdict.beat })
+    return { tone: message.tone, text: `Your longest jump, ${markText(saved)}, was wind assisted. ${message.text.replace(/^Saved\. /, "")}` }
+  }
+  const result = saved
   const mark = markText(result)
   const event = result.eventLabel
   if (verdict.kind === "wind-assisted") {

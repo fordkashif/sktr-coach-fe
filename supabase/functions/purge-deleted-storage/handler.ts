@@ -23,7 +23,7 @@ export type HandlerDeps = {
 export const SCHEDULER_TOKEN_HEADER = "x-sktr-scheduler-token"
 
 /** Only these buckets are ever touched, whatever the queue says. */
-export const PURGEABLE_BUCKETS = ["avatars", "club-logos"]
+export const PURGEABLE_BUCKETS = ["avatars", "club-logos", "session-media"]
 
 export const BATCH_SIZE = 100
 export const MAX_BATCHES = 10

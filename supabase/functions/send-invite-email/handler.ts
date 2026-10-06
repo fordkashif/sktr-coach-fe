@@ -53,6 +53,8 @@ type InviteRow = {
   last_email_attempt_at: string | null
   /** coach_invites only: what the person becomes when they accept. */
   role?: string | null
+  /** guardian_invites only: the athlete the guardian will follow. */
+  athlete_id?: string | null
 }
 
 export const corsHeaders = {
@@ -79,6 +81,8 @@ function fail(
 }
 
 const INVITE_COLUMNS = "id, tenant_id, team_id, email, status, expires_at, email_send_count, last_email_attempt_at"
+// guardian_invites has no team: it belongs to one athlete.
+const GUARDIAN_INVITE_COLUMNS = "id, tenant_id, athlete_id, email, status, expires_at, email_send_count, last_email_attempt_at"
 const NOT_ALLOWED_MESSAGE = "You are not allowed to send this invite."
 
 export async function handleSendInviteEmail(request: Request, deps: HandlerDeps): Promise<Response> {
@@ -112,9 +116,9 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const batch = isBatch ? parseInviteBatchPayload(rawPayload) : null
   const single = isBatch ? null : parseInvitePayload(rawPayload)
   if (isBatch && !batch) {
-    return fail(400, "invalid_request", `Expected { kind: 'coach' | 'athlete', inviteIds: 1 to ${MAX_INVITES_PER_BATCH} invite ids }.`)
+    return fail(400, "invalid_request", `Expected { kind: 'coach' | 'athlete' | 'guardian', inviteIds: 1 to ${MAX_INVITES_PER_BATCH} invite ids }.`)
   }
-  if (!isBatch && !single) return fail(400, "invalid_request", "Expected { kind: 'coach' | 'athlete', inviteId }.")
+  if (!isBatch && !single) return fail(400, "invalid_request", "Expected { kind: 'coach' | 'athlete' | 'guardian', inviteId }.")
   const kind: InviteKind = (batch ?? single)!.kind
 
   const userClient = deps.createUserClient(supabaseUrl, supabaseAnonKey, authorization)
@@ -135,7 +139,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const callerTenantId = typeof tenantResult.data === "string" ? tenantResult.data : null
   const callerIsClubAdmin = clubAdminResult.data === true
 
-  const table = kind === "coach" ? "coach_invites" : "athlete_invites"
+  const table = kind === "coach" ? "coach_invites" : kind === "guardian" ? "guardian_invites" : "athlete_invites"
   // is_team_coach() is asked once per team in a batch.
   const teamCoachAnswers = new Map<string, boolean>()
   let providerCalls = 0
@@ -144,7 +148,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   const { data: inviteData, error: inviteError } = await serviceClient
     .from(table)
     // Only coach_invites has a role column (coach or club-admin).
-    .select(payload.kind === "coach" ? `${INVITE_COLUMNS}, role` : INVITE_COLUMNS)
+    .select(payload.kind === "coach" ? `${INVITE_COLUMNS}, role` : payload.kind === "guardian" ? GUARDIAN_INVITE_COLUMNS : INVITE_COLUMNS)
     .eq("id", payload.inviteId)
     .maybeSingle()
   const invite = (inviteData as InviteRow | null) ?? null
@@ -171,6 +175,14 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
     }
   }
 
+  // A guardian invite: the database decides (club admin, or a lead or coach of the athlete's team, never
+  // an assistant). Asked only for an invite of the caller's own club; no answer counts as no.
+  let callerCanSendGuardianInvite = false
+  if (payload.kind === "guardian" && !inviteError && invite && callerTenantId !== null && callerTenantId === invite.tenant_id) {
+    const guardianResult = await userClient.rpc("can_send_guardian_invite", { p_invite_id: invite.id })
+    callerCanSendGuardianInvite = !guardianResult.error && guardianResult.data === true
+  }
+
   // A missing invite, an invite of another club and an invite of a team the coach is not assigned to all
   // get the same answer, so the function cannot be used to find out which invite ids exist.
   if (
@@ -181,6 +193,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
       callerTenantId,
       callerIsClubAdmin,
       callerIsTeamCoach,
+      callerCanSendGuardianInvite,
       inviteTenantId: invite.tenant_id,
     })
   ) {
@@ -218,7 +231,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   // Same preference check dispatch-notification-emails uses. With no user id it matches by email only,
   // and it answers "enabled" when no preference row exists, so a brand new address is never suppressed.
   // It only says no when the owner of that address has turned email off themselves.
-  const eventType = payload.kind === "coach" ? "coach_invite_created" : "athlete_invite_created"
+  const eventType = payload.kind === "coach" ? "coach_invite_created" : payload.kind === "guardian" ? "guardian_invite_created" : "athlete_invite_created"
   const { data: emailEnabled, error: preferenceError } = await serviceClient.rpc("notification_channel_enabled", {
     p_channel: "email",
     p_event_type: eventType,
@@ -264,12 +277,15 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
   if (!claimedRow) return rateLimitResponse({ reason: "cooldown", retryAfterSeconds: RESEND_COOLDOWN_SECONDS })
   const previousSendCount = claimedRow.email_send_count ?? 0
 
-  const [tenantRow, teamRow, inviterRow] = await Promise.all([
+  const [tenantRow, teamRow, inviterRow, athleteRow] = await Promise.all([
     serviceClient.from("tenants").select("name").eq("id", invite.tenant_id).maybeSingle(),
     invite.team_id
       ? serviceClient.from("teams").select("name").eq("id", invite.team_id).maybeSingle()
       : Promise.resolve({ data: null }),
     serviceClient.from("profiles").select("display_name, role").eq("user_id", caller.id).maybeSingle(),
+    payload.kind === "guardian" && invite.athlete_id
+      ? serviceClient.from("athletes").select("first_name").eq("id", invite.athlete_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
   const clubName = cleanName((tenantRow.data as { name?: string } | null)?.name) || null
   const teamName = cleanName((teamRow.data as { name?: string } | null)?.name) || null
@@ -284,6 +300,7 @@ export async function handleSendInviteEmail(request: Request, deps: HandlerDeps)
     inviterName,
     clubName,
     teamName,
+    athleteName: cleanName((athleteRow.data as { first_name?: string } | null)?.first_name) || null,
     claimLink,
     expiresAt: invite.expires_at,
   })

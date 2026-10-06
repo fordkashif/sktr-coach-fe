@@ -4,7 +4,9 @@
  *
  * Pure: no imports, no browser, no Supabase. The database applies the same rules in
  * supabase/migrations/20261008100000_results_history_and_competitions.sql (result_events,
- * format_result_mark(), athlete_event_best()). Keep the two in step.
+ * format_result_mark(), athlete_event_best()) and, for rounds, splits, attempt series and heights,
+ * in 20261016100000_result_detail_splits_attempts_relays_rounds.sql (apply_result_detail()).
+ * Keep them in step.
  */
 
 /** The canonical unit a mark is stored in. Times are seconds, field events metres. */
@@ -289,6 +291,30 @@ export function compareValueFor(value: number, timing: Timing | null, event: Res
 
 /* ---------- History and bests ---------------------------------------------------------------- */
 
+/* ---------- Rounds and detail: the shapes ---------------------------------------------------- */
+
+export type ResultRound = "heat" | "quarter_final" | "semi_final" | "final" | "timed_final"
+/** Q: went through on place. q: went through on time. */
+export type Qualifier = "Q" | "q"
+
+/** One attempt of a horizontal jump or a throw: a distance, a foul (X) or a pass (-). */
+export type Attempt = { result: "mark"; mark: number; wind?: number | null } | { result: "foul" } | { result: "pass" }
+
+/** One height of a vertical jump with what happened at it: "O", "XO", "XXO", "X", "XX", "XXX", "-", "X-", "XX-". */
+export type HeightLine = { height: number; tries: string }
+
+/** Running (cumulative) times in seconds. `every` is the distance between splits in metres, when it is regular. */
+export type SplitsDetail = { every: number | null; times: number[] }
+
+/** What a result can carry beyond its mark. Stored in one canonical form (see applyResultDetail). */
+export type ResultDetail = {
+  splits?: SplitsDetail
+  /** Reaction time in seconds, three decimals. */
+  reaction?: number
+  attempts?: Attempt[]
+  heights?: HeightLine[]
+}
+
 export type AthleteResult = {
   id: string
   athleteId: string
@@ -318,6 +344,16 @@ export type AthleteResult = {
   notes: string | null
   enteredByUserId: string | null
   createdAt: string
+  /** Heat, semi final, final. Null or missing when the event had one round or nobody said. */
+  round?: ResultRound | null
+  /** Which heat (or section of a timed final). */
+  heat?: number | null
+  lane?: number | null
+  qualifier?: Qualifier | null
+  /** Splits, reaction time, attempt series or heights. */
+  detail?: ResultDetail | null
+  /** Set on the row that holds the best wind legal attempt of a series whose best attempt was wind assisted. */
+  derivedFromResultId?: string | null
 }
 
 export type Season = { start: string; end: string }
@@ -533,4 +569,480 @@ export const RESULT_SOURCE_LABELS: Record<ResultSource, string> = {
   training: "Training",
   manual: "Added by hand",
   imported: "Earlier record",
+}
+
+/* ---------- Rounds and heats ------------------------------------------------------------------- */
+
+export const RESULT_ROUNDS: Array<{ value: ResultRound; label: string }> = [
+  { value: "heat", label: "Heat" },
+  { value: "quarter_final", label: "Quarter final" },
+  { value: "semi_final", label: "Semi final" },
+  { value: "final", label: "Final" },
+  { value: "timed_final", label: "Timed final" },
+]
+
+/** "Heat", "Semi final". Empty when there is no round. */
+export function roundLabel(round: ResultRound | null | undefined): string {
+  return RESULT_ROUNDS.find((item) => item.value === round)?.label ?? ""
+}
+
+/**
+ * An entry holds one result per slot. The deciding round is one slot: a result with no round, a
+ * final and a timed final are the same place in the running order.
+ */
+export type RoundSlot = "heat" | "quarter_final" | "semi_final" | "final"
+
+export function roundSlot(round: ResultRound | null | undefined): RoundSlot {
+  return round === "heat" || round === "quarter_final" || round === "semi_final" ? round : "final"
+}
+
+const ROUND_SLOT_ORDER: Record<RoundSlot, number> = { heat: 1, quarter_final: 2, semi_final: 3, final: 4 }
+
+/** 1 for a heat up to 4 for the deciding round. */
+export function roundOrder(round: ResultRound | null | undefined): number {
+  return ROUND_SLOT_ORDER[roundSlot(round)]
+}
+
+type RoundFields = { round?: ResultRound | null; heat?: number | null; lane?: number | null; qualifier?: Qualifier | null }
+
+/** "Heat 2, lane 4, qualified on place (Q)". Empty when nothing was recorded. The place is said separately. */
+export function describeRound(result: RoundFields): string {
+  const parts: string[] = []
+  const label = roundLabel(result.round)
+  if (label) parts.push(result.heat ? `${label} ${result.heat}` : label)
+  else if (result.heat) parts.push(`Race ${result.heat}`)
+  if (result.lane) parts.push(`lane ${result.lane}`)
+  if (result.qualifier) parts.push(result.qualifier === "Q" ? "qualified on place (Q)" : "qualified on time (q)")
+  const text = parts.join(", ")
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : ""
+}
+
+/** The results of one entry in running order: heat, quarter final, semi final, then the deciding round. */
+export function sortRounds<T extends { round?: ResultRound | null; date: string; createdAt: string }>(results: T[]): T[] {
+  return [...results].sort((a, b) => roundOrder(a.round) - roundOrder(b.round) || a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
+}
+
+/** The result an entry is known by: the last round that was run. Null when there is none. */
+export function headlineResult<T extends { round?: ResultRound | null; date: string; createdAt: string }>(results: T[]): T | null {
+  const sorted = sortRounds(results)
+  return sorted[sorted.length - 1] ?? null
+}
+
+/* ---------- Splits ------------------------------------------------------------------------------- */
+
+/** How far an event is, in metres. Null when its name does not say (a test a coach named). */
+export function eventDistance(eventKey: string): number | null {
+  if (eventKey === "mile") return 1609
+  if (eventKey === "half_marathon") return 21098
+  if (eventKey === "marathon") return 42195
+  const relay = /^4x(\d+)m$/.exec(eventKey)
+  if (relay) return 4 * Number(relay[1])
+  const kilometres = /^(\d+)k(?:m)?_/.exec(eventKey)
+  if (kilometres) return Number(kilometres[1]) * 1000
+  const metres = /^(\d+)m(?:_|$)/.exec(eventKey)
+  return metres ? Number(metres[1]) : null
+}
+
+/** The usual distance between splits: 200m in a 400m, a lap from 800m up, a kilometre on long ones. Null: no usual one. */
+export function defaultSplitEvery(eventKey: string): number | null {
+  const distance = eventDistance(eventKey)
+  if (distance === null || distance <= 150) return null
+  if (distance <= 300) return 100
+  if (distance <= 400) return 200
+  if (distance <= 3000) return 400
+  if (distance <= 12000) return 1000
+  return 5000
+}
+
+/** How splits are typed: the running time at each point, or the time of each lap on its own. Stored as running times. */
+export type SplitEntryMode = "running" | "lap"
+
+/** What was typed, as running (cumulative) times. */
+export function toRunningSplits(values: number[], mode: SplitEntryMode): number[] {
+  if (mode === "running") return values.map((value) => roundTo(value, 2))
+  let total = 0
+  return values.map((value) => {
+    total = roundTo(total + value, 2)
+    return total
+  })
+}
+
+/** Running times as the time of each lap. */
+export function toLapSplits(running: number[]): number[] {
+  return running.map((value, index) => roundTo(value - (index === 0 ? 0 : running[index - 1]), 2))
+}
+
+/** Checks running times against each other and against the final time. A message in plain words, or null when fine. */
+export function checkSplits(running: number[], finalTime: number | null): string | null {
+  if (running.length > 40) return "A result can hold 40 splits at most."
+  for (let index = 0; index < running.length; index += 1) {
+    const value = running[index]
+    if (!(value > 0)) return `Split ${index + 1} must be more than 0.`
+    if (index > 0 && value <= running[index - 1]) {
+      return `Split ${index + 1} (${formatMark(value, "s")}) must be later than split ${index} (${formatMark(running[index - 1], "s")}). Each split must be later than the one before it.`
+    }
+    if (finalTime !== null && value > finalTime) {
+      return `Split ${index + 1} (${formatMark(value, "s")}) is larger than the final time (${formatMark(finalTime, "s")}). A split cannot be larger than the final time.`
+    }
+  }
+  return null
+}
+
+export type SplitRow = {
+  /** "200m", "Split 2", "Finish". */
+  label: string
+  /** Running time at this point. */
+  time: number
+  /** Time of this lap on its own. */
+  lap: number
+  /** This lap against the one before: negative is faster. Null for the first lap and when the two laps are not the same length. */
+  change: number | null
+  finish: boolean
+}
+
+/** A race's splits as table rows, ending with the finish. */
+export function splitRows(splits: SplitsDetail, finalTime: number, eventKey: string): SplitRow[] {
+  const every = splits.every
+  const distance = eventDistance(eventKey)
+  const times = splits.times.filter((time) => time < finalTime)
+  const points = [...times, finalTime]
+  const lastLegMatches = every !== null && distance !== null ? distance - every * times.length === every : false
+  return points.map((time, index) => {
+    const finish = index === points.length - 1
+    const lap = roundTo(time - (index === 0 ? 0 : points[index - 1]), 2)
+    const previousLap = index === 0 ? null : roundTo(points[index - 1] - (index === 1 ? 0 : points[index - 2]), 2)
+    const comparable = every !== null && (!finish || lastLegMatches)
+    return {
+      label: finish ? "Finish" : every !== null ? `${every * (index + 1)}m` : `Split ${index + 1}`,
+      time,
+      lap,
+      change: previousLap !== null && comparable ? roundTo(lap - previousLap, 2) : null,
+      finish,
+    }
+  })
+}
+
+/** "+0.42", "-0.31", "0.00": a lap against the one before. */
+export function formatLapChange(change: number): string {
+  const amount = Math.abs(change)
+  const text = amount >= 60 ? formatMark(amount, "s") : amount.toFixed(2)
+  return change > 0 ? `+${text}` : change < 0 ? `-${text}` : text
+}
+
+export type ParsedReaction = { ok: true; value: number | null } | { ok: false; message: string }
+
+/** "0.152", ".152", "0,152", "" (none). Seconds, three decimals, under one second. */
+export function parseReactionInput(text: string): ParsedReaction {
+  const raw = text.trim().replace(/,/g, ".")
+  if (!raw) return { ok: true, value: null }
+  if (!/^0?\.\d{1,3}$/.test(raw)) return { ok: false, message: "Write the reaction time in seconds, like 0.152." }
+  const value = roundTo(Number(raw), 3)
+  if (!(value > 0)) return { ok: false, message: "A reaction time is more than 0." }
+  return { ok: true, value }
+}
+
+export function formatReaction(value: number): string {
+  return roundTo(value, 3).toFixed(3)
+}
+
+/* ---------- Attempt series (horizontal jumps and throws) ------------------------------------------ */
+
+export const MAX_ATTEMPTS = 6
+
+export type ParsedAttempt = { ok: true; attempt: Attempt | null } | { ok: false; message: string }
+
+/** "6.42" a distance, "X" a foul, "-" a pass, "" not taken. */
+export function parseAttemptInput(text: string): ParsedAttempt {
+  const raw = text.trim()
+  if (!raw) return { ok: true, attempt: null }
+  if (/^(x|f|foul)$/i.test(raw)) return { ok: true, attempt: { result: "foul" } }
+  if (/^(-|–|p|pass)$/i.test(raw)) return { ok: true, attempt: { result: "pass" } }
+  const parsed = parseMarkInput(raw, "m")
+  if (!parsed.ok || parsed.value >= 1000) return { ok: false, message: "Write a distance like 6.42, X for a foul or - for a pass." }
+  return { ok: true, attempt: { result: "mark", mark: parsed.value } }
+}
+
+/** "6.42", "X" or "-". */
+export function formatAttempt(attempt: Attempt): string {
+  return attempt.result === "mark" ? formatMark(attempt.mark, "m") : attempt.result === "foul" ? "X" : "-"
+}
+
+export type SeriesSummary = {
+  /** The attempt that is the result: the longest; of two equal ones a wind legal one, then the earlier. Null with no measured attempt. */
+  bestIndex: number | null
+  /** The best wind legal attempt, only when the best attempt itself was wind assisted and another one was legal. */
+  legalIndex: number | null
+  measured: number
+  fouls: number
+  passes: number
+}
+
+function attemptWindLegal(attempt: Attempt): boolean {
+  return attempt.result === "mark" && isWindLegal(attempt.wind ?? null)
+}
+
+export function summariseSeries(attempts: Attempt[]): SeriesSummary {
+  let bestIndex: number | null = null
+  let legalBest: number | null = null
+  let measured = 0
+  let fouls = 0
+  let passes = 0
+  const markAt = (index: number | null) => (index === null ? null : (attempts[index] as Extract<Attempt, { result: "mark" }>))
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index]
+    if (attempt.result === "foul") {
+      fouls += 1
+      continue
+    }
+    if (attempt.result === "pass") {
+      passes += 1
+      continue
+    }
+    measured += 1
+    const best = markAt(bestIndex)
+    if (best === null || attempt.mark > best.mark || (attempt.mark === best.mark && !attemptWindLegal(best) && attemptWindLegal(attempt))) bestIndex = index
+    if (attemptWindLegal(attempt)) {
+      const legal = markAt(legalBest)
+      if (legal === null || attempt.mark > legal.mark) legalBest = index
+    }
+  }
+  const best = markAt(bestIndex)
+  return { bestIndex, legalIndex: best !== null && !attemptWindLegal(best) ? legalBest : null, measured, fouls, passes }
+}
+
+/* ---------- Heights (high jump and pole vault) --------------------------------------------------- */
+
+const TRIES_PATTERN = /^(O|XO|XXO|X|XX|XXX|-|X-|XX-)$/
+
+/** "xo" becomes "XO". Also takes 0 for O and P for a pass. Null when it is not a line of attempts. */
+export function normaliseTries(text: string): string | null {
+  const tries = text.replace(/\s+/g, "").toUpperCase().replace(/0/g, "O").replace(/[P–]/g, "-")
+  return TRIES_PATTERN.test(tries) ? tries : null
+}
+
+export type ParsedHeightLine = { ok: true; line: HeightLine } | { ok: false; message: string }
+
+/** "1.85 XO", "1,85 xo", "1.90m XXX". */
+export function parseHeightLine(text: string): ParsedHeightLine {
+  const match = /^\s*(\d+(?:[.,]\d{1,2})?)\s*m?\s+(\S(?:.*\S)?)\s*$/.exec(text)
+  const height = match ? parseMarkInput(match[1], "m") : null
+  const tries = match ? normaliseTries(match[2]) : null
+  if (!height || !height.ok || height.value >= 10 || !tries) return { ok: false, message: "Write a height and its attempts, like 1.85 XO." }
+  return { ok: true, line: { height: height.value, tries } }
+}
+
+/** "1.80 O, 1.85 XO, 1.90 XXX" (commas, semicolons or new lines between heights). */
+export function parseHeightSeries(text: string): { ok: true; lines: HeightLine[] } | { ok: false; message: string } {
+  const lines: HeightLine[] = []
+  // A comma between heights follows the attempts or is followed by a space; a decimal comma ("1,85") does neither.
+  for (const part of text.split(/[;\n]|(?<=\s[oOxX0pP–-]{1,3})\s*,|,(?=\s)/)) {
+    if (!part.trim()) continue
+    const parsed = parseHeightLine(part)
+    if (!parsed.ok) return parsed
+    lines.push(parsed.line)
+  }
+  return { ok: true, lines }
+}
+
+/** "1.85 XO" */
+export function formatHeightLine(line: HeightLine): string {
+  return `${formatMark(line.height, "m")} ${line.tries}`
+}
+
+function failuresIn(tries: string): number {
+  return tries.split("").filter((letter) => letter === "X").length
+}
+
+export type HeightsSummary = {
+  /** The highest height cleared. Null when none was. */
+  best: number | null
+  bestIndex: number | null
+  /** 1, 2 or 3: the attempt the best height was cleared on. */
+  clearedOnAttempt: number | null
+  /** The first tie-break: failures at the height last cleared. */
+  failuresAtBest: number
+  /** The second tie-break: failures in the whole competition up to and including the height last cleared. */
+  totalFailures: number
+  /** Three failures in a row: the athlete's competition is over. */
+  out: boolean
+}
+
+export function summariseHeights(heights: HeightLine[]): HeightsSummary {
+  let bestIndex = -1
+  let run = 0
+  let out = false
+  for (let index = 0; index < heights.length; index += 1) {
+    if (heights[index].tries.endsWith("O")) {
+      bestIndex = index
+      run = 0
+    } else {
+      run += failuresIn(heights[index].tries)
+    }
+    if (run >= 3) out = true
+  }
+  if (bestIndex < 0) return { best: null, bestIndex: null, clearedOnAttempt: null, failuresAtBest: 0, totalFailures: 0, out }
+  const best = heights[bestIndex]
+  return {
+    best: best.height,
+    bestIndex,
+    clearedOnAttempt: best.tries.length,
+    failuresAtBest: failuresIn(best.tries),
+    totalFailures: heights.slice(0, bestIndex + 1).reduce((sum, line) => sum + failuresIn(line.tries), 0),
+    out,
+  }
+}
+
+/* ---------- Detail as a whole ---------------------------------------------------------------------- */
+
+/** Which kinds of detail an event takes. */
+export function detailKindsFor(eventKey: string, unit: MarkUnit | null): { splits: boolean; reaction: boolean; attempts: boolean; heights: boolean } {
+  const event = findResultEvent(eventKey)
+  const vertical = eventKey === "high_jump" || eventKey === "pole_vault"
+  const distance = eventDistance(eventKey)
+  return {
+    splits: unit === "s" && (distance === null || distance >= 200),
+    reaction: unit === "s" && Boolean(event) && (event?.category === "Sprints" || event?.category === "Hurdles"),
+    attempts: unit === "m" && !vertical,
+    heights: vertical,
+  }
+}
+
+export type AppliedDetail =
+  | {
+      ok: true
+      /** The detail in its canonical form. Null when nothing applies to the event. */
+      detail: ResultDetail | null
+      /** True when the mark comes from the detail (an attempt series or heights). */
+      series: boolean
+      /** The best measured attempt or the highest height cleared; the mark that was passed in when there is no series. */
+      mark: number | null
+      wind: number | null
+      /** The best wind legal attempt, only when the best attempt was wind assisted and another was legal. */
+      legal: { mark: number; wind: number | null } | null
+    }
+  | { ok: false; message: string }
+
+/**
+ * Checks the detail of a result and puts it in its canonical form, with what follows from it.
+ * The database does the same in apply_result_detail(); the messages match.
+ * Parts that do not belong to the event are dropped: splits and reaction are for times, attempts
+ * for distances other than the high jump and pole vault, heights for those two.
+ */
+export function applyResultDetail(detail: ResultDetail | null | undefined, context: { eventKey: string; unit: MarkUnit; windApplies: boolean; mark: number | null }): AppliedDetail {
+  const { eventKey, unit, windApplies, mark } = context
+  if (!detail) return { ok: true, detail: null, series: false, mark, wind: null, legal: null }
+  const vertical = eventKey === "high_jump" || eventKey === "pole_vault"
+  const out: ResultDetail = {}
+  let series = false
+  let seriesMark: number | null = null
+  let seriesWind: number | null = null
+  let legal: { mark: number; wind: number | null } | null = null
+
+  if (unit === "s" && detail.splits && Array.isArray(detail.splits.times)) {
+    const times = detail.splits.times.map((time) => roundTo(Number(time), 2))
+    if (times.length > 40) return { ok: false, message: "A result can hold 40 splits at most." }
+    for (let index = 0; index < times.length; index += 1) {
+      if (!Number.isFinite(times[index])) return { ok: false, message: "Every split must be a time." }
+      if (!(times[index] > 0)) return { ok: false, message: "Every split must be more than 0." }
+      if (index > 0 && times[index] <= times[index - 1]) return { ok: false, message: "Each split must be later than the one before it." }
+      if (mark !== null && times[index] > mark) return { ok: false, message: "A split cannot be larger than the final time." }
+    }
+    const every = detail.splits.every ?? null
+    if (every !== null && (!Number.isInteger(every) || every < 10 || every > 10000)) {
+      return { ok: false, message: "The distance between splits is a whole number of metres, like 200." }
+    }
+    // A last split equal to the final time is the finish itself, which is the mark.
+    const kept = times.filter((time) => mark === null || time < mark)
+    if (kept.length > 0) out.splits = { every, times: kept }
+  }
+
+  if (unit === "s" && detail.reaction !== undefined && detail.reaction !== null) {
+    const reaction = roundTo(Number(detail.reaction), 3)
+    if (!Number.isFinite(reaction)) return { ok: false, message: "A reaction time is a number of seconds, like 0.152." }
+    if (reaction <= 0 || reaction >= 1) return { ok: false, message: "A reaction time is under one second, like 0.152." }
+    out.reaction = reaction
+  }
+
+  if (unit === "m" && !vertical && Array.isArray(detail.attempts) && detail.attempts.length > 0) {
+    if (detail.attempts.length > MAX_ATTEMPTS) return { ok: false, message: "A series has six attempts at most." }
+    const attempts: Attempt[] = []
+    for (const attempt of detail.attempts) {
+      if (attempt?.result === "foul" || attempt?.result === "pass") {
+        attempts.push({ result: attempt.result })
+      } else if (attempt?.result === "mark" && typeof attempt.mark === "number") {
+        const value = roundTo(attempt.mark, 2)
+        if (!(value > 0) || value >= 1000) return { ok: false, message: "Every measured attempt needs a distance in metres, like 6.42." }
+        const wind = windApplies && typeof attempt.wind === "number" ? roundTo(attempt.wind, 1) : null
+        if (wind !== null && (wind < -9.9 || wind > 9.9)) return { ok: false, message: "Wind must be between -9.9 and +9.9." }
+        attempts.push(wind === null ? { result: "mark", mark: value } : { result: "mark", mark: value, wind })
+      } else {
+        return { ok: false, message: "An attempt is a distance, a foul (X) or a pass (-)." }
+      }
+    }
+    const summary = summariseSeries(attempts)
+    if (summary.bestIndex === null) {
+      return { ok: false, message: "A series needs at least one measured attempt. With only fouls and passes there is no mark to save." }
+    }
+    const best = attempts[summary.bestIndex] as Extract<Attempt, { result: "mark" }>
+    series = true
+    seriesMark = best.mark
+    seriesWind = best.wind ?? null
+    if (summary.legalIndex !== null) {
+      const legalAttempt = attempts[summary.legalIndex] as Extract<Attempt, { result: "mark" }>
+      legal = { mark: legalAttempt.mark, wind: legalAttempt.wind ?? null }
+    }
+    out.attempts = attempts
+  }
+
+  if (vertical && Array.isArray(detail.heights) && detail.heights.length > 0) {
+    if (detail.heights.length > 30) return { ok: false, message: "A competition can hold 30 heights at most." }
+    const heights: HeightLine[] = []
+    let run = 0
+    for (const line of detail.heights) {
+      const height = typeof line?.height === "number" ? roundTo(line.height, 2) : Number.NaN
+      if (!(height > 0) || height >= 10) return { ok: false, message: "Every line needs a height in metres, like 1.85." }
+      const tries = normaliseTries(String(line.tries ?? ""))
+      if (!tries) return { ok: false, message: "Write the attempts at a height with O, X and -, like O, XO or XXX." }
+      if (heights.length > 0 && height <= heights[heights.length - 1].height) return { ok: false, message: "Heights go up: each one must be higher than the one before." }
+      if (run >= 3) return { ok: false, message: "After three failures in a row the competition is over, so no height can follow." }
+      run = tries.endsWith("O") ? 0 : run + failuresIn(tries)
+      heights.push({ height, tries })
+    }
+    const summary = summariseHeights(heights)
+    if (summary.best === null) return { ok: false, message: "No height was cleared, so there is no mark to save." }
+    series = true
+    seriesMark = summary.best
+    seriesWind = null
+    out.heights = heights
+  }
+
+  return {
+    ok: true,
+    detail: Object.keys(out).length > 0 ? out : null,
+    series,
+    mark: series ? seriesMark : mark,
+    wind: series ? seriesWind : null,
+    legal,
+  }
+}
+
+/** True when a result carries more than its mark: a round, a lane, splits, a series. */
+export function hasResultDetail(result: Pick<AthleteResult, "round" | "heat" | "lane" | "qualifier" | "detail">): boolean {
+  return Boolean(result.round || result.heat || result.lane || result.qualifier || (result.detail && Object.keys(result.detail).length > 0))
+}
+
+/** Running splits as one line of text for a file: "24.10; 49.80". Empty when there are none. */
+export function splitsText(detail: ResultDetail | null | undefined): string {
+  return (detail?.splits?.times ?? []).map((time) => formatMark(time, "s")).join("; ")
+}
+
+/** The attempts or heights as one line of text for a file: "6.42 (+1.1); X; -" or "1.80 O; 1.85 XO". */
+export function seriesText(detail: ResultDetail | null | undefined): string {
+  if (detail?.attempts?.length) {
+    return detail.attempts
+      .map((attempt) => `${formatAttempt(attempt)}${attempt.result === "mark" && attempt.wind !== null && attempt.wind !== undefined ? ` (${formatWind(attempt.wind)})` : ""}`)
+      .join("; ")
+  }
+  if (detail?.heights?.length) return detail.heights.map(formatHeightLine).join("; ")
+  return ""
 }

@@ -50,3 +50,30 @@ export function registerServiceWorker() {
       })
   })
 }
+
+/** True when this build registers the service worker (see registerServiceWorker above). */
+function serviceWorkerAllowed(): boolean {
+  if (!import.meta.env.PROD) return false
+  const flag = import.meta.env.VITE_ENABLE_SW
+  if (flag === "false") return false
+  return import.meta.env.VITE_BACKEND_MODE === "supabase" || flag === "true"
+}
+
+/**
+ * The app's service worker registration, for push notifications (src/lib/push/push-client.ts).
+ * Push needs the worker, so when a person turns push on before the page finished loading (the
+ * worker is registered on "load"), it is registered here. Null where this build has no worker
+ * (development and demo builds) or the browser has none. Never throws.
+ */
+export async function getAppServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null
+  try {
+    const existing = await navigator.serviceWorker.getRegistration("/")
+    if (existing) return existing
+    if (!serviceWorkerAllowed()) return null
+    await navigator.serviceWorker.register("/sw.js", { scope: "/" })
+    return await navigator.serviceWorker.ready
+  } catch {
+    return null
+  }
+}

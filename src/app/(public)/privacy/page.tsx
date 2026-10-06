@@ -53,16 +53,19 @@ export default function PrivacyPage() {
             "A profile photo, if you add one.",
             "Your role (athlete, coach or club admin), your club and your teams.",
             "Your notification choices and the notifications sent to you.",
+            "If you turn on push notifications: for each phone or computer, the address your browser gave us to reach it and a short name for it (for example Chrome on Android). You can remove a device in notification settings, and it is removed when you sign out there.",
           ]}
         />
         <LegalText>Athletes:</LegalText>
         <LegalList
           items={[
             "Training: the plan assigned to you, the sessions you log, test week results, competition entries and results, and personal bests.",
+            "Photos and short videos you add to a session log to show your coach, with any caption you write. Photos are made smaller on your phone before they are sent, which also removes where they were taken.",
             "Wellness check-ins: sleep, soreness, fatigue, stress and mood, and any note you add.",
             "Pain and injury reports: where it hurts, how bad it is, when it started, whether it stops you training, and your note.",
             "Private details, if you or your club add them: date of birth, preferred name, pronouns, height, weight, an emergency contact, medical notes and allergies, a bib or registration number, and your school or club affiliation.",
             "For athletes under 18, the name, phone number and email address of a parent or guardian may be stored.",
+            "A parent or guardian the club invited gets their own account. For them we store their name, email address, password (scrambled), how they are related to the athlete, which athletes they follow, who invited them and when, and their notification choices.",
           ]}
         />
         <LegalText>Coaches and club admins:</LegalText>
@@ -97,9 +100,12 @@ export default function PrivacyPage() {
             "Coaches see the training, results, wellness check-ins, pain reports and private details of athletes on teams they are assigned to. When an athlete leaves a team, that team's coaches stop seeing them.",
             "Club admins see the same for every athlete in their own club, and manage the club's coaches, teams and invites.",
             "Club admins can read (but not write in) every direct message thread between a coach and an athlete in their club. A person in a conversation can report a message to the club admins, and a club admin can hide a message.",
+            "Photos and short videos an athlete adds to a session log are seen by that athlete, the coaches of their current team (assistant coaches included) and their club's admins. A coach can leave a short comment on one, which the athlete sees. They are never public: each one opens through a private link that stops working after a few minutes.",
             "Other athletes, coaches of other teams and other clubs cannot see your health information, private details or messages.",
             "A coach can write a report about an athlete and share it with that athlete in the app, or with a parent or guardian through a private link. The link opens that one report without signing in, ends after 7, 30 or 90 days, and the coach can stop it sooner. A report never contains a coach's private notes, and contains health information only when the coach chose to include it, which needs the consent described below.",
-            "A coach's email address is shown to their athletes only if the coach switches that on.",
+            "A parent or guardian with an account sees only the athletes the club linked them to, and can only read: the athlete's plan and what was done or skipped, competitions and results, records and goals, test week results, attendance, reports the coach shared with the athlete, team announcements, the team calendar and the coach's name. They cannot see a coach's private notes, messages between coach and athlete, other athletes or the roster. The only thing they can change is the guardian contact the club holds for their child.",
+            "A parent or guardian sees an athlete's health information (check-ins, pain and injury reports, medical notes and the reason for time off) only while the athlete is under 18. From the age of 18 it is hidden unless the athlete switches sharing on in their profile, and they can switch it off again. If the club has no date of birth for the athlete, it is hidden.",
+            "A coach's email address is shown to their athletes, and to their athletes' parents and guardians, only if the coach switches that on.",
             "Emails about a new message or a pain report say that there is something to read. They do not contain the message text or any health detail.",
           ]}
         />
@@ -127,6 +133,9 @@ export default function PrivacyPage() {
           Many athletes who use SKTR Coach are under 18. Under the Act a parent or guardian gives consent for a child and can use the child's rights for them. An athlete joins only through their club, by an invite or a team join code from a coach. Before an athlete under 18 uses the app, the club must have the consent of a parent or guardian, including consent to record health information.
         </LegalText>
         <LegalText>
+          A parent or guardian gets an account only by invite from the club: a coach of the athlete's team or a club admin sends it, and can end that access at any time, at once. A parent or guardian cannot add themselves to an athlete or remove themselves from one. They can ask the club, and they can delete their own account, which removes their sign-in and their links but nothing about the athlete.
+        </LegalText>
+        <LegalText>
           Messages between an adult coach and an athlete are limited to coaches of the athlete's own team, are text only, cannot be deleted by either person, and can always be read by the club's admins. If you are a parent or guardian and want to see, correct or remove what is stored about your child, or to withdraw your consent, ask the club or email {support}.
         </LegalText>
       </LegalSection>
@@ -135,7 +144,7 @@ export default function PrivacyPage() {
         <LegalList
           items={[
             "To run the app: showing athletes their training, showing coaches who is ready to train, and keeping records for the club.",
-            "To send the emails and in-app notifications the service needs (invites, password resets, and the notifications you have left switched on).",
+            "To send the emails, in-app notifications and push notifications the service needs (invites, password resets, and the notifications you have left switched on).",
             "To review requests from clubs and set clubs up.",
             "To keep the service secure, find faults and stop abuse.",
           ]}
@@ -163,6 +172,7 @@ export default function PrivacyPage() {
           items={[
             "Our hosting providers (Supabase for the database, sign-in and file storage, and Vercel for the website) store and deliver the app's information on our behalf.",
             "Resend delivers our emails. It receives the recipient's email address and the content of each email.",
+            "If you turn on push notifications, the push service of your browser or phone (Google, Apple, Mozilla or Microsoft) delivers them. Each one is encrypted so that only your device can read it, and it never contains health details or the text of a message.",
             "Vercel Web Analytics counts visits to pages so we can see how the app is used. It does not use cookies and does not follow you across other websites.",
           ]}
         />
@@ -203,6 +213,7 @@ export default function PrivacyPage() {
             "A club's owner can close the club in the app, or tell us the club has stopped using SKTR Coach. Closing locks every member out at once. The club's information is kept for 90 days, in case the club asks us to reopen it, and is then deleted for good together with its members' sign-in accounts.",
             "If an athlete leaves a team, their history stays in their own account. A club admin can delete an athlete's information, and anyone can delete their own account in the app under Your account.",
             "When you delete your account, your sign-in and what is recorded about you are deleted straight away. Messages you sent stay in the other person's conversation, shown as from \"Deleted account\", so that a club admin can still read a conversation that was reported. Plans, templates and notes a coach wrote stay with the club, shown as written by \"A former coach\". A coach who leads a team, and the owner of a club, must hand that over first.",
+            "A photo or video on a session log is deleted when the athlete removes it, when the athlete's information or account is deleted, and when the club is deleted. The file itself is removed from our storage within a day.",
             "A request from a club to join that we decline is deleted within 12 months.",
             "The records kept to stop spam on the request form are kept for about a day.",
             "We may keep something longer where the law requires it, or where a club needs a record to protect an athlete. We will tell you if that applies to a request you make.",

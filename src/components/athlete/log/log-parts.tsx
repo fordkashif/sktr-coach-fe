@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { CaretDown } from "@phosphor-icons/react"
 import {
   Button,
@@ -214,6 +214,7 @@ export function ExerciseLog({
   onAddSet,
   onStopwatch,
   hideLabel = false,
+  media,
 }: {
   row: LoggableRow
   logs: Record<string, SessionRowLog>
@@ -232,6 +233,8 @@ export function ExerciseLog({
   onStopwatch?: () => void
   /** The block title already says it (a block with a single item and no exercises). */
   hideLabel?: boolean
+  /** Photos and videos of this exercise: the add button for the action line, and the rows under it. */
+  media?: { action: ReactNode; list: ReactNode }
 }) {
   const sets = Array.from({ length: count }, (_, index) => index + 1)
   const doneCount = sets.filter((setIndex) => logs[setKey(row.id, setIndex)]?.completed).length
@@ -257,6 +260,8 @@ export function ExerciseLog({
         target={row.target}
         hint={hint}
         trailing={<TickButton done={allDone} label={`${row.label}, ${allDone ? "done" : "mark as done"}`} onClick={() => onToggle(1)} />}
+        actions={media?.action}
+        footer={media?.list}
       />
     )
   }
@@ -304,10 +309,12 @@ export function ExerciseLog({
               Add note
             </Button>
           ) : null}
+          {media?.action}
         </>
       }
       footer={
         <>
+          {media?.list}
           {showNote ? (
             <Input
               className="mt-2"

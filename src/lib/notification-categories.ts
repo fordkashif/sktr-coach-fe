@@ -1,4 +1,4 @@
-export type NotificationCategoryRole = "athlete" | "coach" | "club-admin" | "platform-admin"
+export type NotificationCategoryRole = "athlete" | "coach" | "club-admin" | "platform-admin" | "guardian"
 
 export type NotificationPreferenceCategory = {
   key: string
@@ -293,6 +293,71 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
     defaults: { "in-app": true, email: false },
     emailAvailable: true,
     group: "reminders",
+  },
+
+  // Parent or guardian (20261016090000_guardian_access.sql). All on by default on both channels.
+  {
+    key: "guardian-plans",
+    title: "New training plans",
+    description: "When the coach publishes a plan for an athlete you follow.",
+    eventTypes: ["guardian_plan_published"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-test-weeks",
+    title: "Test weeks",
+    description: "When a test week opens for an athlete you follow.",
+    eventTypes: ["guardian_test_week_published"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-pain-reports",
+    title: "Pain and injury reports",
+    description: "When an athlete you follow sends a pain or injury report. Only where you can see their health information.",
+    eventTypes: ["guardian_pain_reported"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-reports",
+    title: "Reports from the coach",
+    description: "When the coach shares a report about an athlete you follow.",
+    eventTypes: ["guardian_report_shared"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-announcements",
+    title: "Announcements",
+    description: "When the coach or the club posts an announcement to the team. The email carries the announcement.",
+    eventTypes: ["guardian_announcement_posted"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-access",
+    title: "Your access",
+    description: "When the club adds an athlete to your account or ends your access to one.",
+    eventTypes: ["guardian_linked", "guardian_unlinked"],
+    roles: ["guardian"],
+    defaults: { "in-app": true, email: true },
+    emailAvailable: true,
+  },
+  {
+    key: "guardian-invites",
+    title: "Guardian invites",
+    description: "When a parent or guardian you invited accepts.",
+    eventTypes: ["guardian_invite_accepted"],
+    roles: ["coach", "club-admin"],
+    defaults: { "in-app": true, email: false },
+    emailAvailable: false,
   },
 
   // Platform admin, and the person who asked for a club
