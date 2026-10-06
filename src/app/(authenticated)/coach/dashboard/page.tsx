@@ -432,7 +432,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
               <EmptyState title="No session planned today" body="A rest day, or the plan has nothing on this date." />
             )}
           </Section>
-          <Section title="This week's plan">
+          <Section title="This week's plan" action={<Link to="/coach/training-plan/calendar" className="sk-link">Calendar</Link>}>
             {planWeek === undefined ? (
               <SkeletonRows rows={4} label="Loading this week's plan" />
             ) : planWeek && planWeek.days.length > 0 ? (

@@ -82,7 +82,9 @@ test("a goal is achieved by the first later legal result that meets it", () => {
 })
 
 test("results before the goal was set, wind assisted marks and other events do not achieve it", () => {
-  assert.equal(achievementFromResults(openGoal, [result("k:100m", 11.0, "2026-02-28")]).achievedOn, null)
+  assert.equal(achievementFromResults(openGoal, [result("k:100m", 11.0, "2026-02-27")]).achievedOn, null)
+  // One day of slack: the goal's day is UTC, the result's is local, so the evening before counts.
+  assert.equal(achievementFromResults(openGoal, [result("k:100m", 11.0, "2026-02-28")]).achievedOn, "2026-02-28")
   assert.equal(achievementFromResults(openGoal, [result("k:100m", 11.0, "2026-05-01", false)]).achievedOn, null)
   assert.equal(achievementFromResults(openGoal, [result("k:200m", 11.0, "2026-05-01")]).achievedOn, null)
   // The day the goal was set counts.

@@ -150,8 +150,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
   {
     key: "athlete-left-team",
     title: "Athletes leaving",
-    description: "When an athlete takes themselves off one of your teams.",
-    eventTypes: ["athlete_left_team"],
+    description: "When an athlete leaves one of your teams or deletes their account.",
+    eventTypes: ["athlete_left_team", "athlete_account_deleted"],
     roles: ["coach", "club-admin"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,
@@ -215,8 +215,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORIES: NotificationPreferenceCategory[
   {
     key: "club-account",
     title: "Your club's account",
-    description: "When a package request is approved or declined, and when the club's access is paused or turned back on.",
-    eventTypes: ["package_request_reviewed", "club_suspended", "club_reactivated"],
+    description: "When a package request is approved or declined, when the club's access is paused or turned back on, when the club changes owner or is closed, and when a coach or club admin deletes their account.",
+    eventTypes: ["package_request_reviewed", "club_suspended", "club_reactivated", "club_closed", "club_ownership_transferred", "member_account_deleted"],
     roles: ["club-admin"],
     defaults: { "in-app": true, email: true },
     emailAvailable: true,

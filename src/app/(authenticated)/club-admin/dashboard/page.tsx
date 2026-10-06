@@ -326,6 +326,7 @@ export default function ClubAdminDashboardPage() {
         lede={lede}
         actions={
           <>
+            <LinkButton to="/club-admin/calendar">Calendar</LinkButton>
             <LinkButton to="/club-admin/teams">Manage teams</LinkButton>
             <LinkButton to="/club-admin/users?invite=1" variant="primary">
               Invite a coach

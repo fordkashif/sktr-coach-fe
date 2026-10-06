@@ -22,6 +22,7 @@ import {
   MOCK_ATHLETE_USER_ID,
   updateMockResultsState,
 } from "@/lib/data/pr/mock-results-store"
+import { mockSeasonBestWindow } from "@/lib/data/club-admin/seasons-data"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -206,9 +207,9 @@ function toInsertPayload(athleteId: string, input: ResultInput) {
 
 /* ---------- Season ---------------------------------------------------------------------------- */
 
-/** The season bests are counted in: the club's season when today is inside it, otherwise the calendar year. */
+/** The season bests are counted in: the club's current season until its last day has passed, otherwise the calendar year. */
 export async function getResultsSeason(): Promise<Result<Season>> {
-  if (isMock()) return ok(seasonFor(localToday()))
+  if (isMock()) return ok(mockSeasonBestWindow(localToday()))
   const clientResult = requireSupabaseClient("getResultsSeason")
   if (!clientResult.ok) return clientResult
   const { data, error } = await clientResult.client.rpc("get_current_results_season")

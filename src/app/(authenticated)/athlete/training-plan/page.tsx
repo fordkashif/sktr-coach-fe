@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Play, Plus } from "@phosphor-icons/react"
 import { AvailabilityDialog, AvailabilityNotice, useMyAvailability } from "@/components/athlete/availability"
+import { AthleteCalendarScreen, AthletePlanViewSwitch, type AthletePlanView } from "@/components/calendar/athlete-calendar"
 import { SkipDialog } from "@/components/athlete/log/log-parts"
 import { useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
@@ -453,6 +454,26 @@ export default function AthleteTrainingPlanPage() {
   }
 
   const detailPending = isSupabase && Boolean(activePlanId) && backendDetailLoadedFor !== activePlanId
+
+  // Week list (the plan) or the calendar, as a list or a month. The choice is kept in the address.
+  const viewParam = searchParams.get("view")
+  const planView: AthletePlanView = viewParam === "agenda" || viewParam === "month" ? viewParam : "week"
+  const viewSwitch = (
+    <AthletePlanViewSwitch
+      value={planView}
+      onChange={(next) => {
+        const params = new URLSearchParams(searchParams)
+        params.delete("day")
+        params.delete("month")
+        if (next === "week") params.delete("view")
+        else params.set("view", next)
+        setSearchParams(params, { replace: true })
+      }}
+    />
+  )
+  if (planView !== "week" && !openDay) {
+    return <AthleteCalendarScreen layout={planView} switcher={viewSwitch} notice={<AvailabilityNotice current={availability.current} />} />
+  }
   const teamLabel = isSupabase ? backendTeamName : null
 
   if (isSupabase && (backendLoading || detailPending) && !backendError) {
@@ -492,6 +513,7 @@ export default function AthleteTrainingPlanPage() {
       <Screen>
         <ScreenHeader title="Your plan" />
         <AvailabilityNotice current={availability.current} />
+        <div>{viewSwitch}</div>
         <Section aria-label="Plan">
           <EmptyState
             title="No plan assigned yet"
@@ -556,6 +578,8 @@ export default function AthleteTrainingPlanPage() {
 
       <AvailabilityNotice current={availability.current} />
       {backendError ? <Notice tone="error">Some of your plan could not be loaded. {backendError}</Notice> : null}
+
+      <div>{viewSwitch}</div>
 
       <Split
         main={

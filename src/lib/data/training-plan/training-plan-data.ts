@@ -95,9 +95,11 @@ export type PublishTrainingPlanInput = {
   teamId: string | null
   visibilityStart: "immediate" | "scheduled"
   visibilityDate: string | null
-  assignTarget: "team" | "subgroup" | "selected"
+  assignTarget: "team" | "squads" | "subgroup" | "selected"
   assignSubgroup: string | null
   selectedAthleteIds: string[]
+  /** For "squads": squads of the plan's team. Their members now, and anyone added later, get the plan. */
+  squadIds?: string[]
   structure: PublishPlanStructure
 }
 
@@ -120,9 +122,10 @@ export type SaveTrainingPlanDraftInput = {
 export type TrainingPlanAssignmentRow = {
   id: string
   planId: string
-  scope: "team" | "athlete"
+  scope: "team" | "athlete" | "squad"
   teamId: string | null
   athleteId: string | null
+  squadId: string | null
   visibilityStart: "immediate" | "scheduled"
   visibilityDate: string | null
 }
@@ -144,14 +147,15 @@ export type TrainingPlanBuilderRecord = {
 type AssignmentDbRow = {
   id: string
   plan_id: string
-  scope: "team" | "athlete"
+  scope: "team" | "athlete" | "squad"
   team_id: string | null
   athlete_id: string | null
+  squad_id: string | null
   visibility_start: "immediate" | "scheduled"
   visibility_date: string | null
 }
 
-const ASSIGNMENT_COLUMNS = "id, plan_id, scope, team_id, athlete_id, visibility_start, visibility_date"
+const ASSIGNMENT_COLUMNS = "id, plan_id, scope, team_id, athlete_id, squad_id, visibility_start, visibility_date"
 
 function mapAssignmentRow(row: AssignmentDbRow): TrainingPlanAssignmentRow {
   return {
@@ -160,6 +164,7 @@ function mapAssignmentRow(row: AssignmentDbRow): TrainingPlanAssignmentRow {
     scope: row.scope,
     teamId: row.team_id,
     athleteId: row.athlete_id,
+    squadId: row.squad_id ?? null,
     visibilityStart: row.visibility_start,
     visibilityDate: row.visibility_date,
   }
@@ -169,6 +174,21 @@ async function resolveAthleteAssignmentIds(
   client: SupabaseClient,
   input: PublishTrainingPlanInput,
 ): Promise<Result<string[]>> {
+  if (input.assignTarget === "squads") {
+    if (!isUuid(input.teamId)) return err("VALIDATION", "A valid team must be selected before publishing.")
+    const squadIds = [...new Set(input.squadIds ?? [])].filter((id) => isUuid(id))
+    if (squadIds.length === 0) return err("VALIDATION", "Pick at least one squad before publishing.")
+    const { data: squads, error: squadError } = await client.from("team_squads").select("id").in("id", squadIds).eq("team_id", input.teamId).is("archived_at", null)
+    if (squadError) return { ok: false, error: mapPostgrestError(squadError) }
+    if (((squads as Array<{ id: string }> | null) ?? []).length !== squadIds.length) {
+      return err("VALIDATION", "One of the squads no longer exists on this team. Check who the plan is for and publish again.")
+    }
+    // The members right now. Anyone added later gets their sessions when they are added.
+    const { data, error } = await client.from("team_squad_members").select("athlete_id").in("squad_id", squadIds)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    return ok([...new Set(((data as Array<{ athlete_id: string }> | null) ?? []).map((row) => row.athlete_id))])
+  }
+
   if (input.assignTarget === "team" || input.assignTarget === "subgroup") {
     if (!isUuid(input.teamId)) {
       return err("VALIDATION", "A valid team must be selected before publishing.")
@@ -304,15 +324,14 @@ async function syncTrainingPlanAssignments(
   athleteAssignmentIds: string[],
 ): Promise<Result<null>> {
   const visibilityDate = input.visibilityStart === "scheduled" ? input.visibilityDate : null
-  const desired =
+  type Desired = { key: string; scope: "team" | "athlete" | "squad"; team_id: string | null; athlete_id: string | null; squad_id: string | null }
+  const desired: Desired[] =
     input.assignTarget === "team"
-      ? [{ key: `team:${input.teamId}`, scope: "team" as const, team_id: input.teamId, athlete_id: null as string | null }]
-      : athleteAssignmentIds.map((athleteId) => ({
-          key: `athlete:${athleteId}`,
-          scope: "athlete" as const,
-          team_id: null as string | null,
-          athlete_id: athleteId as string | null,
-        }))
+      ? [{ key: `team:${input.teamId}`, scope: "team", team_id: input.teamId, athlete_id: null, squad_id: null }]
+      : input.assignTarget === "squads"
+        ? // One row per squad, not per member: the row is what makes the plan follow the squad.
+          [...new Set(input.squadIds ?? [])].map((squadId) => ({ key: `squad:${squadId}`, scope: "squad" as const, team_id: null, athlete_id: null, squad_id: squadId }))
+        : athleteAssignmentIds.map((athleteId) => ({ key: `athlete:${athleteId}`, scope: "athlete" as const, team_id: null, athlete_id: athleteId, squad_id: null }))
 
   const { data: existingRows, error: existingError } = await client
     .from("training_plan_assignments")
@@ -323,7 +342,7 @@ async function syncTrainingPlanAssignments(
 
   const existing = ((existingRows as AssignmentDbRow[] | null) ?? []).map((row) => ({
     id: row.id,
-    key: row.scope === "team" ? `team:${row.team_id}` : `athlete:${row.athlete_id}`,
+    key: row.scope === "team" ? `team:${row.team_id}` : row.scope === "squad" ? `squad:${row.squad_id}` : `athlete:${row.athlete_id}`,
   }))
   const desiredKeys = new Set(desired.map((row) => row.key))
   const existingKeys = new Set(existing.map((row) => row.key))
@@ -337,6 +356,7 @@ async function syncTrainingPlanAssignments(
       scope: row.scope,
       team_id: row.team_id,
       athlete_id: row.athlete_id,
+      squad_id: row.squad_id,
       visibility_start: input.visibilityStart,
       visibility_date: visibilityDate,
       created_by_user_id: context.userId,
@@ -819,7 +839,8 @@ export async function getAssignedTrainingPlansForCurrentAthlete(): Promise<Resul
   const { data: assignments, error: assignmentsError } = await clientResult.client
     .from("training_plan_assignments")
     .select("plan_id, scope, team_id, athlete_id")
-    .or(`athlete_id.eq.${athleteContext.data.athleteId},team_id.eq.${athleteContext.data.teamId ?? "00000000-0000-0000-0000-000000000000"}`)
+    // Squad rows: the database only returns the ones of squads this athlete is in.
+    .or(`athlete_id.eq.${athleteContext.data.athleteId},team_id.eq.${athleteContext.data.teamId ?? "00000000-0000-0000-0000-000000000000"},scope.eq.squad`)
 
   if (assignmentsError) return { ok: false, error: mapPostgrestError(assignmentsError) }
 
@@ -1025,4 +1046,58 @@ export async function getCurrentPlanWeekForCoachTeam(params: { scopeTeamId?: str
   const detailResult = await getTrainingPlanDetail(plan.id)
   if (!detailResult.ok) return detailResult
   return ok(pickTeamPlanWeek(plan, detailResult.data?.weeks ?? [], params.todayKey))
+}
+
+/** One published plan of a team: the days it has a session on, and how it is assigned. */
+export type TeamPublishedPlanDays = {
+  id: string
+  name: string
+  dates: string[]
+  assignments: TrainingPlanAssignmentRow[]
+}
+
+/**
+ * The published plans of one team with their session days, for the publish step's check that an
+ * athlete is not surprised by two sessions on one day (a team plan and a squad plan).
+ */
+export async function listPublishedPlanDaysForTeam(teamId: string): Promise<Result<TeamPublishedPlanDays[]>> {
+  const clientResult = requireSupabaseClient("listPublishedPlanDaysForTeam")
+  if (!clientResult.ok) return clientResult
+  const client = clientResult.client
+  if (!isUuid(teamId)) return ok([])
+
+  const { data: plans, error: plansError } = await client
+    .from("training_plans")
+    .select("id, name, team_id, start_date, weeks, notes, builder_state")
+    .eq("team_id", teamId)
+    .eq("status", "published")
+  if (plansError) return { ok: false, error: mapPostgrestError(plansError) }
+  const rows =
+    (plans as Array<{ id: string; name: string; team_id: string | null; start_date: string; weeks: number; notes: string | null; builder_state: unknown }> | null) ?? []
+  if (rows.length === 0) return ok([])
+
+  const { data: assignments, error: assignmentsError } = await client
+    .from("training_plan_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .in(
+      "plan_id",
+      rows.map((row) => row.id),
+    )
+  if (assignmentsError) return { ok: false, error: mapPostgrestError(assignmentsError) }
+  const assignmentRows = ((assignments as AssignmentDbRow[] | null) ?? []).map(mapAssignmentRow)
+
+  return ok(
+    rows.map((row) => {
+      const draft = planFromBuilderState(
+        { id: row.id, status: "published", name: row.name, teamId: row.team_id ?? "", startDate: row.start_date, weeks: row.weeks, notes: row.notes ?? "" },
+        row.builder_state,
+      )
+      return {
+        id: row.id,
+        name: row.name,
+        dates: planBlueprints(draft).map((blueprint) => blueprint.date),
+        assignments: assignmentRows.filter((assignment) => assignment.planId === row.id),
+      }
+    }),
+  )
 }

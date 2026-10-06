@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   Field,
+  FilterChips,
   Input,
   LinkButton,
   List,
@@ -34,6 +35,8 @@ import {
   type AttendanceStatus,
 } from "@/lib/data/coach/attendance"
 import { clearAttendanceMark, getTeamAttendanceDay, saveAttendanceMark, type AttendanceDayRow, type TeamAttendanceDay } from "@/lib/data/coach/attendance-data"
+import type { Squad } from "@/lib/data/coach/squads"
+import { listTeamSquads } from "@/lib/data/coach/squads-data"
 import { skippedLabel } from "@/lib/data/session/types"
 import { addDaysIso, todayIso } from "@/lib/data/training-plan/plan-builder-model"
 
@@ -77,6 +80,19 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
   const [reasonDraft, setReasonDraft] = useState<Record<string, string>>({})
   const [markingAll, setMarkingAll] = useState(false)
   const inFlight = useRef(0)
+  // Squads of the team, to take attendance of one group at a time. Extra: the screen works without them.
+  const [squads, setSquads] = useState<Squad[]>([])
+  const [squadId, setSquadId] = useState("all")
+
+  useEffect(() => {
+    let cancelled = false
+    void listTeamSquads(teamId).then((result) => {
+      if (!cancelled && result.ok) setSquads(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [teamId])
 
   const load = useCallback(async () => {
     const result = await getTeamAttendanceDay(teamId, date)
@@ -164,7 +180,8 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
     setSaveState("saved")
   }
 
-  const rows = useMemo(() => day?.rows ?? [], [day])
+  const squad = squads.find((item) => item.id === squadId) ?? null
+  const rows = useMemo(() => (day?.rows ?? []).filter((row) => !squad || squad.athleteIds.includes(row.athleteId)), [day, squad])
   const unmarked = rows.filter((row) => !row.record)
   const marked = rows.length - unmarked.length
   const summary = attendanceSummaryText(attendanceCounts(rows.flatMap((row) => (row.record ? [row.record] : []))))
@@ -214,7 +231,7 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
         actions={
           day && unmarked.length > 0 ? (
             <Button variant="primary" disabled={markingAll} onClick={() => void markAll()}>
-              {markingAll ? "Marking..." : "Mark everyone present"}
+              {markingAll ? "Marking..." : squad ? `Mark ${squad.name} present` : "Mark everyone present"}
             </Button>
           ) : undefined
         }
@@ -239,6 +256,15 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
         ) : null}
       </div>
 
+      {squads.length > 0 ? (
+        <FilterChips
+          label="Squad"
+          value={squad ? squad.id : "all"}
+          onChange={setSquadId}
+          options={[{ value: "all", label: "Whole team" }, ...squads.map((item) => ({ value: item.id, label: item.name, count: item.athleteIds.length }))]}
+        />
+      ) : null}
+
       <Section
         title="Athletes"
         hint={
@@ -251,6 +277,8 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
       >
         {!day ? (
           <SkeletonRows rows={6} leading label="Loading the roster" />
+        ) : rows.length === 0 && squad ? (
+          <EmptyState title={`Nobody in ${squad.name} yet`} body="Choose its athletes on the team page, or show the whole team." />
         ) : rows.length === 0 ? (
           <EmptyState
             title="Nobody on this team yet"

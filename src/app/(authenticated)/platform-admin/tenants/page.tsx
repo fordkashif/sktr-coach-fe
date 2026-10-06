@@ -29,6 +29,7 @@ import {
   Textarea,
   type DataTableColumn,
 } from "@/components/sk"
+import { ClosedClubsSection } from "@/components/platform-admin/closed-clubs-section"
 import { getPackageById, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
 import {
   getPlatformAdminPackageUpgradeRequests,
@@ -490,6 +491,8 @@ export default function PlatformAdminTenantsPage() {
           {notice}
         </Notice>
       ) : null}
+
+      <ClosedClubsSection onChanged={() => void load()} />
 
       {loading ? (
         <Section title="Clubs">

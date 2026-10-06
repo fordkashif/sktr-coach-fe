@@ -53,6 +53,8 @@ const CoachTrainingPlanPage = lazy(() => import("@/app/(authenticated)/coach/tra
 const CoachExercisesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/exercises/page"))
 const CoachPlanTemplatesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/templates/page"))
 const CoachLiftMaxesPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/maxes/page"))
+const CoachTeamCalendarPage = lazy(() => import("@/app/(authenticated)/coach/training-plan/calendar/page"))
+const ClubAdminCalendarPage = lazy(() => import("@/app/(authenticated)/club-admin/calendar/page"))
 const CoachAthleteDetailPage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/page"))
 const CoachLogForAthletePage = lazy(() => import("@/app/(authenticated)/coach/athletes/[athleteId]/log/page"))
 const CoachTeamAttendancePage = lazy(() => import("@/app/(authenticated)/coach/teams/[teamId]/attendance/page"))
@@ -72,6 +74,8 @@ const ClubAdminDashboardPage = lazy(() => import("@/app/(authenticated)/club-adm
 const ClubAdminGetStartedPage = lazy(() => import("@/app/(authenticated)/club-admin/get-started/page"))
 const ClubAdminBillingSetupPage = lazy(() => import("@/app/(authenticated)/club-admin/setup/billing/page"))
 const ClubAdminProfilePage = lazy(() => import("@/app/(authenticated)/club-admin/profile/page"))
+const ClubAdminSeasonsPage = lazy(() => import("@/app/(authenticated)/club-admin/seasons/page"))
+const ClubAdminStartSeasonPage = lazy(() => import("@/app/(authenticated)/club-admin/seasons/start/page"))
 const ClubAdminUsersPage = lazy(() => import("@/app/(authenticated)/club-admin/users/page"))
 const ClubAdminTeamsPage = lazy(() => import("@/app/(authenticated)/club-admin/teams/page"))
 const ClubAdminReportsPage = lazy(() => import("@/app/(authenticated)/club-admin/reports/page"))
@@ -160,6 +164,7 @@ export function AppRouter() {
             <Route path="/coach/training-plan/exercises" element={routeElement(CoachExercisesPage)} />
             <Route path="/coach/training-plan/maxes" element={routeElement(CoachLiftMaxesPage)} />
             <Route path="/coach/training-plan/templates" element={routeElement(CoachPlanTemplatesPage)} />
+            <Route path="/coach/training-plan/calendar" element={routeElement(CoachTeamCalendarPage)} />
             <Route path="/coach/athletes/:athleteId" element={routeElement(CoachAthleteDetailPage)} />
             <Route path="/coach/athletes/:athleteId/log" element={routeElement(CoachLogForAthletePage)} />
             <Route path="/coach/teams/:teamId/attendance" element={routeElement(CoachTeamAttendancePage)} />
@@ -181,10 +186,13 @@ export function AppRouter() {
             <Route path="/club-admin/get-started" element={routeElement(ClubAdminGetStartedPage)} />
             <Route path="/club-admin/dashboard" element={routeElement(ClubAdminDashboardPage)} />
             <Route path="/club-admin/profile" element={routeElement(ClubAdminProfilePage)} />
+            <Route path="/club-admin/profile/seasons" element={routeElement(ClubAdminSeasonsPage)} />
+            <Route path="/club-admin/profile/seasons/:seasonId/start" element={routeElement(ClubAdminStartSeasonPage)} />
             <Route path="/club-admin/users" element={routeElement(ClubAdminUsersPage)} />
             <Route path="/club-admin/teams" element={routeElement(ClubAdminTeamsPage)} />
             <Route path="/club-admin/reports" element={routeElement(ClubAdminReportsPage)} />
             <Route path="/club-admin/audit" element={routeElement(ClubAdminAuditPage)} />
+            <Route path="/club-admin/calendar" element={routeElement(ClubAdminCalendarPage)} />
             <Route path="/club-admin/messages" element={routeElement(ClubAdminMessagesPage)} />
             <Route path="/club-admin/messages/t/:threadId" element={routeElement(ClubAdminMessageThreadPage)} />
             <Route path="/club-admin/messages/a/new" element={routeElement(ClubAdminNewAnnouncementPage)} />

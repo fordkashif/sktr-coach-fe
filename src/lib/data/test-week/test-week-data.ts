@@ -656,6 +656,8 @@ export type CoachTestWeekListItem = {
   endDate: string
   status: "draft" | "published" | "closed"
   isArchived: boolean
+  /** Squads of the team this week is for. Empty means the whole team. */
+  squadIds: string[]
   testCount: number
   /** Distinct athletes with at least one submitted result for this week. */
   submittedAthleteCount: number
@@ -691,7 +693,7 @@ export async function getCoachTestWeeksForCurrentUser(params?: {
 
   const query = clientResult.client
     .from("test_weeks")
-    .select("id, name, team_id, start_date, end_date, status, is_archived")
+    .select("id, name, team_id, start_date, end_date, status, is_archived, squad_ids")
     .eq("tenant_id", coachContext.data.tenantId)
     .order("start_date", { ascending: false })
     .limit(100)
@@ -709,6 +711,7 @@ export async function getCoachTestWeeksForCurrentUser(params?: {
     end_date: string
     status: "draft" | "published" | "closed"
     is_archived: boolean
+    squad_ids: string[] | null
   }> | null) ?? []
   if (weekRows.length === 0) return ok([])
 
@@ -754,6 +757,7 @@ export async function getCoachTestWeeksForCurrentUser(params?: {
       endDate: row.end_date,
       status: row.status,
       isArchived: Boolean(row.is_archived),
+      squadIds: row.squad_ids ?? [],
       testCount: countByWeek[row.id] ?? 0,
       submittedAthleteCount: submittedByWeek.get(row.id)?.size ?? 0,
     })),
@@ -883,6 +887,8 @@ export type CoachTestWeekDetail = {
   endDate: string
   status: "draft" | "published" | "closed"
   isArchived: boolean
+  /** Squads of the team this week is for. Empty means the whole team. */
+  squadIds: string[]
   tests: ActiveTestDefinition[]
   athletes: CoachTestWeekAthleteRow[]
 }
@@ -925,7 +931,7 @@ export async function getCoachTestWeekDetail(testWeekId: string): Promise<Result
 
   const { data: week, error: weekError } = await client
     .from("test_weeks")
-    .select("id, name, team_id, start_date, end_date, status, is_archived")
+    .select("id, name, team_id, start_date, end_date, status, is_archived, squad_ids")
     .eq("id", testWeekId)
     .eq("tenant_id", tenantId)
     .maybeSingle()
@@ -965,6 +971,14 @@ export async function getCoachTestWeekDetail(testWeekId: string): Promise<Result
       .order("first_name", { ascending: true })
     if (error) return { ok: false, error: mapPostgrestError(error) }
     rosterRows = (data as AthleteNameRow[] | null) ?? []
+  }
+  // A week for chosen squads lists their members only. Anyone else with a result still shows, below.
+  const squadIds = ((week.squad_ids as string[] | null) ?? []).filter(Boolean)
+  if (squadIds.length > 0) {
+    const { data, error } = await client.from("team_squad_members").select("athlete_id").in("squad_id", squadIds)
+    if (error) return { ok: false, error: mapPostgrestError(error) }
+    const inSquads = new Set(((data as Array<{ athlete_id: string }> | null) ?? []).map((row) => row.athlete_id))
+    rosterRows = rosterRows.filter((row) => inSquads.has(row.id))
   }
 
   const rosterIds = new Set(rosterRows.map((row) => row.id))
@@ -1061,6 +1075,7 @@ export async function getCoachTestWeekDetail(testWeekId: string): Promise<Result
     endDate: week.end_date as string,
     status: week.status as CoachTestWeekDetail["status"],
     isArchived: Boolean(week.is_archived),
+    squadIds,
     tests: testsResult.data,
     athletes: [...athleteRows.values()],
   })
@@ -1071,6 +1086,8 @@ export type SaveCoachTestWeekInput = {
   testWeekId?: string | null
   name: string
   teamId: string
+  /** Squads of that team the week is for. Empty or left out means the whole team. */
+  squadIds?: string[]
   startDate: string
   endDate: string
   /** True publishes (or keeps published). False saves a new week as a draft and leaves an existing status alone. */
@@ -1136,6 +1153,7 @@ export async function saveTestWeekForCurrentCoach(input: SaveCoachTestWeekInput)
       .insert({
         tenant_id: tenantId,
         team_id: input.teamId,
+        squad_ids: [...new Set(input.squadIds ?? [])],
         name: input.name.trim(),
         start_date: input.startDate,
         end_date: input.endDate,
@@ -1179,6 +1197,7 @@ export async function saveTestWeekForCurrentCoach(input: SaveCoachTestWeekInput)
     .from("test_weeks")
     .update({
       team_id: input.teamId,
+      squad_ids: [...new Set(input.squadIds ?? [])],
       name: input.name.trim(),
       start_date: input.startDate,
       end_date: input.endDate,

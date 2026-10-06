@@ -37,6 +37,8 @@ import {
   type ClubReports,
   type ClubWellnessRow,
 } from "@/lib/data/club-admin/reports-data"
+import { pickableSeasons, type ClubSeason } from "@/lib/data/club-admin/season-logic"
+import { listClubSeasons } from "@/lib/data/club-admin/seasons-data"
 import { DEFAULT_REPORT_DAYS, describeReportRange, reportRangeForLastDays, type ReportMark, type ReportRange } from "@/lib/data/coach/reports-data"
 import { markUnitLabel } from "@/lib/data/pr/marks"
 import { averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
@@ -112,6 +114,24 @@ export default function ClubAdminReportsPage() {
   const [teamFilter, setTeamFilter] = useState("all")
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>("all")
   const [limit, setLimit] = useState(PAGE)
+  const [seasons, setSeasons] = useState<ClubSeason[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void listClubSeasons().then((result) => {
+      if (!cancelled && result.ok) setSeasons(pickableSeasons(result.data))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  // One quick range per season that has started: the current season up to today, and each past season.
+  const seasonPresets = seasons
+    .filter((season) => season.start <= today)
+    .map((season) => ({
+      label: season.status === "current" ? `This season (${season.name})` : `${season.name} season`,
+      range: { from: season.start, to: season.end < today ? season.end : today },
+    }))
 
   useEffect(() => {
     let cancelled = false
@@ -514,6 +534,7 @@ export default function ClubAdminReportsPage() {
             { label: "Last 28 days", range: reportRangeForLastDays(28, today) },
             { label: "Last 90 days", range: reportRangeForLastDays(90, today) },
             { label: "This year", range: { from: `${today.slice(0, 4)}-01-01`, to: today } },
+            ...seasonPresets,
           ]}
         />
         <Field label={active.searchLabel}>

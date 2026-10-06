@@ -1,12 +1,14 @@
 import { PaperPlaneTilt } from "@phosphor-icons/react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ActionBar,
   Button,
   CheckRow,
   EmptyState,
   Field,
+  GroupDot,
   Input,
+  LinkButton,
   List,
   ListRow,
   Notice,
@@ -21,6 +23,9 @@ import {
 } from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { currentAvailability, describeAvailability, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
+import { dayClashText, findDayClashes, liveSquadIds, type PlanDays, type Squad } from "@/lib/data/coach/squads"
+import type { Result } from "@/lib/data/result"
+import { planBlueprints } from "@/lib/data/session/session-from-plan"
 import {
   EVENT_GROUPS,
   formatDateRange,
@@ -45,6 +50,8 @@ export function PlanPublish({
   plan,
   teams,
   athletes,
+  squads,
+  listTeamPlanDays,
   busy,
   error,
   onChange,
@@ -54,6 +61,10 @@ export function PlanPublish({
   plan: PlanDraft
   teams: TeamOption[]
   athletes: AthleteOption[]
+  /** The live squads of the coach's teams. */
+  squads: Squad[]
+  /** The team's published plans with their session days, to warn about two sessions on one day. */
+  listTeamPlanDays: (teamId: string) => Promise<Result<PlanDays[]>>
   busy: boolean
   error: string | null
   onChange: (updater: (plan: PlanDraft) => PlanDraft) => void
@@ -64,9 +75,13 @@ export function PlanPublish({
   const [availability, setAvailability] = useState<Record<string, AthleteAvailability>>({})
   const team = teams.find((candidate) => candidate.id === plan.teamId) ?? null
   const teamAthletes = athletes.filter((athlete) => athlete.teamId === plan.teamId)
-  const recipients = assignedAthletes(plan, athletes)
+  const teamSquads = squads.filter((squad) => squad.teamId === plan.teamId)
+  // A squad archived since the plan was last saved is no longer a choice.
+  const chosenSquadIds = liveSquadIds(plan.assign.squadIds, squads, plan.teamId)
+  const chosenSquads = new Set(chosenSquadIds)
+  const recipients = assignedAthletes({ ...plan, assign: { ...plan.assign, squadIds: chosenSquadIds } }, athletes, squads)
   const assignedCount = recipients.length
-  const blocker = validateForPublish(plan, assignedCount)
+  const blocker = validateForPublish({ ...plan, assign: { ...plan.assign, squadIds: chosenSquadIds } }, assignedCount)
   const isUpdate = plan.status === "published"
   const groupsInTeam = EVENT_GROUPS.filter((group) => teamAthletes.some((athlete) => athlete.eventGroup === group.value))
   const query = search.trim().toLowerCase()
@@ -92,6 +107,37 @@ export function PlanPublish({
       cancelled = true
     }
   }, [athleteIdsKey])
+
+  // Other published plans of this team: an athlete on two of them gets two sessions on a shared day.
+  const [otherPlans, setOtherPlans] = useState<PlanDays[]>([])
+  useEffect(() => {
+    if (!plan.teamId) return
+    let cancelled = false
+    void listTeamPlanDays(plan.teamId).then((result) => {
+      if (!cancelled && result.ok) setOtherPlans(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [listTeamPlanDays, plan.teamId])
+  const recipientKey = recipients.map((athlete) => athlete.id).join(",")
+  const clash = useMemo(() => {
+    const from = plan.assign.visibilityStart === "scheduled" && plan.assign.visibilityDate && plan.assign.visibilityDate > todayIso() ? plan.assign.visibilityDate : todayIso()
+    return findDayClashes(
+      { id: plan.id, name: plan.name, dates: planBlueprints(plan).map((blueprint) => blueprint.date), athleteIds: recipientKey ? recipientKey.split(",") : [] },
+      otherPlans.filter((other) => other.id !== plan.id),
+      from,
+    )
+  }, [otherPlans, plan, recipientKey])
+
+  // Forget a chosen squad that no longer exists, so the publish does not ask the server for it.
+  const staleSquads = squads.length > 0 && chosenSquadIds.length !== plan.assign.squadIds.length
+  useEffect(() => {
+    if (staleSquads) onChange((current) => ({ ...current, assign: { ...current.assign, squadIds: liveSquadIds(current.assign.squadIds, squads, current.teamId) } }))
+  }, [onChange, squads, staleSquads])
+
+  const toggleSquad = (squadId: string) =>
+    setAssign({ squadIds: chosenSquads.has(squadId) ? chosenSquadIds.filter((id) => id !== squadId) : [...chosenSquadIds, squadId] })
 
   const availabilityText = (athleteId: string) => {
     const period = availability[athleteId]
@@ -135,9 +181,11 @@ export function PlanPublish({
                 value={plan.assign.target}
                 onChange={setTarget}
                 options={[
-                  { value: "team", label: "Whole team" },
-                  { value: "subgroup", label: "Event group" },
-                  { value: "selected", label: "Athletes" },
+                  { value: "team" as const, label: "Whole team" },
+                  { value: "squads" as const, label: "Squads" },
+                  // An event group only narrows a team whose athletes are in more than one.
+                  ...(groupsInTeam.length > 1 || plan.assign.target === "subgroup" ? [{ value: "subgroup" as const, label: "Event group" }] : []),
+                  { value: "selected" as const, label: "Athletes" },
                 ]}
               />
 
@@ -153,16 +201,68 @@ export function PlanPublish({
                 </Field>
               ) : null}
 
+              {plan.assign.target === "squads" ? (
+                teamSquads.length === 0 ? (
+                  <EmptyState
+                    className="mt-3"
+                    title="This team has no squads yet"
+                    body="A squad is a small group inside the team, such as Short sprints or 400m. Make one on the team page, then send it this plan."
+                    action={
+                      team ? (
+                        <LinkButton size="sm" to={`/coach/teams/${team.id}`}>
+                          Open the team page
+                        </LinkButton>
+                      ) : undefined
+                    }
+                  />
+                ) : (
+                  <>
+                    <List className="mt-2" aria-label="Choose squads">
+                      {teamSquads.map((squad) => (
+                        <CheckRow
+                          key={squad.id}
+                          checked={chosenSquads.has(squad.id)}
+                          onChange={() => toggleSquad(squad.id)}
+                          leading={<GroupDot color={squad.color} />}
+                          title={squad.name}
+                          subtitle={squad.note ?? undefined}
+                          trailing={plural(squad.athleteIds.length, "athlete")}
+                        />
+                      ))}
+                    </List>
+                    <p className="mt-3 text-[0.9375rem] text-sk-mute" data-squad-hint>
+                      Athletes you add to {chosenSquadIds.length === 1 ? "this squad" : "these squads"} later get the upcoming sessions too. Anyone you take out stops getting new ones.
+                    </p>
+                  </>
+                )
+              ) : null}
+
+              {clash ? (
+                <Notice tone="info" className="mt-3">
+                  <span data-plan-clash>{dayClashText(clash)}</span>
+                </Notice>
+              ) : null}
+
               {teamAthletes.length > 8 ? (
                 <Field label="Find an athlete" className="mt-4 max-w-sm">
                   <SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name" />
                 </Field>
               ) : null}
 
-              {teamAthletes.length === 0 ? (
+              {plan.assign.target === "squads" && (teamSquads.length === 0 || chosenSquadIds.length === 0) ? null : teamAthletes.length === 0 ? (
                 <EmptyState className="mt-3" title="No athletes on this team yet" body="Add or invite athletes from the team page, then come back to publish." />
               ) : listed.length === 0 ? (
-                <EmptyState className="mt-3" title={query ? "Nobody matches that name" : "Nobody in this event group"} body={query ? "Check the spelling or clear the search." : "Pick another group, or choose athletes one by one."} />
+                <EmptyState
+                  className="mt-3"
+                  title={query ? "Nobody matches that name" : plan.assign.target === "squads" ? "Nobody in these squads yet" : "Nobody in this event group"}
+                  body={
+                    query
+                      ? "Check the spelling or clear the search."
+                      : plan.assign.target === "squads"
+                        ? "You can still publish. Athletes get the plan when you add them to a squad."
+                        : "Pick another group, or choose athletes one by one."
+                  }
+                />
               ) : (
                 <List className="mt-2" aria-label={picking ? "Choose athletes" : "Athletes who get this plan"}>
                   {listed.map((athlete) =>

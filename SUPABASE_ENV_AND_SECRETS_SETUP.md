@@ -79,6 +79,7 @@ Server/CI only (never in browser bundle):
     - `claim-coach-invite-account`
     - `claim-athlete-invite-account`
     - `send-invite-email`
+    - `purge-deleted-storage` (removes the photos and logos of deleted accounts and clubs; needs no secret of its own)
   - A new function has to be added to both the dev and the prod deploy list in that workflow, and to `supabase/config.toml`.
 - Required GitHub environment secrets for this workflow:
   - `SUPABASE_ACCESS_TOKEN`

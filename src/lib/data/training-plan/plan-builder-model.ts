@@ -9,7 +9,8 @@ import type { PublishPlanStructure, TrainingPlanDetail } from "@/lib/data/traini
 
 export type SessionType = "Track" | "Gym" | "Recovery" | "Technical" | "Mixed"
 export type PlanStatus = "draft" | "published" | "archived"
-export type AssignTarget = "team" | "subgroup" | "selected"
+/** "squads": one or more squads of the plan's team. Their members now, and anyone added to them later. */
+export type AssignTarget = "team" | "squads" | "subgroup" | "selected"
 
 /** A change to one exercise row for one athlete ("except David: 70%"). Empty fields keep the row's own value. */
 export type ExerciseOverrideDraft = {
@@ -65,6 +66,8 @@ export type PlanAssignDraft = {
   target: AssignTarget
   subgroup: EventGroup | null
   athleteIds: string[]
+  /** Squads of the plan's team, for the "squads" target. */
+  squadIds: string[]
   visibilityStart: "immediate" | "scheduled"
   visibilityDate: string | null
 }
@@ -199,7 +202,7 @@ export function planEndDate(plan: Pick<PlanDraft, "startDate" | "weeks">) {
 }
 
 export function defaultAssign(): PlanAssignDraft {
-  return { target: "team", subgroup: null, athleteIds: [], visibilityStart: "immediate", visibilityDate: null }
+  return { target: "team", subgroup: null, athleteIds: [], squadIds: [], visibilityStart: "immediate", visibilityDate: null }
 }
 
 export function createEmptyPlan(teamId: string): PlanDraft {
@@ -378,7 +381,7 @@ export function duplicateAsDraft(plan: PlanDraft): PlanDraft {
     name: plan.name ? `${plan.name} (copy)` : "",
     weekFocus: { ...plan.weekFocus },
     sessions: plan.sessions.map((session) => cloneSessionTo(session, session.week, session.dayIndex)),
-    assign: { ...plan.assign, athleteIds: [...plan.assign.athleteIds] },
+    assign: { ...plan.assign, athleteIds: [...plan.assign.athleteIds], squadIds: [...plan.assign.squadIds] },
   }
 }
 
@@ -413,8 +416,10 @@ export function validateForPublish(plan: PlanDraft, assignedCount: number): stri
   if (plan.sessions.length === 0) return "Add at least one session before publishing."
   if (plan.assign.target === "subgroup" && !plan.assign.subgroup) return "Choose an event group to assign."
   if (plan.assign.target === "selected" && plan.assign.athleteIds.length === 0) return "Pick at least one athlete."
+  if (plan.assign.target === "squads" && plan.assign.squadIds.length === 0) return "Pick at least one squad."
   if (plan.assign.visibilityStart === "scheduled" && !plan.assign.visibilityDate) return "Pick the date athletes should first see the plan."
-  if (assignedCount === 0) return "Nobody would receive this plan. Check who it is assigned to."
+  // A squad can be empty for now: athletes added to it later get the plan.
+  if (assignedCount === 0 && plan.assign.target !== "squads") return "Nobody would receive this plan. Check who it is assigned to."
   return null
 }
 
@@ -541,12 +546,13 @@ function sanitizeSession(value: unknown, maxWeeks: number): SessionDraft | null 
 function sanitizeAssign(value: unknown): PlanAssignDraft {
   const raw = asRecord(value)
   if (!raw) return defaultAssign()
-  const target: AssignTarget = raw.target === "subgroup" || raw.target === "selected" ? raw.target : "team"
+  const target: AssignTarget = raw.target === "subgroup" || raw.target === "selected" || raw.target === "squads" ? raw.target : "team"
   const subgroup = EVENT_GROUPS.some((group) => group.value === raw.subgroup) ? (raw.subgroup as EventGroup) : null
   return {
     target,
     subgroup,
     athleteIds: Array.isArray(raw.athleteIds) ? raw.athleteIds.filter((id): id is string => typeof id === "string") : [],
+    squadIds: Array.isArray(raw.squadIds) ? raw.squadIds.filter((id): id is string => typeof id === "string") : [],
     visibilityStart: raw.visibilityStart === "scheduled" ? "scheduled" : "immediate",
     visibilityDate: typeof raw.visibilityDate === "string" && raw.visibilityDate ? raw.visibilityDate : null,
   }

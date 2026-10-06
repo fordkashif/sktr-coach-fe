@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   TestWeekScreen,
   type ActionResult,
@@ -13,6 +13,8 @@ import {
   type TestWeekStatus,
 } from "@/components/coach/test-week-screen"
 import { mockAthletes, mockTeams, mockTestWeekResults, onCreateTestWeek, type EventGroup, type Role } from "@/lib/mock-data"
+import { reachedAthleteIds, type Squad } from "@/lib/data/coach/squads"
+import { SQUADS_CHANGED_EVENT, listSquadsForTeams } from "@/lib/data/coach/squads-data"
 import { checkTestResultEntry } from "@/lib/data/test-week/result-entry"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 
@@ -31,6 +33,8 @@ type StoredWeek = {
   id: string
   name: string
   teamId: string
+  /** Squads of the team the week is for. Empty or missing means the whole team. */
+  squadIds?: string[]
   startDate: string
   endDate: string
   status: TestWeekStatus
@@ -170,6 +174,28 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
   const scopedTeamId = isCoach ? initialCoachTeamId : null
   const teamIdsKey = isCoach && coachTeamIds ? coachTeamIds.join(",") : null
   const [storedWeeks, setStoredWeeks] = useState<StoredWeek[]>(readStoredWeeks)
+  const [squads, setSquads] = useState<Squad[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () =>
+      void listSquadsForTeams(teamIdsKey === null ? null : teamIdsKey.split(",")).then((result) => {
+        if (!cancelled && result.ok) setSquads(result.data)
+      })
+    load()
+    window.addEventListener(SQUADS_CHANGED_EVENT, load)
+    return () => {
+      cancelled = true
+      window.removeEventListener(SQUADS_CHANGED_EVENT, load)
+    }
+  }, [teamIdsKey])
+
+  /** The athletes a week is for: its team, or the members of its squads. */
+  const audienceIds = useCallback(
+    (week: Pick<StoredWeek, "teamId" | "squadIds">) =>
+      reachedAthleteIds({ teamId: week.teamId, target: (week.squadIds ?? []).length > 0 ? "squads" : "team", squadIds: week.squadIds ?? [] }, mockAthletes, squads),
+    [squads],
+  )
 
   const commit = useCallback((update: (current: StoredWeek[]) => StoredWeek[]) => {
     setStoredWeeks((current) => {
@@ -203,24 +229,27 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
           endDate: week.endDate,
           status: week.status,
           isArchived: week.isArchived,
+          squadIds: week.squadIds ?? [],
           testCount: week.tests.length,
-          athleteCount: teams.find((team) => team.id === week.teamId)?.athleteCount ?? null,
+          athleteCount: (week.squadIds ?? []).length > 0 ? audienceIds(week).length : (teams.find((team) => team.id === week.teamId)?.athleteCount ?? null),
           submittedCount: Object.keys(week.submissions).length,
         }))
         .sort((left, right) => right.startDate.localeCompare(left.startDate)),
-    [scopedTeamId, storedWeeks, teams],
+    [audienceIds, scopedTeamId, storedWeeks, teams],
   )
 
   const loadDetail = useCallback(
     async (testWeekId: string): Promise<ActionResult<TestWeekDetail>> => {
       const week = storedWeeks.find((candidate) => candidate.id === testWeekId)
       if (!week) return { ok: false, message: "This test week no longer exists." }
+      const audience = new Set(audienceIds(week))
       return {
         ok: true,
         data: {
           tests: week.tests,
           athletes: mockAthletes
-            .filter((athlete) => athlete.teamId === week.teamId)
+            // Someone outside the squads who already has a result stays in the list.
+            .filter((athlete) => athlete.teamId === week.teamId && (audience.has(athlete.id) || Boolean(week.submissions[athlete.id])))
             .map((athlete) => {
               const submission = week.submissions[athlete.id]
               const results: TestWeekDetail["athletes"][number]["results"] = {}
@@ -240,7 +269,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
         },
       }
     },
-    [storedWeeks],
+    [audienceIds, storedWeeks],
   )
 
   const onSave = useCallback(
@@ -253,6 +282,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
         id,
         name: input.name,
         teamId: input.teamId,
+        squadIds: input.squadIds,
         startDate: input.startDate,
         endDate: input.endDate,
         status: input.publish ? "published" : (existing?.status ?? "draft"),
@@ -345,6 +375,7 @@ export default function CoachTestWeekPageClient({ initialRole, initialCoachTeamI
     <TestWeekScreen
       weeks={weeks}
       teams={teams}
+      squads={squads}
       lockedTeamId={isCoach && teams.length <= 1 ? scopedTeamId : null}
       defaultTeamId={scopedTeamId}
       isLoading={false}

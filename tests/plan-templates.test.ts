@@ -65,7 +65,7 @@ function samplePlan(): PlanDraft {
       { id: "s2", week: 2, dayIndex: 3, title: "", sessionType: "Track", location: "", durationMinutes: "", notes: "", blocks: [] },
       { id: "s3", week: 3, dayIndex: 0, title: "Past the end", sessionType: "Track", location: "", durationMinutes: "", notes: "", blocks: [] },
     ],
-    assign: { target: "selected", subgroup: "Sprint", athleteIds: ["a1", "a3"], visibilityStart: "scheduled", visibilityDate: "2026-01-01" },
+    assign: { target: "selected", subgroup: "Sprint", athleteIds: ["a1", "a3"], squadIds: [], visibilityStart: "scheduled", visibilityDate: "2026-01-01" },
   }
 }
 
@@ -131,7 +131,7 @@ test("a plan from a template is a dated draft for the chosen team", () => {
   assert.equal(plan.teamId, "t4")
   assert.equal(plan.startDate, "2026-11-02")
   assert.equal(plan.weeks, 2)
-  assert.deepEqual(plan.assign, { target: "team", subgroup: null, athleteIds: [], visibilityStart: "immediate", visibilityDate: null })
+  assert.deepEqual(plan.assign, { target: "team", subgroup: null, athleteIds: [], squadIds: [], visibilityStart: "immediate", visibilityDate: null })
   // Every session is dated from the new start date: same week and day slot, new calendar date.
   const [first, second] = [...plan.sessions].sort((left, right) => left.week - right.week)
   assert.equal(slotDate(plan, first.week, first.dayIndex), "2026-11-02")

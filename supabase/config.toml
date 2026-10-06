@@ -16,3 +16,12 @@ verify_jwt = false
 # Verifies the caller itself (auth.getUser with the caller's JWT), like the functions above.
 [functions.send-invite-email]
 verify_jwt = false
+
+# Fetched by calendar apps with no sign-in. The long random token in the address is the key
+# (supabase/functions/_shared/calendar-feed.ts).
+[functions.calendar-feed]
+verify_jwt = false
+
+# Verifies the caller itself (scheduler token, service role key or a platform admin JWT).
+[functions.purge-deleted-storage]
+verify_jwt = false

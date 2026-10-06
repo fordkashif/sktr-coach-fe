@@ -10,6 +10,8 @@ import {
   type TestWeekSavedResult,
   type TestWeekTeamOption,
 } from "@/components/coach/test-week-screen"
+import type { Squad } from "@/lib/data/coach/squads"
+import { listSquadsForTeams } from "@/lib/data/coach/squads-data"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
 import type { Result } from "@/lib/data/result"
 import {
@@ -51,6 +53,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
   const teamIdsKey = isCoach && coachTeamIds ? coachTeamIds.join(",") : null
   const [loadError, setLoadError] = useState<string | null>(null)
   const [teams, setTeams] = useState<TestWeekTeamOption[]>([])
+  const [squads, setSquads] = useState<Squad[]>([])
   // The list remembers which team it was loaded for, so a switch never shows the last team's weeks.
   const [loaded, setLoaded] = useState<{ scope: string | null; items: CoachTestWeekListItem[] } | null>(null)
   const isLoading = loaded === null || loaded.scope !== scopedTeamId
@@ -59,9 +62,10 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
 
   const load = useCallback(async () => {
     const run = ++loadRun.current
-    const [teamsResult, weeksResult] = await Promise.all([
+    const [teamsResult, weeksResult, squadsResult] = await Promise.all([
       getCoachTeamsSnapshotForCurrentUser(),
       getCoachTestWeeksForCurrentUser({ scopeTeamId: scopedTeamId, includeArchived: true }),
+      listSquadsForTeams(teamIdsKey === null ? null : teamIdsKey.split(",")),
     ])
     // Only the newest load may land.
     if (run !== loadRun.current) return
@@ -80,6 +84,8 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         .filter((team) => (allowed ? allowed.has(team.id) : true))
         .map((team) => ({ id: team.id, name: team.name, athleteCount: team.athleteCount })),
     )
+    // Squads are an extra: without them a test week still goes to the whole team.
+    setSquads(squadsResult.ok ? squadsResult.data : [])
     setLoaded({ scope: scopedTeamId, items: weeksResult.data })
     setLoadError(null)
   }, [scopedTeamId, teamIdsKey])
@@ -98,11 +104,17 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         endDate: week.endDate,
         status: week.status,
         isArchived: week.isArchived,
+        squadIds: week.squadIds,
         testCount: week.testCount,
-        athleteCount: week.teamId ? (teams.find((team) => team.id === week.teamId)?.athleteCount ?? null) : null,
+        athleteCount:
+          week.squadIds.length > 0
+            ? new Set(squads.filter((squad) => week.squadIds.includes(squad.id)).flatMap((squad) => squad.athleteIds)).size
+            : week.teamId
+              ? (teams.find((team) => team.id === week.teamId)?.athleteCount ?? null)
+              : null,
         submittedCount: week.submittedAthleteCount,
       })),
-    [teams, weekItems],
+    [squads, teams, weekItems],
   )
 
   const loadDetail = useCallback(async (testWeekId: string): Promise<ActionResult<TestWeekDetail>> => {
@@ -140,6 +152,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
         testWeekId: input.id,
         name: input.name,
         teamId: input.teamId,
+        squadIds: input.squadIds,
         startDate: input.startDate,
         endDate: input.endDate,
         publish: input.publish,
@@ -203,6 +216,7 @@ export default function CoachTestWeekPageSupabaseClient({ initialRole, initialCo
     <TestWeekScreen
       weeks={weeks}
       teams={teams}
+      squads={squads}
       lockedTeamId={isCoach && (coachTeamIds?.length ?? 0) <= 1 ? scopedTeamId : null}
       defaultTeamId={scopedTeamId}
       isLoading={isLoading}

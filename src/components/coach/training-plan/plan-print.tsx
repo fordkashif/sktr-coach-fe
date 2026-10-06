@@ -14,6 +14,7 @@ import {
   type PlanDraft,
   type SessionDraft,
 } from "@/lib/data/training-plan/plan-builder-model"
+import type { Squad } from "@/lib/data/coach/squads"
 import { assignedAthletes, type AthleteOption, type TeamOption } from "./storage"
 import { plural } from "./ui"
 
@@ -103,12 +104,14 @@ export function PlanPrintDialog({
   plan,
   team,
   athletes,
+  squads,
   initialWeek,
   onClose,
 }: {
   plan: PlanDraft
   team: TeamOption | null
   athletes: AthleteOption[]
+  squads?: Squad[]
   initialWeek: number
   onClose: () => void
 }) {
@@ -116,7 +119,7 @@ export function PlanPrintDialog({
   const [week, setWeek] = useState(Math.min(Math.max(1, initialWeek), plan.weeks))
   const [withNames, setWithNames] = useState(false)
   const [printing, setPrinting] = useState(false)
-  const recipients = assignedAthletes(plan, athletes)
+  const recipients = assignedAthletes(plan, athletes, squads)
   const weeks = scope === "week" ? [week] : Array.from({ length: plan.weeks }, (_, index) => index + 1)
   const sessionCount = weeks.reduce((sum, item) => sum + weekSessions(plan, item).length, 0)
 

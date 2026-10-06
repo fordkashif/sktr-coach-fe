@@ -56,8 +56,10 @@ export { SubSection, SubSections } from "./subsection"
 export { PasswordInput } from "./password-input"
 export { RadioRow } from "./radio-row"
 export { QuickPick, type QuickPickOption, type QuickPickTone } from "./quick-pick"
+export { MonthGrid, type MonthGridDay, type MonthGridSpan } from "./month-grid"
 
 // Deprecated v1 names. They keep older screens working on the v2 look. Replacements are noted on each.
 export { PageHeader, Panel } from "./legacy"
 export { ReadinessTag, Initials, type Tone } from "./status"
 export { SuggestInput, type SuggestOption } from "./suggest-input"
+export { GroupDot, type GroupDotColor } from "./squad-dot"

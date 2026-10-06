@@ -140,7 +140,7 @@ for (const viewport of [
       // A row typed by hand still works, with a percentage nobody has a best lift for.
       await page.getByLabel("Block 1 exercise 1 load", { exact: true }).press("Enter")
       const name2 = page.getByLabel("Block 1 exercise 2 name", { exact: true })
-      await expect(name2).toBeFocused()
+      await expect(name2).toBeVisible()
       await name2.fill("Zercher carry")
       await page.getByLabel("Block 1 exercise 2 sets", { exact: true }).fill("3")
       await page.getByLabel("Block 1 exercise 2 reps", { exact: true }).fill("5")

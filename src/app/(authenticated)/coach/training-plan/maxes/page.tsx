@@ -43,7 +43,7 @@ export default function CoachLiftMaxesPage() {
   const [params] = useSearchParams()
   const askedLift = params.get("lift")?.trim() ?? ""
 
-  const [directory, setDirectory] = useState<PlanDirectory>({ teams: [], athletes: [] })
+  const [directory, setDirectory] = useState<PlanDirectory>({ teams: [], athletes: [], squads: [] })
   const [maxes, setMaxes] = useState<LiftMax[]>([])
   const [libraryLifts, setLibraryLifts] = useState<string[]>([])
   const [loading, setLoading] = useState(true)

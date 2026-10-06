@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { PencilSimple, SignOut } from "@phosphor-icons/react"
+import { MySquadsLine } from "@/components/athlete/my-squads-line"
 import {
   Avatar,
   Button,
@@ -584,6 +585,7 @@ export default function AthleteProfilePage() {
                       ))}
                       {profile.coaches.length === 0 ? <ListRow title="No coach listed yet" subtitle="Your club has not assigned a coach to this team." /> : null}
                     </List>
+                    <MySquadsLine />
                     <p className="pt-3 text-sm text-sk-mute">To move to another team or come off this one, ask your coach or club admin.</p>
                   </>
                 ) : (
