@@ -8,6 +8,7 @@ import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, ListRow, No
 import { AuthSplit } from "@/layouts/auth-layout"
 import { safeReturnPath } from "@/lib/return-path"
 import { describeAccessRequestError, describeAuthLinkError, describeNoAccessError, describeSignInError } from "@/lib/auth-errors"
+import { AppSplash } from "@/components/app-splash"
 import { setSessionCookies } from "@/lib/auth-session"
 import { getPackageById, getRecommendedPackage, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
 import { getCoachTeamsSnapshotForCurrentUser } from "@/lib/data/coach/teams-data"
@@ -135,6 +136,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState("")
+  // With a sign-in already stored, the form stays hidden while the app finds the person's first screen,
+  // so they do not see a sign-in form flash past. It always gives way after a few seconds.
+  const [resuming, setResuming] = useState(isSupabaseMode)
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false)
   const [requestForm, setRequestForm] = useState<RequestFormState>(emptyRequestForm)
@@ -192,10 +196,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isSupabaseMode) return
-    if (!isSupabaseEnabled()) return
-
-    const supabase = getBrowserSupabaseClient()
-    if (!supabase) return
+    const supabase = isSupabaseEnabled() ? getBrowserSupabaseClient() : null
+    if (!supabase) {
+      setResuming(false)
+      return
+    }
 
     let active = true
     let redirecting = false
@@ -204,10 +209,18 @@ export default function LoginPage() {
       const { data } = await supabase.auth.getSession()
       const session = data.session
 
-      if (!active || !session || redirecting) return
+      if (!active || redirecting) return
+      if (!session) {
+        setResuming(false)
+        return
+      }
 
       const actor = await resolveSessionActor(supabase, session)
-      if (!active || !actor) return
+      if (!active) return
+      if (!actor) {
+        setResuming(false)
+        return
+      }
 
       redirecting = true
       setError("")
@@ -294,7 +307,15 @@ export default function LoginPage() {
       await routeActor()
     }
 
-    void handleAuthCallback().catch(() => undefined)
+    void handleAuthCallback()
+      .catch(() => undefined)
+      .finally(() => {
+        // An error message, or a link that was handed on, needs the form back.
+        if (active && !redirecting) setResuming(false)
+      })
+    const giveUp = window.setTimeout(() => {
+      if (active && !redirecting) setResuming(false)
+    }, 6000)
 
     const {
       data: { subscription },
@@ -304,6 +325,7 @@ export default function LoginPage() {
 
     return () => {
       active = false
+      window.clearTimeout(giveUp)
       subscription.unsubscribe()
     }
   }, [isSupabaseMode, navigate, rememberMe, returnParam])
@@ -622,6 +644,8 @@ export default function LoginPage() {
     packageFitWarnings.length > 0
       ? `Your club looks bigger than this package. ${getPackageById(recommendedPackageId)?.label ?? "A larger package"} is a better fit. ${packageFitWarnings.join(" ")} You can still send the request as it is.`
       : null
+
+  if (resuming) return <AppSplash />
 
   return (
     <AuthSplit
