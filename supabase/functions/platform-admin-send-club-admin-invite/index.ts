@@ -68,10 +68,10 @@ async function sendWithResend(params: {
       subject: params.subject,
       text: params.body,
       html: `<div style="font-family:Arial,sans-serif;line-height:1.6;">
-        <h2 style="margin:0 0 16px;">Your PaceLab club admin access is ready</h2>
-        <p style="margin:0 0 12px;">Your organization request has been approved.</p>
-        <p style="margin:0 0 12px;">Open the link below to complete first access, set your password, and finish tenant setup.</p>
-        <p style="margin:16px 0;"><a href="${params.body.match(/https?:\/\/\S+/)?.[0] ?? "#"}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#1368ff;color:#ffffff;text-decoration:none;font-weight:600;">Complete first access</a></p>
+        <h2 style="margin:0 0 16px;">Your SKTR Coach club is approved</h2>
+        <p style="margin:0 0 12px;">Your request to join SKTR Coach has been approved.</p>
+        <p style="margin:0 0 12px;">Open the link below, press Set up my account, choose a password and finish setting up your club. The link works one time.</p>
+        <p style="margin:16px 0;"><a href="${params.body.match(/https?:\/\/\S+/)?.[0] ?? "#"}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#2152ff;color:#ffffff;text-decoration:none;font-weight:600;">Set up my account</a></p>
         <p style="margin:16px 0 0;">If the button does not work, use this link:</p>
         <p style="word-break:break-all;">${params.body.match(/https?:\/\/\S+/)?.[0] ?? ""}</p>
       </div>`,
@@ -277,8 +277,8 @@ Deno.serve(async (request) => {
       apiKey: resendApiKey,
       fromEmail,
       toEmail: requestorEmail,
-      subject: "Your PaceLab club admin access is ready",
-      body: `Your organization request has been approved.\n\nComplete first access here:\n${appLink}\n\nYou will be required to set your password and finish tenant setup before entering the workspace.`,
+      subject: "Your SKTR Coach club is approved",
+      body: `Your request to join SKTR Coach has been approved.\n\nSet up your account here:\n${appLink}\n\nYou will choose a password and finish setting up your club. The link works one time. Questions: support@thesktr.com`,
     })
   } catch (dispatchError) {
     const message = dispatchError instanceof Error ? dispatchError.message : "Invite email dispatch failed."
