@@ -1,5 +1,6 @@
 "use client"
 
+import { InstallTip } from "@/components/install-banner"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strategy, UsersThree, type Icon } from "@phosphor-icons/react"
@@ -698,6 +699,8 @@ export default function LoginPage() {
               {isSigningIn ? "Signing in. Checking your account." : ""}
             </p>
           </form>
+
+          <InstallTip />
 
           <Section title="New to SKTR Coach?" hint="Clubs join by request. It takes about two minutes.">
             <div className="pt-3">
