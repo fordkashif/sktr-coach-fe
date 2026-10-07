@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, List, ListRow, Sheet } from "@/components/sk"
 import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
+import { InstallBanner } from "@/components/install-banner"
 import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
 import { GlobalSearch, SearchButton, useSearchShortcut } from "@/components/search/global-search"
 
@@ -463,6 +464,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
         {showChrome ? <PlatformNoticeBanner role={role} /> : null}
+        {showChrome ? <InstallBanner /> : null}
         <div className="min-h-full">{children}</div>
       </main>
 

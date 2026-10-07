@@ -4,6 +4,7 @@ import { DeleteAccountSection, YourDataSection } from "@/components/account/data
 import { useCurrentAccount } from "@/lib/account-store"
 import { useRole } from "@/lib/role-context"
 import { UnitsSection } from "@/components/account/units-section"
+import { GetAppSection } from "@/components/account/get-app-section"
 
 /** Your account: photo, name, sign-in details. Every role opens it; athletes reach it from their profile. */
 export default function AccountPage() {
@@ -43,6 +44,7 @@ export default function AccountPage() {
 
       {role === "platform-admin" ? null : <UnitsSection />}
 
+      <GetAppSection />
       <DevicesSection />
       <YourDataSection />
       <DeleteAccountSection />
