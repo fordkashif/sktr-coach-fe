@@ -52,7 +52,10 @@ import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
 import { InstallBanner } from "@/components/install-banner"
 import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
 import { SearchButton, useSearchShortcut } from "@/components/search/search-button"
+import { markScreen, timingEnabled } from "@/lib/perf/timing-log"
 // The search dialog is fetched the first time someone opens search, not in the first download.
+// The on-phone timing view, only fetched when timing is switched on (?timing=1).
+const TimingPanel = lazy(() => import("@/components/perf/timing-panel").then((module) => ({ default: module.TimingPanel })))
 const GlobalSearch = lazy(() => import("@/components/search/global-search").then((module) => ({ default: module.GlobalSearch })))
 
 /**
@@ -165,6 +168,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (role === "coach") preloadCoachTabs()
   }, [role])
   const { pathname } = useLocation()
+  // Timing: a new screen starts here, before the screen's own requests go out.
+  if (timingEnabled()) markScreen(pathname)
   const navigate = useNavigate()
   // One team at a time, moved only by a coach or the club: "Join a team" is for athletes with none.
   const athleteOnTeam = useAthleteOnTeam(role === "athlete", pathname)
@@ -536,6 +541,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Suspense>
       ) : null}
       {showChrome && messagesLink ? <MessageUnreadKeeper /> : null}
+      {timingEnabled() ? (
+        <Suspense fallback={null}>
+          <TimingPanel />
+        </Suspense>
+      ) : null}
     </div>
   )
 }
