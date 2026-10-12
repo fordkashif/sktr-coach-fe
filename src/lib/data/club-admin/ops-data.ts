@@ -439,6 +439,9 @@ function mapMemberAccessError(error: { code?: string; message: string }): DataEr
   if (message.includes("at least one active club-admin")) {
     return { code: "CONFLICT", message: "Your club needs at least one active club admin. Make someone else a club admin first.", cause: error }
   }
+  if (message.includes("staff cannot be made athletes")) {
+    return { code: "FORBIDDEN", message: "Coaches and club admins cannot be made athletes. Athletes join a team with their own account.", cause: error }
+  }
   if (message.includes("your own role")) {
     return { code: "FORBIDDEN", message: "You cannot change your own role or deactivate your own account. Ask another club admin to do it.", cause: error }
   }

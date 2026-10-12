@@ -65,6 +65,7 @@ import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { sendInviteEmail, type InviteEmailSent } from "@/lib/data/invites/invite-email-data"
 import { ok, type Result } from "@/lib/data/result"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
+import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
   loadAccountRequestsSafe,
@@ -153,6 +154,9 @@ export default function ClubAdminUsersPage() {
     isSupabaseMode ? [] : loadTeamsSafe().filter((team) => team.status === "active"),
   )
   const [directory, setDirectory] = useState<ClubAdminPeopleDirectory | null>(null)
+  // Who is signed in, straight from the sign-in on this device. The row for yourself shows your
+  // email and "(you)" (and no actions menu) even before, or without, the people directory.
+  const [signedIn, setSignedIn] = useState<{ id: string; email: string } | null>(null)
   const [athletes, setAthletes] = useState<ClubAthlete[] | null>(null)
   const [athletesError, setAthletesError] = useState<string | null>(null)
   const [mockUserEmail] = useState(() => (isSupabaseMode || typeof window === "undefined" ? null : window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY)))
@@ -264,15 +268,38 @@ export default function ClubAdminUsersPage() {
   useEffect(() => {
     if (!isSupabaseMode) return
     let cancelled = false
+    void getBrowserSupabaseClient()
+      ?.auth.getSession()
+      .then(({ data }) => {
+        const user = data.session?.user
+        if (!cancelled && user) setSignedIn({ id: user.id, email: (user.email ?? "").trim().toLowerCase() })
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [isSupabaseMode])
 
-    void getClubAdminPeopleDirectory().then((result) => {
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    let cancelled = false
+
+    // Emails and teams for the people table. Asked twice before giving up, and a failure is
+    // always shown, so the table never quietly says "No email on file" for everyone.
+    const load = async (attempt: number): Promise<void> => {
+      const result = await getClubAdminPeopleDirectory().catch((error: unknown) => ({
+        ok: false as const,
+        error: { message: error instanceof Error ? error.message : "Something went wrong." },
+      }))
       if (cancelled) return
       if (!result.ok) {
-        setBackendError((current) => current ?? `Could not load team assignments: ${result.error.message}`)
+        if (attempt === 0) return load(1)
+        setBackendError((current) => current ?? `Could not load emails and teams: ${result.error.message}`)
         return
       }
       setDirectory(result.data)
-    })
+    }
+    void load(0)
 
     return () => {
       cancelled = true
@@ -345,7 +372,8 @@ export default function ClubAdminUsersPage() {
   const teamName = useCallback((teamId: string | null) => (teamId ? (teamNameById.get(teamId) ?? null) : null), [teamNameById])
   const teamOptions = useMemo(() => teams.map((team) => ({ id: team.id, name: team.name })), [teams])
 
-  const emailOf = (user: ClubUser) => (isSupabaseMode ? (directory?.members[user.id]?.email ?? "") : user.email)
+  const emailOf = (user: ClubUser) =>
+    isSupabaseMode ? (directory?.members[user.id]?.email ?? (signedIn?.id === user.id ? signedIn.email : "")) : user.email
   const labelOf = (user: ClubUser) => emailOf(user) || user.name
 
   const teamNamesOf = (user: ClubUser) => {
@@ -363,7 +391,8 @@ export default function ClubAdminUsersPage() {
       .filter((name): name is string => Boolean(name))
   }
 
-  const isSelf = (user: ClubUser) => (isSupabaseMode ? directory?.currentUserId === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail)
+  const isSelf = (user: ClubUser) =>
+    isSupabaseMode ? (directory?.currentUserId ?? signedIn?.id) === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail
 
   // Staff: coaches and club admins, plus anyone whose account says athlete but who has no athlete
   // record (a staff member whose role was changed), so nobody is invisible on both lists.
@@ -877,7 +906,9 @@ export default function ClubAdminUsersPage() {
 
   const staffMenu = (user: ClubUser): RowMenuItem[] => {
     const busy = busyKey === `user:${user.id}`
-    const roles = (["club-admin", "coach", "athlete"] as UserRole[]).filter((role) => role !== user.role)
+    // Staff move between coach and club admin only. A coach or club admin is never made an athlete
+    // (athletes join a team with their own account); the database refuses it as well.
+    const roles = (["club-admin", "coach"] as UserRole[]).filter((role) => role !== user.role)
     return [
       ...roles.map((role) => ({ label: `Make ${ROLE_LABEL[role].toLowerCase()}`, onSelect: () => setConfirm({ kind: "role" as const, userId: user.id, role }), disabled: busy })),
       // Only offered to someone who coaches a team, so the item is never a dead end.
