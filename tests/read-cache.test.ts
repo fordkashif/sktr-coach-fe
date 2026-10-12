@@ -163,7 +163,15 @@ test("every function on the read-only list is declared stable in the database", 
     const starts = [...sql.matchAll(new RegExp(`create or replace function public\\.${name}\\(`, "gi"))]
     assert.ok(starts.length > 0, `${name} is not defined in supabase/migrations`)
     const from = starts[starts.length - 1].index ?? 0
-    const header = sql.slice(from, sql.indexOf("as $", from))
-    assert.match(header, /\bstable\b/i, `${name} must be declared stable to be shared as a read`)
+    // "stable" may come before the body ("... stable as $$ ... $$;") or after it ("as $$ ... $$ language sql stable;").
+    const open = /as\s+(\$[a-z_]*\$)/i.exec(sql.slice(from))
+    assert.ok(open, `${name}: could not find the function body`)
+    const bodyStart = from + open.index + open[0].length
+    const header = sql.slice(from, from + open.index)
+    const bodyEnd = sql.indexOf(open[1], bodyStart)
+    const trailer = sql.slice(bodyEnd + open[1].length, sql.indexOf(";", bodyEnd + open[1].length))
+    const attributes = `${header} ${trailer}`
+    assert.match(attributes, /\b(stable|immutable)\b/i, `${name} must be declared stable to be shared as a read`)
+    assert.doesNotMatch(attributes, /\bvolatile\b/i, `${name} is declared volatile`)
   }
 })

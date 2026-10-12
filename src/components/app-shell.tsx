@@ -37,7 +37,8 @@ import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useCurrentAccount } from "@/lib/account-store"
 import { MenuClubBrand, ShellClubBrand } from "@/components/club/club-brand"
-import { preloadAthleteTabs } from "@/router/preload-tabs"
+import { preloadAthleteTabs, preloadCoachPlans, preloadCoachTabs } from "@/router/preload-tabs"
+import { CoachCompetitionsPage, CoachDashboardPage, CoachReportsPage, CoachTeamDetailPage, CoachTeamsPage, CoachTestWeekPage } from "@/router/tab-pages"
 import { SignOutDialog } from "@/components/account/sign-out-dialog"
 import { useAthleteOnTeam } from "@/lib/data/athlete/use-athlete-on-team"
 import {
@@ -142,53 +143,24 @@ function getRoleLabel(role: string) {
   return "Athlete"
 }
 
-let coachTeamRoutePrefetchPromise: Promise<unknown> | null = null
-let coachReportsRoutePrefetchPromise: Promise<unknown> | null = null
-let coachTrainingPlanRoutePrefetchPromise: Promise<unknown> | null = null
-let coachTestWeekRoutePrefetchPromise: Promise<unknown> | null = null
-
-function prefetchCoachTeamRoute() {
-  if (!coachTeamRoutePrefetchPromise) {
-    coachTeamRoutePrefetchPromise = import("@/app/(authenticated)/coach/teams/[teamId]/page")
-  }
-  return coachTeamRoutePrefetchPromise
-}
-
-function prefetchCoachReportsRoute() {
-  if (!coachReportsRoutePrefetchPromise) {
-    coachReportsRoutePrefetchPromise = import("@/app/(authenticated)/coach/reports/page")
-  }
-  return coachReportsRoutePrefetchPromise
-}
-
-function prefetchCoachTrainingPlanRoute() {
-  if (!coachTrainingPlanRoutePrefetchPromise) {
-    coachTrainingPlanRoutePrefetchPromise = import("@/app/(authenticated)/coach/training-plan/page")
-  }
-  return coachTrainingPlanRoutePrefetchPromise
-}
-
-function prefetchCoachTestWeekRoute() {
-  if (!coachTestWeekRoutePrefetchPromise) {
-    coachTestWeekRoutePrefetchPromise = import("@/app/(authenticated)/coach/test-week/page")
-  }
-  return coachTestWeekRoutePrefetchPromise
-}
-
-function prefetchCoachLink(linkId: string) {
-  if (linkId === "teams") return prefetchCoachTeamRoute()
-  if (linkId === "reports") return prefetchCoachReportsRoute()
-  if (linkId === "plans") return prefetchCoachTrainingPlanRoute()
-  if (linkId === "tests") return prefetchCoachTestWeekRoute()
+// Desktop: a coach tab starts loading when the pointer is over it.
+function prefetchCoachLink(linkId: string): Promise<unknown> {
+  if (linkId === "dashboard") return CoachDashboardPage.preload()
+  if (linkId === "teams") return Promise.all([CoachTeamDetailPage.preload(), CoachTeamsPage.preload()])
+  if (linkId === "reports") return CoachReportsPage.preload()
+  if (linkId === "plans") return preloadCoachPlans()
+  if (linkId === "tests") return CoachTestWeekPage.preload()
+  if (linkId === "competitions") return CoachCompetitionsPage.preload()
   return Promise.resolve()
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, userEmail } = useRole()
 
-  // Fetch the other tabs' code while the athlete is on the first screen, so the first tap on each is quicker.
+  // Fetch the other tabs' code while the person is on the first screen, so the first tap on each is quicker.
   useEffect(() => {
     if (role === "athlete") preloadAthleteTabs()
+    if (role === "coach") preloadCoachTabs()
   }, [role])
   const { pathname } = useLocation()
   const navigate = useNavigate()
