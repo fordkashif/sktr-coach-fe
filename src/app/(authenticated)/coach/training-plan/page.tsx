@@ -1,11 +1,17 @@
-import { lazy, Suspense, useMemo } from "react"
+import { Suspense, useMemo } from "react"
 import { ScreenSkeleton } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getBackendMode } from "@/lib/supabase/config"
+import { lazyPage } from "@/router/lazy-page"
 
 // Each backend mode loads only its own storage code (mock data stays out of the real bundle).
-const CoachTrainingPlanPageClient = lazy(() => import("@/components/coach/training-plan-page-client"))
-const CoachTrainingPlanPageSupabaseClient = lazy(() => import("@/components/coach/training-plan-page-supabase-client"))
+const CoachTrainingPlanPageClient = lazyPage(() => import("@/components/coach/training-plan-page-client"))
+const CoachTrainingPlanPageSupabaseClient = lazyPage(() => import("@/components/coach/training-plan-page-supabase-client"))
+
+/** Loads the plan builder this backend uses, so the screen opens without a second wait. */
+export function preloadPlanBuilder() {
+  return getBackendMode() === "supabase" ? CoachTrainingPlanPageSupabaseClient.preload() : CoachTrainingPlanPageClient.preload()
+}
 
 type CoachPageRole = "coach" | "club-admin"
 

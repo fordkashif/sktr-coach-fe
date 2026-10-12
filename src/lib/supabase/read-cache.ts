@@ -25,8 +25,14 @@
 /** Read-only database functions (all declared `stable` in supabase/migrations). Anything else counts as a write. */
 export const READ_ONLY_RPCS = new Set([
   "current_tenant_athlete_count",
+  "get_announcement_recipients",
   "get_announcements",
+  "get_athlete_guardians",
+  "get_athlete_invite_preview",
   "get_calendar_feed_status",
+  "get_closed_clubs",
+  "get_club_guardians",
+  "get_club_ownership",
   "get_current_account",
   "get_current_athlete_team_coaches",
   "get_current_athlete_team_context",
@@ -34,15 +40,37 @@ export const READ_ONLY_RPCS = new Set([
   "get_current_club_closure",
   "get_current_results_season",
   "get_current_tenant_package",
+  "get_guardian_child_attendance",
+  "get_guardian_child_coaches",
+  "get_guardian_child_details",
+  "get_guardian_child_sessions",
+  "get_guardian_children",
+  "get_message_oversight_threads",
+  "get_message_thread",
+  "get_message_threads",
   "get_message_unread_counts",
   "get_my_account_deletion_check",
   "get_my_guardian_sharing",
   "get_my_last_exercise_logs",
   "get_my_last_exercise_results",
   "get_my_platform_notices",
+  "get_platform_failed_notification_emails",
+  "get_platform_notification_email_stats",
+  "get_platform_system_status",
+  "get_platform_tenant_sizes",
+  "get_platform_usage",
+  "get_public_coach_invite_role",
+  "get_public_guardian_invite",
   "get_relay_entries",
+  "get_roster_capacity",
   "get_session_logged_by",
+  "get_tenant_member_emails",
   "get_visible_avatars",
+  "guardian_athlete_plan_ids",
+  "guardian_athlete_test_week_ids",
+  "list_platform_admins",
+  "list_platform_notices",
+  "search_everything",
   "training_load_sessions",
   "training_load_weeks",
 ])
@@ -51,7 +79,7 @@ export const READ_ONLY_RPCS = new Set([
 export const READ_KEEP_MS = 30_000
 /** Badge counts and inbox reads are kept for less, so a new notification or message shows up soon. */
 export const LIVE_READ_KEEP_MS = 10_000
-const LIVE_READS = /\/rest\/v1\/(user_notifications|messages|message_threads|rpc\/get_message_unread_counts|rpc\/get_announcements)\b/
+const LIVE_READS = /\/rest\/v1\/(user_notifications|messages|message_threads|rpc\/get_message_unread_counts|rpc\/get_announcements|rpc\/get_message_threads|rpc\/get_message_thread|rpc\/get_message_oversight_threads)\b/
 /** Never keep more than this many answers. The oldest go first. */
 export const MAX_KEPT_READS = 300
 
