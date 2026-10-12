@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { getCurrentAthleteTeam, hasMockAthleteLeftTeam, loadMockJoinedTeamId, MOCK_ATHLETE_ID } from "@/lib/data/athlete/profile-data"
 import { getBackendMode } from "@/lib/supabase/config"
 
 /**
@@ -17,12 +16,17 @@ export function useAthleteOnTeam(isAthlete: boolean, refreshKey?: string): boole
       return
     }
     let cancelled = false
+    // The profile data code is large and this runs in the app frame, so it is fetched here
+    // (after the first screen) rather than being part of the first download.
+    const profileData = import("@/lib/data/athlete/profile-data")
     if (getBackendMode() === "supabase") {
-      void getCurrentAthleteTeam().then((result) => {
-        if (!cancelled && result.ok) setOnTeam(Boolean(result.data.teamId))
-      })
+      void profileData
+        .then(({ getCurrentAthleteTeam }) => getCurrentAthleteTeam())
+        .then((result) => {
+          if (!cancelled && result.ok) setOnTeam(Boolean(result.data.teamId))
+        })
     } else {
-      void import("@/lib/mock-data").then((module) => {
+      void Promise.all([import("@/lib/mock-data"), profileData]).then(([module, { hasMockAthleteLeftTeam, loadMockJoinedTeamId, MOCK_ATHLETE_ID }]) => {
         if (cancelled) return
         const athlete = module.mockAthletes.find((item) => item.id === MOCK_ATHLETE_ID)
         setOnTeam(Boolean(hasMockAthleteLeftTeam() ? null : (loadMockJoinedTeamId() ?? athlete?.teamId ?? null)))

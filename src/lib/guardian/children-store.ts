@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react"
 import { getCookieValue, ROLE_COOKIE, SESSION_UPDATED_EVENT, USER_COOKIE } from "@/lib/auth-session"
-import { getGuardianChildren } from "@/lib/data/guardian/guardian-data"
 import type { GuardianChild } from "@/lib/data/guardian/types"
 
 /**
@@ -70,6 +69,8 @@ export function pickGuardianChild(children: Array<{ athleteId: string }>, wanted
 
 async function load(key: string) {
   const token = ++loadToken
+  // Only parents need this, so the guardian data code is fetched on first use.
+  const { getGuardianChildren } = await import("@/lib/data/guardian/guardian-data")
   const result = await getGuardianChildren()
   if (token !== loadToken) return
   if (!result.ok) {

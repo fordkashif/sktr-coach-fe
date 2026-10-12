@@ -13,6 +13,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 550,
     rollupOptions: {
       output: {
+        // Merge very small shared files (mostly single icons) into their neighbours, so a screen
+        // is a handful of downloads instead of dozens of tiny ones.
+        experimentalMinChunkSize: 10_000,
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined
 
@@ -20,7 +23,9 @@ export default defineConfig({
           if (id.includes("@hugeicons/")) return "icons-vendor"
           if (id.includes("@supabase/")) return "supabase-vendor"
           if (id.includes("react-router")) return "router-vendor"
-          if (id.includes("/react/") || id.includes("\\react\\") || id.includes("react-dom")) return "react-vendor"
+          // Only React itself. A looser match ("/react/") also caught @phosphor-icons/react, which put every
+          // icon in the app into the first download.
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react-vendor"
           return undefined
         },
       },

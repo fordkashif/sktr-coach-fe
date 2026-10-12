@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { Button, Notice } from "@/components/sk"
-import { dismissPlatformNotice, getMyPlatformNotices, type VisibleNotice } from "@/lib/data/platform-admin/tools-data"
+import type { VisibleNotice } from "@/lib/data/platform-admin/tools-data"
 import type { NoticeRole } from "@/lib/data/platform-admin/tools-logic"
+
+type ToolsData = typeof import("@/lib/data/platform-admin/tools-data")
+let toolsModule: ToolsData | null = null
+// Loaded on demand: almost nobody has a notice, so this code stays out of the first download.
+// Kept once loaded, so dismissing (only possible once a notice is showing) saves straight away.
+async function toolsData(): Promise<ToolsData> {
+  toolsModule ??= await import("@/lib/data/platform-admin/tools-data")
+  return toolsModule
+}
 
 const REFRESH_MS = 10 * 60 * 1000
 
@@ -15,8 +24,13 @@ export function PlatformNoticeBanner({ role }: { role: NoticeRole | null }) {
   const { pathname } = useLocation()
   const [notices, setNotices] = useState<VisibleNotice[]>([])
 
+  const latest = useRef(0)
   const load = useCallback(async () => {
-    setNotices(await getMyPlatformNotices(role))
+    // Only the newest request counts: when the role settles just after the app opens, an
+    // answer for the earlier role could otherwise arrive last and show the wrong notices.
+    const request = ++latest.current
+    const next = await (await toolsData()).getMyPlatformNotices(role)
+    if (request === latest.current) setNotices(next)
   }, [role])
 
   // On arrival, when the person comes back to the tab, and every ten minutes, so a withdrawn or
@@ -42,7 +56,8 @@ export function PlatformNoticeBanner({ role }: { role: NoticeRole | null }) {
 
   const dismiss = () => {
     setNotices((current) => current.filter((item) => item.id !== notice.id))
-    void dismissPlatformNotice(notice.id, role)
+    if (toolsModule) void toolsModule.dismissPlatformNotice(notice.id, role)
+    else void toolsData().then(({ dismissPlatformNotice }) => dismissPlatformNotice(notice.id, role))
   }
 
   const link = notice.linkUrl

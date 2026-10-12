@@ -25,7 +25,7 @@ import {
   UsersThree,
 } from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
 import { GuardianChildSwitcher } from "@/components/guardian/child-switcher"
@@ -51,7 +51,9 @@ import { Avatar, List, ListRow, Sheet } from "@/components/sk"
 import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
 import { InstallBanner } from "@/components/install-banner"
 import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
-import { GlobalSearch, SearchButton, useSearchShortcut } from "@/components/search/global-search"
+import { SearchButton, useSearchShortcut } from "@/components/search/search-button"
+// The search dialog is fetched the first time someone opens search, not in the first download.
+const GlobalSearch = lazy(() => import("@/components/search/global-search").then((module) => ({ default: module.GlobalSearch })))
 
 /**
  * App shell. See DESIGN.md, "Navigation".
@@ -170,6 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchUsed, setSearchUsed] = useState(false)
   const { selectedTeamId: coachTeamId, teams: coachTeams } = useCoachTeams()
   // An assistant coach does not build plans, keep competitions or export reports, so those tabs are not shown to them.
   const coachIsAssistant = role === "coach" && coachTeams.find((team) => team.id === coachTeamId)?.role === "assistant"
@@ -281,7 +284,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const bell = showBell ? <NotificationBell onOpen={() => setPanelOpen(true)} /> : null
   // Search: an icon button in both bars, "/" or Ctrl or Cmd and K. Its screen list is built from `links`.
-  const openSearch = useCallback(() => setSearchOpen(true), [])
+  const openSearch = useCallback(() => {
+    setSearchUsed(true)
+    setSearchOpen(true)
+  }, [])
   useSearchShortcut(openSearch, showChrome)
   const searchButton = showChrome ? <SearchButton onOpen={openSearch} /> : null
   const searchDestinations = useMemo(() => links.map((link) => ({ id: link.id, label: link.label, href: link.href })), [links])
@@ -516,16 +522,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       {showBell ? <NotificationSheet open={panelOpen} onOpenChange={setPanelOpen} /> : null}
-      {showChrome ? (
-        <GlobalSearch
-          open={searchOpen}
-          onOpenChange={setSearchOpen}
-          role={role}
-          destinations={searchDestinations}
-          assistant={coachIsAssistant}
-          coachTeamIds={coachTeamIdList}
-          owner={userEmail}
-        />
+      {showChrome && searchUsed ? (
+        <Suspense fallback={null}>
+          <GlobalSearch
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            role={role}
+            destinations={searchDestinations}
+            assistant={coachIsAssistant}
+            coachTeamIds={coachTeamIdList}
+            owner={userEmail}
+          />
+        </Suspense>
       ) : null}
       {showChrome && messagesLink ? <MessageUnreadKeeper /> : null}
     </div>
