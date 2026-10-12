@@ -1,4 +1,4 @@
-import { getCookieValue, ROLE_COOKIE, SESSION_COOKIE, TENANT_COOKIE } from "@/lib/auth-session"
+import { getCookieValue, ROLE_COOKIE, SESSION_COOKIE, TENANT_COOKIE, USER_COOKIE } from "@/lib/auth-session"
 import type { AppRole } from "@/lib/supabase/actor"
 import { getBackendMode } from "@/lib/supabase/config"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
@@ -72,8 +72,50 @@ async function getMockGuardAuthContext(): Promise<GuardAuthContext> {
  * closed club) is never remembered: those states are meant to change under the person's feet.
  * A request the database refuses still fires the access paused event, which asks afresh.
  */
-const SETTLED_FOR_MS = 60_000
+const SETTLED_FOR_MS = 5 * 60_000
 let settled: { userId: string; at: number; context: GuardAuthContext } | null = null
+
+/*
+ * The last good answer is also kept on this device, so opening the app shows the screen straight
+ * away instead of waiting for several requests first (on a phone that was up to 13 seconds). The
+ * check still runs in the background and replaces it. This only decides which screen to draw: the
+ * database enforces access on every request by itself, and a refused request fires the access
+ * paused event, which re-checks at once.
+ */
+const DEVICE_KEY_PREFIX = "sktr:access:"
+const DEVICE_KEEP_MS = 14 * 24 * 60 * 60_000
+
+function deviceKey(): string | null {
+  if (typeof window === "undefined" || !getCookieValue(SESSION_COOKIE)) return null
+  const user = getCookieValue(USER_COOKIE)?.trim().toLowerCase()
+  return user ? `${DEVICE_KEY_PREFIX}${user}` : null
+}
+
+function saveOnDevice(context: GuardAuthContext | null) {
+  const key = deviceKey()
+  if (!key) return
+  try {
+    if (context) window.localStorage.setItem(key, JSON.stringify({ at: Date.now(), context }))
+    else window.localStorage.removeItem(key)
+  } catch {
+    // Storage blocked or full: the app then waits for the check, as before.
+  }
+}
+
+/** The last good answer for the person signed in on this device, if there is a recent one. */
+export function rememberedOnDevice(now: number = Date.now()): GuardAuthContext | null {
+  const key = deviceKey()
+  if (!key) return null
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(key) ?? "null") as { at?: number; context?: GuardAuthContext } | null
+    if (!saved?.context || typeof saved.at !== "number" || now - saved.at > DEVICE_KEEP_MS) return null
+    // The role cookie is set at sign-in. A different role means a different sign-in: do not guess.
+    if (saved.context.role !== getRoleFromCookie()) return null
+    return isSettledContext(saved.context) ? saved.context : null
+  } catch {
+    return null
+  }
+}
 
 export function isSettledContext(context: GuardAuthContext): boolean {
   if (!context.isAuthenticated || !context.role || !context.memberActive) return false
@@ -90,12 +132,15 @@ function recallSettled(userId: string, fresh: boolean, now: number = Date.now())
 }
 
 function rememberIfSettled(userId: string, context: GuardAuthContext) {
-  settled = isSettledContext(context) ? { userId, at: Date.now(), context } : null
+  const good = isSettledContext(context)
+  settled = good ? { userId, at: Date.now(), context } : null
+  saveOnDevice(good ? context : null)
 }
 
 /** Forget the remembered answer, for example after a sign out. */
 export function forgetGuardAuthContext() {
   settled = null
+  saveOnDevice(null)
 }
 
 async function getSupabaseGuardAuthContext(options?: { fresh?: boolean }): Promise<GuardAuthContext> {
@@ -111,7 +156,7 @@ async function getSupabaseGuardAuthContext(options?: { fresh?: boolean }): Promi
     throw new GuardCheckUnavailable()
   }
   const session = sessionResult.data.session
-  if (!session) settled = null
+  if (!session) forgetGuardAuthContext()
   if (!session) {
     // An expired token that could not be renewed because the network was down still has its
     // sign-in stored. Only a clear answer counts as signed out.
