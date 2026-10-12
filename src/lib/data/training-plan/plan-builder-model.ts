@@ -455,9 +455,18 @@ export function validateForPublish(plan: PlanDraft, assignedCount: number): stri
   if (plan.assign.target === "selected" && plan.assign.athleteIds.length === 0) return "Pick at least one athlete."
   if (plan.assign.target === "squads" && plan.assign.squadIds.length === 0) return "Pick at least one squad."
   if (plan.assign.visibilityStart === "scheduled" && !plan.assign.visibilityDate) return "Pick the date athletes should first see the plan."
-  // A squad can be empty for now: athletes added to it later get the plan.
-  if (assignedCount === 0 && plan.assign.target !== "squads") return "Nobody would receive this plan. Check who it is assigned to."
+  // A whole team or a squad can be empty for now: athletes who join it later get the plan.
+  if (assignedCount === 0 && !reachesLaterJoiners(plan)) return "Nobody would receive this plan. Check who it is assigned to."
   return null
+}
+
+/**
+ * True when the plan goes to a whole team or to squads. Those are stored as one link to the team or
+ * squad, so an athlete who joins later gets the plan too (their sessions start the day they join).
+ * An event group or picked athletes are stored athlete by athlete, so they only reach who is there now.
+ */
+export function reachesLaterJoiners(plan: Pick<PlanDraft, "assign">): boolean {
+  return plan.assign.target === "team" || plan.assign.target === "squads"
 }
 
 /** Athlete-facing structure written to the weeks, days and blocks tables on publish. */
