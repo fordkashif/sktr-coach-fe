@@ -46,6 +46,7 @@ import { getBackendMode } from "@/lib/supabase/config"
 import { removePushOnSignOut } from "@/lib/push/push-client"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { preloadAthleteTabs } from "@/router/preload-tabs"
+import { useAthleteOnTeam } from "@/lib/data/athlete/use-athlete-on-team"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -198,6 +199,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [role])
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  // One team at a time, moved only by a coach or the club: "Join a team" is for athletes with none.
+  const athleteOnTeam = useAthleteOnTeam(role === "athlete", pathname)
   const [mobileDetailMode, setMobileDetailMode] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -360,7 +363,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <DropdownMenuItem asChild className={menuItem}>
           <Link to={accountHref}>Your account</Link>
         </DropdownMenuItem>
-        {role === "athlete" ? (
+        {role === "athlete" && athleteOnTeam === false ? (
           <DropdownMenuItem asChild className={menuItem}>
             <Link to="/athlete/join">Join a team</Link>
           </DropdownMenuItem>
