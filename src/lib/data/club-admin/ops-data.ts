@@ -1353,6 +1353,12 @@ export async function getClubAdminPeopleDirectory(): Promise<Result<ClubAdminPeo
   const { data: authSession } = await clientResult.client.auth.getSession()
   const currentUserEmail = authSession.session?.user.email?.trim().toLowerCase()
 
+  // Account emails come from `get_tenant_member_emails`. Asked at the same time as the rest (it
+  // used to wait for them). Optional: if it is missing or fails, invite based emails still show.
+  const emailsPromise = Promise.resolve(clientResult.client.rpc("get_tenant_member_emails")).then(
+    (result) => result,
+    () => null,
+  )
   const [teamsResult, coachesResult, athletesResult, coachInvitesResult, athleteInvitesResult] = await Promise.all([
     clientResult.client.from("teams").select("id, name").eq("tenant_id", tenantId),
     clientResult.client.from("team_coaches").select("team_id, user_id").eq("tenant_id", tenantId),
@@ -1394,17 +1400,11 @@ export async function getClubAdminPeopleDirectory(): Promise<Result<ClubAdminPeo
   }
   if (currentUserEmail) entry(userId).email = currentUserEmail
 
-  // Account emails for everyone in the club, from the `get_tenant_member_emails` database function.
-  // Optional: if the function is missing or fails, the invite based emails above still show.
-  try {
-    const emailsResult = await clientResult.client.rpc("get_tenant_member_emails")
-    if (!emailsResult.error) {
-      for (const row of (emailsResult.data as Array<{ user_id: string | null; email: string | null }> | null) ?? []) {
-        if (row.user_id && row.email) entry(row.user_id).email = row.email.toLowerCase()
-      }
+  const emailsResult = await emailsPromise
+  if (emailsResult && !emailsResult.error) {
+    for (const row of (emailsResult.data as Array<{ user_id: string | null; email: string | null }> | null) ?? []) {
+      if (row.user_id && row.email) entry(row.user_id).email = row.email.toLowerCase()
     }
-  } catch {
-    // Keep the emails already collected.
   }
 
   return ok({
