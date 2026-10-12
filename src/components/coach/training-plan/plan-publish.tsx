@@ -33,6 +33,7 @@ import {
   planEndDate,
   slotDate,
   todayIso,
+  reachesLaterJoiners,
   validateForPublish,
   weekSessions,
   type AssignTarget,
@@ -83,6 +84,9 @@ export function PlanPublish({
   const assignedCount = recipients.length
   const blocker = validateForPublish({ ...plan, assign: { ...plan.assign, squadIds: chosenSquadIds } }, assignedCount)
   const isUpdate = plan.status === "published"
+  // Nobody on the team (or squad) yet: the plan still goes out, and reaches whoever joins later.
+  const forLaterJoiners = assignedCount === 0 && reachesLaterJoiners(plan) && !blocker
+  const audience = plan.assign.target === "squads" ? (chosenSquadIds.length === 1 ? "the squad" : "the squads") : "the team"
   const groupsInTeam = EVENT_GROUPS.filter((group) => teamAthletes.some((athlete) => athlete.eventGroup === group.value))
   const query = search.trim().toLowerCase()
   const selected = new Set(plan.assign.athleteIds)
@@ -250,7 +254,15 @@ export function PlanPublish({
               ) : null}
 
               {plan.assign.target === "squads" && (teamSquads.length === 0 || chosenSquadIds.length === 0) ? null : teamAthletes.length === 0 ? (
-                <EmptyState className="mt-3" title="No athletes on this team yet" body="Add or invite athletes from the team page, then come back to publish." />
+                <EmptyState
+                  className="mt-3"
+                  title="No athletes on this team yet"
+                  body={
+                    reachesLaterJoiners(plan)
+                      ? "You can publish now. Athletes you add or invite from the team page get this plan from the day they join."
+                      : "Add or invite athletes from the team page, then come back to publish."
+                  }
+                />
               ) : listed.length === 0 ? (
                 <EmptyState
                   className="mt-3"
@@ -337,11 +349,22 @@ export function PlanPublish({
 
       <ActionBar aria-label="Publish">
         <p aria-live="polite" className="min-w-0 text-sm font-semibold text-sk-mute">
-          {blocker ?? (isUpdate ? "Athletes already on this plan are not told again." : "")}
+          {blocker ??
+            (forLaterJoiners
+              ? `Nobody is on ${plan.assign.target === "squads" ? audience : team?.name ?? audience} yet. Athletes who join get this plan.`
+              : isUpdate
+                ? "Athletes already on this plan are not told again."
+                : "")}
         </p>
         <Button variant="primary" onClick={onPublish} disabled={busy || Boolean(blocker)}>
           <PaperPlaneTilt className="size-5" weight="bold" aria-hidden />
-          {busy ? "Publishing..." : isUpdate ? `Save for ${plural(assignedCount, "athlete")}` : `Publish to ${plural(assignedCount, "athlete")}`}
+          {busy
+            ? "Publishing..."
+            : forLaterJoiners
+              ? `${isUpdate ? "Save for" : "Publish to"} ${audience}`
+              : isUpdate
+                ? `Save for ${plural(assignedCount, "athlete")}`
+                : `Publish to ${plural(assignedCount, "athlete")}`}
         </Button>
       </ActionBar>
     </Screen>
@@ -369,9 +392,15 @@ export function PlanPublished({
       <ScreenHeader
         fact={<StatusText tone="green">{wasUpdate ? "Updated" : "Published"}</StatusText>}
         title={plan.name || "Training plan"}
-        lede={`${wasUpdate ? "Plan updated for" : "Plan published to"} ${plural(count, "athlete")}. ${
-          scheduled ? `They see it in their training plan from ${formatDayMonth(plan.assign.visibilityDate as string)}.` : "They can open it in their training plan now."
-        }`}
+        lede={
+          count === 0 && reachesLaterJoiners(plan)
+            ? `${wasUpdate ? "Plan updated" : "Plan published"}. Nobody is on ${plan.assign.target === "squads" ? "the squad" : "the team"} yet: athletes who join get it from the day they join${
+                scheduled ? `, and see it from ${formatDayMonth(plan.assign.visibilityDate as string)}` : ""
+              }.`
+            : `${wasUpdate ? "Plan updated for" : "Plan published to"} ${plural(count, "athlete")}. ${
+                scheduled ? `They see it in their training plan from ${formatDayMonth(plan.assign.visibilityDate as string)}.` : "They can open it in their training plan now."
+              }`
+        }
       />
       <Section title="What next">
         <List>
