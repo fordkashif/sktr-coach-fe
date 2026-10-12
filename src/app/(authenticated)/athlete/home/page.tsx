@@ -1,5 +1,6 @@
 "use client"
 
+import { blockNameFromPreview, exerciseCount, joinBlockNames } from "@/lib/data/training-plan/session-glance"
 import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { Check, Play } from "@phosphor-icons/react"
@@ -406,12 +407,12 @@ export default function AthleteHomePage() {
   }
 
   /* Today: the one colour block, only when there is a session to do --- */
+  // At a glance: the session's parts and how many exercises. The full list is in the session.
+  const todayExercises = todaySession ? todaySession.blocks.reduce((sum, block) => sum + block.rows.length, 0) : 0
   const sessionSummary = todaySession
-    ? todaySession.blocks
-        .flatMap((block) => (block.rows.length > 0 ? block.rows.map((row) => `${row.label} ${units.target(row.target)}`) : [block.name]))
-        .join(", ")
+    ? [joinBlockNames(todaySession.blocks.map((block) => block.name)), todayExercises > 0 ? exerciseCount(todayExercises) : null].filter(Boolean).join(" · ")
     : planDayToday
-      ? planDayToday.blockPreview.map((preview) => units.target(preview)).join(", ") || planDayToday.focus
+      ? joinBlockNames(planDayToday.blockPreview.map(blockNameFromPreview)) || planDayToday.focus
       : ""
   const sessionMeta = todaySession
     ? inProgress && todaySession.blocks.length > 0
