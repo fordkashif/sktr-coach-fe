@@ -65,6 +65,8 @@ import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { sendInviteEmail, type InviteEmailSent } from "@/lib/data/invites/invite-email-data"
 import { ok, type Result } from "@/lib/data/result"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite, UserRole } from "@/lib/mock-club-admin"
+import { getCookieValue, USER_COOKIE } from "@/lib/auth-session"
+import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 import {
   loadAccountRequestsSafe,
@@ -93,6 +95,35 @@ const ROLE_LABEL: Record<UserRole, string> = {
   "club-admin": "Club admin",
   coach: "Coach",
   athlete: "Athlete",
+}
+
+/** This device's last copy of the people directory, kept per signed-in account. */
+const DIRECTORY_STORAGE_PREFIX = "club-admin-people-directory:"
+
+function directoryStorageKey(): string | null {
+  const user = getCookieValue(USER_COOKIE)?.trim().toLowerCase()
+  return user ? `${DIRECTORY_STORAGE_PREFIX}${user}` : null
+}
+
+function readSavedDirectory(): ClubAdminPeopleDirectory | null {
+  const key = typeof window === "undefined" ? null : directoryStorageKey()
+  if (!key) return null
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(key) ?? "null") as ClubAdminPeopleDirectory | null
+    return saved && typeof saved.currentUserId === "string" && saved.members && Array.isArray(saved.teams) ? saved : null
+  } catch {
+    return null
+  }
+}
+
+function saveDirectory(directory: ClubAdminPeopleDirectory) {
+  const key = directoryStorageKey()
+  if (!key) return
+  try {
+    window.localStorage.setItem(key, JSON.stringify(directory))
+  } catch {
+    // Storage can be full or blocked. The directory then just loads each time.
+  }
 }
 
 const ROLE_CHANGE_EFFECT: Record<UserRole, string> = {
@@ -152,7 +183,15 @@ export default function ClubAdminUsersPage() {
   const [teams, setTeams] = useState<Array<Pick<ClubTeam, "id" | "name" | "coachUserId" | "coachUserIds">>>(() =>
     isSupabaseMode ? [] : loadTeamsSafe().filter((team) => team.status === "active"),
   )
-  const [directory, setDirectory] = useState<ClubAdminPeopleDirectory | null>(null)
+  // Emails and teams, shown straight away from this device's last copy, then refreshed.
+  const [directory, setDirectoryState] = useState<ClubAdminPeopleDirectory | null>(() => (getBackendMode() === "supabase" ? readSavedDirectory() : null))
+  const setDirectory = useCallback((next: ClubAdminPeopleDirectory) => {
+    setDirectoryState(next)
+    saveDirectory(next)
+  }, [])
+  // Who is signed in, straight from the sign-in on this device. The row for yourself shows your
+  // email and "(you)" (and no actions menu) even before, or without, the people directory.
+  const [signedIn, setSignedIn] = useState<{ id: string; email: string } | null>(null)
   const [athletes, setAthletes] = useState<ClubAthlete[] | null>(null)
   const [athletesError, setAthletesError] = useState<string | null>(null)
   const [mockUserEmail] = useState(() => (isSupabaseMode || typeof window === "undefined" ? null : window.localStorage.getItem(MOCK_USER_EMAIL_STORAGE_KEY)))
@@ -264,21 +303,63 @@ export default function ClubAdminUsersPage() {
   useEffect(() => {
     if (!isSupabaseMode) return
     let cancelled = false
-
-    void getClubAdminPeopleDirectory().then((result) => {
-      if (cancelled) return
-      if (!result.ok) {
-        setBackendError((current) => current ?? `Could not load team assignments: ${result.error.message}`)
-        return
-      }
-      setDirectory(result.data)
-    })
-
+    void getBrowserSupabaseClient()
+      ?.auth.getSession()
+      .then(({ data }) => {
+        const user = data.session?.user
+        if (!cancelled && user) setSignedIn({ id: user.id, email: (user.email ?? "").trim().toLowerCase() })
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
-    // Reload assignments whenever the people snapshot changes.
-  }, [isSupabaseMode, opsSnapshot])
+  }, [isSupabaseMode])
+
+  // Emails and teams for the people table. Asked as soon as the screen opens (not after the people
+  // list), asked twice before giving up, and a failure is always shown, so the table never quietly
+  // says "No email on file". Asked again when the people list changes after a save. A change while a
+  // request is on its way does not throw that request away: it is asked once more when it is back.
+  const directoryLoad = useRef<{ running: boolean; again: boolean; latest: number; mounted: boolean }>({ running: false, again: false, latest: 0, mounted: true })
+  const [directoryRound, setDirectoryRound] = useState(0)
+  useEffect(() => {
+    const state = directoryLoad.current
+    state.mounted = true
+    return () => {
+      state.mounted = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!isSupabaseMode) return
+    const state = directoryLoad.current
+    if (state.running) {
+      state.again = true
+      return
+    }
+    state.running = true
+    const request = ++state.latest
+
+    const load = async (attempt: number): Promise<void> => {
+      const result = await getClubAdminPeopleDirectory().catch((error: unknown) => ({
+        ok: false as const,
+        error: { message: error instanceof Error ? error.message : "Something went wrong." },
+      }))
+      if (!state.mounted || request !== state.latest) return
+      if (!result.ok) {
+        if (attempt === 0) return load(1)
+        setBackendError((current) => current ?? `Could not load emails and teams: ${result.error.message}`)
+        return
+      }
+      setDirectory(result.data)
+    }
+    void load(0).finally(() => {
+      if (request !== state.latest) return
+      state.running = false
+      if (state.again && state.mounted) {
+        state.again = false
+        setDirectoryRound((round) => round + 1)
+      }
+    })
+  }, [isSupabaseMode, opsSnapshot, directoryRound, setDirectory])
 
   useEffect(() => {
     if (isSupabaseMode) return
@@ -345,7 +426,8 @@ export default function ClubAdminUsersPage() {
   const teamName = useCallback((teamId: string | null) => (teamId ? (teamNameById.get(teamId) ?? null) : null), [teamNameById])
   const teamOptions = useMemo(() => teams.map((team) => ({ id: team.id, name: team.name })), [teams])
 
-  const emailOf = (user: ClubUser) => (isSupabaseMode ? (directory?.members[user.id]?.email ?? "") : user.email)
+  const emailOf = (user: ClubUser) =>
+    isSupabaseMode ? (directory?.members[user.id]?.email ?? (signedIn?.id === user.id ? signedIn.email : "")) : user.email
   const labelOf = (user: ClubUser) => emailOf(user) || user.name
 
   const teamNamesOf = (user: ClubUser) => {
@@ -363,7 +445,8 @@ export default function ClubAdminUsersPage() {
       .filter((name): name is string => Boolean(name))
   }
 
-  const isSelf = (user: ClubUser) => (isSupabaseMode ? directory?.currentUserId === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail)
+  const isSelf = (user: ClubUser) =>
+    isSupabaseMode ? (directory?.currentUserId ?? signedIn?.id) === user.id : Boolean(mockUserEmail) && user.email === mockUserEmail
 
   // Staff: coaches and club admins, plus anyone whose account says athlete but who has no athlete
   // record (a staff member whose role was changed), so nobody is invisible on both lists.
@@ -877,7 +960,9 @@ export default function ClubAdminUsersPage() {
 
   const staffMenu = (user: ClubUser): RowMenuItem[] => {
     const busy = busyKey === `user:${user.id}`
-    const roles = (["club-admin", "coach", "athlete"] as UserRole[]).filter((role) => role !== user.role)
+    // Staff move between coach and club admin only. A coach or club admin is never made an athlete
+    // (athletes join a team with their own account); the database refuses it as well.
+    const roles = (["club-admin", "coach"] as UserRole[]).filter((role) => role !== user.role)
     return [
       ...roles.map((role) => ({ label: `Make ${ROLE_LABEL[role].toLowerCase()}`, onSelect: () => setConfirm({ kind: "role" as const, userId: user.id, role }), disabled: busy })),
       // Only offered to someone who coaches a team, so the item is never a dead end.
