@@ -1,6 +1,7 @@
-import { cleanReferenceUrl, isEmptyOverride, mergeOverride, parsePercent, resolvePercentTarget } from "@/lib/data/exercises/loads"
+// Relative on purpose: this file is loaded by the unit tests, outside the bundler.
+import { cleanReferenceUrl, isEmptyOverride, mergeOverride, parsePercent, resolvePercentTarget } from "../exercises/loads"
 import type { LogKind, LoggableRow, SessionBlockType, SessionRowLog } from "@/lib/data/session/types"
-import { cleanIntendedEffort } from "@/lib/data/training-plan/plan-phases"
+import { cleanIntendedEffort } from "../training-plan/plan-phases"
 import {
   sessionDisplayTitle,
   slotDate,
@@ -8,8 +9,8 @@ import {
   type ExerciseDraft,
   type PlanDraft,
   type SessionDraft,
-} from "@/lib/data/training-plan/plan-builder-model"
-import { loadToKg } from "@/lib/units"
+} from "../training-plan/plan-builder-model"
+import { loadToKg } from "../../units"
 
 /**
  * Turns a coach plan session into the session an athlete logs against.
@@ -69,10 +70,12 @@ export type SessionBlueprint = {
 
 export const MAX_SETS = 20
 
-const TIME_WORDS = /sprint|speed|accel|start|tempo|interval|hill|run|fly|relay|hurdle|race|stride|\b\d+\s?m\b/i
+// Whole words: "run" must not match "crunches", "fly" not "butterfly", "race" not "brace".
+const TIME_WORDS = /\b(sprint\w*|speed|accel\w*|starts?|tempo|intervals?|hills?|run|runs|running|fly|flys|flying|relays?|hurdles?|races?|strides?)\b|\b\d+\s?m\b/i
 const JUMP_WORDS = /jump|bound|plyo|approach|takeoff|take off|hop|vault/i
 const THROW_WORDS = /throw|shot|discus|javelin|hammer|med ball|medicine ball/i
-const STRENGTH_WORDS = /strength|power|gym|lift|squat|clean|press|deadlift|weights|accessor/i
+// Gym lifts by name, so "Speed bench" or "Lat pulldowns" with no load typed are still lifts.
+const STRENGTH_WORDS = /strength|power|gym|lift|squat|clean|press|deadlift|weights|accessor|\b(bench|snatch|jerk|rdls?|rows?|curls?|pull ?downs?|pull ?ups?|chin ?ups?|thrusts?)\b/i
 const CHECK_WORDS = /warm|cool|mobility|physio|recovery|stretch|activation|core|drill|technique/i
 
 export function inferBlockType(title: string, sessionType: SessionDraft["sessionType"]): SessionBlockType {
