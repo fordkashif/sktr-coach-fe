@@ -4,6 +4,7 @@ import { Camera, Eye, EyeSlash } from "@phosphor-icons/react"
 import { Avatar, Button, Field, InlineConfirm, Input, List, ListRow, Notice, Section, notify } from "@/components/sk"
 import { refreshAccount, useCurrentAccount } from "@/lib/account-store"
 import { clearSessionCookies } from "@/lib/auth-session"
+import { SignOutDialog } from "@/components/account/sign-out-dialog"
 import {
   DISPLAY_NAME_MAX_LENGTH,
   MIN_PASSWORD_LENGTH,
@@ -22,7 +23,6 @@ import { getCurrentCoachContactVisibility, setCurrentCoachContactVisibility } fr
 import { prepareAvatarImage, type AvatarImageError } from "@/lib/image-resize"
 import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
 import { useRole } from "@/lib/role-context"
-import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 import { removePushOnSignOut } from "@/lib/push/push-client"
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
@@ -465,21 +465,12 @@ export function DevicesSection() {
     navigate("/login")
   }
 
-  const handleSignOut = async () => {
-    await removePushOnSignOut()
-    if (getBackendMode() === "supabase") {
-      const supabase = getBrowserSupabaseClient()
-      if (supabase) await supabase.auth.signOut({ scope: "local" })
-    } else {
-      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
-      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
-    }
-    clearSessionCookies()
-    navigate("/login")
-  }
+  const [signOutOpen, setSignOutOpen] = useState(false)
+
 
   return (
     <Section title="Devices">
+      <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
       {done ? (
         <Notice tone="success" className="mb-3">
           Your other devices are signed out. This one stays signed in.
@@ -554,7 +545,7 @@ export function DevicesSection() {
           <ListRow
             title="This device"
             trailing={
-              <Button size="sm" variant="danger" onClick={() => void handleSignOut()}>
+              <Button size="sm" variant="danger" onClick={() => setSignOutOpen(true)}>
                 Sign out
               </Button>
             }

@@ -161,6 +161,8 @@ test.describe("push on this device, phone", () => {
 
     await page.goto("/athlete/profile")
     await page.getByRole("button", { name: "Sign out" }).click()
+    // Signing out asks first.
+    await page.getByRole("dialog", { name: "Sign out?" }).getByRole("button", { name: "Sign out" }).click()
     await expect(page).toHaveURL(/\/login/)
 
     await openSettings(page, "athlete")

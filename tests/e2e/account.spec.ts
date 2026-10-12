@@ -80,6 +80,8 @@ test("coach changes their password while signed in and can sign in with the new 
 
   // Sign out, then the old password fails and the new one works.
   await page.getByRole("button", { name: "Sign out", exact: true }).click()
+  // Signing out asks first.
+  await page.getByRole("dialog", { name: "Sign out?" }).getByRole("button", { name: "Sign out" }).click()
   await expect(page).toHaveURL(/\/login/)
   await page.getByLabel("Email").fill("coach@pacelab.local")
   await page.getByLabel("Password").fill("Password123!")
