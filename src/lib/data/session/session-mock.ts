@@ -671,10 +671,11 @@ export function mockAthletePlans(): Array<{ summary: TrainingPlanSummary; detail
             durationMinutes: blueprint.durationMinutes,
             location: blueprint.location,
             coachNote: blueprint.coachNote,
-            blockPreview: blueprint.blocks.flatMap((block) =>
+            // One preview per block, "Name: row | row", like the real plans (plan-builder-model summarizeBlock).
+            blockPreview: blueprint.blocks.map((block) =>
               block.rows.length > 0 && !(block.rows.length === 1 && block.rows[0].label === block.name)
-                ? block.rows.map((row) => `${row.label} ${row.target}`)
-                : [block.name],
+                ? `${block.name}: ${block.rows.map((row) => `${row.label} ${row.target}`).join(" | ")}`
+                : block.name,
             ),
           })),
       }

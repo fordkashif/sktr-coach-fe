@@ -1,5 +1,6 @@
 "use client"
 
+import { blockNameFromPreview, joinBlockNames } from "@/lib/data/training-plan/session-glance"
 import { clubToday } from "@/lib/club-day"
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
@@ -41,7 +42,7 @@ import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from
 import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, TrainingPlanWeek } from "@/lib/data/training-plan/types"
 import { isWeekType, weekLine } from "@/lib/data/training-plan/plan-phases"
 import { getBackendMode } from "@/lib/supabase/config"
-import { useUnits, type Units } from "@/lib/units-store"
+import { useUnits } from "@/lib/units-store"
 
 function parseDateKey(key: string) {
   return new Date(`${key.slice(0, 10)}T00:00:00`)
@@ -91,13 +92,10 @@ function buildWeekRows(week: TrainingPlanWeek, planStartDate: string, weekPositi
   })
 }
 
-/** One short line for a day in the week list. The full detail is one tap away. */
-function daySummary(day: TrainingPlanDay, units: Units) {
-  const facts = [day.durationMinutes ? `${day.durationMinutes} min` : null, day.location].filter(Boolean).join(", ")
-  if (day.blockPreview.length === 0) return facts || day.focus || `${day.sessionType} session`
-  const shown = day.blockPreview.slice(0, 2).map((preview) => units.target(preview)).join(", ")
-  const more = day.blockPreview.length - 2
-  return more > 0 ? `${shown} and ${more} more` : shown
+/** One short line for a day in the week list: its parts ("Strength, Core and Sprints"). The full detail is one tap away. */
+function daySummary(day: TrainingPlanDay) {
+  const parts = joinBlockNames(day.blockPreview.map(blockNameFromPreview))
+  return [parts, day.durationMinutes ? `${day.durationMinutes} min` : null].filter(Boolean).join(" · ") || day.focus || `${day.sessionType} session`
 }
 
 type DayState = { kind: "done" | "skipped" | "today" | "started" | "missed" | "excused" | "upcoming" | "unknown"; tone: StateTone; label: string | null }
@@ -296,7 +294,6 @@ function PlanDayScreen({
 }
 
 export default function AthleteTrainingPlanPage() {
-  const units = useUnits()
   const backendMode = getBackendMode()
   const isSupabase = backendMode === "supabase"
   const [searchParams, setSearchParams] = useSearchParams()
@@ -642,7 +639,7 @@ export default function AthleteTrainingPlanPage() {
                     to={planQuery({ day: row.dateKey })}
                     leading={leading}
                     title={day.title}
-                    subtitle={daySummary(day, units)}
+                    subtitle={daySummary(day)}
                     trailing={state?.label ? <StatusText tone={state.tone}>{state.kind === "skipped" ? "Skipped" : state.label}</StatusText> : undefined}
                     aria-current={isToday ? "date" : undefined}
                   />,
