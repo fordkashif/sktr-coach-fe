@@ -37,15 +37,8 @@ import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useCurrentAccount } from "@/lib/account-store"
 import { MenuClubBrand, ShellClubBrand } from "@/components/club/club-brand"
-import { clearSessionCookies } from "@/lib/auth-session"
-import {
-  MOCK_COACH_TEAM_STORAGE_KEY,
-  MOCK_ROLE_STORAGE_KEY,
-} from "@/lib/mock-auth"
-import { getBackendMode } from "@/lib/supabase/config"
-import { removePushOnSignOut } from "@/lib/push/push-client"
-import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { preloadAthleteTabs } from "@/router/preload-tabs"
+import { SignOutDialog } from "@/components/account/sign-out-dialog"
 import { useAthleteOnTeam } from "@/lib/data/athlete/use-athlete-on-team"
 import {
   DropdownMenu,
@@ -299,24 +292,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent("pacelab:mobile-detail-back"))
   }
 
-  const handleSignOut = async () => {
-    const backendMode = getBackendMode()
-    // Stops push for this device first (needs the sign-in). Never throws, never blocks sign out.
-    await removePushOnSignOut()
-
-    if (backendMode === "supabase") {
-      const supabase = getBrowserSupabaseClient()
-      if (supabase) {
-        await supabase.auth.signOut({ scope: "local" })
-      }
-    }
-    if (backendMode === "mock") {
-      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
-      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
-    }
-    clearSessionCookies()
-    navigate("/login")
-  }
+  const [signOutOpen, setSignOutOpen] = useState(false)
 
   const prefetchHandlers = (linkId: string) =>
     role === "coach"
@@ -374,7 +350,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <DropdownMenuItem
           className={menuItem}
           onSelect={() => {
-            void handleSignOut()
+            // After the menu has closed, so the dialog takes focus cleanly.
+            window.setTimeout(() => setSignOutOpen(true), 0)
           }}
         >
           Sign out
@@ -382,6 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </DropdownMenuContent>
     </DropdownMenu>
   )
+  const signOutDialog = <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
 
   const brand = (
     <Link
@@ -476,6 +454,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {showChrome ? <InstallBanner /> : null}
         <div className="min-h-full">{children}</div>
       </main>
+      {signOutDialog}
 
       {/* Phone: the tab bar */}
       {showChrome ? (

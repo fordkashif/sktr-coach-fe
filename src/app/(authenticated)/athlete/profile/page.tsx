@@ -1,8 +1,8 @@
 "use client"
 
 import { GuardianSharingSection } from "@/components/athlete/guardian-sharing-section"
+import { SignOutDialog } from "@/components/account/sign-out-dialog"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { useNavigate } from "react-router-dom"
 import { PencilSimple, SignOut } from "@phosphor-icons/react"
 import { MySquadsLine } from "@/components/athlete/my-squads-line"
 import {
@@ -29,7 +29,6 @@ import {
 import { PhotoSection } from "@/components/account/account-sections"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { refreshAccount, useCurrentAccount } from "@/lib/account-store"
-import { clearSessionCookies } from "@/lib/auth-session"
 import {
   ATHLETE_EVENT_GROUP_OPTIONS,
   EMPTY_ATHLETE_PRIVATE_DETAILS,
@@ -57,11 +56,8 @@ import {
   type AthleteTeamCoach,
   type CurrentAthleteProfileSnapshot,
 } from "@/lib/data/athlete/profile-data"
-import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-auth"
 import { useRole } from "@/lib/role-context"
-import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
-import { removePushOnSignOut } from "@/lib/push/push-client"
 import { useUnits } from "@/lib/units-store"
 import { bodyWeightForViewer, bodyWeightToKg, cmToFeetInches, feetInchesToCm, formatBodyWeight, formatHeight, trimNumber, type UnitPreferences } from "@/lib/units"
 
@@ -169,7 +165,6 @@ function hasGuardian(details: AthletePrivateDetails) {
 export default function AthleteProfilePage() {
   const units = useUnits()
   const isSupabaseMode = getBackendMode() === "supabase"
-  const navigate = useNavigate()
   const { userEmail } = useRole()
   const { avatarUrl } = useCurrentAccount()
 
@@ -314,18 +309,7 @@ export default function AthleteProfilePage() {
     setSavedNotice(true)
   }
 
-  const handleSignOut = async () => {
-    await removePushOnSignOut()
-    if (isSupabaseMode) {
-      const supabase = getBrowserSupabaseClient()
-      if (supabase) await supabase.auth.signOut({ scope: "local" })
-    } else {
-      window.localStorage.removeItem(MOCK_ROLE_STORAGE_KEY)
-      window.localStorage.removeItem(MOCK_COACH_TEAM_STORAGE_KEY)
-    }
-    clearSessionCookies()
-    navigate("/login")
-  }
+  const [signOutOpen, setSignOutOpen] = useState(false)
 
   const lede = profile
     ? [profile.details.preferredName ? `Goes by ${profile.details.preferredName}` : null, profile.primaryEvent, profile.teamName].filter(Boolean).join(", ") ||
@@ -670,10 +654,11 @@ export default function AthleteProfilePage() {
                   {profile.teamName ? null : <ListRow to="/athlete/join" title="Join a team" subtitle="Use an invite link or code from a coach." />}
                 </List>
                 <div className="pt-4">
-                  <Button variant="danger" onClick={() => void handleSignOut()}>
+                  <Button variant="danger" onClick={() => setSignOutOpen(true)}>
                     <SignOut className="size-5" weight="bold" aria-hidden />
                     Sign out
                   </Button>
+                  <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
                 </div>
               </Section>
             </>
