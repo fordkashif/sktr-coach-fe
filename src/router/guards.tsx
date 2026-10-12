@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { evaluateAccess, type AccessResult } from "@/lib/access-control"
 import { ACCESS_PAUSED_EVENT } from "@/lib/access-paused"
 import { SESSION_UPDATED_EVENT, signedOutOnPurpose } from "@/lib/auth-session"
 import { loginPathWithReturn } from "@/lib/return-path"
-import { AccessPausedPage } from "@/pages/access-paused"
 import { getCurrentGuardAuthContext, GuardCheckUnavailable, type GuardAuthContext } from "@/router/guard-auth-context"
+
+// Shown only when a club is paused or closed, so its code is not part of the first download.
+const AccessPausedPage = lazy(() => import("@/pages/access-paused").then((module) => ({ default: module.AccessPausedPage })))
 
 export function GuardedAuthenticatedLayout() {
   const location = useLocation()
@@ -95,7 +97,11 @@ export function GuardedAuthenticatedLayout() {
   }
 
   if (!access.allowed && access.blocked) {
-    return <AccessPausedPage block={access.blocked} isClubAdmin={role === "club-admin"} />
+    return (
+      <Suspense fallback={null}>
+        <AccessPausedPage block={access.blocked} isClubAdmin={role === "club-admin"} />
+      </Suspense>
+    )
   }
 
   if (!access.allowed) {

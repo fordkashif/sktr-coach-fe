@@ -2,16 +2,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useLocation } from "react-router-dom"
-import {
-  getClubAdminBillingRecord,
-  getClubAdminOpsSnapshot,
-  getClubAdminProfileRecord,
-  getClubAdminReportSnapshot,
-  type ClubAdminBillingRecord,
-  type ClubAdminOpsSnapshot,
-  type ClubAdminProfileRecord,
-  type ClubAdminReportSnapshot,
-} from "@/lib/data/club-admin/ops-data"
+import type { ClubAdminBillingRecord, ClubAdminOpsSnapshot, ClubAdminProfileRecord, ClubAdminReportSnapshot } from "@/lib/data/club-admin/ops-data"
+// The club admin data code is only needed by club admins, so it is fetched when first asked for
+// instead of being part of the app's first download for everyone.
+const opsData = () => import("@/lib/data/club-admin/ops-data")
 import { useRole } from "@/lib/role-context"
 import { getBackendMode } from "@/lib/supabase/config"
 
@@ -160,7 +154,7 @@ export function ClubAdminProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseMode || role !== "club-admin") return
 
     setProfileLoading(true)
-    const result = await getClubAdminProfileRecord()
+    const result = await (await opsData()).getClubAdminProfileRecord()
     if (!result.ok) {
       setProfileError(result.error.message)
       setProfileLoading(false)
@@ -176,7 +170,7 @@ export function ClubAdminProvider({ children }: { children: ReactNode }) {
   const refreshOpsSnapshot = useCallback(async () => {
     if (!isSupabaseMode || role !== "club-admin") return
     setOpsLoading(true)
-    const result = await getClubAdminOpsSnapshot()
+    const result = await (await opsData()).getClubAdminOpsSnapshot()
     if (!result.ok) {
       setOpsError(result.error.message)
       setOpsLoading(false)
@@ -191,7 +185,7 @@ export function ClubAdminProvider({ children }: { children: ReactNode }) {
   const refreshReportSnapshot = useCallback(async () => {
     if (!isSupabaseMode || role !== "club-admin") return
     setReportLoading(true)
-    const result = await getClubAdminReportSnapshot()
+    const result = await (await opsData()).getClubAdminReportSnapshot()
     if (!result.ok) {
       setReportError(result.error.message)
       setReportLoading(false)
@@ -206,7 +200,7 @@ export function ClubAdminProvider({ children }: { children: ReactNode }) {
   const refreshBillingRecord = useCallback(async () => {
     if (!isSupabaseMode || role !== "club-admin") return
     setBillingLoading(true)
-    const result = await getClubAdminBillingRecord()
+    const result = await (await opsData()).getClubAdminBillingRecord()
     if (!result.ok) {
       setBillingError(result.error.message)
       setBillingLoading(false)

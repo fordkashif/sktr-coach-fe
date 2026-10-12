@@ -23,6 +23,11 @@ import {
  * the tab bar, so the first tap on a tab only waits for its data. Same imports as the router
  * (src/router/tab-pages.ts), so a screen loaded here opens with no loading screen at all.
  */
+/** The search dialog (opened from the frame on every screen) is fetched with the tabs. */
+function preloadSearch() {
+  return import("@/components/search/global-search")
+}
+
 const ATHLETE_TAB_PAGES = [
   AthleteHomePage.preload,
   AthleteTrainingPlanPage.preload,
@@ -30,6 +35,7 @@ const ATHLETE_TAB_PAGES = [
   AthleteTrendsPage.preload,
   AthleteProfilePage.preload,
   AthleteMessagesPage.preload,
+  preloadSearch,
 ]
 
 /** The plans screen loads its builder in a second step: load both. */
@@ -46,6 +52,7 @@ const COACH_TAB_PAGES = [
   CoachTestWeekPage.preload,
   CoachCompetitionsPage.preload,
   CoachReportsPage.preload,
+  preloadSearch,
 ]
 
 const started = new Set<string>()
