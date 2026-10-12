@@ -667,7 +667,7 @@ export default function AthleteProfilePage() {
                 <List>
                   <ListRow to="/account" title="Account and security" subtitle="Email, password and devices." />
                   <ListRow to="/settings/notifications" title="Notification settings" subtitle="What we tell you about and how." />
-                  <ListRow to="/athlete/join" title={profile.teamName ? "Join or switch team" : "Join a team"} subtitle="Use an invite link or code from a coach." />
+                  {profile.teamName ? null : <ListRow to="/athlete/join" title="Join a team" subtitle="Use an invite link or code from a coach." />}
                 </List>
                 <div className="pt-4">
                   <Button variant="danger" onClick={() => void handleSignOut()}>

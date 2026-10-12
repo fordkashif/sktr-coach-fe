@@ -94,6 +94,10 @@ const PROBLEMS = {
     title: "This invite is for a different club",
     body: "Your account belongs to another club, so it cannot join this team.",
   },
+  otherTeam: {
+    title: "You are already on a team",
+    body: "An athlete is on one team at a time. Only a coach or your club can move you to another team.",
+  },
 } satisfies Record<string, Problem>
 
 function problemForStatus(status: InviteStatus): Problem | null {
@@ -106,6 +110,7 @@ function problemForStatus(status: InviteStatus): Problem | null {
 /** Turns the accept_athlete_invite database errors into something an athlete can act on. */
 function problemForAcceptError(message: string): Problem {
   const text = message.toLowerCase()
+  if (text.includes("already on another team")) return PROBLEMS.otherTeam
   if (text.includes("expired")) return PROBLEMS.expired
   if (text.includes("not pending")) return PROBLEMS.used
   if (text.includes("different email")) return PROBLEMS.wrongEmail
@@ -125,6 +130,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
   const [joining, setJoining] = useState(false)
   const [supabaseInvite, setSupabaseInvite] = useState<ResolvedInvite | null>(null)
   const [supabaseTeam, setSupabaseTeam] = useState<{ teamId: string | null; teamName: string | null } | null>(null)
+  const [supabaseTeamChecked, setSupabaseTeamChecked] = useState(false)
   const [mockTeams, setMockTeams] = useState<Team[] | null>(null)
   const [mockAthleteTeamId, setMockAthleteTeamId] = useState<string | null>(null)
 
@@ -140,7 +146,10 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
     if (!isSupabaseMode) return
     let cancelled = false
     void getCurrentAthleteTeam().then((result) => {
-      if (!cancelled && result.ok) setSupabaseTeam(result.data)
+      if (cancelled) return
+      if (result.ok) setSupabaseTeam(result.data)
+      // If the check failed, the form shows and the database still refuses a second team.
+      setSupabaseTeamChecked(true)
     })
     return () => {
       cancelled = true
@@ -304,6 +313,42 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
     )
   }
 
+  // An athlete is on one team at a time, and only a coach or the club moves them: no form for them.
+  const teamChecked = isSupabaseMode ? supabaseTeamChecked : mockTeams !== null
+  if (!teamChecked) {
+    return (
+      <Screen width="narrow">
+        <ScreenHeader back={{ to: "/athlete/profile", label: "Profile" }} title="Join a team" />
+        <SkeletonRows rows={2} label="Checking your team" />
+      </Screen>
+    )
+  }
+  if (currentTeam) {
+    const inviteForOtherTeam = resolvedInvite && !isChecking && resolvedInvite.teamId !== currentTeam.id ? resolvedInvite : null
+    return (
+      <Screen width="narrow">
+        <ScreenHeader
+          back={{ to: "/athlete/profile", label: "Profile" }}
+          title={`You are on ${currentTeam.name}`}
+          lede="An athlete is on one team at a time. To move to another team, ask your coach or your club admin."
+        />
+        {inviteForOtherTeam ? (
+          <Notice>
+            This invite is for {inviteForOtherTeam.name}
+            <span className="mt-0.5 block font-normal">Only a coach or your club can move you there. Show them this invite if you should be on that team.</span>
+          </Notice>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <LinkButton to="/athlete/home" variant="primary">
+            Open today
+            <ArrowRight className="size-5" weight="bold" aria-hidden />
+          </LinkButton>
+          <LinkButton to="/athlete/profile">Your profile</LinkButton>
+        </div>
+      </Screen>
+    )
+  }
+
   const inviteDetail = resolvedInvite
     ? [eventGroupLabel(resolvedInvite.group), resolvedInvite.athleteCount !== null ? `${resolvedInvite.athleteCount} athletes` : null].filter(Boolean).join(", ")
     : ""
@@ -368,18 +413,10 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
               {joining ? "Joining..." : resolvedInvite && canJoin ? `Join ${resolvedInvite.name}` : "Join team"}
             </Button>
           )}
-          {canJoin && currentTeam ? (
-            <p className="sk-field-hint">Joining moves you off {currentTeam.name}. You can only be on one team at a time.</p>
-          ) : null}
         </div>
       </form>
 
-      <Section title="Your team right now" hint={currentTeam ? undefined : "You are not on a team yet. Once you join one, your plan and test weeks appear in the app."}>
-        {currentTeam ? (
-          <List>
-            <ListRow leading={<Avatar name={currentTeam.name} />} title={currentTeam.name} subtitle="You can leave a team from your profile." />
-          </List>
-        ) : null}
+      <Section title="Your team right now" hint="You are not on a team yet. Once you join one, your plan and test weeks appear in the app.">
         <p className="sk-field-hint pt-3">No code? Ask your coach to invite you from their team page. The invite goes to your email.</p>
       </Section>
     </Screen>
