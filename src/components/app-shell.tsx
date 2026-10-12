@@ -45,6 +45,7 @@ import {
 import { getBackendMode } from "@/lib/supabase/config"
 import { removePushOnSignOut } from "@/lib/push/push-client"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
+import { preloadAthleteTabs } from "@/router/preload-tabs"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -190,6 +191,11 @@ function prefetchCoachLink(linkId: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, userEmail } = useRole()
+
+  // Fetch the other tabs' code while the athlete is on the first screen, so the first tap on each is quicker.
+  useEffect(() => {
+    if (role === "athlete") preloadAthleteTabs()
+  }, [role])
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [mobileDetailMode, setMobileDetailMode] = useState(false)

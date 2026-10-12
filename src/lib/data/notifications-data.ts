@@ -6,7 +6,7 @@ import {
   markMockNotificationsRead,
 } from "@/lib/notifications/mock-feed"
 import { notificationTargetPath, type NotificationRole } from "@/lib/notifications/target"
-import { getBrowserSupabaseClient } from "@/lib/supabase/client"
+import { clearSharedReads, getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
 export type NotificationItem = {
@@ -193,7 +193,10 @@ export function subscribeToNotificationChanges(onChange: () => void): () => void
           "postgres_changes",
           { event: "*", schema: "public", table: "user_notifications", filter: `recipient_user_id=eq.${userId}` },
           () => {
-            if (!stopped) onChange()
+            if (stopped) return
+            // A notification arrived or changed: the badge and list must not come from shared reads.
+            clearSharedReads()
+            onChange()
           },
         )
         .subscribe()

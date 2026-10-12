@@ -18,7 +18,7 @@ import type {
 import { MESSAGE_MAX_LENGTH } from "@/lib/data/messages/types"
 import { kickNotificationEmails } from "@/lib/data/notifications-data"
 import { err, mapPostgrestError, ok, type DataError, type Result } from "@/lib/data/result"
-import { getBrowserSupabaseClient } from "@/lib/supabase/client"
+import { clearSharedReads, getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
 
 /**
@@ -313,7 +313,10 @@ export function subscribeToMessageThread(threadId: string, onChange: () => void)
   let channel: ReturnType<SupabaseClient["channel"]> | null = null
   try {
     const notify = () => {
-      if (!stopped) onChange()
+      if (stopped) return
+      // A message arrived or the thread changed: re-read it rather than reuse a shared read.
+      clearSharedReads()
+      onChange()
     }
     channel = client
       .channel(`message-thread:${threadId}`)
