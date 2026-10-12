@@ -7,9 +7,12 @@ import { MOCK_COACH_TEAM_STORAGE_KEY, MOCK_ROLE_STORAGE_KEY } from "@/lib/mock-a
 import { removePushOnSignOut } from "@/lib/push/push-client"
 import { getBrowserSupabaseClient } from "@/lib/supabase/client"
 import { getBackendMode } from "@/lib/supabase/config"
+import { forgetGuardAuthContext } from "@/router/guard-auth-context"
 
 /** Signs this device out (other devices stay signed in) and goes to the sign-in page. */
 async function signOutThisDevice() {
+  // The access answer kept on this device for quick opening belongs to this sign-in.
+  forgetGuardAuthContext()
   // Stops push for this device first (needs the sign-in). Never throws, never blocks sign out.
   await removePushOnSignOut()
   if (getBackendMode() === "supabase") {

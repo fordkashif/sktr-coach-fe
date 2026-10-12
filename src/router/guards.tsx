@@ -4,15 +4,18 @@ import { evaluateAccess, type AccessResult } from "@/lib/access-control"
 import { ACCESS_PAUSED_EVENT } from "@/lib/access-paused"
 import { SESSION_UPDATED_EVENT, signedOutOnPurpose } from "@/lib/auth-session"
 import { loginPathWithReturn } from "@/lib/return-path"
-import { getCurrentGuardAuthContext, GuardCheckUnavailable, type GuardAuthContext } from "@/router/guard-auth-context"
+import { getCurrentGuardAuthContext, GuardCheckUnavailable, rememberedOnDevice, type GuardAuthContext } from "@/router/guard-auth-context"
 
 // Shown only when a club is paused or closed, so its code is not part of the first download.
 const AccessPausedPage = lazy(() => import("@/pages/access-paused").then((module) => ({ default: module.AccessPausedPage })))
 
 export function GuardedAuthenticatedLayout() {
   const location = useLocation()
-  const [access, setAccess] = useState<AccessResult | null>(null)
-  const [role, setRole] = useState<string | null>(null)
+  // Opening the app: draw the screen from the last good answer on this device straight away. The
+  // check below still runs and replaces it (with the notice, if something changed meanwhile).
+  const [remembered] = useState(() => rememberedOnDevice())
+  const [access, setAccess] = useState<AccessResult | null>(() => (remembered ? evaluateAccess({ pathname: location.pathname, ...remembered }) : null))
+  const [role, setRole] = useState<string | null>(remembered?.role ?? null)
   // Only matters before the first answer: with a screen already showing, a failed check changes nothing.
   const [unreachable, setUnreachable] = useState(false)
 
