@@ -70,7 +70,7 @@ export function TimingPanel() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            <p className="mb-3 text-sm text-sk-ink-2">Newest screen first. "server" went to the database, "kept" was answered on the phone, "code" is a file the screen needed.</p>
+            <p className="mb-3 text-sm text-sk-ink-2">Newest screen first. "server" went to the database, "bundle" came with the start-up call, "kept" was answered on the phone, "code" is a file the screen needed.</p>
             {screens.map((screen, index) => {
               const s = summary(screen)
               return (
@@ -81,7 +81,7 @@ export function TimingPanel() {
                   </p>
                   <ul className="space-y-0.5 font-mono text-[11px] leading-4 text-sk-ink">
                     {screen.calls.map((call, i) => (
-                      <li key={i} className={call.source === "kept" ? "text-sk-mute" : undefined}>
+                      <li key={i} className={call.source === "kept" || call.source === "bundle" ? "text-sk-mute" : undefined}>
                         +{call.start} {call.duration}ms {call.source}
                         {call.status && call.status >= 400 ? ` ${call.status}` : ""} {call.label}
                       </li>

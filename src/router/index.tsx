@@ -7,6 +7,10 @@ import {
   AthleteProfilePage,
   AthleteTrainingPlanPage,
   AthleteTrendsPage,
+  ClubAdminDashboardPage,
+  ClubAdminReportsPage,
+  ClubAdminTeamsPage,
+  ClubAdminUsersPage,
   CoachCompetitionsPage,
   CoachDashboardPage,
   CoachMessagesPage,
@@ -85,15 +89,11 @@ const CoachMessageThreadPage = lazyPage(() => import("@/app/(authenticated)/coac
 const CoachMessageAthletePage = lazyPage(() => import("@/app/(authenticated)/coach/messages/with/[athleteId]/page"))
 const CoachNewAnnouncementPage = lazyPage(() => import("@/app/(authenticated)/coach/messages/a/new/page"))
 const CoachAnnouncementPage = lazyPage(() => import("@/app/(authenticated)/coach/messages/a/[announcementId]/page"))
-const ClubAdminDashboardPage = lazyPage(() => import("@/app/(authenticated)/club-admin/dashboard/page"))
 const ClubAdminGetStartedPage = lazyPage(() => import("@/app/(authenticated)/club-admin/get-started/page"))
 const ClubAdminBillingSetupPage = lazyPage(() => import("@/app/(authenticated)/club-admin/setup/billing/page"))
 const ClubAdminProfilePage = lazyPage(() => import("@/app/(authenticated)/club-admin/profile/page"))
 const ClubAdminSeasonsPage = lazyPage(() => import("@/app/(authenticated)/club-admin/seasons/page"))
 const ClubAdminStartSeasonPage = lazyPage(() => import("@/app/(authenticated)/club-admin/seasons/start/page"))
-const ClubAdminUsersPage = lazyPage(() => import("@/app/(authenticated)/club-admin/users/page"))
-const ClubAdminTeamsPage = lazyPage(() => import("@/app/(authenticated)/club-admin/teams/page"))
-const ClubAdminReportsPage = lazyPage(() => import("@/app/(authenticated)/club-admin/reports/page"))
 const ClubAdminBillingPage = lazyPage(() => import("@/app/(authenticated)/club-admin/billing/page"))
 const ClubAdminAuditPage = lazyPage(() => import("@/app/(authenticated)/club-admin/audit/page"))
 const ClubAdminMessagesPage = lazyPage(() => import("@/app/(authenticated)/club-admin/messages/page"))

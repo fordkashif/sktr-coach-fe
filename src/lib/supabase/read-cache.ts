@@ -143,6 +143,24 @@ function toResponse(snapshot: Snapshot): Response {
   })
 }
 
+import { answerFromBundle, bundleTarget, type AppStartBundle } from "./app-start"
+
+/** After the start-up bundle is found missing (database not updated yet), wait this long before trying again. */
+const BUNDLE_RETRY_MS = 10 * 60_000
+
+export type ReadCacheOptions = {
+  now?: () => number
+  /**
+   * Answer the app's start-up questions from one get_app_start request (see app-start.ts).
+   * Off unless asked for.
+   */
+  appStart?: boolean
+  /** A request was answered from the bundle (for the on-phone timing view). */
+  onBundleAnswer?: (init: RequestInit | undefined) => void
+  /** The bundle request itself finished (for the on-phone timing view). */
+  onBundleFetched?: (startedAt: number, status: number) => void
+}
+
 export type ReadCache = {
   fetch: typeof fetch
   /** Forget every kept read and make reads already on their way not be kept. */
@@ -151,7 +169,7 @@ export type ReadCache = {
   size: () => number
 }
 
-export function createReadCache(baseFetch: typeof fetch, options: { now?: () => number } = {}): ReadCache {
+export function createReadCache(baseFetch: typeof fetch, options: ReadCacheOptions = {}): ReadCache {
   const now = options.now ?? (() => Date.now())
   const kept = new Map<string, { at: number; keepMs: number; snapshot: Snapshot }>()
   const inFlight = new Map<string, Promise<Snapshot | Response>>()
@@ -162,6 +180,57 @@ export function createReadCache(baseFetch: typeof fetch, options: { now?: () => 
     generation += 1
     kept.clear()
     inFlight.clear()
+  }
+
+  // The start-up bundle: one per sign-in and generation, asked for by the first request it can
+  // answer, shared by every request that arrives while it is on its way.
+  let bundle: { generation: number; auth: string; at: number | null; promise: Promise<AppStartBundle | null> } | null = null
+  let bundleMissingUntil = 0
+
+  const startBundle = (url: string, headers: Headers): NonNullable<typeof bundle> => {
+    const origin = new URL(url).origin
+    const send = new Headers({ "content-type": "application/json", accept: "application/json" })
+    for (const name of ["apikey", "authorization", "x-client-info"]) {
+      const value = headers.get(name)
+      if (value) send.set(name, value)
+    }
+    const startedAt = typeof performance !== "undefined" ? performance.now() : 0
+    const state: NonNullable<typeof bundle> = { generation, auth: headers.get("authorization") ?? "", at: null, promise: Promise.resolve(null) }
+    state.promise = (async () => {
+      try {
+        const response = await baseFetch(`${origin}/rest/v1/rpc/get_app_start`, { method: "POST", headers: send, body: "{}" })
+        options.onBundleFetched?.(startedAt, response.status)
+        if (!response.ok) {
+          // Not on this database yet: do not ask again for a while.
+          if (response.status === 404) bundleMissingUntil = now() + BUNDLE_RETRY_MS
+          return null
+        }
+        const value = (await response.json()) as AppStartBundle | null
+        state.at = now()
+        return value && typeof value === "object" && !Array.isArray(value) ? value : null
+      } catch {
+        return null
+      }
+    })()
+    return state
+  }
+
+  const answerWithBundle = async (url: string, method: string, headers: Headers, body: string | null): Promise<unknown[] | null> => {
+    const target = bundleTarget(url, method, headers, body)
+    if (!target) return null
+    const auth = headers.get("authorization") ?? ""
+    const maxAge = target.live ? LIVE_READ_KEEP_MS : READ_KEEP_MS
+    const usable = (state: typeof bundle) =>
+      state !== null && state.generation === generation && state.auth === auth && (state.at === null || now() - state.at < maxAge)
+    if (!usable(bundle)) {
+      // Live counts never start a bundle on their own, and a missing function is not asked for again soon.
+      if (target.live || now() < bundleMissingUntil) return null
+      bundle = startBundle(url, headers)
+    }
+    const state = bundle as NonNullable<typeof bundle>
+    const value = await state.promise
+    if (!value || (state.at !== null && now() - state.at >= maxAge)) return null
+    return answerFromBundle(value, target)
   }
 
   const cachedFetch: typeof fetch = async (input, init) => {
@@ -190,6 +259,23 @@ export function createReadCache(baseFetch: typeof fetch, options: { now?: () => 
 
     const startedIn = generation
     const run = (async (): Promise<Snapshot | Response> => {
+      if (options.appStart) {
+        const answer = await answerWithBundle(String(input), (init?.method ?? "GET").toUpperCase(), new Headers(init?.headers), typeof init?.body === "string" ? init.body : null)
+        if (answer) {
+          options.onBundleAnswer?.(init)
+          const snapshot: Snapshot = {
+            status: 200,
+            statusText: "OK",
+            headers: [
+              ["content-type", "application/json; charset=utf-8"],
+              ["content-range", answer.length > 0 ? `0-${answer.length - 1}/*` : "*/*"],
+            ],
+            body: JSON.stringify(answer),
+          }
+          if (generation === startedIn) kept.set(key, { at: now(), keepMs, snapshot })
+          return snapshot
+        }
+      }
       const response = await baseFetch(input, init)
       // Only a good answer is shared or kept. Errors go back to the caller as they came.
       if (!response.ok) return response
