@@ -19,3 +19,9 @@ export const CoachTestWeekPage = lazyPage(() => import("@/app/(authenticated)/co
 export const CoachTrainingPlanPage = lazyPage(() => import("@/app/(authenticated)/coach/training-plan/page"))
 export const CoachCompetitionsPage = lazyPage(() => import("@/app/(authenticated)/coach/competitions/page"))
 export const CoachMessagesPage = lazyPage(() => import("@/app/(authenticated)/coach/messages/page"))
+
+// Club admin tabs.
+export const ClubAdminDashboardPage = lazyPage(() => import("@/app/(authenticated)/club-admin/dashboard/page"))
+export const ClubAdminUsersPage = lazyPage(() => import("@/app/(authenticated)/club-admin/users/page"))
+export const ClubAdminTeamsPage = lazyPage(() => import("@/app/(authenticated)/club-admin/teams/page"))
+export const ClubAdminReportsPage = lazyPage(() => import("@/app/(authenticated)/club-admin/reports/page"))

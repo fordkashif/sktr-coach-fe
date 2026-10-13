@@ -1,3 +1,4 @@
+import { whenDatabaseQuiet } from "@/lib/supabase/in-flight"
 import {
   AthleteHomePage,
   AthleteLogPage,
@@ -5,6 +6,10 @@ import {
   AthleteProfilePage,
   AthleteTrainingPlanPage,
   AthleteTrendsPage,
+  ClubAdminDashboardPage,
+  ClubAdminReportsPage,
+  ClubAdminTeamsPage,
+  ClubAdminUsersPage,
   CoachCompetitionsPage,
   CoachDashboardPage,
   CoachMessagesPage,
@@ -55,13 +60,19 @@ const COACH_TAB_PAGES = [
   preloadSearch,
 ]
 
+const CLUB_ADMIN_TAB_PAGES = [ClubAdminDashboardPage.preload, ClubAdminUsersPage.preload, ClubAdminTeamsPage.preload, ClubAdminReportsPage.preload, preloadSearch]
+
 const started = new Set<string>()
 
 function whenIdle(run: () => void) {
   if (typeof window === "undefined") return
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
-  if (idle) idle(run, { timeout: 4000 })
-  else window.setTimeout(run, 2000)
+  // First let the screen's own data arrive: on a phone, code downloads started while it is on its
+  // way compete with it for the connection and the screen waits longer.
+  void whenDatabaseQuiet().then(() => {
+    if (idle) idle(run, { timeout: 4000 })
+    else window.setTimeout(run, 500)
+  })
 }
 
 function preload(key: string, pages: Array<() => Promise<unknown>>) {
@@ -78,6 +89,11 @@ function preload(key: string, pages: Array<() => Promise<unknown>>) {
 /** Fetches the athlete tab screens' code in the background, one after another, once per visit. */
 export function preloadAthleteTabs() {
   preload("athlete", ATHLETE_TAB_PAGES)
+}
+
+/** Fetches the club admin tab screens' code in the background, one after another, once per visit. */
+export function preloadClubAdminTabs() {
+  preload("club-admin", CLUB_ADMIN_TAB_PAGES)
 }
 
 /** Fetches the coach tab screens' code in the background, one after another, once per visit. */

@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useCurrentAccount } from "@/lib/account-store"
 import { MenuClubBrand, ShellClubBrand } from "@/components/club/club-brand"
-import { preloadAthleteTabs, preloadCoachPlans, preloadCoachTabs } from "@/router/preload-tabs"
+import { preloadAthleteTabs, preloadClubAdminTabs, preloadCoachPlans, preloadCoachTabs } from "@/router/preload-tabs"
 import { CoachCompetitionsPage, CoachDashboardPage, CoachReportsPage, CoachTeamDetailPage, CoachTeamsPage, CoachTestWeekPage } from "@/router/tab-pages"
 import { SignOutDialog } from "@/components/account/sign-out-dialog"
 import { useAthleteOnTeam } from "@/lib/data/athlete/use-athlete-on-team"
@@ -166,6 +166,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (role === "athlete") preloadAthleteTabs()
     if (role === "coach") preloadCoachTabs()
+    if (role === "club-admin") preloadClubAdminTabs()
   }, [role])
   const { pathname } = useLocation()
   // Timing: a new screen starts here, before the screen's own requests go out.

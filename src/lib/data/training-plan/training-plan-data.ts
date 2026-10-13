@@ -920,10 +920,39 @@ type BlockRow = {
   preview_text: string
 }
 
+type NestedWeekRow = WeekRow & { training_plan_days: Array<DayRow & { training_plan_blocks: BlockRow[] | null }> | null }
+
+const WEEK_COLUMNS = "id, week_number, emphasis, week_type, phase_name, status"
+const DAY_COLUMNS = "id, plan_week_id, day_index, day_label, date, title, session_type, focus, status, duration_minutes, location, coach_note"
+const BLOCK_COLUMNS = "id, plan_day_id, sort_order, preview_text"
+
 export async function getTrainingPlanDetail(planId: string): Promise<Result<TrainingPlanDetail | null>> {
   const clientResult = requireSupabaseClient("getTrainingPlanDetail")
   if (!clientResult.ok) return clientResult
 
+  // Weeks, their days and the days' blocks in one request (it used to be three, one after another:
+  // on a phone each one is a round trip). The same access rules apply to the nested rows.
+  const nested = await clientResult.client
+    .from("training_plan_weeks")
+    .select(`${WEEK_COLUMNS}, training_plan_days(${DAY_COLUMNS}, training_plan_blocks(${BLOCK_COLUMNS}))`)
+    .eq("plan_id", planId)
+    .order("week_number", { ascending: true })
+  if (!nested.error) {
+    const nestedWeeks = (nested.data as unknown as NestedWeekRow[] | null) ?? []
+    if (nestedWeeks.length === 0) return ok(null)
+    const days = nestedWeeks.flatMap((week) => week.training_plan_days ?? []).sort((a, b) => a.day_index - b.day_index)
+    return ok(
+      buildPlanDetail(
+        planId,
+        nestedWeeks,
+        days,
+        days.flatMap((day) => day.training_plan_blocks ?? []),
+      ),
+    )
+  }
+
+  // The nested form was refused (for example a database without the links between these tables):
+  // ask the old way.
   const { data: weeks, error: weeksError } = await clientResult.client
     .from("training_plan_weeks")
     .select("id, week_number, emphasis, week_type, phase_name, status")
@@ -957,7 +986,11 @@ export async function getTrainingPlanDetail(planId: string): Promise<Result<Trai
     normalizedBlocks = (blocks as BlockRow[] | null) ?? []
   }
 
-  return ok({
+  return ok(buildPlanDetail(planId, normalizedWeeks, normalizedDays, normalizedBlocks))
+}
+
+function buildPlanDetail(planId: string, normalizedWeeks: WeekRow[], normalizedDays: DayRow[], normalizedBlocks: BlockRow[]): TrainingPlanDetail {
+  return {
     planId,
     weeks: normalizedWeeks.map((week) => ({
       id: week.id,
@@ -986,7 +1019,7 @@ export async function getTrainingPlanDetail(planId: string): Promise<Result<Trai
             .map((block) => block.preview_text),
         })),
     })),
-  })
+  }
 }
 
 /** One week of a team's plan, as the coach dashboard lists it. */

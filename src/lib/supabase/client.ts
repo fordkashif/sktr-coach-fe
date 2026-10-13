@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { ACCESS_PAUSED_EVENT, withAccessPausedSignal } from "@/lib/access-paused"
-import { markServerFetch, timedFetch } from "@/lib/perf/timing-log"
+import { markBundleAnswer, markServerFetch, noteBundleFetch, timedFetch } from "@/lib/perf/timing-log"
+import { countInFlight } from "@/lib/supabase/in-flight"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
 import { createReadCache, type ReadCache } from "@/lib/supabase/read-cache"
 import { isFlushingForPageHide } from "@/lib/undo-queue"
@@ -37,7 +38,11 @@ export function getBrowserSupabaseClient() {
   if (!config) return null
 
   // keepalive while the tab closes with a delete still waiting on "Undo" (src/lib/undo-queue.ts).
-  readCache = createReadCache(markServerFetch((input, init) => fetch(input, isFlushingForPageHide() ? { ...init, keepalive: true } : init)))
+  readCache = createReadCache(
+    markServerFetch((input, init) => fetch(input, isFlushingForPageHide() ? { ...init, keepalive: true } : init)),
+    // The app's start-up questions are answered from one request (src/lib/supabase/app-start.ts).
+    { appStart: true, onBundleAnswer: markBundleAnswer, onBundleFetched: noteBundleFetch },
+  )
 
   browserClient = createClient(config.url, config.anonKey, {
     auth: {
@@ -49,7 +54,7 @@ export function getBrowserSupabaseClient() {
     // Lets the route guard react the moment the database says this member is locked out.
     // Identical reads from different screens share one answer (src/lib/supabase/read-cache.ts).
     // With on-phone timing switched on (?timing=1), each call is also measured (src/lib/perf/timing-log.ts).
-    global: { fetch: timedFetch(withAccessPausedSignal(readCache.fetch)) },
+    global: { fetch: countInFlight(timedFetch(withAccessPausedSignal(readCache.fetch))) },
   })
 
   browserClient.auth.onAuthStateChange((event) => {
