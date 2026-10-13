@@ -19,7 +19,7 @@ export type TimingCall = {
    * "server": went over the network. "kept": answered from the app's kept reads. "bundle": answered
    * from the start-up bundle. "code": a code file.
    */
-  source: "server" | "kept" | "bundle" | "code"
+  source: "server" | "kept" | "bundle" | "batch" | "code"
   status?: number
 }
 
@@ -33,7 +33,7 @@ const MAX_SCREENS = 6
 let enabledCache: boolean | null = null
 const screens: TimingScreen[] = []
 const listeners = new Set<() => void>()
-const pendingByInit = new WeakMap<object, { server: boolean; bundle?: boolean }>()
+const pendingByInit = new WeakMap<object, { server: boolean; bundle?: boolean; batch?: boolean }>()
 
 function readEnabled(): boolean {
   if (typeof window === "undefined") return false
@@ -118,12 +118,12 @@ export function timedFetch(inner: typeof fetch): typeof fetch {
     if (!timingEnabled()) return inner(input, init)
     const at = performance.now()
     const key = init ?? {}
-    const marker: { server: boolean; bundle?: boolean } = { server: false }
+    const marker: { server: boolean; bundle?: boolean; batch?: boolean } = { server: false }
     pendingByInit.set(key, marker)
     const passInit = init ?? (key as RequestInit)
     try {
       const response = await inner(input, passInit)
-      add({ label: shortLabel(input, init), at, duration: performance.now() - at, source: marker.server ? "server" : marker.bundle ? "bundle" : "kept", status: response.status })
+      add({ label: shortLabel(input, init), at, duration: performance.now() - at, source: marker.server ? "server" : marker.bundle ? "bundle" : marker.batch ? "batch" : "kept", status: response.status })
       return response
     } catch (error) {
       add({ label: `${shortLabel(input, init)} (failed)`, at, duration: performance.now() - at, source: "server" })
@@ -154,6 +154,19 @@ export function markBundleAnswer(init: RequestInit | undefined) {
 export function noteBundleFetch(startedAt: number, status: number) {
   if (!timingEnabled()) return
   add({ label: "POST rpc/get_app_start (start-up bundle)", at: startedAt, duration: performance.now() - startedAt, source: "server", status })
+}
+
+/** A request answered from a batch of reads (called by the shared reads layer). */
+export function markBatchAnswer(init: RequestInit | undefined) {
+  if (!init) return
+  const marker = pendingByInit.get(init)
+  if (marker) marker.batch = true
+}
+
+/** A batch request itself. */
+export function noteBatchFetch(startedAt: number, status: number, reads: number) {
+  if (!timingEnabled()) return
+  add({ label: `POST rpc/batch_reads (${reads} reads together)`, at: startedAt, duration: performance.now() - startedAt, source: "server", status })
 }
 
 let observing = false

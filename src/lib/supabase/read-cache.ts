@@ -144,6 +144,12 @@ function toResponse(snapshot: Snapshot): Response {
 }
 
 import { answerFromBundle, bundleTarget, type AppStartBundle } from "./app-start"
+import { batchableRead, type BatchRead } from "./batch-reads"
+
+/** Plain reads that start within this many ms of each other are sent together. */
+const BATCH_WINDOW_MS = 20
+/** batch_reads takes at most this many reads per request. */
+const BATCH_MAX = 40
 
 /** After the start-up bundle is found missing (database not updated yet), wait this long before trying again. */
 const BUNDLE_RETRY_MS = 10 * 60_000
@@ -159,6 +165,12 @@ export type ReadCacheOptions = {
   onBundleAnswer?: (init: RequestInit | undefined) => void
   /** The bundle request itself finished (for the on-phone timing view). */
   onBundleFetched?: (startedAt: number, status: number) => void
+  /** Send plain reads that start together as one batch_reads request (see batch-reads.ts). Off unless asked for. */
+  batch?: boolean
+  /** A request was answered from a batch (for the on-phone timing view). */
+  onBatchAnswer?: (init: RequestInit | undefined) => void
+  /** A batch request finished (for the on-phone timing view). */
+  onBatchFetched?: (startedAt: number, status: number, reads: number) => void
 }
 
 export type ReadCache = {
@@ -213,6 +225,74 @@ export function createReadCache(baseFetch: typeof fetch, options: ReadCacheOptio
       }
     })()
     return state
+  }
+
+  // Batches: one open group per sign-in, sent BATCH_WINDOW_MS after its first read.
+  type Waiting = { read: BatchRead; resolve: (rows: unknown[] | null) => void }
+  const groups = new Map<string, { origin: string; headers: Headers; items: Waiting[] }>()
+  let batchMissingUntil = 0
+
+  const sendGroup = async (group: { origin: string; headers: Headers; items: Waiting[] }) => {
+    // A read on its own gains nothing from a batch: it goes out as it is.
+    if (group.items.length === 1) {
+      group.items[0].resolve(null)
+      return
+    }
+    for (let start = 0; start < group.items.length; start += BATCH_MAX) {
+      const chunk = group.items.slice(start, start + BATCH_MAX)
+      const send = new Headers({ "content-type": "application/json", accept: "application/json" })
+      for (const name of ["apikey", "authorization", "x-client-info"]) {
+        const value = group.headers.get(name)
+        if (value) send.set(name, value)
+      }
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0
+      try {
+        const response = await baseFetch(`${group.origin}/rest/v1/rpc/batch_reads`, {
+          method: "POST",
+          headers: send,
+          body: JSON.stringify({ p_reads: chunk.map((item) => item.read) }),
+        })
+        options.onBatchFetched?.(startedAt, response.status, chunk.length)
+        if (!response.ok) {
+          if (response.status === 404) batchMissingUntil = now() + BUNDLE_RETRY_MS
+          chunk.forEach((item) => item.resolve(null))
+          continue
+        }
+        const results = (await response.json()) as Array<{ ok?: boolean; rows?: unknown[] }> | null
+        chunk.forEach((item, index) => {
+          const result = Array.isArray(results) ? results[index] : null
+          item.resolve(result?.ok === true && Array.isArray(result.rows) ? result.rows : null)
+        })
+      } catch {
+        chunk.forEach((item) => item.resolve(null))
+      }
+    }
+  }
+
+  const answerWithBatch = (url: string, method: string, headers: Headers, body: string | null): Promise<unknown[] | null> | null => {
+    if (now() < batchMissingUntil) return null
+    const read = batchableRead(url, method, headers, body, (name) => READ_ONLY_RPCS.has(name))
+    if (!read) return null
+    let origin: string
+    try {
+      origin = new URL(url).origin
+    } catch {
+      return null
+    }
+    const groupKey = [origin, headers.get("authorization") ?? "", headers.get("apikey") ?? ""].join("\u0000")
+    return new Promise((resolve) => {
+      let group = groups.get(groupKey)
+      if (!group) {
+        group = { origin, headers, items: [] }
+        groups.set(groupKey, group)
+        const open = group
+        setTimeout(() => {
+          if (groups.get(groupKey) === open) groups.delete(groupKey)
+          void sendGroup(open)
+        }, BATCH_WINDOW_MS)
+      }
+      group.items.push({ read, resolve })
+    })
   }
 
   const answerWithBundle = async (url: string, method: string, headers: Headers, body: string | null): Promise<unknown[] | null> => {
@@ -271,6 +351,24 @@ export function createReadCache(baseFetch: typeof fetch, options: ReadCacheOptio
               ["content-range", answer.length > 0 ? `0-${answer.length - 1}/*` : "*/*"],
             ],
             body: JSON.stringify(answer),
+          }
+          if (generation === startedIn) kept.set(key, { at: now(), keepMs, snapshot })
+          return snapshot
+        }
+      }
+      if (options.batch) {
+        const batched = answerWithBatch(String(input), (init?.method ?? "GET").toUpperCase(), new Headers(init?.headers), typeof init?.body === "string" ? init.body : null)
+        const rows = batched ? await batched : null
+        if (rows) {
+          options.onBatchAnswer?.(init)
+          const snapshot: Snapshot = {
+            status: 200,
+            statusText: "OK",
+            headers: [
+              ["content-type", "application/json; charset=utf-8"],
+              ["content-range", rows.length > 0 ? `0-${rows.length - 1}/*` : "*/*"],
+            ],
+            body: JSON.stringify(rows),
           }
           if (generation === startedIn) kept.set(key, { at: now(), keepMs, snapshot })
           return snapshot

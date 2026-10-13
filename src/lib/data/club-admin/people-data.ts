@@ -181,6 +181,14 @@ export async function getClubAthletes(): Promise<Result<ClubAthlete[]>> {
     primary_event: string | null
     is_active: boolean
   }> = []
+  // Switched-off logins and account emails do not depend on the athletes: ask for them at the same
+  // time instead of after (on a phone each step was a round trip).
+  const inactivePromise = client.from("profiles").select("user_id").eq("is_active", false)
+  const emailsPromise = Promise.resolve(client.rpc("get_tenant_member_emails")).then(
+    (result) => result,
+    () => null,
+  )
+
   // 1,000 rows a page, so a big club is not cut off by the API row limit.
   for (let page = 0; page < 20; page += 1) {
     const { data, error } = await client
@@ -199,15 +207,15 @@ export async function getClubAthletes(): Promise<Result<ClubAthlete[]>> {
   const inactiveUsers = new Set<string>()
   if (userIds.length > 0) {
     // Only the switched-off logins are needed, and there are few of them.
-    const { data, error } = await client.from("profiles").select("user_id").eq("is_active", false)
+    const { data, error } = await inactivePromise
     if (error) return { ok: false, error: mapPostgrestError(error) }
     for (const row of (data as Array<{ user_id: string }> | null) ?? []) inactiveUsers.add(row.user_id)
   }
 
   const emails = new Map<string, string>()
   try {
-    const emailsResult = await client.rpc("get_tenant_member_emails")
-    if (!emailsResult.error) {
+    const emailsResult = await emailsPromise
+    if (emailsResult && !emailsResult.error) {
       for (const row of (emailsResult.data as Array<{ user_id: string | null; email: string | null }> | null) ?? []) {
         if (row.user_id && row.email) emails.set(row.user_id, row.email.toLowerCase())
       }

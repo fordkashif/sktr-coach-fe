@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { ACCESS_PAUSED_EVENT, withAccessPausedSignal } from "@/lib/access-paused"
-import { markBundleAnswer, markServerFetch, noteBundleFetch, timedFetch } from "@/lib/perf/timing-log"
+import { markBatchAnswer, markBundleAnswer, markServerFetch, noteBatchFetch, noteBundleFetch, timedFetch } from "@/lib/perf/timing-log"
 import { countInFlight } from "@/lib/supabase/in-flight"
 import { getSupabasePublicConfig } from "@/lib/supabase/config"
 import { createReadCache, type ReadCache } from "@/lib/supabase/read-cache"
@@ -41,7 +41,15 @@ export function getBrowserSupabaseClient() {
   readCache = createReadCache(
     markServerFetch((input, init) => fetch(input, isFlushingForPageHide() ? { ...init, keepalive: true } : init)),
     // The app's start-up questions are answered from one request (src/lib/supabase/app-start.ts).
-    { appStart: true, onBundleAnswer: markBundleAnswer, onBundleFetched: noteBundleFetch },
+    // Plain reads a screen makes at the same moment go as one request (src/lib/supabase/batch-reads.ts).
+    {
+      appStart: true,
+      onBundleAnswer: markBundleAnswer,
+      onBundleFetched: noteBundleFetch,
+      batch: true,
+      onBatchAnswer: markBatchAnswer,
+      onBatchFetched: noteBatchFetch,
+    },
   )
 
   browserClient = createClient(config.url, config.anonKey, {
