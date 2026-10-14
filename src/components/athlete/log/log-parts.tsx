@@ -122,11 +122,12 @@ export function SyncStatus({ sync, onRetry, className }: { sync: SyncState; onRe
       ) : sync.status === "retrying" ? (
         <StatusText tone="amber">Not sent yet, retrying</StatusText>
       ) : (
-        <span className="flex items-center gap-2">
+        <span className="flex flex-wrap items-center gap-2">
           <StatusText tone="coral">Could not save</StatusText>
           <Button size="sm" onClick={onRetry}>
             Try again
           </Button>
+          {sync.message ? <span className="basis-full text-sm text-sk-ink-2">{sync.message}</span> : null}
         </span>
       )}
     </div>
