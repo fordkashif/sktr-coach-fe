@@ -13,7 +13,7 @@ export type PbMomentData = {
 
 /**
  * PbMoment: the celebration after an athlete saves a new personal best. The mark lands with a
- * burst of lime and ink, then one button to carry on. Escape or the button closes it.
+ * burst in the accent and ink, then one button to carry on. Escape or the button closes it.
  */
 export function PbMoment({ pb, onClose }: { pb: PbMomentData; onClose: () => void }) {
   const button = useRef<HTMLButtonElement>(null)
@@ -42,7 +42,7 @@ export function PbMoment({ pb, onClose }: { pb: PbMomentData; onClose: () => voi
         New PB
       </p>
       <Burst play>
-        <span className="block rounded-[22px] bg-sk-lime px-5 py-3">
+        <span className="block rounded-[22px] bg-sk-accent px-5 py-3 [&_*]:text-sk-on-accent!">
           <Mark value={pb.display} unit={pb.unit} size="lg" className="text-[5.5rem] lg:text-[6.5rem]" />
         </span>
       </Burst>
@@ -54,7 +54,7 @@ export function PbMoment({ pb, onClose }: { pb: PbMomentData; onClose: () => voi
         ref={button}
         type="button"
         onClick={onClose}
-        className="sk-anim-rise h-[60px] min-w-56 cursor-pointer rounded-full bg-sk-ink px-8 font-display text-[1.5rem] font-black uppercase text-sk-lime [animation-delay:320ms] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-ink"
+        className="sk-anim-rise h-[60px] min-w-56 cursor-pointer rounded-full bg-sk-ink px-8 font-display text-[1.5rem] font-black uppercase text-white [animation-delay:320ms] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-ink"
       >
         Let's go
       </button>

@@ -472,11 +472,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             style={{ gridTemplateColumns: `repeat(${tabColumns}, minmax(0, 1fr))` }}
           >
             {isAthlete && athleteActiveIndex >= 0 ? (
-              // The lime highlight slides to the open tab.
+              // The accent highlight slides to the open tab.
               <span
                 aria-hidden
                 data-tab-highlight
-                className="pointer-events-none absolute top-2 h-[52px] w-[62px] rounded-[20px] bg-sk-lime transition-[left] duration-500 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
+                className="pointer-events-none absolute top-2 h-[52px] w-[62px] rounded-[20px] bg-sk-accent transition-[left] duration-500 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
                 style={{ left: `calc(0.375rem + (100% - 0.75rem) / ${tabColumns} * ${athleteActiveIndex + 0.5} - 31px)` }}
               />
             ) : null}
@@ -490,7 +490,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     to={link.href}
                     aria-label="Log a session"
                     aria-current={isActive ? "page" : undefined}
-                    className="relative flex size-14 items-center justify-center justify-self-center rounded-full bg-sk-ink text-sk-lime outline-offset-2 transition-transform focus-visible:outline-2 focus-visible:outline-sk-blue active:scale-90"
+                    className="relative flex size-14 items-center justify-center justify-self-center rounded-full bg-sk-accent text-sk-on-accent outline-offset-2 transition-transform focus-visible:outline-2 focus-visible:outline-sk-blue active:scale-90"
                   >
                     <Plus className="size-6" weight="bold" aria-hidden />
                   </Link>
@@ -506,9 +506,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="relative flex h-[52px] flex-col items-center justify-center rounded-[20px] outline-offset-0 focus-visible:outline-2 focus-visible:outline-sk-blue"
                   >
                     <span key={isActive ? "on" : "off"} className={cn("relative", isActive && "sk-anim-bounce")}>
-                      <LinkIcon className={cn("size-6", isActive ? "text-sk-ink" : "text-sk-mute")} weight={isActive ? "bold" : "regular"} aria-hidden />
+                      <LinkIcon className={cn("size-6", isActive ? "text-sk-on-accent" : "text-sk-mute")} weight={isActive ? "bold" : "regular"} aria-hidden />
                     </span>
-                    <span className={cn("mt-0.5 text-[0.625rem] leading-none", isActive ? "font-extrabold text-sk-ink" : "font-semibold text-sk-mute")}>{link.short ?? link.label}</span>
+                    <span className={cn("mt-0.5 text-[0.625rem] leading-none", isActive ? "font-extrabold text-sk-on-accent" : "font-semibold text-sk-mute")}>{link.short ?? link.label}</span>
                   </Link>
                 )
               }

@@ -279,7 +279,7 @@ export function ExerciseLog({
   }
 
   const rated = row.kind !== "check"
-  // Reps and attempts done so far, drawn as bars: the best one is lime.
+  // Reps and attempts done so far, drawn as bars: the best one is in the accent.
   const splits =
     row.kind === "time" || row.kind === "mark"
       ? sets.flatMap((setIndex) => {

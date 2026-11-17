@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 
 /*
  * Motion parts of the athlete skin ("Stopwatch", see DESIGN.md). They work on any screen but are
- * drawn in lime and ink. Every animation is CSS that turns itself off for people who ask the
+ * drawn in the accent and ink. Every animation is CSS that turns itself off for people who ask the
  * phone for reduced motion; the parts still show the same information when it does.
  */
 
@@ -38,7 +38,7 @@ export function useCountUp(value: number, durationMs = 900) {
 }
 
 /**
- * Ring: a progress ring, ink with a lime line inside it. `progress` is 0 to 1. The centre takes
+ * Ring: a progress ring, ink with an accent line inside it. `progress` is 0 to 1. The centre takes
  * anything (the countdown, a score). Decorative: put the meaning in the children or an aria-label
  * on the element around it.
  */
@@ -55,7 +55,7 @@ export function Ring({
   thickness?: number
   children?: ReactNode
   className?: string
-  /** Breathes with a lime glow (the last seconds of a rest). */
+  /** Breathes with an accent glow (the last seconds of a rest). */
   pulse?: boolean
 }) {
   const stroke = thickness ?? Math.max(8, Math.round(size / 9))
@@ -68,7 +68,7 @@ export function Ring({
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="absolute inset-0 -rotate-90">
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-sw-grey)" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-sw-ink)" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={dash} className="transition-[stroke-dasharray] duration-300 ease-linear" />
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-lime)" strokeWidth={Math.max(3, Math.round(stroke * 0.5))} strokeLinecap="round" strokeDasharray={dash} className="transition-[stroke-dasharray] duration-300 ease-linear" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-accent)" strokeWidth={Math.max(3, Math.round(stroke * 0.5))} strokeLinecap="round" strokeDasharray={dash} className="transition-[stroke-dasharray] duration-300 ease-linear" />
       </svg>
       <span className="relative flex flex-col items-center justify-center text-center">{children}</span>
     </span>
@@ -93,7 +93,7 @@ export function ReadinessGauge({ value, word, size = 200, className }: { value: 
         <svg width={size} height={height} viewBox={`0 0 ${size} ${height}`} aria-hidden className="absolute inset-0">
           <path d={path} fill="none" stroke="var(--sk-sw-grey)" strokeWidth={stroke} strokeLinecap="round" />
           <path d={path} fill="none" stroke="var(--sk-sw-ink)" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={dash} />
-          <path d={path} fill="none" stroke="var(--sk-lime)" strokeWidth={Math.round(stroke * 0.45)} strokeLinecap="round" strokeDasharray={dash} />
+          <path d={path} fill="none" stroke="var(--sk-accent)" strokeWidth={Math.round(stroke * 0.45)} strokeLinecap="round" strokeDasharray={dash} />
         </svg>
         <span className="absolute inset-x-0 bottom-0 text-center font-display text-[3.5rem] font-black leading-[0.85] tabular-nums text-sk-ink" aria-hidden>
           {shown}
@@ -110,7 +110,7 @@ export function ReadinessGauge({ value, word, size = 200, className }: { value: 
 
 /**
  * HoldButton: a button for something that should not happen by accident (finishing a session).
- * On a touch screen it fills with lime while held and acts when full; let go early and it drains.
+ * On a touch screen it fills with the accent while held and acts when full; let go early and it drains.
  * A mouse click or the keyboard acts straight away, so it never traps anyone.
  */
 export function HoldButton({
@@ -189,8 +189,8 @@ export function HoldButton({
         onConfirm()
       }}
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 -z-10 bg-sk-lime" style={{ width: `${fill * 100}%`, transition: holding ? "none" : "width 0.35s cubic-bezier(0.2,0.9,0.2,1)" }} />
-      <span className={cn("relative transition-colors", fill > 0.5 && "text-sk-ink")}>{holding ? holdingLabel : children}</span>
+      <span aria-hidden className="absolute inset-y-0 left-0 -z-10 bg-sk-accent" style={{ width: `${fill * 100}%`, transition: holding ? "none" : "width 0.35s cubic-bezier(0.2,0.9,0.2,1)" }} />
+      <span className={cn("relative transition-colors", fill > 0.5 && "text-sk-on-accent")}>{holding ? holdingLabel : children}</span>
     </button>
   )
 }
@@ -198,7 +198,7 @@ export function HoldButton({
 const RAYS = Array.from({ length: 14 }, (_, index) => index)
 
 /**
- * Burst: lime and ink rays that fly out from what it wraps, and a bounce, once each time
+ * Burst: accent and ink rays that fly out from what it wraps, and a bounce, once each time
  * `play` turns true. For a new personal best.
  */
 export function Burst({ play, children, className }: { play: boolean; children: ReactNode; className?: string }) {
@@ -210,7 +210,7 @@ export function Burst({ play, children, className }: { play: boolean; children: 
             <span key={index} className="absolute left-0 top-0 block" style={{ transform: `rotate(${(index * 360) / RAYS.length}deg)` }}>
               <span
                 className="sk-anim-ray -ml-1 -mt-[30px] block h-[30px] w-2 rounded-full"
-                style={{ background: index % 2 ? "var(--sk-sw-ink)" : "var(--sk-lime)", animationDelay: `${(index % 3) * 45}ms` }}
+                style={{ background: index % 2 ? "var(--sk-sw-ink)" : "var(--sk-accent)", animationDelay: `${(index % 3) * 45}ms` }}
               />
             </span>
           ))}
@@ -223,7 +223,7 @@ export function Burst({ play, children, className }: { play: boolean; children: 
 
 /**
  * Bars: values drawn as chunky bars that grow in one after another (rep splits, laps).
- * `best` marks the one drawn in lime. Lower is better for times, so pass `lowerIsBetter`.
+ * `best` marks the one drawn in the accent. Lower is better for times, so pass `lowerIsBetter`.
  */
 export function Bars({
   items,
@@ -250,7 +250,7 @@ export function Bars({
             <span className="text-[0.8125rem] font-bold text-sk-mute">{item.label}</span>
             <span className="block h-10 overflow-hidden rounded-[14px] bg-sk-sw-grey">
               <span
-                className={cn("sk-anim-grow flex h-full items-center justify-between rounded-[14px] px-3", isBest ? "bg-sk-lime text-sk-ink" : "bg-sk-ink text-white")}
+                className={cn("sk-anim-grow flex h-full items-center justify-between rounded-[14px] px-3", isBest ? "bg-sk-accent text-sk-on-accent" : "bg-sk-ink text-white")}
                 style={{ width: `${width}%`, animationDelay: `${index * 110}ms` }}
               >
                 <span className="text-[0.6875rem] font-extrabold uppercase">{isBest ? "Best" : ""}</span>
@@ -347,15 +347,15 @@ export function CountUpNumber({ value }: { value: number }) {
 }
 
 /**
- * Celebrate: a lime tick in a circle with a burst and one big word, for the end of a session.
+ * Celebrate: a tick in a circle with a burst and one big word, for the end of a session.
  * It is part of the page, not a dialog, and never blocks a tap.
  */
 export function Celebrate({ word, children }: { word: ReactNode; children?: ReactNode }) {
   return (
     <div className="pointer-events-none flex flex-col items-center gap-3 py-2 text-center" role="presentation">
       <Burst play>
-        <span className="grid size-24 place-items-center rounded-full bg-sk-lime shadow-[0_0_0_6px_#fff,0_0_0_8px_var(--sk-sw-ink)]">
-          <svg viewBox="0 0 24 24" className="size-11" fill="none" stroke="var(--sk-sw-ink)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <span className="grid size-24 place-items-center rounded-full bg-sk-accent shadow-[0_0_0_6px_#fff,0_0_0_8px_var(--sk-sw-ink)]">
+          <svg viewBox="0 0 24 24" className="size-11" fill="none" stroke="var(--sk-on-accent)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M5 12.5l4.5 4.5L19 7" className="sk-anim-draw" />
           </svg>
         </span>
