@@ -379,7 +379,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showChrome ? (
         <header
           data-shell="topbar"
-          className="hidden h-[69px] shrink-0 items-center gap-4 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
+          className="hidden h-[69px] shrink-0 items-center gap-3 border-b border-sk-line bg-white px-6 lg:flex xl:gap-7 xl:px-10"
         >
           {brand}
           <ShellClubBrand compact={showTeamSwitcher || showChildSwitcher} />

@@ -190,7 +190,8 @@ test.describe("result detail: rounds, splits, attempts and relays (mock mode)", 
     // Records: listed under relay teams, never as an event with a personal best.
     await page.goto("/athlete/prs")
     await expect(page.getByRole("heading", { level: 2, name: "Relay teams" })).toBeVisible()
-    await expect(page.getByRole("list", { name: "Relays you ran in" })).toContainText("Sep")
+    // The mock relay is 30 days back, so check the meet rather than a month name that moves.
+    await expect(page.getByRole("list", { name: "Relays you ran in" })).toContainText("Autumn Open")
     await expect(page.getByRole("link", { name: /^4x100m/ })).toHaveCount(0)
     await expect(page.getByRole("link", { name: /^100m/ })).toContainText("11.28")
   })
