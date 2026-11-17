@@ -523,13 +523,20 @@ body {
 
 /* ------------------------------------------------------------------
    Athlete skin "Stopwatch" (DESIGN.md, Athlete skin). The athlete side sits under
-   [data-skin="stopwatch"] on the shell. One accent: electric lime on ink and white.
+   [data-skin="stopwatch"] on the shell. One accent colour on ink and white; the accent tokens below
+   are the only place it is set.
    Scoreboard numbers (Big Shoulders Display), Sora for words, and motion.
 ------------------------------------------------------------------- */
 :root {
-  --sk-lime: #d4ff3a;
-  --sk-lime-deep: #c2ee1f;
-  --sk-lime-tint: #f1ffc4;
+  /* The accent. Change these together to recolour the athlete side. */
+  --sk-accent: #2152ff;
+  --sk-accent-rgb: 33 82 255;
+  --sk-accent-deep: #1741d6;
+  --sk-accent-tint: #e8edff;
+  /* Text and icons on the accent. */
+  --sk-on-accent: #ffffff;
+  /* The accent as text or an icon on ink (it must stay readable there). */
+  --sk-accent-on-ink: #9db3ff;
   --sk-sw-ink: #0e1116;
   --sk-sw-grey: #f2f3ee;
   --sk-font-display: "Big Shoulders Display", "Outfit Variable", sans-serif;
@@ -537,23 +544,25 @@ body {
 }
 
 @theme inline {
-  --color-sk-lime: var(--sk-lime);
-  --color-sk-lime-tint: var(--sk-lime-tint);
+  --color-sk-accent: var(--sk-accent);
+  --color-sk-accent-tint: var(--sk-accent-tint);
+  --color-sk-on-accent: var(--sk-on-accent);
+  --color-sk-accent-on-ink: var(--sk-accent-on-ink);
   --color-sk-sw-grey: var(--sk-sw-grey);
   --font-display: var(--sk-font-display);
 }
 
 [data-skin="stopwatch"] {
-  /* The action colour is ink; lime is the one highlight. */
+  /* The action colour is ink; the accent is the one highlight. */
   --sk-ink: #0e1116;
   --sk-blue: #0e1116;
   --sk-blue-ink: #0e1116;
   --sk-blue-link: #0e1116;
-  --sk-blue-tint: var(--sk-lime-tint);
+  --sk-blue-tint: var(--sk-accent-tint);
   --sk-soft: var(--sk-sw-grey);
   --sk-soft-2: #ecede6;
-  --primary: var(--sk-lime);
-  --primary-foreground: var(--sk-sw-ink);
+  --primary: var(--sk-accent);
+  --primary-foreground: var(--sk-on-accent);
   --ring: var(--sk-sw-ink);
   --chart-1: var(--sk-sw-ink);
   font-family: var(--sk-font-body);
@@ -582,65 +591,66 @@ body {
   }
   [data-skin="stopwatch"] .sk-stat-value { @apply text-[2.75rem] leading-[0.95] lg:text-[3.25rem]; }
   [data-skin="stopwatch"] .sk-link {
-    @apply underline decoration-sk-lime decoration-[3px] underline-offset-[5px] hover:decoration-sk-ink;
+    @apply underline decoration-sk-accent decoration-[3px] underline-offset-[5px] hover:decoration-sk-ink;
   }
 
-  /* Buttons: pill shaped, lime for the main action. */
+  /* Buttons: pill shaped, the accent for the main action. */
   [data-skin="stopwatch"] .sk-btn { @apply rounded-full font-bold; }
-  [data-skin="stopwatch"] .sk-btn-primary { @apply bg-sk-lime text-sk-ink hover:bg-[var(--sk-lime-deep)]; }
+  [data-skin="stopwatch"] .sk-btn-primary { @apply bg-sk-accent text-sk-on-accent hover:bg-[var(--sk-accent-deep)]; }
   [data-skin="stopwatch"] .sk-btn-secondary,
   [data-skin="stopwatch"] .sk-btn-quiet { @apply border-0 bg-sk-sw-grey text-sk-ink hover:bg-[#e4e6dd]; }
   [data-skin="stopwatch"] .sk-btn-text,
-  [data-skin="stopwatch"] .sk-btn-ghost { @apply text-sk-ink underline decoration-sk-lime decoration-2 underline-offset-4 hover:bg-sk-sw-grey; }
-  [data-skin="stopwatch"] .sk-btn-on-color { @apply bg-sk-ink text-sk-lime hover:bg-[#23272e]; }
+  [data-skin="stopwatch"] .sk-btn-ghost { @apply text-sk-ink underline decoration-sk-accent decoration-2 underline-offset-4 hover:bg-sk-sw-grey; }
+  [data-skin="stopwatch"] .sk-btn-on-color { background-color: var(--sk-on-accent); color: var(--sk-accent); @apply hover:opacity-90; }
   [data-skin="stopwatch"] .sk-btn:active { transform: scale(0.97); }
   [data-skin="stopwatch"] .sk-icon-btn { @apply rounded-full border-0 bg-sk-sw-grey hover:bg-[#e4e6dd]; }
 
-  /* Hero: the lime session card, with an optional photo above it. */
-  [data-skin="stopwatch"] .sk-hero { @apply relative gap-3 overflow-hidden rounded-[30px] bg-sk-lime p-5 text-sk-ink lg:p-7; }
-  [data-skin="stopwatch"] .sk-hero-label { @apply text-[0.8125rem] font-extrabold uppercase tracking-[0.02em] text-sk-ink; }
+  /* Hero: the accent session card, with an optional photo above it. */
+  [data-skin="stopwatch"] .sk-hero { @apply relative gap-3 overflow-hidden rounded-[30px] bg-sk-accent p-5 text-sk-on-accent lg:p-7; }
+  [data-skin="stopwatch"] .sk-hero-label { @apply text-[0.8125rem] font-extrabold uppercase tracking-[0.02em] text-sk-on-accent; }
   [data-skin="stopwatch"] .sk-hero-title {
     font-family: var(--sk-font-display);
     @apply text-[3.5rem] font-black uppercase leading-[0.86] tracking-[0.005em] lg:text-[4.5rem];
   }
-  [data-skin="stopwatch"] .sk-hero-body { @apply text-[0.9375rem] font-medium text-sk-ink; }
+  [data-skin="stopwatch"] .sk-hero-body { @apply text-[0.9375rem] font-medium text-sk-on-accent; }
   [data-skin="stopwatch"] .sk-hero .sk-btn-lg { @apply h-[60px] text-[1.0625rem]; }
 
-  /* Stats: tiles. The first one is lime. */
+  /* Stats: tiles. The first one is the accent. */
   [data-skin="stopwatch"] .sk-statstrip { @apply gap-2 border-0 lg:gap-3; }
   [data-skin="stopwatch"] .sk-statstrip > .sk-stat:nth-child(n) { @apply rounded-[24px] border-0 bg-sk-sw-grey p-4 lg:p-5; }
-  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child { @apply bg-sk-lime; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child { @apply bg-sk-accent; }
   [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-label,
   [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-hint,
-  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-of { @apply text-sk-ink; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-of,
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-value { @apply text-sk-on-accent; }
 
   /* Views and tabs */
   [data-skin="stopwatch"] .sk-seg { @apply rounded-full bg-sk-sw-grey; }
   [data-skin="stopwatch"] .sk-seg-item { @apply rounded-full transition-[background-color,color] duration-200; }
   [data-skin="stopwatch"] .sk-seg-item[data-active="true"],
   [data-skin="stopwatch"] .sk-seg-item[data-state="active"] { @apply bg-sk-ink text-white; }
-  [data-skin="stopwatch"] .sk-tab[data-active="true"] { @apply border-sk-lime font-extrabold text-sk-ink; border-bottom-width: 4px; }
+  [data-skin="stopwatch"] .sk-tab[data-active="true"] { @apply border-sk-accent font-extrabold text-sk-ink; border-bottom-width: 4px; }
   [data-skin="stopwatch"] .sk-meter { @apply h-2.5 bg-sk-sw-grey; }
   [data-skin="stopwatch"] .sk-meter > span { @apply bg-sk-ink transition-[width] duration-500 ease-out; }
-  [data-skin="stopwatch"] .sk-field { @apply rounded-[16px] focus:border-sk-ink focus:ring-sk-lime/60; }
-  [data-skin="stopwatch"] .sk-dot-blue { @apply bg-sk-lime ring-2 ring-sk-ink; }
-  [data-skin="stopwatch"] .sk-tag-blue { @apply bg-sk-lime text-sk-ink; }
+  [data-skin="stopwatch"] .sk-field { @apply rounded-[16px] focus:border-sk-ink focus:ring-sk-accent/40; }
+  [data-skin="stopwatch"] .sk-dot-blue { @apply bg-sk-accent; }
+  [data-skin="stopwatch"] .sk-tag-blue { @apply bg-sk-accent text-sk-on-accent; }
 
-  /* The week: circles pop in one after another; today is lime and breathes. */
+  /* The week: circles pop in one after another; today is the accent and breathes. */
   [data-skin="stopwatch"] .sk-day-num {
     font-family: var(--sk-font-display);
     @apply size-10 text-[1.125rem] font-black;
   }
   [data-skin="stopwatch"] .sk-day[data-state="planned"] .sk-day-num { @apply bg-white text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)]; }
-  [data-skin="stopwatch"] .sk-day[data-state="today"] .sk-day-num { @apply bg-sk-lime text-sk-ink shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--sk-sw-ink)]; }
-  [data-skin="stopwatch"] .sk-day[data-state="done"] .sk-day-num { @apply bg-sk-ink text-sk-lime; }
+  [data-skin="stopwatch"] .sk-day[data-state="today"] .sk-day-num { @apply bg-sk-accent text-sk-on-accent shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--sk-sw-ink)]; }
+  [data-skin="stopwatch"] .sk-day[data-state="done"] .sk-day-num { @apply bg-sk-ink text-sk-accent-on-ink; }
   [data-skin="stopwatch"] .sk-day[data-today="true"] .sk-day-letter { @apply font-extrabold text-sk-ink; }
 }
 
 @keyframes sk-pop { 0% { transform: scale(0); opacity: 0 } 70% { transform: scale(1.14); opacity: 1 } 100% { transform: scale(1); opacity: 1 } }
 @keyframes sk-rise { from { transform: translateY(18px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes sk-grow-x { from { transform: scaleX(0) } to { transform: scaleX(1) } }
-@keyframes sk-breathe { 0% { box-shadow: 0 0 0 0 rgb(212 255 58 / 0.9) } 100% { box-shadow: 0 0 0 16px rgb(212 255 58 / 0) } }
+@keyframes sk-breathe { 0% { box-shadow: 0 0 0 0 rgb(var(--sk-accent-rgb) / 0.9) } 100% { box-shadow: 0 0 0 16px rgb(var(--sk-accent-rgb) / 0) } }
 @keyframes sk-thump { 0% { transform: scale(1) } 35% { transform: scale(1.2) } 100% { transform: scale(1) } }
 @keyframes sk-ray { 0% { transform: translateY(0) scaleY(0.2); opacity: 1 } 100% { transform: translateY(-84px) scaleY(1); opacity: 0 } }
 @keyframes sk-bounce { 0% { transform: translateY(0) } 40% { transform: translateY(-5px) } 100% { transform: translateY(0) } }
@@ -684,17 +694,17 @@ body {
    so the skin sits outside the layers to win over them. */
   [data-skin="stopwatch"] [data-sk-tap] { @apply rounded-[16px] border-0 bg-sk-sw-grey transition-[background-color,transform] duration-200 hover:bg-[#e4e6dd] active:scale-95; }
   [data-skin="stopwatch"] [data-sk-tap="number"] { font-family: var(--sk-font-display); @apply min-h-14 text-[1.625rem] font-black; }
-  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] { @apply bg-sk-lime text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)] hover:bg-sk-lime; }
-  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] span { @apply text-sk-ink; }
+  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] { @apply bg-sk-accent text-sk-on-accent hover:bg-sk-accent; }
+  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] span { @apply text-sk-on-accent; }
   [data-skin="stopwatch"] [data-sk-stepper] { @apply size-14 rounded-full border-0 bg-sk-sw-grey; }
-  [data-skin="stopwatch"] [data-sk-stepper]:last-of-type { @apply bg-sk-lime; }
+  [data-skin="stopwatch"] [data-sk-stepper]:last-of-type { @apply bg-sk-accent text-sk-on-accent; }
   [data-skin="stopwatch"] [data-sk-stepper-value] { font-family: var(--sk-font-display); @apply text-[3.5rem] font-black; }
   [data-skin="stopwatch"] [data-sk-tick] { @apply rounded-full border-0 bg-sk-sw-grey text-sk-mute; }
-  [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"] { @apply bg-sk-lime text-sk-ink; }
+  [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"] { @apply bg-sk-accent text-sk-on-accent; }
   [data-skin="stopwatch"] [data-day-state] { font-family: var(--sk-font-display); @apply size-10 text-[1.125rem] font-black; }
-  [data-skin="stopwatch"] [data-day-state="today"] { @apply bg-sk-lime text-sk-ink; }
+  [data-skin="stopwatch"] [data-day-state="today"] { @apply bg-sk-accent text-sk-on-accent; }
   [data-skin="stopwatch"] [data-day-state="planned"] { @apply bg-white text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)]; }
-  [data-skin="stopwatch"] [data-day-state="done"] { @apply bg-sk-ink text-sk-lime; }
+  [data-skin="stopwatch"] [data-day-state="done"] { @apply bg-sk-ink text-sk-accent-on-ink; }
   [data-skin="stopwatch"] [data-sk-daylabel-num] { font-family: var(--sk-font-display); @apply text-[1.75rem] font-black leading-none; }
   [data-skin="stopwatch"] [data-sk-pager-title] { font-family: var(--sk-font-display); @apply text-[1.75rem] font-black uppercase leading-none lg:text-[2rem]; }
   [data-skin="stopwatch"] .sk-title { @apply text-[2.625rem] lg:text-[4.25rem]; }
@@ -718,7 +728,7 @@ body {
 }
 [data-skin="stopwatch"] .sk-slide-marker-still { transition: none; }
 [data-skin="stopwatch"] .sk-slide-marker[data-variant="pill"] { border-radius: 9999px; background: var(--sk-sw-ink); }
-[data-skin="stopwatch"] .sk-slide-marker[data-variant="line"] { bottom: -1px; height: 4px; border-radius: 4px; background: var(--sk-lime); }
+[data-skin="stopwatch"] .sk-slide-marker[data-variant="line"] { bottom: -1px; height: 4px; border-radius: 4px; background: var(--sk-accent); }
 [data-skin="stopwatch"] .sk-seg:has(> .sk-slide-marker) > .sk-seg-item { position: relative; z-index: 1; background: transparent; transition: color 0.3s ease; }
 [data-skin="stopwatch"] .sk-seg:has(> .sk-slide-marker) > .sk-seg-item[data-active="true"] { color: #fff; }
 [data-skin="stopwatch"] .sk-tabs:has(> .sk-slide-marker) > .sk-tab { border-bottom-color: transparent; transition: color 0.25s ease; }
@@ -756,15 +766,15 @@ body {
 [data-skin="stopwatch"] a.sk-list-row:active > svg:last-child,
 [data-skin="stopwatch"] button.sk-list-row:hover > svg:last-child { transform: translateX(4px); }
 
-/* Fields light up lime when they take focus. */
+/* Fields light up in the accent when they take focus. */
 [data-skin="stopwatch"] input,
 [data-skin="stopwatch"] textarea,
 [data-skin="stopwatch"] select { transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.2s ease; }
 [data-skin="stopwatch"] input:focus-visible,
 [data-skin="stopwatch"] input:focus,
-[data-skin="stopwatch"] textarea:focus { box-shadow: 0 0 0 4px rgb(212 255 58 / 0.7); }
+[data-skin="stopwatch"] textarea:focus { box-shadow: 0 0 0 4px rgb(var(--sk-accent-rgb) / 0.35); }
 
-/* Ticks: a lime ring flies out when a set is marked done. */
+/* Ticks: a ring in the accent flies out when a set is marked done. */
 [data-skin="stopwatch"] [data-sk-tick] { position: relative; }
 [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"]::after {
   content: "";
@@ -781,7 +791,7 @@ body {
 [data-skin="stopwatch"] [data-slot="dialog-content"] { border-radius: 28px; }
 [data-skin="stopwatch"] [data-slot="sheet-content"].inset-x-0.bottom-0 { border-radius: 28px 28px 0 0; }
 
-@keyframes sk-ring-out { 0% { box-shadow: 0 0 0 0 rgb(212 255 58 / 0.95) } 100% { box-shadow: 0 0 0 18px rgb(212 255 58 / 0) } }
+@keyframes sk-ring-out { 0% { box-shadow: 0 0 0 0 rgb(var(--sk-accent-rgb) / 0.95) } 100% { box-shadow: 0 0 0 18px rgb(var(--sk-accent-rgb) / 0) } }
 @keyframes sk-bump { 0% { transform: scale(1) } 40% { transform: scale(1.16) } 100% { transform: scale(1) } }
 @keyframes sk-photo-in { from { opacity: 0; filter: saturate(0.3) brightness(1.15) } to { opacity: 1; filter: none } }
 @keyframes sk-sheet-up { from { transform: translateY(100%) } to { transform: translateY(0) } }
