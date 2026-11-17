@@ -55,6 +55,8 @@ import type { CurrentSession } from "@/lib/mock-data"
 import { useUnits } from "@/lib/units-store"
 
 const TEST_WEEK_STORAGE_KEY = "pacelab:test-week-submission"
+/** The photo above today's session (public/images/athlete, from Unsplash). */
+const HERO_PHOTO = "/images/athlete/blocks.webp"
 
 /** Demo session shown in mock mode only. Supabase mode never falls back to this. */
 const mockModeSession: CurrentSession = {
@@ -471,6 +473,7 @@ export default function AthleteHomePage() {
             </Section>
           ) : heroSession ? (
             <HeroBlock
+              image={HERO_PHOTO}
               label={todayDone ? "Today's session, done" : "Today's session"}
               meta={sessionMeta}
               title={heroSession.title}

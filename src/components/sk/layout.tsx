@@ -135,6 +135,7 @@ export function HeroBlock({
   title,
   body,
   action,
+  image,
   className,
 }: {
   label: ReactNode
@@ -142,10 +143,12 @@ export function HeroBlock({
   title: ReactNode
   body?: ReactNode
   action?: ReactNode
+  /** A photo above the block (the athlete skin's session card sits over it). Decorative. */
+  image?: string
   className?: string
 }) {
-  return (
-    <section className={cn("sk-hero", className)} data-sk-hero>
+  const block = (
+    <section className={cn("sk-hero", image && "sk-hero-over", className)} data-sk-hero>
       <div className="flex items-baseline justify-between gap-4">
         <p className="sk-hero-label">{label}</p>
         {meta ? <p className="sk-hero-label shrink-0">{meta}</p> : null}
@@ -154,5 +157,12 @@ export function HeroBlock({
       {body ? <p className="sk-hero-body">{body}</p> : null}
       {action}
     </section>
+  )
+  if (!image) return block
+  return (
+    <div className="sk-hero-wrap">
+      <img src={image} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+      {block}
+    </div>
   )
 }

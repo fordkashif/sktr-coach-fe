@@ -198,6 +198,29 @@ Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus r
 
 Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weight="fill"` for the active tab. No Lucide, no Hugeicons. Icons support words; they do not replace them, except the bell, back, close and the athlete's log button, which carry an `aria-label`.
 
+## Athlete skin: "Stopwatch"
+
+The athlete side is the most used part of the app and has to feel like a sports app, so it wears a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root for the athlete role; every rule of the skin lives in `src/styles/globals.css` under that attribute, so coach, club admin and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
+
+- One accent: electric lime `sk-lime` (#d4ff3a) on ink (#0e1116) and white. Lime is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple.
+- Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words. Outfit stays for the rest of the app.
+- Buttons are pills. The primary button is lime with ink text. The hero action is ink with lime text.
+- Today's session is the lime `HeroBlock` over a photo (`image`, files in `public/images/athlete`).
+- Stats in a `StatStrip` are tiles; the first is lime.
+- The phone tab bar floats, with a lime highlight that slides to the open tab, and the round ink log button with a lime plus.
+- Motion: blocks of a screen rise in one after another, the week's days pop in, today breathes, a chosen answer pops. All of it switches off with the phone's reduced motion setting.
+
+Motion parts (from `@/components/sk`, file `motion.tsx`):
+
+| Part | What it is |
+|---|---|
+| `Ring` | A progress ring, ink with a lime line inside, anything in the centre. The rest countdown. `pulse` breathes in the last seconds. |
+| `ReadinessGauge` | A half circle that sweeps up to the readiness score while the number counts up. |
+| `HoldButton` | Held on a touch screen until it fills with lime (finishing a session); a click or the keyboard acts at once. |
+| `Burst` | Lime and ink rays and a bounce around what it wraps, when `play` turns true. Used by `PbMoment` (`src/components/athlete/pb-moment.tsx`) after a new personal best. |
+| `Bars` | Values as chunky bars that grow in one after another, the best in lime. Rep times and attempts in the log. |
+| `useCountUp` | A number that counts up to its value. |
+
 ## Navigation
 
 Built once in `src/components/app-shell.tsx`. Screens never draw navigation.

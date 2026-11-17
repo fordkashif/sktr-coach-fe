@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Timer, X } from "@phosphor-icons/react"
-import { Button, Meter, Sheet, StatusText } from "@/components/sk"
+import { Button, Ring, Sheet, StatusText } from "@/components/sk"
 import { REST_CHOICES_SECONDS } from "@/lib/data/session/log-assist"
 import {
   extendRest,
@@ -185,38 +185,43 @@ export function ClockBar({
   if (clock.mode === "rest") {
     const remaining = restRemainingMs(clock, now)
     const over = remaining <= 0
+    const left = Math.max(0, 1 - restProgress(clock, now) / 100)
+    const lastSeconds = !over && remaining <= 10_000
     return (
-      <div data-clock={over ? "rest-over" : "rest"} className="flex items-center gap-2 pb-2">
+      <div data-clock={over ? "rest-over" : "rest"} className="flex items-center gap-3 pb-2">
+        <Ring progress={over ? 1 : left} size={84} pulse={over || lastSeconds}>
+          <span role="timer" aria-label={over ? "Time since the rest ended" : "Rest left"} className="text-[1.75rem] font-black leading-none tabular-nums text-sk-ink">
+            {over ? `+${formatCountdown(Math.floor(-remaining / 1000) * 1000)}` : formatCountdown(remaining)}
+          </span>
+        </Ring>
         <div className="min-w-0 flex-1">
-          <p className="flex items-baseline gap-2 text-sm font-bold text-sk-ink">
+          <p className="text-sm font-bold text-sk-ink">
             {over ? (
               <span className="motion-safe:animate-pulse">
                 <StatusText tone="green">Rest over</StatusText>
               </span>
             ) : (
-              <span>Rest</span>
+              <span>Rest{clock.label ? `, ${clock.label}` : ""}</span>
             )}
-            <span role="timer" aria-label={over ? "Time since the rest ended" : "Rest left"} className="text-2xl font-extrabold leading-none tabular-nums">
-              {over ? `+${formatCountdown(Math.floor(-remaining / 1000) * 1000)}` : formatCountdown(remaining)}
-            </span>
           </p>
-          <Meter value={restProgress(clock, now)} tone={over ? "green" : "blue"} className={over ? "mt-1.5 motion-safe:animate-pulse" : "mt-1.5"} label="Rest done" />
           <span className="sr-only" role="status">
             {over ? "Rest over. Go again." : ""}
           </span>
+          <div className="mt-2 flex items-center gap-2">
+            {over ? (
+              <Button size="sm" variant="quiet" onClick={() => control.startRest(clock.durationMs / 1000, clock.label)}>
+                Again
+              </Button>
+            ) : (
+              <Button size="sm" variant="quiet" onClick={() => control.addRest(30)}>
+                +30 s
+              </Button>
+            )}
+            <Button size="sm" variant={over ? "primary" : "secondary"} onClick={control.close}>
+              {over ? "Done" : "Stop"}
+            </Button>
+          </div>
         </div>
-        {over ? (
-          <Button size="sm" variant="quiet" onClick={() => control.startRest(clock.durationMs / 1000, clock.label)}>
-            Again
-          </Button>
-        ) : (
-          <Button size="sm" variant="quiet" onClick={() => control.addRest(30)}>
-            +30 s
-          </Button>
-        )}
-        <Button size="sm" onClick={control.close}>
-          {over ? "Done" : "Stop"}
-        </Button>
         {sheet}
       </div>
     )
@@ -228,7 +233,7 @@ export function ClockBar({
     return (
       <div data-clock={running ? "stopwatch-running" : "stopwatch"} className="pb-2">
         <div className="flex items-center gap-2">
-          <p role="timer" aria-label="Stopwatch" className="text-2xl font-extrabold leading-none tabular-nums text-sk-ink">
+          <p role="timer" aria-label="Stopwatch" className="h-10 text-[2.5rem] font-black leading-10 tabular-nums text-sk-ink">
             {formatStopwatch(elapsed)}
           </p>
           <p className="min-w-0 flex-1 truncate text-sm text-sk-mute">{target ? `${target.rowLabel}, rep ${target.setIndex}` : "Stopwatch"}</p>

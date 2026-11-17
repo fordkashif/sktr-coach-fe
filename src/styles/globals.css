@@ -520,3 +520,187 @@ body {
     font-size: max(16px, 1em);
   }
 }
+
+/* ------------------------------------------------------------------
+   Athlete skin "Stopwatch" (DESIGN.md, Athlete skin). The athlete side sits under
+   [data-skin="stopwatch"] on the shell. One accent: electric lime on ink and white.
+   Scoreboard numbers (Big Shoulders Display), Sora for words, and motion.
+------------------------------------------------------------------- */
+:root {
+  --sk-lime: #d4ff3a;
+  --sk-lime-deep: #c2ee1f;
+  --sk-lime-tint: #f1ffc4;
+  --sk-sw-ink: #0e1116;
+  --sk-sw-grey: #f2f3ee;
+  --sk-font-display: "Big Shoulders Display", "Outfit Variable", sans-serif;
+  --sk-font-body: "Sora Variable", "Sora", "Outfit Variable", system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-sk-lime: var(--sk-lime);
+  --color-sk-lime-tint: var(--sk-lime-tint);
+  --color-sk-sw-grey: var(--sk-sw-grey);
+  --font-display: var(--sk-font-display);
+}
+
+[data-skin="stopwatch"] {
+  /* The action colour is ink; lime is the one highlight. */
+  --sk-ink: #0e1116;
+  --sk-blue: #0e1116;
+  --sk-blue-ink: #0e1116;
+  --sk-blue-link: #0e1116;
+  --sk-blue-tint: var(--sk-lime-tint);
+  --sk-soft: var(--sk-sw-grey);
+  --sk-soft-2: #ecede6;
+  --primary: var(--sk-lime);
+  --primary-foreground: var(--sk-sw-ink);
+  --ring: var(--sk-sw-ink);
+  --chart-1: var(--sk-sw-ink);
+  font-family: var(--sk-font-body);
+  letter-spacing: -0.005em;
+}
+
+@layer components {
+  [data-skin="stopwatch"] .sk-title {
+    font-family: var(--sk-font-display);
+    @apply text-[3rem] font-black uppercase leading-[0.88] tracking-[0.005em] lg:text-[4.25rem];
+  }
+  [data-skin="stopwatch"] .sk-title-compact {
+    font-family: var(--sk-font-display);
+    @apply text-[2.25rem] font-black uppercase leading-[0.9] tracking-[0.005em] lg:text-[3rem];
+  }
+  [data-skin="stopwatch"] .sk-h2 {
+    font-family: var(--sk-font-display);
+    @apply text-[1.625rem] font-black uppercase leading-none tracking-[0.01em] lg:text-[1.875rem];
+  }
+  [data-skin="stopwatch"] .sk-stat-value,
+  [data-skin="stopwatch"] [data-sk-mark],
+  [data-skin="stopwatch"] .sk-num,
+  [data-skin="stopwatch"] [role="timer"] {
+    font-family: var(--sk-font-display);
+    @apply font-black tracking-[0.005em];
+  }
+  [data-skin="stopwatch"] .sk-stat-value { @apply text-[2.75rem] leading-[0.95] lg:text-[3.25rem]; }
+  [data-skin="stopwatch"] .sk-link {
+    @apply underline decoration-sk-lime decoration-[3px] underline-offset-[5px] hover:decoration-sk-ink;
+  }
+
+  /* Buttons: pill shaped, lime for the main action. */
+  [data-skin="stopwatch"] .sk-btn { @apply rounded-full font-bold; }
+  [data-skin="stopwatch"] .sk-btn-primary { @apply bg-sk-lime text-sk-ink hover:bg-[var(--sk-lime-deep)]; }
+  [data-skin="stopwatch"] .sk-btn-secondary,
+  [data-skin="stopwatch"] .sk-btn-quiet { @apply border-0 bg-sk-sw-grey text-sk-ink hover:bg-[#e4e6dd]; }
+  [data-skin="stopwatch"] .sk-btn-text,
+  [data-skin="stopwatch"] .sk-btn-ghost { @apply text-sk-ink underline decoration-sk-lime decoration-2 underline-offset-4 hover:bg-sk-sw-grey; }
+  [data-skin="stopwatch"] .sk-btn-on-color { @apply bg-sk-ink text-sk-lime hover:bg-[#23272e]; }
+  [data-skin="stopwatch"] .sk-btn:active { transform: scale(0.97); }
+  [data-skin="stopwatch"] .sk-icon-btn { @apply rounded-full border-0 bg-sk-sw-grey hover:bg-[#e4e6dd]; }
+
+  /* Hero: the lime session card, with an optional photo above it. */
+  [data-skin="stopwatch"] .sk-hero { @apply relative gap-3 overflow-hidden rounded-[30px] bg-sk-lime p-5 text-sk-ink lg:p-7; }
+  [data-skin="stopwatch"] .sk-hero-label { @apply text-[0.8125rem] font-extrabold uppercase tracking-[0.02em] text-sk-ink; }
+  [data-skin="stopwatch"] .sk-hero-title {
+    font-family: var(--sk-font-display);
+    @apply text-[3.5rem] font-black uppercase leading-[0.86] tracking-[0.005em] lg:text-[4.5rem];
+  }
+  [data-skin="stopwatch"] .sk-hero-body { @apply text-[0.9375rem] font-medium text-sk-ink; }
+  [data-skin="stopwatch"] .sk-hero .sk-btn-lg { @apply h-[60px] text-[1.0625rem]; }
+
+  /* Stats: tiles. The first one is lime. */
+  [data-skin="stopwatch"] .sk-statstrip { @apply gap-2 border-0 lg:gap-3; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:nth-child(n) { @apply rounded-[24px] border-0 bg-sk-sw-grey p-4 lg:p-5; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child { @apply bg-sk-lime; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-label,
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-hint,
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:first-child .sk-stat-of { @apply text-sk-ink; }
+
+  /* Views and tabs */
+  [data-skin="stopwatch"] .sk-seg { @apply rounded-full bg-sk-sw-grey; }
+  [data-skin="stopwatch"] .sk-seg-item { @apply rounded-full transition-[background-color,color] duration-200; }
+  [data-skin="stopwatch"] .sk-seg-item[data-active="true"],
+  [data-skin="stopwatch"] .sk-seg-item[data-state="active"] { @apply bg-sk-ink text-white; }
+  [data-skin="stopwatch"] .sk-tab[data-active="true"] { @apply border-sk-lime font-extrabold text-sk-ink; border-bottom-width: 4px; }
+  [data-skin="stopwatch"] .sk-meter { @apply h-2.5 bg-sk-sw-grey; }
+  [data-skin="stopwatch"] .sk-meter > span { @apply bg-sk-ink transition-[width] duration-500 ease-out; }
+  [data-skin="stopwatch"] .sk-field { @apply rounded-[16px] focus:border-sk-ink focus:ring-sk-lime/60; }
+  [data-skin="stopwatch"] .sk-dot-blue { @apply bg-sk-lime ring-2 ring-sk-ink; }
+  [data-skin="stopwatch"] .sk-tag-blue { @apply bg-sk-lime text-sk-ink; }
+
+  /* The week: circles pop in one after another; today is lime and breathes. */
+  [data-skin="stopwatch"] .sk-day-num {
+    font-family: var(--sk-font-display);
+    @apply size-10 text-[1.125rem] font-black;
+  }
+  [data-skin="stopwatch"] .sk-day[data-state="planned"] .sk-day-num { @apply bg-white text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)]; }
+  [data-skin="stopwatch"] .sk-day[data-state="today"] .sk-day-num { @apply bg-sk-lime text-sk-ink shadow-[0_0_0_3px_#fff,0_0_0_5px_var(--sk-sw-ink)]; }
+  [data-skin="stopwatch"] .sk-day[data-state="done"] .sk-day-num { @apply bg-sk-ink text-sk-lime; }
+  [data-skin="stopwatch"] .sk-day[data-today="true"] .sk-day-letter { @apply font-extrabold text-sk-ink; }
+}
+
+@keyframes sk-pop { 0% { transform: scale(0); opacity: 0 } 70% { transform: scale(1.14); opacity: 1 } 100% { transform: scale(1); opacity: 1 } }
+@keyframes sk-rise { from { transform: translateY(18px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes sk-grow-x { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+@keyframes sk-breathe { 0% { box-shadow: 0 0 0 0 rgb(212 255 58 / 0.9) } 100% { box-shadow: 0 0 0 16px rgb(212 255 58 / 0) } }
+@keyframes sk-thump { 0% { transform: scale(1) } 35% { transform: scale(1.2) } 100% { transform: scale(1) } }
+@keyframes sk-ray { 0% { transform: translateY(0) scaleY(0.2); opacity: 1 } 100% { transform: translateY(-84px) scaleY(1); opacity: 0 } }
+@keyframes sk-bounce { 0% { transform: translateY(0) } 40% { transform: translateY(-5px) } 100% { transform: translateY(0) } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Every athlete screen arrives: its blocks rise in, one after another. */
+  [data-skin="stopwatch"] .sk-page > :not([data-sk-actionbar]) { animation: sk-rise 0.5s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-page > :nth-child(2) { animation-delay: 60ms; }
+  [data-skin="stopwatch"] .sk-page > :nth-child(3) { animation-delay: 120ms; }
+  [data-skin="stopwatch"] .sk-page > :nth-child(4) { animation-delay: 180ms; }
+  [data-skin="stopwatch"] .sk-page > :nth-child(n + 5) { animation-delay: 240ms; }
+  [data-skin="stopwatch"] .sk-day .sk-day-num { animation: sk-pop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  [data-skin="stopwatch"] .sk-day:nth-child(2) .sk-day-num { animation-delay: 70ms; }
+  [data-skin="stopwatch"] .sk-day:nth-child(3) .sk-day-num { animation-delay: 140ms; }
+  [data-skin="stopwatch"] .sk-day:nth-child(4) .sk-day-num { animation-delay: 210ms; }
+  [data-skin="stopwatch"] .sk-day:nth-child(5) .sk-day-num { animation-delay: 280ms; }
+  [data-skin="stopwatch"] .sk-day:nth-child(6) .sk-day-num { animation-delay: 350ms; }
+  [data-skin="stopwatch"] .sk-day:nth-child(7) .sk-day-num { animation-delay: 420ms; }
+  [data-skin="stopwatch"] .sk-day[data-state="today"] .sk-day-num { animation: sk-pop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both, sk-breathe 1.6s 0.8s ease-out infinite; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat { animation: sk-pop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:nth-child(2) { animation-delay: 80ms; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:nth-child(3) { animation-delay: 160ms; }
+  [data-skin="stopwatch"] .sk-statstrip > .sk-stat:nth-child(n + 4) { animation-delay: 240ms; }
+  .sk-anim-grow { transform-origin: left center; animation: sk-grow-x 0.7s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  .sk-anim-pop { animation: sk-pop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  .sk-anim-rise { animation: sk-rise 0.45s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  .sk-anim-thump { animation: sk-thump 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  .sk-anim-ray { animation: sk-ray 0.85s cubic-bezier(0.1, 0.8, 0.2, 1) both; }
+  .sk-anim-bounce { animation: sk-bounce 0.4s ease both; }
+  .sk-anim-breathe { animation: sk-breathe 1.4s ease-out infinite; }
+}
+
+/* HeroBlock with a photo: the photo runs to the screen edges on a phone and the block overlaps it. */
+@layer components {
+  .sk-hero-wrap { @apply relative flex flex-col; }
+  .sk-hero-photo { @apply -mx-5 -mt-3 block h-[230px] w-[calc(100%+2.5rem)] max-w-none object-cover sm:-mx-6 sm:w-[calc(100%+3rem)] lg:mx-0 lg:mt-0 lg:h-[260px] lg:w-full lg:rounded-[30px]; }
+  .sk-hero-wrap > .sk-hero-over { @apply -mt-16 mx-0 shadow-[0_18px_40px_-18px_rgb(14_17_22/0.45)] lg:-mt-20 lg:mx-6; }
+}
+
+/* Athlete skin: answers, steppers, ticks and day pickers. These parts are styled with utilities,
+   so the skin sits outside the layers to win over them. */
+  [data-skin="stopwatch"] [data-sk-tap] { @apply rounded-[16px] border-0 bg-sk-sw-grey transition-[background-color,transform] duration-200 hover:bg-[#e4e6dd] active:scale-95; }
+  [data-skin="stopwatch"] [data-sk-tap="number"] { font-family: var(--sk-font-display); @apply min-h-14 text-[1.625rem] font-black; }
+  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] { @apply bg-sk-lime text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)] hover:bg-sk-lime; }
+  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"] span { @apply text-sk-ink; }
+  [data-skin="stopwatch"] [data-sk-stepper] { @apply size-14 rounded-full border-0 bg-sk-sw-grey; }
+  [data-skin="stopwatch"] [data-sk-stepper]:last-of-type { @apply bg-sk-lime; }
+  [data-skin="stopwatch"] [data-sk-stepper-value] { font-family: var(--sk-font-display); @apply text-[3.5rem] font-black; }
+  [data-skin="stopwatch"] [data-sk-tick] { @apply rounded-full border-0 bg-sk-sw-grey text-sk-mute; }
+  [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"] { @apply bg-sk-lime text-sk-ink; }
+  [data-skin="stopwatch"] [data-day-state] { font-family: var(--sk-font-display); @apply size-10 text-[1.125rem] font-black; }
+  [data-skin="stopwatch"] [data-day-state="today"] { @apply bg-sk-lime text-sk-ink; }
+  [data-skin="stopwatch"] [data-day-state="planned"] { @apply bg-white text-sk-ink shadow-[inset_0_0_0_2px_var(--sk-sw-ink)]; }
+  [data-skin="stopwatch"] [data-day-state="done"] { @apply bg-sk-ink text-sk-lime; }
+  [data-skin="stopwatch"] [data-sk-daylabel-num] { font-family: var(--sk-font-display); @apply text-[1.75rem] font-black leading-none; }
+  [data-skin="stopwatch"] [data-sk-pager-title] { font-family: var(--sk-font-display); @apply text-[1.75rem] font-black uppercase leading-none lg:text-[2rem]; }
+  [data-skin="stopwatch"] .sk-title { @apply text-[2.625rem] lg:text-[4.25rem]; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] [data-sk-tap][aria-checked="true"],
+  [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"] { animation: sk-pop 0.4s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+}
+/* Progress bars stay ink on the athlete side (the green tone is the default elsewhere). */
+[data-skin="stopwatch"] .sk-meter > span { background-color: var(--sk-sw-ink); }

@@ -237,6 +237,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const overflows = tabCandidates.length + (placedInMore.length > 0 ? 1 : 0) > PHONE_TAB_LIMIT
   const phoneTabs = overflows ? tabCandidates.slice(0, PHONE_TAB_LIMIT - 1) : tabCandidates
   const moreLinks = [...placedInMore, ...(overflows ? tabCandidates.slice(PHONE_TAB_LIMIT - 1) : [])]
+  // The athlete side wears the "Stopwatch" skin (DESIGN.md, Athlete skin): a floating tab bar with a sliding highlight.
+  const isAthlete = role === "athlete"
+  const tabColumns = phoneTabs.length + (moreLinks.length > 0 ? 1 : 0)
+  const athleteActiveIndex = isAthlete ? phoneTabs.findIndex((link) => link.id !== ATHLETE_LOG_ID && isLinkActive(link)) : -1
   const moreActive = moreLinks.some(isLinkActive)
   const messagesInAppBar = messagesLink?.phone === "icon"
   const messagesLabel = useMessagesLabel()
@@ -355,7 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-white text-sk-ink">
+    <div className="flex h-dvh flex-col overflow-hidden bg-white text-sk-ink" data-skin={isAthlete ? "stopwatch" : undefined}>
       <a
         href="#main-content"
         className="sr-only z-[60] rounded-[12px] bg-sk-blue px-4 py-2.5 font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
@@ -446,11 +450,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Main"
           data-shell="tabbar"
           className={cn(
-            "relative z-40 shrink-0 border-t border-sk-line bg-white px-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
+            isAthlete
+              ? "relative z-40 shrink-0 bg-transparent px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden"
+              : "relative z-40 shrink-0 border-t border-sk-line bg-white px-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
             hideMobileNav && "hidden",
           )}
         >
-          <div className="mx-auto grid max-w-lg items-center" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + (moreLinks.length > 0 ? 1 : 0)}, minmax(0, 1fr))` }}>
+          <div
+            className={cn(
+              "relative mx-auto grid max-w-lg items-center",
+              isAthlete && "h-[68px] rounded-[26px] bg-white px-1.5 shadow-[0_10px_30px_rgb(14_17_22/0.14),0_0_0_1px_rgb(14_17_22/0.04)]",
+            )}
+            style={{ gridTemplateColumns: `repeat(${tabColumns}, minmax(0, 1fr))` }}
+          >
+            {isAthlete && athleteActiveIndex >= 0 ? (
+              // The lime highlight slides to the open tab.
+              <span
+                aria-hidden
+                data-tab-highlight
+                className="pointer-events-none absolute top-2 h-[52px] w-[62px] rounded-[20px] bg-sk-lime transition-[left] duration-500 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
+                style={{ left: `calc(0.375rem + (100% - 0.75rem) / ${tabColumns} * ${athleteActiveIndex + 0.5} - 31px)` }}
+              />
+            ) : null}
             {phoneTabs.map((link) => {
               const isActive = isLinkActive(link)
               const LinkIcon = link.icon
@@ -461,9 +482,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     to={link.href}
                     aria-label="Log a session"
                     aria-current={isActive ? "page" : undefined}
-                    className="-mt-[22px] flex size-14 items-center justify-center justify-self-center rounded-full bg-sk-ink text-white outline-offset-2 transition-transform focus-visible:outline-2 focus-visible:outline-sk-blue active:scale-95"
+                    className="relative flex size-14 items-center justify-center justify-self-center rounded-full bg-sk-ink text-sk-lime outline-offset-2 transition-transform focus-visible:outline-2 focus-visible:outline-sk-blue active:scale-90"
                   >
                     <Plus className="size-6" weight="bold" aria-hidden />
+                  </Link>
+                )
+              }
+              if (isAthlete) {
+                return (
+                  <Link
+                    key={link.id}
+                    to={link.href}
+                    {...prefetchHandlers(link.id)}
+                    aria-current={isActive ? "page" : undefined}
+                    className="relative flex h-[52px] flex-col items-center justify-center rounded-[20px] outline-offset-0 focus-visible:outline-2 focus-visible:outline-sk-blue"
+                  >
+                    <span key={isActive ? "on" : "off"} className={cn("relative", isActive && "sk-anim-bounce")}>
+                      <LinkIcon className={cn("size-6", isActive ? "text-sk-ink" : "text-sk-mute")} weight={isActive ? "bold" : "regular"} aria-hidden />
+                    </span>
+                    <span className={cn("mt-0.5 text-[0.625rem] leading-none", isActive ? "font-extrabold text-sk-ink" : "font-semibold text-sk-mute")}>{link.short ?? link.label}</span>
                   </Link>
                 )
               }

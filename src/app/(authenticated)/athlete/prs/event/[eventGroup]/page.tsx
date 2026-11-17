@@ -38,12 +38,16 @@ import { parseLocalDay } from "@/lib/data/pr/pr-display"
 import { canViewerEditResult, getCurrentAthleteRecords, type AthleteRecords } from "@/lib/data/pr/results-data"
 import { viewText } from "@/lib/units-view"
 
+import { PbMoment, type PbMomentData } from "@/components/athlete/pb-moment"
+
 type SavedNotice = { tone: "success" | "warning" | "info"; text: string }
 
 export default function AthleteEventHistoryPage() {
   const { eventGroup = "" } = useParams()
   const location = useLocation()
   const saved = (location.state as { saved?: SavedNotice } | null)?.saved ?? null
+  // A new personal best gets its moment once, straight after saving.
+  const [pb, setPb] = useState<PbMomentData | null>(() => (location.state as { pb?: PbMomentData } | null)?.pb ?? null)
   const [records, setRecords] = useState<AthleteRecords | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The one result whose detail (round, splits, attempts) is open under its row.
@@ -194,6 +198,7 @@ export default function AthleteEventHistoryPage() {
 
   return (
     <Screen>
+      {pb ? <PbMoment pb={pb} onClose={() => setPb(null)} /> : null}
       <ScreenHeader
         back={{ to: "/athlete/prs", label: "Records" }}
         title={event.label}

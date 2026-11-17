@@ -36,7 +36,7 @@ export function Mark({
   const units = useUnits()
   if (unit?.trim() === "kg" && units.weight === "lb" && typeof value === "string") ({ value, unit } = markForViewer(value, unit, "lb"))
   return (
-    <span className={cn("inline-flex items-baseline whitespace-nowrap font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums", MARK_SIZES[size], className)}>
+    <span data-sk-mark className={cn("inline-flex items-baseline whitespace-nowrap font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums", MARK_SIZES[size], className)}>
       {value}
       {unit ? <span className="ml-0.5 text-[max(0.65em,0.8125rem)] font-bold tracking-normal text-sk-mute">{unit.trim()}</span> : null}
       {qualifier ? <span className="ml-1.5 text-sm font-semibold tracking-normal text-sk-mute">{qualifier}</span> : null}

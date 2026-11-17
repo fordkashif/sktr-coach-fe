@@ -66,6 +66,7 @@ export function TapScale({
               aria-checked={selected}
               aria-label={`${name} ${option} of ${words.length}, ${word}`}
               onClick={() => onChange(option)}
+              data-sk-tap="number"
               className={cn(TAP_BASE, "text-lg tabular-nums", selected ? TAP_ON : TAP_OFF)}
             >
               {option}
@@ -122,13 +123,13 @@ export function Stepper({
     <div className={cn("flex flex-col gap-2.5 py-4", className)}>
       <QuestionHead id={id} label={label} hint={hint} />
       <div role="group" aria-labelledby={id} className="flex items-center gap-3">
-        <button type="button" className={buttonClass} aria-label={decreaseLabel} disabled={value <= min} onClick={() => move(-1)}>
+        <button type="button" data-sk-stepper className={buttonClass} aria-label={decreaseLabel} disabled={value <= min} onClick={() => move(-1)}>
           <Minus className="size-5" weight="bold" aria-hidden />
         </button>
-        <p role="status" className="min-w-0 flex-1 text-center text-[1.75rem] font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums">
+        <p role="status" data-sk-stepper-value className="min-w-0 flex-1 text-center text-[1.75rem] font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums">
           {format(value)}
         </p>
-        <button type="button" className={buttonClass} aria-label={increaseLabel} disabled={value >= max} onClick={() => move(1)}>
+        <button type="button" data-sk-stepper className={buttonClass} aria-label={increaseLabel} disabled={value >= max} onClick={() => move(1)}>
           <Plus className="size-5" weight="bold" aria-hidden />
         </button>
       </div>
@@ -188,6 +189,7 @@ export function Choices<T extends string>(
               role={props.multiple ? "checkbox" : "radio"}
               aria-checked={on}
               onClick={() => toggle(option.value)}
+              data-sk-tap="word"
               className={cn(TAP_BASE, "flex-col px-2.5 py-2 text-[0.9375rem]", on ? TAP_ON : TAP_OFF)}
             >
               {option.label}

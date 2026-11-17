@@ -29,7 +29,7 @@ export function WeekPager({
   return (
     <div className={cn("flex items-center justify-between gap-3", className)}>
       <div className="min-w-0" aria-live="polite">
-        <p className="text-lg font-bold leading-tight tracking-[-0.02em] text-sk-ink lg:text-[1.375rem]">{title}</p>
+        <p data-sk-pager-title className="text-lg font-bold leading-tight tracking-[-0.02em] text-sk-ink lg:text-[1.375rem]">{title}</p>
         {subtitle ? <p className="mt-0.5 text-sm text-sk-mute">{subtitle}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -103,6 +103,7 @@ export function DayPicker({
               </span>
               <span
                 aria-hidden
+                data-day-state={day.state}
                 className={cn(
                   "mt-1.5 flex size-9 items-center justify-center rounded-full text-sm tabular-nums outline-2 outline-offset-2 transition-colors",
                   DAY_STATE[day.state],
@@ -124,7 +125,7 @@ export function DayLabel({ weekday, number, today = false, muted = false }: { we
   return (
     <span className="flex w-9 flex-col items-center leading-none" aria-hidden>
       <span className={cn("text-xs font-semibold", today ? "font-bold text-sk-blue-link" : "text-sk-mute")}>{weekday}</span>
-      <span className={cn("mt-1 text-lg font-extrabold tabular-nums", today ? "text-sk-blue-link" : muted ? "text-sk-faint" : "text-sk-ink")}>{number}</span>
+      <span data-sk-daylabel-num className={cn("mt-1 text-lg font-extrabold tabular-nums", today ? "text-sk-blue-link" : muted ? "text-sk-faint" : "text-sk-ink")}>{number}</span>
     </span>
   )
 }
