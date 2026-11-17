@@ -112,6 +112,7 @@ export function TickButton({ done, label, onClick, className }: { done: boolean;
       aria-pressed={done}
       aria-label={label}
       onClick={onClick}
+      data-sk-tick
       className={cn(
         "flex size-[52px] shrink-0 cursor-pointer items-center justify-center rounded-[14px] border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
         done ? "border-sk-green bg-sk-green text-white" : "border-sk-line-strong bg-white text-sk-faint hover:border-sk-ink hover:text-sk-ink",

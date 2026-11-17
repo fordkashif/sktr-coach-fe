@@ -7,6 +7,9 @@ import { registerServiceWorker } from "@/lib/pwa"
 // Loaded here so the browser's install event is caught before any screen exists.
 import "@/lib/install-prompt"
 import "@fontsource-variable/outfit"
+import "@fontsource-variable/sora"
+import "@fontsource/big-shoulders-display/800"
+import "@fontsource/big-shoulders-display/900"
 import "@/styles/globals.css"
 
 initializeSupabaseRuntime()

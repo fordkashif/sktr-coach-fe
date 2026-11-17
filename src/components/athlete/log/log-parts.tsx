@@ -16,6 +16,7 @@ import {
   NumberInput,
   Select,
   SetGroup,
+  Bars,
   SetRow,
   Sheet,
   StatusText,
@@ -149,6 +150,13 @@ export function LogProgress({ done, total }: { done: number; total: number }) {
   )
 }
 
+/** A rep time for the bars: seconds with hundredths, minutes when it runs past a minute. */
+function formatSplit(seconds: number) {
+  if (seconds < 60) return seconds.toFixed(2)
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${(seconds - minutes * 60).toFixed(2).padStart(5, "0")}`
+}
+
 const SET_NOUN: Record<LoggableRow["kind"], string> = { strength: "Set", time: "Rep", mark: "Attempt", check: "Set" }
 
 function trim(value: number | null | undefined) {
@@ -271,6 +279,16 @@ export function ExerciseLog({
   }
 
   const rated = row.kind !== "check"
+  // Reps and attempts done so far, drawn as bars: the best one is lime.
+  const splits =
+    row.kind === "time" || row.kind === "mark"
+      ? sets.flatMap((setIndex) => {
+          const log = logs[setKey(row.id, setIndex)]
+          const value = row.kind === "time" ? log?.timeSeconds : log?.mark
+          if (!log?.completed || value == null || !(value > 0)) return []
+          return [{ key: String(setIndex), label: `${noun} ${setIndex}`, value, display: row.kind === "time" ? formatSplit(value) : value.toFixed(2) }]
+        })
+      : []
   return (
     <SetGroup
       data-exercise={row.label}
@@ -318,6 +336,14 @@ export function ExerciseLog({
       }
       footer={
         <>
+          {splits.length >= 2 ? (
+            <Bars
+              className="mt-3"
+              label={`${row.label}, ${row.kind === "time" ? "times" : "marks"} so far`}
+              lowerIsBetter={row.kind === "time"}
+              items={splits}
+            />
+          ) : null}
           {media?.list}
           {showNote ? (
             <Input

@@ -12,6 +12,7 @@ import {
   List,
   ListRow,
   Notice,
+  ReadinessGauge,
   ReadinessText,
   Screen,
   ScreenHeader,
@@ -291,7 +292,7 @@ export default function AthleteWellnessPage() {
     <Screen>
       <ScreenHeader
         title="Wellness check-in"
-        lede={todayEntry && !isEditing ? "Today is done. Your coach can see how you are feeling." : "Five quick taps before you train. It takes about 20 seconds."}
+        lede={todayEntry && !isEditing ? "Today is done. Your coach can see how you are feeling." : undefined}
       />
 
       {loadError ? <Notice tone="error">We could not load your check-ins. {loadError}</Notice> : null}
@@ -402,6 +403,9 @@ export default function AthleteWellnessPage() {
           ) : todayEntry && resultCopy ? (
             <>
               <Section title="Today's readiness" meta={justSaved ? "Check-in saved" : longDate(today)}>
+                <div className="flex justify-center pb-2 pt-3">
+                  <ReadinessGauge value={todayEntry.readinessScore} />
+                </div>
                 <List>
                   <ListRow
                     leading={<StatusDot tone={todayEntry.readiness === "green" ? "green" : todayEntry.readiness === "yellow" ? "amber" : "coral"} />}

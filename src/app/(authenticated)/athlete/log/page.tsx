@@ -21,6 +21,8 @@ import { SessionMediaSection, exerciseMedia, rowLabels, useSessionMedia } from "
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
   ActionBar,
+  Celebrate,
+  HoldButton,
   Button,
   EffortScale,
   EmptyState,
@@ -292,6 +294,7 @@ export default function AthleteLogPage() {
 
       {session && completed && !editing ? (
         <>
+          {justFinished ? <Celebrate word="Session done" /> : null}
           {justFinished ? (
             <Notice
               tone="success"
@@ -459,10 +462,17 @@ export default function AthleteLogPage() {
                 placeholder="How it felt, niggles, what you changed"
               />
             </Field>
-            <Button variant="primary" size="lg" block className="mt-5" disabled={finishing} onClick={() => void handleFinish()}>
-              <Check className="size-5" weight="bold" aria-hidden />
-              {completed ? "Save changes" : "Finish session"}
-            </Button>
+            {completed ? (
+              <Button variant="primary" size="lg" block className="mt-5" disabled={finishing} onClick={() => void handleFinish()}>
+                <Check className="size-5" weight="bold" aria-hidden />
+                Save changes
+              </Button>
+            ) : (
+              // Held on a phone so a stray tap never ends the session; a click or Enter finishes at once.
+              <HoldButton className="mt-5" disabled={finishing} onConfirm={() => void handleFinish()} holdingLabel="Keep holding">
+                Finish session
+              </HoldButton>
+            )}
             {!completed && totals.total > 0 && totals.done < totals.total ? (
               <p className="mt-2 text-center text-sm text-sk-mute">
                 {totals.done} of {totals.total} ticked. You can finish with some left.

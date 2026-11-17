@@ -38,6 +38,12 @@ test.describe("result detail: rounds, splits, attempts and relays (mock mode)", 
 
     // 6.80 is kept as wind assisted; 6.70 is the personal best (it beats 6.63).
     await expect(page).toHaveURL(/\/athlete\/prs\/event\//)
+    // A new personal best gets its moment first.
+    const moment = page.getByRole("dialog", { name: "New PB" })
+    await expect(moment).toContainText("6.70")
+    await expect(moment).toContainText("Long jump, 0.07m further")
+    await moment.getByRole("button", { name: "Let's go" }).click()
+    await expect(moment).toHaveCount(0)
     await expect(main(page)).toContainText("Your longest jump, 6.80m (+2.9), was wind assisted. New personal best in the Long jump: 6.70m (+0.4), 0.07m further than your 6.63m.")
     await expect(main(page)).toContainText("best wind legal jump of a series")
 

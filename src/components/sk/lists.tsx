@@ -2,6 +2,7 @@ import { CaretRight, Check } from "@phosphor-icons/react"
 import { Fragment, type HTMLAttributes, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { CountUpNumber } from "./motion"
 
 /** List: rows separated by hairlines. Children are ListRow (or any <li>). */
 export function List({ children, className, ordered = false, ...rest }: { children: ReactNode; className?: string; ordered?: boolean; "aria-label"?: string }) {
@@ -130,7 +131,7 @@ export function Stat({
     <div className={cn("sk-stat", className)}>
       <p className="sk-stat-label">{label}</p>
       <p className="sk-stat-value">
-        {value}
+        {typeof value === "number" ? <CountUpNumber value={value} /> : value}
         {unit}
         {of !== undefined && of !== null ? <span className="sk-stat-of">of {of}</span> : null}
       </p>

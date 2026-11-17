@@ -15,6 +15,7 @@ import {
   type DetailErrors,
 } from "@/components/athlete/result-detail"
 import { eventHistoryPath, UNIT_WORDS, verdictMessage } from "@/components/athlete/results-parts"
+import type { PbMomentData } from "@/components/athlete/pb-moment"
 import { Button, Choices, Field, Input, InlineConfirm, LinkButton, Notice, Section, Select, Textarea } from "@/components/sk"
 import {
   describeDifference,
@@ -201,7 +202,12 @@ export function ResultForm({
       navigate(forAthlete.returnTo, { replace: true, state: { saved: staffVerdictMessage(forAthlete.name, result.data.result, result.data.verdict) } })
       return
     }
-    navigate(eventHistoryPath(result.data.result.eventGroup), { replace: true, state: { saved: verdictMessage(result.data.result, result.data.verdict) } })
+    const verdict = result.data.verdict
+    const best = verdict.legal ?? result.data.result
+    const gain = verdict.kind === "personal-best" && verdict.beat ? describeDifference(best, verdict.beat) : null
+    const pb: PbMomentData | undefined =
+      verdict.kind === "personal-best" ? { eventLabel: best.eventLabel, display: best.display, unit: best.unit, gain: gain?.text ?? null } : undefined
+    navigate(eventHistoryPath(result.data.result.eventGroup), { replace: true, state: { saved: verdictMessage(result.data.result, verdict), pb } })
   }
 
   const handleDelete = async () => {

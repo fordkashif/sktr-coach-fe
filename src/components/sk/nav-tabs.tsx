@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { SlideMarker } from "./motion"
 
 export type NavTabItem = {
   to: string
@@ -68,7 +69,8 @@ export function NavTabs({ label, items, className }: { label: string; items: Nav
 
   return (
     <div className={cn("relative min-w-0", className)} data-overflow-start={edges.start} data-overflow-end={edges.end}>
-      <nav ref={row} aria-label={label} className="sk-tabs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <nav ref={row} aria-label={label} className="sk-tabs relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <SlideMarker variant="line" watch={pathname} memoryKey={`nav-tabs:${label}`} />
         {items.map((item) => {
           const active = isActive(item)
           return (

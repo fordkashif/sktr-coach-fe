@@ -1,6 +1,7 @@
 import { createContext, useContext, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react"
 import { Link, type LinkProps } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { SlideMarker } from "./motion"
 
 /**
  * primary: the one main action of the screen, solid blue. One per screen.
@@ -132,7 +133,8 @@ export function Segmented<T extends string>({
   label?: string
 }) {
   return (
-    <div role="tablist" aria-label={label} className={cn("sk-seg", className)}>
+    <div role="tablist" aria-label={label} className={cn("sk-seg relative", className)}>
+      <SlideMarker variant="pill" watch={value} />
       {options.map((option) => (
         <button
           key={option.value}
@@ -165,7 +167,8 @@ export function Tabs<T extends string>({
   label: string
 }) {
   return (
-    <div role="tablist" aria-label={label} className={cn("sk-tabs", className)}>
+    <div role="tablist" aria-label={label} className={cn("sk-tabs relative", className)}>
+      <SlideMarker variant="line" watch={value} />
       {options.map((option) => (
         <button
           key={option.value}
