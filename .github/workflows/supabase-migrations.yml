@@ -69,11 +69,11 @@ jobs:
             SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
             RESEND_API_KEY="$RESEND_API_KEY" \
             NOTIFICATION_FROM_EMAIL="$NOTIFICATION_FROM_EMAIL" \
-            --project-ref "$SUPABASE_PROJECT_REF"
+            --project-ref "$SUPABASE_PROJECT_REF" --yes
           # Invite emails build their links from PUBLIC_APP_URL. Only sync it when it is configured here,
           # so a value set by hand in the Supabase dashboard is never overwritten with nothing.
           if [ -n "$PUBLIC_APP_URL" ]; then
-            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF"
+            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF" --yes
           else
             echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
           fi
@@ -83,7 +83,7 @@ jobs:
               VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
               VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
               VAPID_SUBJECT="$VAPID_SUBJECT" \
-              --project-ref "$SUPABASE_PROJECT_REF"
+              --project-ref "$SUPABASE_PROJECT_REF" --yes
           else
             echo "::notice::VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set for this environment. Push notifications stay off; everything else works."
           fi
@@ -173,11 +173,11 @@ jobs:
             SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
             RESEND_API_KEY="$RESEND_API_KEY" \
             NOTIFICATION_FROM_EMAIL="$NOTIFICATION_FROM_EMAIL" \
-            --project-ref "$SUPABASE_PROJECT_REF"
+            --project-ref "$SUPABASE_PROJECT_REF" --yes
           # Invite emails build their links from PUBLIC_APP_URL. Only sync it when it is configured here,
           # so a value set by hand in the Supabase dashboard is never overwritten with nothing.
           if [ -n "$PUBLIC_APP_URL" ]; then
-            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF"
+            supabase secrets set PUBLIC_APP_URL="$PUBLIC_APP_URL" --project-ref "$SUPABASE_PROJECT_REF" --yes
           else
             echo "::warning::PUBLIC_APP_URL is not set for this environment. Invite emails will not send until it is set here or in the Supabase edge function secrets."
           fi
@@ -187,7 +187,7 @@ jobs:
               VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
               VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
               VAPID_SUBJECT="$VAPID_SUBJECT" \
-              --project-ref "$SUPABASE_PROJECT_REF"
+              --project-ref "$SUPABASE_PROJECT_REF" --yes
           else
             echo "::notice::VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are not all set for this environment. Push notifications stay off; everything else works."
           fi
