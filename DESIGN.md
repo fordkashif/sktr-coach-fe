@@ -208,7 +208,12 @@ The athlete side is the most used part of the app and has to feel like a sports 
 - Today's session is the lime `HeroBlock` over a photo (`image`, files in `public/images/athlete`).
 - Stats in a `StatStrip` are tiles; the first is lime.
 - The phone tab bar floats, with a lime highlight that slides to the open tab, and the round ink log button with a lime plus.
-- Motion: blocks of a screen rise in one after another, the week's days pop in, today breathes, a chosen answer pops. All of it switches off with the phone's reduced motion setting.
+- Motion is in every interaction, and all of it switches off with the phone's reduced motion setting:
+  - arriving: the blocks of a screen and the rows of a list rise in one after another, the week's days pop in, today breathes, stat numbers count up, progress bars grow, the hero photo fades in;
+  - pressing: buttons, icon buttons, rows and tabs give a little and spring back; rows nudge their chevron forward; the main buttons lift on hover;
+  - choosing: a chosen answer or a ticked set pops lime (a tick also sends out a lime ring), the stepper number bumps, the highlight of segmented views and tabs slides to the chosen one (`SlideMarker`), also across screens for `NavTabs`;
+  - opening: sheets spring up from the bottom, dialogs pop, a rest or stopwatch pops into the bar;
+  - finishing: `Celebrate` (a lime tick that draws itself in a burst) when a session is done, `PbMoment` after a new personal best.
 
 Motion parts (from `@/components/sk`, file `motion.tsx`):
 
@@ -219,7 +224,9 @@ Motion parts (from `@/components/sk`, file `motion.tsx`):
 | `HoldButton` | Held on a touch screen until it fills with lime (finishing a session); a click or the keyboard acts at once. |
 | `Burst` | Lime and ink rays and a bounce around what it wraps, when `play` turns true. Used by `PbMoment` (`src/components/athlete/pb-moment.tsx`) after a new personal best. |
 | `Bars` | Values as chunky bars that grow in one after another, the best in lime. Rep times and attempts in the log. |
-| `useCountUp` | A number that counts up to its value. |
+| `useCountUp`, `CountUpNumber` | A number that counts up to its value. `Stat` uses `CountUpNumber` for a plain number, on the athlete side only. |
+| `SlideMarker` | The sliding highlight inside `Segmented`, `Tabs` and `NavTabs`. Only drawn under the skin. |
+| `Celebrate` | A lime tick in a circle that draws itself inside a burst, with one big word. Part of the page, never blocks a tap. |
 
 ## Navigation
 

@@ -126,7 +126,7 @@ export function Stepper({
         <button type="button" data-sk-stepper className={buttonClass} aria-label={decreaseLabel} disabled={value <= min} onClick={() => move(-1)}>
           <Minus className="size-5" weight="bold" aria-hidden />
         </button>
-        <p role="status" data-sk-stepper-value className="min-w-0 flex-1 text-center text-[1.75rem] font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums">
+        <p role="status" data-sk-stepper-value key={value} className="min-w-0 flex-1 text-center text-[1.75rem] font-extrabold leading-none tracking-[-0.03em] text-sk-ink tabular-nums">
           {format(value)}
         </p>
         <button type="button" data-sk-stepper className={buttonClass} aria-label={increaseLabel} disabled={value >= max} onClick={() => move(1)}>

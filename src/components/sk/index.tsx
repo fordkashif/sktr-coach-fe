@@ -60,7 +60,7 @@ export { PasswordInput } from "./password-input"
 export { RadioRow } from "./radio-row"
 export { QuickPick, type QuickPickOption, type QuickPickTone } from "./quick-pick"
 export { MonthGrid, type MonthGridDay, type MonthGridSpan } from "./month-grid"
-export { Ring, ReadinessGauge, HoldButton, Burst, Bars, useCountUp } from "./motion"
+export { Ring, ReadinessGauge, HoldButton, Burst, Bars, useCountUp, SlideMarker, CountUpNumber, Celebrate } from "./motion"
 
 // Deprecated v1 names. They keep older screens working on the v2 look. Replacements are noted on each.
 export { PageHeader, Panel } from "./legacy"

@@ -25,7 +25,7 @@ import {
   UsersThree,
 } from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react"
 import type React from "react"
 import { CoachTeamSwitcher } from "@/components/coach/team-switcher"
 import { GuardianChildSwitcher } from "@/components/guardian/child-switcher"
@@ -239,6 +239,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const moreLinks = [...placedInMore, ...(overflows ? tabCandidates.slice(PHONE_TAB_LIMIT - 1) : [])]
   // The athlete side wears the "Stopwatch" skin (DESIGN.md, Athlete skin): a floating tab bar with a sliding highlight.
   const isAthlete = role === "athlete"
+  // Sheets, dialogs and toasts open outside the shell, so the skin goes on <html> as well.
+  useLayoutEffect(() => {
+    if (!isAthlete) return
+    document.documentElement.dataset.skin = "stopwatch"
+    return () => {
+      delete document.documentElement.dataset.skin
+    }
+  }, [isAthlete])
   const tabColumns = phoneTabs.length + (moreLinks.length > 0 ? 1 : 0)
   const athleteActiveIndex = isAthlete ? phoneTabs.findIndex((link) => link.id !== ATHLETE_LOG_ID && isLinkActive(link)) : -1
   const moreActive = moreLinks.some(isLinkActive)

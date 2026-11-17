@@ -704,3 +704,105 @@ body {
 }
 /* Progress bars stay ink on the athlete side (the green tone is the default elsewhere). */
 [data-skin="stopwatch"] .sk-meter > span { background-color: var(--sk-sw-ink); }
+
+/* ---- Athlete skin: motion in every interaction -------------------------------------------
+   Presses give, rows nudge, chosen things pop, numbers count, markers slide, sheets spring.
+   Outside the layers so it wins over the utilities the parts are drawn with. */
+.sk-slide-marker { display: none; }
+[data-skin="stopwatch"] .sk-slide-marker {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  transition: left 0.45s cubic-bezier(0.34, 1.4, 0.64, 1), width 0.45s cubic-bezier(0.34, 1.4, 0.64, 1), top 0.3s ease, height 0.3s ease, opacity 0.2s;
+}
+[data-skin="stopwatch"] .sk-slide-marker-still { transition: none; }
+[data-skin="stopwatch"] .sk-slide-marker[data-variant="pill"] { border-radius: 9999px; background: var(--sk-sw-ink); }
+[data-skin="stopwatch"] .sk-slide-marker[data-variant="line"] { bottom: -1px; height: 4px; border-radius: 4px; background: var(--sk-lime); }
+[data-skin="stopwatch"] .sk-seg:has(> .sk-slide-marker) > .sk-seg-item { position: relative; z-index: 1; background: transparent; transition: color 0.3s ease; }
+[data-skin="stopwatch"] .sk-seg:has(> .sk-slide-marker) > .sk-seg-item[data-active="true"] { color: #fff; }
+[data-skin="stopwatch"] .sk-tabs:has(> .sk-slide-marker) > .sk-tab { border-bottom-color: transparent; transition: color 0.25s ease; }
+
+/* Presses */
+[data-skin="stopwatch"] .sk-btn,
+[data-skin="stopwatch"] .sk-icon-btn,
+[data-skin="stopwatch"] [data-sk-tap],
+[data-skin="stopwatch"] [data-sk-tick],
+[data-skin="stopwatch"] [data-sk-stepper],
+[data-skin="stopwatch"] [data-shell="tabbar"] a {
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background-color 0.2s ease, color 0.2s ease, box-shadow 0.25s ease;
+}
+[data-skin="stopwatch"] .sk-btn:active,
+[data-skin="stopwatch"] .sk-icon-btn:active,
+[data-skin="stopwatch"] [data-sk-stepper]:active,
+[data-skin="stopwatch"] [data-shell="tabbar"] a:active { transform: scale(0.92); }
+[data-skin="stopwatch"] [data-sk-tap]:active,
+[data-skin="stopwatch"] [data-sk-tick]:active { transform: scale(0.88); }
+@media (hover: hover) {
+  [data-skin="stopwatch"] .sk-btn-primary:hover,
+  [data-skin="stopwatch"] .sk-btn-on-color:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -10px rgb(14 17 22 / 0.45); }
+  [data-skin="stopwatch"] .sk-btn:hover svg { transform: translateX(2px); }
+}
+[data-skin="stopwatch"] .sk-btn svg { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+
+/* Rows: they give a little when pressed and the chevron nudges forward. */
+[data-skin="stopwatch"] a.sk-list-row,
+[data-skin="stopwatch"] button.sk-list-row { transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background-color 0.2s ease; border-radius: 16px; }
+[data-skin="stopwatch"] a.sk-list-row:active,
+[data-skin="stopwatch"] button.sk-list-row:active { transform: scale(0.975); background-color: var(--sk-sw-grey); }
+[data-skin="stopwatch"] a.sk-list-row > svg:last-child,
+[data-skin="stopwatch"] button.sk-list-row > svg:last-child { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+[data-skin="stopwatch"] a.sk-list-row:hover > svg:last-child,
+[data-skin="stopwatch"] a.sk-list-row:active > svg:last-child,
+[data-skin="stopwatch"] button.sk-list-row:hover > svg:last-child { transform: translateX(4px); }
+
+/* Fields light up lime when they take focus. */
+[data-skin="stopwatch"] input,
+[data-skin="stopwatch"] textarea,
+[data-skin="stopwatch"] select { transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.2s ease; }
+[data-skin="stopwatch"] input:focus-visible,
+[data-skin="stopwatch"] input:focus,
+[data-skin="stopwatch"] textarea:focus { box-shadow: 0 0 0 4px rgb(212 255 58 / 0.7); }
+
+/* Ticks: a lime ring flies out when a set is marked done. */
+[data-skin="stopwatch"] [data-sk-tick] { position: relative; }
+[data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+[data-skin="stopwatch"] [data-day-state] { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1), background-color 0.2s ease; }
+[data-skin="stopwatch"] button:active [data-day-state] { transform: scale(0.88); }
+
+/* Sheets slide up with a spring, dialogs pop. */
+[data-skin="stopwatch"] [data-slot="sheet-content"],
+[data-skin="stopwatch"] [data-slot="dialog-content"] { border-radius: 28px; }
+[data-skin="stopwatch"] [data-slot="sheet-content"].inset-x-0.bottom-0 { border-radius: 28px 28px 0 0; }
+
+@keyframes sk-ring-out { 0% { box-shadow: 0 0 0 0 rgb(212 255 58 / 0.95) } 100% { box-shadow: 0 0 0 18px rgb(212 255 58 / 0) } }
+@keyframes sk-bump { 0% { transform: scale(1) } 40% { transform: scale(1.16) } 100% { transform: scale(1) } }
+@keyframes sk-photo-in { from { opacity: 0; filter: saturate(0.3) brightness(1.15) } to { opacity: 1; filter: none } }
+@keyframes sk-sheet-up { from { transform: translateY(100%) } to { transform: translateY(0) } }
+@keyframes sk-dialog-pop { 0% { transform: translateY(16px) scale(0.9); opacity: 0 } 100% { transform: none; opacity: 1 } }
+@keyframes sk-draw { from { stroke-dashoffset: 24 } to { stroke-dashoffset: 0 } }
+@keyframes sk-nudge { 0%, 100% { transform: translateX(0) } 50% { transform: translateX(3px) } }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] [data-sk-tick][aria-pressed="true"]::after { animation: sk-ring-out 0.6s ease-out both; }
+  [data-skin="stopwatch"] [data-sk-stepper-value] { animation: sk-bump 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  [data-skin="stopwatch"] .sk-hero-photo { animation: sk-photo-in 1.1s ease-out both; }
+  [data-skin="stopwatch"] .sk-hero .sk-btn svg { animation: sk-nudge 1.6s ease-in-out 1s infinite; }
+  [data-skin="stopwatch"] .sk-meter > span { transform-origin: left center; animation: sk-grow-x 0.9s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-list > li { animation: sk-rise 0.4s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-list > li:nth-child(2) { animation-delay: 40ms; }
+  [data-skin="stopwatch"] .sk-list > li:nth-child(3) { animation-delay: 80ms; }
+  [data-skin="stopwatch"] .sk-list > li:nth-child(4) { animation-delay: 120ms; }
+  [data-skin="stopwatch"] .sk-list > li:nth-child(5) { animation-delay: 160ms; }
+  [data-skin="stopwatch"] .sk-list > li:nth-child(n + 6) { animation-delay: 200ms; }
+  [data-skin="stopwatch"] [data-clock] > :first-child { animation: sk-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  [data-skin="stopwatch"] [data-slot="sheet-content"].inset-x-0.bottom-0[data-state="open"] { animation: sk-sheet-up 0.5s cubic-bezier(0.2, 1.15, 0.35, 1) both; }
+  [data-skin="stopwatch"] [data-slot="dialog-content"][data-state="open"] { animation: sk-dialog-pop 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+  .sk-anim-draw { stroke-dasharray: 24; animation: sk-draw 0.5s 0.25s ease-out both; }
+}

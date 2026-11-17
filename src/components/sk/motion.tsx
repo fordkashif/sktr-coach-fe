@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 /*
@@ -261,5 +261,107 @@ export function Bars({
         )
       })}
     </ol>
+  )
+}
+
+/**
+ * SlideMarker: the highlight of a set of tabs that slides to the chosen one instead of jumping.
+ * Put it inside the row (which must be `position: relative`); it finds the child with
+ * data-active="true". It only shows under the athlete skin; elsewhere the tabs draw their own state.
+ */
+export function SlideMarker({ variant, watch, memoryKey }: { variant: "pill" | "line"; watch: unknown; memoryKey?: string }) {
+  const marker = useRef<HTMLSpanElement>(null)
+  const [box, setBox] = useState<MarkerBox | null>(null)
+  const [ready, setReady] = useState(false)
+  useLayoutEffectSafe(() => {
+    const row = marker.current?.parentElement
+    if (!row) return
+    const read = (): MarkerBox | null => {
+      const active = row.querySelector<HTMLElement>(':scope > [data-active="true"]')
+      return active ? { left: active.offsetLeft, width: active.offsetWidth, top: active.offsetTop, height: active.offsetHeight } : null
+    }
+    const measured = read()
+    // Tabs that are separate screens remount on every switch: start from where the marker was.
+    const previous = memoryKey ? MARKER_MEMORY.get(memoryKey) : undefined
+    let frame = 0
+    if (previous && measured && !ready) {
+      setBox(previous)
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          setReady(true)
+          setBox(measured)
+        })
+      })
+    } else {
+      setBox(measured)
+      frame = requestAnimationFrame(() => setReady(true))
+    }
+    if (memoryKey && measured) MARKER_MEMORY.set(memoryKey, measured)
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            const next = read()
+            setBox(next)
+            if (memoryKey && next) MARKER_MEMORY.set(memoryKey, next)
+          })
+    observer?.observe(row)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+    // `ready` only gates the first frame, so it is left out of the dependencies.
+  }, [watch, memoryKey])
+  return (
+    <span
+      ref={marker}
+      aria-hidden
+      data-variant={variant}
+      className={cn("sk-slide-marker", !ready && "sk-slide-marker-still")}
+      style={
+        box
+          ? variant === "pill"
+            ? { left: box.left, top: box.top, width: box.width, height: box.height }
+            : { left: box.left, width: box.width }
+          : { opacity: 0 }
+      }
+    />
+  )
+}
+
+type MarkerBox = { left: number; width: number; top: number; height: number }
+const MARKER_MEMORY = new Map<string, MarkerBox>()
+
+/** useLayoutEffect in the browser, useEffect where there is no DOM. */
+const useLayoutEffectSafe = typeof window === "undefined" ? useEffect : useLayoutEffect
+
+/** A number in a stat that counts up when it shows, on the athlete side only. */
+export function CountUpNumber({ value }: { value: number }) {
+  const span = useRef<HTMLSpanElement>(null)
+  const [animate, setAnimate] = useState(false)
+  useLayoutEffectSafe(() => {
+    setAnimate(Boolean(span.current?.closest('[data-skin="stopwatch"]')) && Number.isInteger(value) && Math.abs(value) < 100000)
+  }, [value])
+  const shown = useCountUp(animate ? value : 0, 900)
+  return <span ref={span}>{animate ? shown : value}</span>
+}
+
+/**
+ * Celebrate: a lime tick in a circle with a burst and one big word, for the end of a session.
+ * It is part of the page, not a dialog, and never blocks a tap.
+ */
+export function Celebrate({ word, children }: { word: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="pointer-events-none flex flex-col items-center gap-3 py-2 text-center" role="presentation">
+      <Burst play>
+        <span className="grid size-24 place-items-center rounded-full bg-sk-lime shadow-[0_0_0_6px_#fff,0_0_0_8px_var(--sk-sw-ink)]">
+          <svg viewBox="0 0 24 24" className="size-11" fill="none" stroke="var(--sk-sw-ink)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5 12.5l4.5 4.5L19 7" className="sk-anim-draw" />
+          </svg>
+        </span>
+      </Burst>
+      <p className="sk-anim-rise font-display text-[3rem] font-black uppercase leading-[0.85] text-sk-ink [animation-delay:150ms]">{word}</p>
+      {children}
+    </div>
   )
 }

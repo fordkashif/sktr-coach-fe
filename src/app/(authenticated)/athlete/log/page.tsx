@@ -21,6 +21,7 @@ import { SessionMediaSection, exerciseMedia, rowLabels, useSessionMedia } from "
 import { setCount, useSessionLog } from "@/components/athlete/log/use-session-log"
 import {
   ActionBar,
+  Celebrate,
   HoldButton,
   Button,
   EffortScale,
@@ -293,6 +294,7 @@ export default function AthleteLogPage() {
 
       {session && completed && !editing ? (
         <>
+          {justFinished ? <Celebrate word="Session done" /> : null}
           {justFinished ? (
             <Notice
               tone="success"
