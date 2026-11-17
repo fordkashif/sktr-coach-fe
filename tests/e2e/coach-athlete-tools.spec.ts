@@ -125,7 +125,11 @@ test.describe("coach tools for athletes (mock mode)", () => {
 
     const squat = page.locator('[data-exercise="Back squat"]')
     await squat.getByRole("button", { name: "Same as target" }).click()
-    await squat.getByLabel("Back squat, set 3, load in kilograms").fill("125")
+    // Wait for the targets to land before changing one, or the typing can race the fill on a slow machine.
+    const set3Load = squat.getByLabel("Back squat, set 3, load in kilograms")
+    await expect(set3Load).toHaveValue("120")
+    await set3Load.fill("125")
+    await expect(set3Load).toHaveValue("125")
     await squat.getByRole("button", { name: "Back squat, set 3, effort, not rated" }).click()
     await page.getByRole("radio", { name: /^9/ }).click()
     await squat.getByRole("button", { name: "Add note" }).click()
