@@ -4,6 +4,7 @@ import { conflictSentence, readEditConflict, type EditConflict } from "@/lib/dat
 import { findEditConflict, getEditStamp, recordMockEdit } from "@/lib/data/edit-conflict-data"
 import { Plus, UserPlus } from "@phosphor-icons/react"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { cn } from "@/lib/utils"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { AssignTeamDialog } from "@/components/club-admin/athletes-view"
@@ -14,6 +15,8 @@ import {
   Button,
   CheckRow,
   DataTable,
+  FaceStack,
+  TileGrid,
   Dialog,
   EmptyState,
   Field,
@@ -1013,51 +1016,6 @@ export default function ClubAdminTeamsPage() {
         .filter(Boolean)
         .join(" ")
 
-  const columns: Array<DataTableColumn<TeamRow>> = [
-    {
-      key: "team",
-      header: "Team",
-      cell: (team) => (
-        <Link to={`?team=${encodeURIComponent(team.id)}`} className="hover:text-sk-blue-link">
-          {team.name}
-          <TableSub>{team.eventGroup === "Mid" ? "Middle distance" : team.eventGroup}</TableSub>
-        </Link>
-      ),
-    },
-    {
-      key: "lead",
-      header: "Lead coach",
-      cell: (team) => {
-        const lead = team.coaches.find((coach) => coach.isPrimary)
-        const extra = team.coaches.length - (lead ? 1 : 0)
-        if (lead) {
-          return (
-            <>
-              {coachLabel(lead)}
-              {extra > 0 ? <span className="text-sk-mute"> and {extra} more</span> : null}
-            </>
-          )
-        }
-        return team.status === "archived" ? (
-          <span className="text-sk-mute">None</span>
-        ) : (
-          <StatusText tone="coral">{team.coaches.length > 0 ? `No lead, ${plural(team.coaches.length, "coach", "coaches")}` : "No lead coach"}</StatusText>
-        )
-      },
-    },
-    { key: "athletes", header: "Athletes", align: "right", strong: true, cell: (team) => team.athletes.length },
-    {
-      key: "status",
-      header: "Status",
-      phone: "trailing",
-      cell: (team) => (
-        <span className="flex items-center justify-between gap-2">
-          <StatusText tone={STATUS[team.status].tone}>{STATUS[team.status].label}</StatusText>
-          <RowMenu label={`More for ${team.name}`} items={teamMenu(team, false)} />
-        </span>
-      ),
-    },
-  ]
 
   return (
     <Screen>
@@ -1124,14 +1082,57 @@ export default function ClubAdminTeamsPage() {
             <EmptyState title="Nothing archived" body="Teams you archive are kept here with their roster and history, ready to restore." />
           )
         ) : (
-          <DataTable
-            caption={view === "active" ? "Active teams" : "Archived teams"}
-            columns={columns}
-            rows={visibleTeams}
-            rowKey={(team) => team.id}
-            rowProps={(team) => ({ "data-team": team.name })}
-            rowBelow={archiveConfirm}
-          />
+          <TileGrid label={view === "active" ? "Active teams" : "Archived teams"}>
+            {visibleTeams.map((team) => {
+              const lead = team.coaches.find((coach) => coach.isPrimary)
+              const extra = team.coaches.length - (lead ? 1 : 0)
+              const noLead = !lead && team.status !== "archived"
+              const confirmRow = archiveConfirm(team)
+              return (
+                <li key={team.id} className={cn("sk-tile-item flex flex-col", confirmRow && "sm:col-span-2 xl:col-span-3")} data-team={team.name}>
+                  <div className={cn("sk-tile flex flex-1 flex-col gap-4 p-4", noLead && "sk-tile-flag", team.status === "archived" && "opacity-75")}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link to={`?team=${encodeURIComponent(team.id)}`} className="sk-tile-link block truncate font-display text-[1.625rem] font-black uppercase leading-none text-sk-ink outline-offset-4">
+                          {team.name}
+                        </Link>
+                        <p className="mt-1 truncate text-sm text-sk-mute">{team.eventGroup === "Mid" ? "Middle distance" : team.eventGroup}</p>
+                      </div>
+                      <div className="relative z-10 flex shrink-0 items-center gap-2">
+                        <StatusText tone={STATUS[team.status].tone}>{STATUS[team.status].label}</StatusText>
+                        <RowMenu label={`More for ${team.name}`} items={teamMenu(team, false)} />
+                      </div>
+                    </div>
+                    <div className="mt-auto flex items-end justify-between gap-3">
+                      <div className="min-w-0 text-sm">
+                        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.02em] text-sk-mute">Lead coach</p>
+                        {lead ? (
+                          <p className="truncate font-semibold text-sk-ink">
+                            {coachLabel(lead)}
+                            {extra > 0 ? <span className="font-normal text-sk-mute"> and {extra} more</span> : null}
+                          </p>
+                        ) : team.status === "archived" ? (
+                          <p className="text-sk-mute">None</p>
+                        ) : (
+                          <StatusText tone="coral">{team.coaches.length > 0 ? `No lead, ${plural(team.coaches.length, "coach", "coaches")}` : "No lead coach"}</StatusText>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="font-display text-[2.25rem] font-black leading-none tabular-nums text-sk-ink">{team.athletes.length}</p>
+                        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.02em] text-sk-mute">{team.athletes.length === 1 ? "athlete" : "athletes"}</p>
+                      </div>
+                    </div>
+                    {team.athletes.length > 0 ? (
+                      <FaceStack names={team.athletes.map((athlete) => athlete.name)} max={6} label={`Athletes: ${team.athletes.map((athlete) => athlete.name).join(", ")}`} />
+                    ) : (
+                      <p className="text-sm text-sk-mute">No athletes yet</p>
+                    )}
+                  </div>
+                  {confirmRow ? <div className="relative z-10 mt-2">{confirmRow}</div> : null}
+                </li>
+              )
+            })}
+          </TileGrid>
         )}
       </Section>
 

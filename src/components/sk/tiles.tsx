@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Ring } from "./motion"
+import { Avatar } from "./status"
 
 /*
  * Tiles of the "Stopwatch" skin for the coach side (DESIGN.md, Coach screens). Grey tiles on white,
@@ -164,6 +165,130 @@ export function WeekSegments({ total, current, className }: { total: number; cur
         ))}
       </span>
       {current !== null ? <span className="text-[0.8125rem] font-bold text-sk-ink">{label}</span> : null}
+    </span>
+  )
+}
+
+/**
+ * ReadinessBar: how a group checked in, as one bar in parts (ready, watch, review, no check-in),
+ * with the words under it. The parts grow in from the left.
+ */
+export function ReadinessBar({ ready, watch, review, none = 0, className }: { ready: number; watch: number; review: number; none?: number; className?: string }) {
+  const total = ready + watch + review + none
+  if (total === 0) return null
+  const parts = [
+    { key: "ready", count: ready, className: "bg-sk-green", word: "ready" },
+    { key: "watch", count: watch, className: "bg-sk-amber", word: "watch" },
+    { key: "review", count: review, className: "bg-sk-coral", word: "review" },
+    { key: "none", count: none, className: "bg-sk-soft-2", word: "no check-in" },
+  ].filter((part) => part.count > 0)
+  const words = parts.map((part) => `${part.count} ${part.word}`).join(", ")
+  return (
+    <span className={cn("block", className)}>
+      <span role="img" aria-label={`Readiness: ${words}`} className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full">
+        {parts.map((part, index) => (
+          <span key={part.key} className={cn("sk-anim-grow block h-full first:rounded-l-full last:rounded-r-full", part.className)} style={{ flexGrow: part.count, animationDelay: `${index * 90}ms` }} />
+        ))}
+      </span>
+      <span className="mt-1.5 block text-[0.8125rem] text-sk-mute" aria-hidden>
+        {words}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * TeamTile: one team as a tile. Lead coach (or a coral "No lead coach"), how many athletes in a
+ * scoreboard number, how they checked in, and plan adherence in a ring.
+ */
+export function TeamTile({
+  to,
+  name,
+  detail,
+  lead,
+  athletes,
+  adherence,
+  readiness,
+  flag,
+}: {
+  to: string
+  name: string
+  detail?: ReactNode
+  lead: ReactNode
+  athletes: number
+  adherence: number | null
+  readiness?: ReactNode
+  flag?: boolean
+}) {
+  return (
+    <li className="sk-tile-item">
+      <Link to={to} className={cn("sk-tile flex h-full flex-col gap-3 p-4", flag && "sk-tile-flag")} data-team-tile={name}>
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink">{name}</span>
+            {detail ? <span className="mt-1 block truncate text-sm text-sk-mute">{detail}</span> : null}
+          </span>
+          <Ring progress={adherence === null ? 0 : adherence / 100} size={58} thickness={6}>
+            <span className="font-display text-[1rem] font-black leading-none text-sk-ink">{adherence === null ? "-" : `${adherence}%`}</span>
+          </Ring>
+        </span>
+        <span className="flex items-end justify-between gap-3">
+          <span className="min-w-0 text-sm">{lead}</span>
+          <span className="shrink-0 text-right">
+            <span className="block font-display text-[2rem] font-black leading-none tabular-nums text-sk-ink">{athletes}</span>
+            <span className="block text-[0.6875rem] font-bold uppercase tracking-[0.02em] text-sk-mute">{athletes === 1 ? "athlete" : "athletes"}</span>
+          </span>
+        </span>
+        {readiness}
+      </Link>
+    </li>
+  )
+}
+
+/**
+ * UsageMeter: how much of an allowance is used (4 of 5 teams) as a ring with the numbers beside it.
+ * Near the limit the ring turns amber; at it, coral.
+ */
+export function UsageMeter({ label, used, limit, hint }: { label: string; used: number; limit: number | null; hint?: ReactNode }) {
+  const share = limit ? Math.min(1, used / limit) : 0
+  const tone = limit && used >= limit ? "text-sk-coral-ink" : limit && used / limit >= 0.8 ? "text-sk-amber-ink" : "text-sk-mute"
+  return (
+    <li className="sk-tile-item">
+      <span className="sk-tile flex items-center gap-4 p-4" data-usage={label}>
+        <Ring progress={share} size={64} thickness={7} />
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-sk-mute">{label}</span>
+          <span className="block font-display text-[2rem] font-black leading-none tabular-nums text-sk-ink">
+            {used}
+            <span className="ml-1 text-[1rem] text-sk-mute">{limit ? `of ${limit}` : "no limit"}</span>
+          </span>
+          {hint ? <span className={cn("mt-0.5 block text-[0.8125rem]", tone)}>{hint}</span> : null}
+        </span>
+      </span>
+    </li>
+  )
+}
+
+/**
+ * FaceStack: the first few people of a group as overlapping avatars, then "+3". Each face pops in
+ * a beat after the last.
+ */
+export function FaceStack({ names, max = 5, label }: { names: string[]; max?: number; label: string }) {
+  if (names.length === 0) return null
+  const shown = names.slice(0, max)
+  const rest = names.length - shown.length
+  return (
+    <span role="img" aria-label={label} className="flex items-center">
+      {shown.map((name, index) => (
+        <span key={`${name}-${index}`} className="sk-face -ml-1 inline-flex first:ml-0" style={{ animationDelay: `${index * 60}ms` }}>
+          <Avatar name={name} size="sm" className="ring-[3px] ring-sk-sw-grey" />
+        </span>
+      ))}
+      {rest > 0 ? (
+        <span className="sk-face -ml-1 grid size-8 place-items-center rounded-full bg-sk-ink text-[0.75rem] font-bold text-white ring-[3px] ring-sk-sw-grey" style={{ animationDelay: `${shown.length * 60}ms` }}>
+          +{rest}
+        </span>
+      ) : null}
     </span>
   )
 }

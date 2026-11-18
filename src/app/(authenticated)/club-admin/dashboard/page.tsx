@@ -1,24 +1,23 @@
 import { useEffect, useMemo, useState } from "react"
-import { Check } from "@phosphor-icons/react"
+import { CaretRight, Check } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import {
   Button,
-  DataTable,
   EmptyState,
   LinkButton,
   List,
   ListRow,
   Notice,
+  ReadinessBar,
   Screen,
   ScreenHeader,
   Section,
   SkeletonRows,
   Stat,
   StatStrip,
-  StatusDot,
   StatusText,
-  TableSub,
-  type DataTableColumn,
+  TeamTile,
+  TileGrid,
   type StateTone,
 } from "@/components/sk"
 import { useClubAdmin } from "@/lib/club-admin-context"
@@ -28,7 +27,7 @@ import { getClubAdminTeamHealthSnapshot, type ClubAdminTeamHealthRow, type ClubA
 import { ROSTER_CHANGED_EVENT } from "@/lib/data/coach/roster-mock"
 import { messagesHomeHref } from "@/lib/data/messages/links"
 import { useMessageUnread } from "@/lib/data/messages/unread-store"
-import { adherenceText, averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
+import { averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import type { Athlete } from "@/lib/mock-data"
 import type { AccountRequest, ClubTeam, ClubUser, CoachInvite } from "@/lib/mock-club-admin"
 import { getBackendMode } from "@/lib/supabase/config"
@@ -36,6 +35,9 @@ import { loadClubAccountRequests, loadClubInvites, loadClubTeams, loadClubUsers,
 
 /** One row of the team table. `adherenceWeight` lets the club figure weight teams fairly. */
 type TeamRow = ClubAdminTeamHealthRow & { adherenceWeight: number }
+
+/** The photo behind "Needs you" (public/images/athlete, from Unsplash). */
+const CLUB_PHOTO = "/images/athlete/club.webp"
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`
@@ -68,15 +70,6 @@ function buildMockTeamRows(teams: ClubTeam[], users: ClubUser[], canned: Athlete
         adherenceWeight: roster.filter((athlete) => (cannedById.get(athlete.id)?.adherence ?? null) !== null).length,
       }
     })
-}
-
-/** Readiness of a team in one line: the worst state leads, as a dot and words. */
-function TeamReadiness({ team }: { team: TeamRow }) {
-  if (team.athleteCount === 0) return <span className="text-sk-mute">No athletes yet</span>
-  if (team.ready + team.watch + team.review === 0) return <span className="text-sk-mute">No check-ins yet</span>
-  const tone: StateTone = team.review > 0 ? "coral" : team.watch > 0 ? "amber" : "green"
-  const parts = [team.review > 0 ? `${team.review} review` : null, team.watch > 0 ? `${team.watch} watch` : null, team.ready > 0 ? `${team.ready} ready` : null].filter(Boolean)
-  return <StatusText tone={tone}>{parts.join(", ")}</StatusText>
 }
 
 export default function ClubAdminDashboardPage() {
@@ -287,37 +280,9 @@ export default function ClubAdminDashboardPage() {
     ? "Getting your club..."
     : kpi.teams === 0 && kpi.athletes === 0 && kpi.coaches === 0
       ? "Your club is ready to fill. Start with a team, then bring in your coaches."
-      : `${plural(kpi.coaches, "coach", "coaches")} and ${plural(kpi.athletes, "athlete")} across ${plural(kpi.teams, "team")}. ${
-          needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`
-        }`
+      : `${plural(kpi.coaches, "coach", "coaches")} and ${plural(kpi.athletes, "athlete")} across ${plural(kpi.teams, "team")}.`
+  const waiting = needsYou.reduce((sum, item) => sum + item.count, 0)
 
-  const teamColumns: Array<DataTableColumn<TeamRow>> = [
-    {
-      key: "team",
-      header: "Team",
-      cell: (team) => (
-        <Link to={`/club-admin/teams?team=${encodeURIComponent(team.id)}`} className="hover:text-sk-blue-link">
-          {team.name}
-          <TableSub>{[team.eventGroup ?? "No event group", team.status === "draft" ? "draft" : null].filter(Boolean).join(", ")}</TableSub>
-        </Link>
-      ),
-    },
-    {
-      key: "lead",
-      header: "Lead coach",
-      cell: (team) => (team.hasLeadCoach ? (team.leadCoachName ?? "Assigned") : <StatusText tone="coral">No lead coach</StatusText>),
-    },
-    { key: "athletes", header: "Athletes", align: "right", cell: (team) => team.athleteCount },
-    { key: "readiness", header: "Readiness", phone: "plain", cell: (team) => <TeamReadiness team={team} /> },
-    {
-      key: "adherence",
-      header: "Adherence",
-      align: "right",
-      strong: true,
-      phone: "trailing",
-      cell: (team) => (team.athleteCount === 0 ? <span className="font-normal text-sk-mute">No athletes</span> : adherenceText(team.adherence)),
-    },
-  ]
 
   return (
     <Screen>
@@ -337,21 +302,48 @@ export default function ClubAdminDashboardPage() {
 
       {backendError ? <Notice tone="error">Could not load the latest data: {backendError}</Notice> : null}
 
-      {dataLoading ? null : needsYou.length > 0 ? (
-        <Section title="Needs you" hint="Requests, athletes and teams that are waiting on a club admin." meta={`${needsYou.length} open`}>
-          <List>
-            {needsYou.map((item) => (
-              <ListRow
-                key={item.key}
-                to={item.to}
-                leading={<StatusDot tone={item.tone} />}
-                title={`${item.count} ${item.title.charAt(0).toLowerCase()}${item.title.slice(1)}`}
-                subtitle={item.body}
-              />
-            ))}
-          </List>
-        </Section>
-      ) : null}
+      {dataLoading ? null : (
+        <section aria-labelledby="club-needs-you" data-club-needs-you className="sk-hero-wrap">
+          <img src={CLUB_PHOTO} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+          <div className="sk-hero sk-hero-over">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 id="club-needs-you" className="sk-hero-label">
+                Needs you
+              </h2>
+              {needsYou.length === 0 ? <p className="sk-hero-label shrink-0">All clear</p> : null}
+            </div>
+            {needsYou.length > 0 ? (
+              <>
+                <p className="sk-hero-title">
+                  {waiting} {waiting === 1 ? "thing" : "things"} waiting
+                </p>
+                <ul className="mt-1 flex flex-col gap-2" aria-label="Waiting on a club admin">
+                  {needsYou.map((item) => (
+                    <li key={item.key}>
+                      <Link
+                        to={item.to}
+                        aria-label={`${item.count} ${item.title.toLowerCase()}`}
+                        className="group flex items-center gap-3 rounded-[18px] bg-white/12 px-4 py-3 transition-[background-color,transform] duration-200 hover:bg-white/20 active:scale-[0.98]"
+                      >
+                        <span className="font-display text-[2rem] font-black leading-none tabular-nums">{item.count}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-bold leading-tight">{item.title}</span>
+                          <span className="block text-sm opacity-85">{item.body}</span>
+                        </span>
+                        <CaretRight className="size-5 shrink-0 transition-transform duration-200 group-hover:translate-x-1" weight="bold" aria-hidden />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <>
+                <p className="sk-hero-title">Nothing waiting</p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       {setupIncomplete && !setupGuideDismissedAt ? (
         <Section
@@ -412,7 +404,6 @@ export default function ClubAdminDashboardPage() {
 
       <Section
         title="Team by team"
-        hint="Who leads each team, how many athletes they have, and how they are doing."
         action={
           <Link to="/club-admin/reports" className="sk-link">
             Reports
@@ -422,7 +413,29 @@ export default function ClubAdminDashboardPage() {
         {dataLoading ? (
           <SkeletonRows rows={4} label="Loading teams" />
         ) : teamRows.length > 0 ? (
-          <DataTable caption="Teams of the club with their lead coach, size, readiness and adherence" columns={teamColumns} rows={teamRows} rowKey={(team) => team.id} />
+          <TileGrid label="Teams of the club" className="mt-1">
+            {teamRows.map((team) => (
+              <TeamTile
+                key={team.id}
+                to={`/club-admin/teams?team=${encodeURIComponent(team.id)}`}
+                name={team.name}
+                detail={[team.eventGroup ?? "No event group", team.status === "draft" ? "draft" : null].filter(Boolean).join(", ")}
+                lead={team.hasLeadCoach ? <span className="font-semibold text-sk-ink">{team.leadCoachName ?? "Lead coach assigned"}</span> : <StatusText tone="coral">No lead coach</StatusText>}
+                athletes={team.athleteCount}
+                adherence={team.athleteCount === 0 ? null : team.adherence}
+                flag={!team.hasLeadCoach}
+                readiness={
+                  team.athleteCount === 0 ? (
+                    <span className="text-sm text-sk-mute">No athletes yet</span>
+                  ) : team.ready + team.watch + team.review === 0 ? (
+                    <span className="text-sm text-sk-mute">No check-ins yet</span>
+                  ) : (
+                    <ReadinessBar ready={team.ready} watch={team.watch} review={team.review} none={team.noCheckIn} />
+                  )
+                }
+              />
+            ))}
+          </TileGrid>
         ) : (
           <EmptyState
             title="No teams yet"
@@ -436,11 +449,6 @@ export default function ClubAdminDashboardPage() {
         )}
       </Section>
 
-      {!dataLoading && needsYou.length === 0 && !setupIncomplete ? (
-        <Section title="Needs you">
-          <EmptyState title="Nothing is waiting on you" body="Account requests, reported messages, athletes without a team and teams without a lead coach show up here." />
-        </Section>
-      ) : null}
     </Screen>
   )
 }

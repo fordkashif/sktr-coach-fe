@@ -66,7 +66,7 @@ export function Ring({
   return (
     <span className={cn("relative inline-grid shrink-0 place-items-center rounded-full", pulse && "sk-anim-breathe", className)} style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="absolute inset-0 -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-sw-grey)" strokeWidth={stroke} />
+        <circle data-sk-ring-track cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-sw-grey)" strokeWidth={stroke} />
         {clamped > 0 ? (
           <>
             <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--sk-sw-ink)" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={dash} className="transition-[stroke-dasharray] duration-300 ease-linear" />

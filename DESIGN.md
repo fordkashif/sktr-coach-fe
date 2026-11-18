@@ -198,9 +198,9 @@ Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus r
 
 Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weight="fill"` for the active tab. No Lucide, no Hugeicons. Icons support words; they do not replace them, except the bell, back, close and the athlete's log button, which carry an `aria-label`.
 
-## Athlete and coach skin: "Stopwatch"
+## Athlete, coach and club admin skin: "Stopwatch"
 
-The athlete and coach sides are the most used parts of the app and have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for the athlete and coach roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so club admin and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
+The athlete, coach and club admin sides have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for those roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so guardian and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
 
 - One accent: blue `sk-accent` (#2152ff, white text on it) on ink (#0e1116) and white. The accent is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple. The accent is set in one place, the `--sk-accent*` tokens in `globals.css` (with `--sk-on-accent` for text on it and `--sk-accent-on-ink` for the accent as text on ink), so it can be changed without touching a screen.
 - Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words. Outfit stays for the rest of the app.
@@ -230,6 +230,17 @@ Coach screens (same skin, plus tiles from `@/components/sk`, file `tiles.tsx`):
 | `WeekRail` | A week as day tiles in a row, today in the accent; scrolls inside itself on a phone. |
 | `Countdown` | Days until something as one scoreboard number ("12 DAYS", "Tomorrow", "On now"). |
 | `WeekSegments` | The weeks of a block as short bars: gone, this week, to come. |
+| `TeamTile` | A team: name and event group, lead coach (or a coral "No lead coach" and an amber outline), athletes as a big number, adherence in a ring, readiness under it. |
+| `ReadinessBar` | How a group checked in as one bar in parts (ready, watch, review, no check-in) that grow in, with the counts in words under it. |
+| `UsageMeter` | Part of an allowance in use (4 of 5 teams) as a ring with the numbers; the words turn amber near the limit and coral at it. |
+| `FaceStack` | The first few people of a group as overlapping avatars that pop in, then "+3". |
+
+Club admin screens (same skin and tiles):
+
+- Dashboard: "Needs you" leads, as the accent card over a photo (`club.webp`) with the total waiting as the title and each item as a row with its count; "Nothing waiting" when it is clear. The teams are a `TileGrid` of `TeamTile`s.
+- Teams: each team is a tile with its lead coach, athletes as a big number and a `FaceStack` of the roster. The name is the link to the team (a stretched link, `sk-tile-link`); the status and the menu sit on top of it. The archive confirmation opens under the tile.
+- Billing: what is in use is a row of `UsageMeter`s.
+- Rings drawn on a grey tile get a white track.
 
 Motion parts (from `@/components/sk`, file `motion.tsx`):
 

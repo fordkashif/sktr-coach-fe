@@ -838,6 +838,7 @@ body {
 [data-skin="stopwatch"] .sk-tile { background: var(--sk-sw-grey); transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.25s ease, background-color 0.2s ease; }
 [data-skin="stopwatch"] .sk-tile-accent { background: var(--sk-accent); color: var(--sk-on-accent); }
 [data-skin="stopwatch"] .sk-tile-flag { box-shadow: inset 0 0 0 2px var(--sk-amber); }
+[data-skin="stopwatch"] .sk-tile [data-sk-ring-track] { stroke: #fff; }
 @media (hover: hover) {
   [data-skin="stopwatch"] a.sk-tile:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgb(14 17 22 / 0.35); }
 }
@@ -850,7 +851,14 @@ body {
   [data-skin="stopwatch"] .sk-tile-item:nth-child(5) { animation-delay: 240ms; }
   [data-skin="stopwatch"] .sk-tile-item:nth-child(6) { animation-delay: 300ms; }
   [data-skin="stopwatch"] .sk-tile-item:nth-child(n + 7) { animation-delay: 360ms; }
+  [data-skin="stopwatch"] .sk-face { animation: sk-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 }
+/* A tile whose name is a stretched link, with its own buttons on top. */
+[data-skin="stopwatch"] div.sk-tile:has(.sk-tile-link) { position: relative; }
+@media (hover: hover) {
+  [data-skin="stopwatch"] div.sk-tile:has(.sk-tile-link:hover) { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgb(14 17 22 / 0.35); }
+}
+.sk-tile-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 /* Filter chips under the skin: grey pills, the chosen one ink. */
 [data-skin="stopwatch"] [data-sk-chip] { border: 0; border-radius: 9999px; background: var(--sk-sw-grey); color: var(--sk-ink); transition: background-color 0.2s ease, color 0.2s ease, transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1); }
 [data-skin="stopwatch"] [data-sk-chip]:hover { background: #e4e6dd; }
