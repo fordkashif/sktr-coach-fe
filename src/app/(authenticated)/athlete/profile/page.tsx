@@ -420,9 +420,6 @@ export default function AthleteProfilePage() {
               <Field label="Preferred name" optional hint="What you like to be called." error={fieldErrors.preferredName}>
                 <Input autoComplete="nickname" maxLength={60} {...detailField("preferredName")} />
               </Field>
-              <Field label="Pronouns" optional error={fieldErrors.pronouns}>
-                <Input maxLength={40} placeholder="she/her, he/him, they/them" {...detailField("pronouns")} />
-              </Field>
               <Field label="Date of birth" error={fieldErrors.dateOfBirth}>
                 <Input
                   type="date"
@@ -550,7 +547,6 @@ export default function AthleteProfilePage() {
                 <FactList>
                   <Fact label="Name">{fullName}</Fact>
                   <Fact label="Preferred name">{details.preferredName}</Fact>
-                  <Fact label="Pronouns">{details.pronouns}</Fact>
                   <Fact label="Date of birth">{profile.dateOfBirth ? `${formatDate(profile.dateOfBirth)}${age !== null ? ` (${age})` : ""}` : null}</Fact>
                   <Fact label="Event group" empty="Not set">
                     {eventGroupLabel(profile.eventGroup)}
