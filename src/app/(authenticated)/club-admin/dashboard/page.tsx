@@ -280,9 +280,8 @@ export default function ClubAdminDashboardPage() {
     ? "Getting your club..."
     : kpi.teams === 0 && kpi.athletes === 0 && kpi.coaches === 0
       ? "Your club is ready to fill. Start with a team, then bring in your coaches."
-      : `${plural(kpi.coaches, "coach", "coaches")} and ${plural(kpi.athletes, "athlete")} across ${plural(kpi.teams, "team")}. ${
-          needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`
-        }`
+      : `${plural(kpi.coaches, "coach", "coaches")} and ${plural(kpi.athletes, "athlete")} across ${plural(kpi.teams, "team")}.`
+  const waiting = needsYou.reduce((sum, item) => sum + item.count, 0)
 
 
   return (
@@ -316,7 +315,7 @@ export default function ClubAdminDashboardPage() {
             {needsYou.length > 0 ? (
               <>
                 <p className="sk-hero-title">
-                  {needsYou.reduce((sum, item) => sum + item.count, 0)} {needsYou.reduce((sum, item) => sum + item.count, 0) === 1 ? "thing" : "things"} waiting
+                  {waiting} {waiting === 1 ? "thing" : "things"} waiting
                 </p>
                 <ul className="mt-1 flex flex-col gap-2" aria-label="Waiting on a club admin">
                   {needsYou.map((item) => (
