@@ -12,7 +12,7 @@ Two reference screens show everything below in use. Copy them:
 1. The page is white. Content sits directly on it. There are no boxes around sections, no grey canvas, no drop shadows.
 2. Sections are separated by whitespace. Things inside a section are separated by 1px hairlines.
 3. Lists are rows. Tables are tables. A stat is a number with a small label.
-4. Type does the work: one typeface (Outfit), big tight bold titles, plain sentence case words.
+4. Type does the work: Big Shoulders Display for titles and numbers, Sora for words, plain sentence case.
 5. Colour means state. If a colour is not telling the reader "act", "ready", "watch" or "needs attention", remove it.
 
 It has to feel like an app, not a report: the same chrome on every screen, the same header pattern on every screen, content that starts straight away, and nothing that jumps while loading.
@@ -71,7 +71,7 @@ The page background is white everywhere, including sign-in screens. There is no 
 
 ## Type
 
-Outfit only, loaded as a variable font. No other typeface, no serif, no monospace for numbers (use `tabular-nums`).
+Two typefaces, nothing else: Sora (variable) for words everywhere, including sheets, dialogs, menus and toasts (it is the body font), and Big Shoulders Display (800 and 900) for titles, headings and numbers. No serif, no monospace for numbers (use `tabular-nums`). Outfit is gone.
 
 | Role | Class | Phone | Desktop |
 |---|---|---|---|
@@ -203,7 +203,7 @@ Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weigh
 The athlete, coach, club admin and parent or guardian sides have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for those roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
 
 - One accent: blue `sk-accent` (#2152ff, white text on it) on ink (#0e1116) and white. The accent is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple. The accent is set in one place, the `--sk-accent*` tokens in `globals.css` (with `--sk-on-accent` for text on it and `--sk-accent-on-ink` for the accent as text on ink), so it can be changed without touching a screen.
-- Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words. Outfit stays for the rest of the app.
+- Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words, on every screen and overlay.
 - Buttons are pills. The primary button is the accent. The hero action is the reverse of the hero (white with blue text).
 - Today's session is the accent `HeroBlock` over a photo (`image`, files in `public/images/athlete`).
 - Stats in a `StatStrip` are tiles; the first is the accent.
@@ -242,6 +242,14 @@ Club admin screens (same skin and tiles):
 - Teams: each team is a tile with its lead coach, athletes as a big number and a `FaceStack` of the roster. The name is the link to the team (a stretched link, `sk-tile-link`); the status and the menu sit on top of it. The archive confirmation opens under the tile.
 - Billing: what is in use is a row of `UsageMeter`s.
 - Rings drawn on a grey tile get a white track.
+
+Shell, overlays and public pages:
+
+- Profile menu: an accent card with the avatar, name, email and role, then rows with a round icon and a chevron; Sign out in coral. It springs open and its rows land one after another.
+- More (phone): the extra destinations as a two column grid of tiles (round icon, scoreboard label), the open one in the accent. They bounce in one after another.
+- Sheet and dialog titles take the scoreboard type under the skin (`data-sk-overlay-title`).
+- Sign out: a coral mark that pops in and pulses, with two equal pill buttons.
+- Sign in, request access, reset password and the other public pages (`AuthSplit`, `PublicFrame` in `src/layouts/auth-layout.tsx`) wear the skin too. The panel is a photo (`blocks-tall.webp`) with a race clock that runs up to a time and lands a "New best", and the line about the product on an accent card. The demo roles are tiles.
 
 Parent or guardian screens (same skin and tiles):
 

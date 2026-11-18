@@ -22,7 +22,7 @@ function OverlayHeader({ title, description, close, kind }: { title: string; des
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0 pt-1">
-        <Title className="text-[1.375rem] font-extrabold leading-tight tracking-[-0.03em] text-sk-ink">{title}</Title>
+        <Title data-sk-overlay-title className="text-[1.375rem] font-extrabold leading-tight tracking-[-0.03em] text-sk-ink">{title}</Title>
         {description ? <Description className="mt-1 text-[0.9375rem] leading-snug text-sk-mute">{description}</Description> : null}
       </div>
       {close}
