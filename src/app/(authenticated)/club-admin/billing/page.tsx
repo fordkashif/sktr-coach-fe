@@ -18,8 +18,8 @@ import {
   Select,
   SkeletonRows,
   Split,
-  Stat,
-  StatStrip,
+  TileGrid,
+  UsageMeter,
   StatusText,
   Tag,
   Textarea,
@@ -347,24 +347,24 @@ export default function ClubAdminBillingPage() {
           {usageError ? (
             <Notice tone="error">We could not load how much of your package is in use. {usageError}</Notice>
           ) : usage ? (
-            <StatStrip aria-label="How much of your package is in use">
+            <TileGrid label="How much of your package is in use">
               {RESOURCES.map((resource) => {
                 const used = usage[resource.key]
                 const limit = currentPackage ? currentPackage.limits[resource.key] : null
-                if (limit === null) return <Stat key={resource.key} label={resource.label} value={used.toLocaleString()} hint="In use" />
-                if (!Number.isFinite(limit)) return <Stat key={resource.key} label={resource.label} value={used.toLocaleString()} hint="No limit" />
+                if (limit === null) return <UsageMeter key={resource.key} label={resource.label} used={used} limit={null} hint="In use" />
+                if (!Number.isFinite(limit)) return <UsageMeter key={resource.key} label={resource.label} used={used} limit={null} hint="No limit" />
                 const left = Math.max(limit - used, 0)
                 return (
-                  <Stat
+                  <UsageMeter
                     key={resource.key}
                     label={resource.label}
-                    value={used.toLocaleString()}
-                    of={limit.toLocaleString()}
+                    used={used}
+                    limit={limit}
                     hint={left === 0 ? "At the limit" : `${left.toLocaleString()} more before the limit`}
                   />
                 )
               })}
-            </StatStrip>
+            </TileGrid>
           ) : null}
 
           {atLimit.length > 0 ? (
