@@ -239,7 +239,7 @@ export default function TeamJoinCodePage() {
                 : ""
 
   return (
-    <InviteFrame>
+    <InviteFrame headline={["Join", "your team."]}>
       <ScreenHeader title={title} lede={<span aria-live="polite">{lede}</span>} />
 
       {stage.kind === "loading" ? (

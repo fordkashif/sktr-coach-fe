@@ -48,7 +48,7 @@ export function FirstAccessFrame({
   return (
     <Screen width="narrow">
       {/* The shell shows the brand in the phone app bar; on desktop it shows no bar during setup. */}
-      <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-blue max-lg:hidden">SKTR Coach</p>
+      <p className="font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink max-lg:hidden">SKTR Coach</p>
       {body}
     </Screen>
   )

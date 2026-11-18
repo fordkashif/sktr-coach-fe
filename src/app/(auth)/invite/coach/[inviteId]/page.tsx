@@ -267,7 +267,7 @@ export default function CoachInviteAcceptPage() {
   ]
 
   return (
-    <InviteFrame>
+    <InviteFrame headline={["Your athletes", "are waiting."]} body="Write the plan, run test weeks and see every check-in before the first rep.">
       <ScreenHeader
         title={title}
         lede={<span aria-live="polite">{stage === "error" ? "Something stopped this invite from opening. Nothing has been changed on your account." : message}</span>}

@@ -1,32 +1,37 @@
 import type { ReactNode } from "react"
-import { List, ListRow, Screen, Section } from "@/components/sk"
-import { PublicFooter } from "@/layouts/auth-layout"
+import { Section } from "@/components/sk"
+import { AuthSplit } from "@/layouts/auth-layout"
 
 /**
- * The frame of the public invite pages (athlete claim, coach invite): no app chrome, the brand, then
- * the same kit parts as every signed-in screen so the two pages are siblings.
+ * The frame of the public invite pages (athlete claim, coach invite, guardian claim, join a team):
+ * the same front door as sign in, with the form on white and the photo panel beside it. `headline`
+ * is the line on the panel; each invite says what is waiting for the person.
  */
-export function InviteFrame({ children }: { children: ReactNode }) {
+export function InviteFrame({ children, headline = ["Your team", "is waiting."], body }: { children: ReactNode; headline?: string[]; body?: ReactNode }) {
   return (
-    <main className="mx-auto w-full max-w-[560px] py-4 sm:py-10">
-      <Screen width="narrow">
-        <p className="text-lg font-extrabold tracking-[-0.03em] text-sk-blue">SKTR Coach</p>
-        {children}
-        <PublicFooter />
-      </Screen>
-    </main>
+    <AuthSplit headline={headline} body={body ?? "Plans, check-ins, results and messages from your club, all in one place."}>
+      {children}
+    </AuthSplit>
   )
 }
 
-/** The numbered "what happens next" list under an invite. */
+/** The numbered "what happens next" steps under an invite, as tiles that land one after another. */
 export function InviteSteps({ title, steps }: { title: string; steps: Array<{ title: string; body: string }> }) {
   return (
     <Section title={title}>
-      <List ordered>
+      <ol className="flex flex-col gap-2.5 pt-1" aria-label={title}>
         {steps.map((step, index) => (
-          <ListRow key={step.title} leading={<span className="w-5 text-center font-bold text-sk-blue-link">{index + 1}</span>} title={step.title} subtitle={step.body} />
+          <li key={step.title} className="sk-tile-item" style={{ animationDelay: `${index * 80}ms` }}>
+            <div className="sk-tile flex items-start gap-4 p-4">
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sk-accent font-display text-[1.5rem] font-black leading-none text-sk-on-accent">{index + 1}</span>
+              <span className="min-w-0 pt-0.5">
+                <span className="block font-bold text-sk-ink">{step.title}</span>
+                <span className="mt-0.5 block text-sm leading-snug text-sk-mute">{step.body}</span>
+              </span>
+            </div>
+          </li>
         ))}
-      </List>
+      </ol>
     </Section>
   )
 }

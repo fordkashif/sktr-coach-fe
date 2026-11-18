@@ -158,7 +158,7 @@ export default function GuardianClaimPage() {
   ]
 
   return (
-    <InviteFrame>
+    <InviteFrame headline={["Follow their", "training."]} body="Read their plan, results and team news. Nothing to change, nothing to miss.">
       <ScreenHeader title={title} lede={<span aria-live="polite">{stage === "error" ? "Something stopped this invite from opening. Nothing has been changed." : message}</span>} />
 
       {stage === "loading" ? (
