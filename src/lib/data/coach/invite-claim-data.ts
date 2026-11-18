@@ -125,7 +125,9 @@ export async function completeCurrentCoachOnboarding(params: {
 
   if (params.password) {
     const passwordResult = await clientResult.data.auth.updateUser({ password: params.password.trim() })
-    if (passwordResult.error) return err("UNKNOWN", passwordResult.error.message, passwordResult.error)
+    // Already that password: nothing to change, carry on.
+    const samePassword = passwordResult.error && (passwordResult.error.code === "same_password" || /different from the old password/i.test(passwordResult.error.message))
+    if (passwordResult.error && !samePassword) return err("UNKNOWN", passwordResult.error.message, passwordResult.error)
   }
 
   const { error } = await clientResult.data.rpc("complete_current_coach_onboarding", {
