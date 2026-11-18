@@ -914,3 +914,5 @@ body {
 /* Sub headings under the skin: scoreboard type too, so no heading is left in the body font. */
 [data-skin="stopwatch"] h3 { font-family: var(--sk-font-display); font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; }
 [data-skin="stopwatch"] h3.text-base { font-size: 1.375rem; line-height: 1; }
+/* Tags under the skin: round, small capitals, no outline. */
+[data-skin="stopwatch"] .sk-tag { border: 0; border-radius: 9999px; padding: 0.25rem 0.625rem; font-size: 0.6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; box-shadow: none; }

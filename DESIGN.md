@@ -200,7 +200,7 @@ Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weigh
 
 ## The skin: "Stopwatch"
 
-The athlete, coach, club admin and parent or guardian sides have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for those roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
+Every role (athlete, coach, club admin, parent or guardian and platform admin) has to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for every signed-in role; every rule of the skin lives in `src/styles/globals.css` under that attribute. Build athlete screens with the same kit; the skin restyles it.
 
 - One accent: blue `sk-accent` (#2152ff, white text on it) on ink (#0e1116) and white. The accent is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple. The accent is set in one place, the `--sk-accent*` tokens in `globals.css` (with `--sk-on-accent` for text on it and `--sk-accent-on-ink` for the accent as text on ink), so it can be changed without touching a screen.
 - Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words, on every screen and overlay.
@@ -251,6 +251,17 @@ Club admin screens (same skin and tiles):
 - Teams: each team is a tile with its lead coach, athletes as a big number and a `FaceStack` of the roster. The name is the link to the team (a stretched link, `sk-tile-link`); the status and the menu sit on top of it. The archive confirmation opens under the tile.
 - Billing: what is in use is a row of `UsageMeter`s.
 - Rings drawn on a grey tile get a white track.
+
+Platform admin screens (same skin and tiles):
+
+- Dashboard: "Needs you" leads as the accent card over a photo (`sunrise.webp`), each item a row with its count. The club pipeline is a `Pipeline`: new requests, waiting on billing, onboarding, live, as numbered tiles joined by arrows, each with a bar for its share; live is the accent. Totals across all clubs are scoreboard tiles.
+- Requests: each request is a wide tile (club, requester, status, package and size, when it came in); the open one is outlined in the accent.
+- Clubs: each club is a tile with its status tag, package, admin, size and date.
+- Tags under the skin are round with small capitals.
+
+| Part | What it is |
+|---|---|
+| `Pipeline` | Stages one after another as numbered tiles joined by arrows, each with its count, a hint and a bar for its share of the busiest stage. `accent` for the stage that is the goal, `flag` for one that needs someone. |
 
 Shell, overlays and public pages:
 

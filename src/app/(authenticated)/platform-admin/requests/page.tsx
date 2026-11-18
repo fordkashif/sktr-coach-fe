@@ -2,7 +2,7 @@ import { ArrowCounterClockwise, ArrowSquareOut, Check, Copy, DownloadSimple, Env
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Button,
-  DataTable,
+  Avatar,
   EmptyState,
   Fact,
   FactList,
@@ -21,11 +21,9 @@ import {
   StatusText,
   SubSection,
   SubSections,
-  TableSub,
   Tabs,
   Tag,
   Textarea,
-  type DataTableColumn,
   type StateTone,
   type TagTone,
 } from "@/components/sk"
@@ -1113,65 +1111,6 @@ export default function PlatformAdminRequestsPage() {
     return { body, footer }
   }
 
-  const columns: Array<DataTableColumn<Request>> = [
-    {
-      key: "club",
-      header: "Club",
-      cell: (request) => (
-        <>
-          <button
-            type="button"
-            className="cursor-pointer rounded-[6px] text-left font-bold text-sk-ink hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-            aria-label={`Open request from ${request.organizationName}`}
-            onClick={(event) => {
-              event.stopPropagation()
-              openRequest(request.id)
-            }}
-          >
-            <span className="break-words">{request.organizationName}</span>
-          </button>
-          {request.region ? <TableSub>{request.region}</TableSub> : null}
-        </>
-      ),
-    },
-    {
-      key: "requester",
-      header: "Requester",
-      phone: "plain",
-      cell: (request) => (
-        <span className="min-w-0">
-          <span className="block text-sk-ink">{request.requestorName}</span>
-          <span className="block break-all text-sm text-sk-mute">{request.requestorEmail}</span>
-        </span>
-      ),
-    },
-    { key: "type", header: "Type", phone: "hide", cell: (request) => organizationTypeOf(request) ?? <span className="text-sk-mute">Not given</span> },
-    { key: "size", header: "Size", cell: (request) => sizeOf(request) },
-    { key: "package", header: "Package", cell: (request) => packageLabelOf(request) },
-    { key: "received", header: "Received", cell: (request) => formatDateTime(request.createdAt) ?? "Unknown" },
-    {
-      key: "status",
-      header: "Status",
-      phone: "trailing",
-      cell: (request) => {
-        const status = statusOf(request)
-        const inviteNote =
-          request.status !== "approved" || !request.provisionedTenantId || stageOf(request) === "closed"
-            ? null
-            : request.accessInviteSentAt
-              ? `Invite sent ${formatDay(request.accessInviteSentAt)}`
-              : "Invite not sent"
-        return (
-          <span className="inline-flex flex-col items-start gap-1 max-sm:items-end">
-            <Tag tone={status.tone} className="whitespace-nowrap">
-              {status.label}
-            </Tag>
-            {inviteNote && status.label !== "Invite not sent" ? <span className="whitespace-nowrap text-sm text-sk-mute">{inviteNote}</span> : null}
-          </span>
-        )
-      },
-    },
-  ]
 
   const activeDetail = active ? detailOf(active) : null
 
@@ -1302,13 +1241,48 @@ export default function PlatformAdminRequestsPage() {
                 }
               />
             ) : (
-              <DataTable
-                caption={`Club requests, ${STAGE_LABEL[stage]}${search.trim() ? ", filtered by search" : ""}`}
-                columns={columns}
-                rows={visible}
-                rowKey={(request) => request.id}
-                rowProps={(request) => ({ "data-request-row": request.organizationName, "data-selected": request.id === activeId, onClick: () => openRequest(request.id) })}
-              />
+              <ul aria-label={`Club requests, ${STAGE_LABEL[stage]}${search.trim() ? ", filtered by search" : ""}`} className="flex flex-col gap-2.5">
+                {visible.map((request, index) => {
+                  const status = statusOf(request)
+                  const inviteNote =
+                    request.status !== "approved" || !request.provisionedTenantId || stageOf(request) === "closed"
+                      ? null
+                      : request.accessInviteSentAt
+                        ? `Invite sent ${formatDay(request.accessInviteSentAt)}`
+                        : "Invite not sent"
+                  return (
+                    <li key={request.id} className="sk-tile-item" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+                      <button
+                        type="button"
+                        data-request-row={request.organizationName}
+                        data-selected={request.id === activeId}
+                        aria-label={`Open request from ${request.organizationName}`}
+                        onClick={() => openRequest(request.id)}
+                        className="sk-tile group grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 p-4 text-left hover:-translate-y-[2px] hover:shadow-[0_14px_28px_-16px_rgb(14_17_22/0.35)] active:scale-[0.99] data-[selected=true]:shadow-[inset_0_0_0_2px_var(--sk-accent)] md:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto]"
+                      >
+                        <Avatar name={request.organizationName} size="lg" className="bg-sk-ink text-white" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink">{request.organizationName}</span>
+                          <span className="mt-1 block truncate text-sm text-sk-mute">{[request.region, organizationTypeOf(request)].filter(Boolean).join(", ") || "Region not given"}</span>
+                        </span>
+                        <span className="col-span-2 min-w-0 text-sm md:col-span-1">
+                          <span className="block truncate font-semibold text-sk-ink">{request.requestorName}</span>
+                          <span className="block break-all text-sk-mute">{request.requestorEmail}</span>
+                        </span>
+                        <span className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 md:col-span-1 md:flex-col md:items-end">
+                          <Tag tone={status.tone} className="whitespace-nowrap">
+                            {status.label}
+                          </Tag>
+                          <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-sk-ink">
+                            {packageLabelOf(request)}, {sizeOf(request)}
+                          </span>
+                          <span className="whitespace-nowrap text-[0.8125rem] text-sk-mute">{inviteNote && status.label !== "Invite not sent" ? inviteNote : (formatDateTime(request.createdAt) ?? "Unknown")}</span>
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </Section>
         </>
