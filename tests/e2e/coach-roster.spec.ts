@@ -179,3 +179,41 @@ test("coach on two teams sets availability and moves an athlete between them", a
   // Nothing scrolls sideways on a phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
 })
+
+test("coach deletes cancelled invites, one or all at once, with undo", async ({ page }) => {
+  await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
+  await page.goto("/coach/teams/t1")
+  await page.getByRole("button", { name: "Add athletes" }).click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByRole("tab", { name: "List" }).click()
+  await dialog.getByLabel("Athletes, one per line").fill(["old.one@example.com", "old.two@example.com", "keep.me@example.com"].join("\n"))
+  await dialog.getByRole("button", { name: "Send 3 invites" }).click()
+  await expect(dialog.locator("[data-bulk-summary]")).toContainText("3 invites sent")
+  await dialog.getByRole("button", { name: "Close" }).click()
+  await page.getByRole("tab", { name: /Invites/ }).click()
+
+  for (const email of ["old.one@example.com", "old.two@example.com"]) {
+    await page.getByRole("button", { name: `More for the invite to ${email}` }).click()
+    await page.getByRole("menuitem", { name: "Cancel invite" }).click()
+    await page.locator(`[data-invite="${email}"]`).getByRole("button", { name: "Cancel invite" }).click()
+    await expect(page.locator(`[data-invite="${email}"]`)).toContainText("Cancelled")
+  }
+
+  // One by its menu, then Undo brings it back.
+  await page.getByRole("button", { name: "More for the invite to old.one@example.com" }).click()
+  await page.getByRole("menuitem", { name: "Delete" }).click()
+  await expect(page.locator('[data-invite="old.one@example.com"]')).toHaveCount(0)
+  await page.getByRole("button", { name: "Undo" }).click()
+  await expect(page.locator('[data-invite="old.one@example.com"]')).toBeVisible()
+
+  // All the old ones at once. The waiting invite stays.
+  await page.getByRole("button", { name: "Delete 2 expired or cancelled" }).click()
+  await expect(page.locator('[data-invite="old.one@example.com"]')).toHaveCount(0)
+  await expect(page.locator('[data-invite="old.two@example.com"]')).toHaveCount(0)
+  await expect(page.locator('[data-invite="keep.me@example.com"]')).toBeVisible()
+  await page.goto("/coach/dashboard")
+  await page.goto("/coach/teams/t1")
+  await page.getByRole("tab", { name: /Invites/ }).click()
+  await expect(page.locator('[data-invite="old.two@example.com"]')).toHaveCount(0)
+  await expect(page.locator('[data-invite="keep.me@example.com"]')).toBeVisible()
+})

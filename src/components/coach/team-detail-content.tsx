@@ -1,6 +1,7 @@
 "use client"
 
-import { UserPlus } from "@phosphor-icons/react"
+import { Trash, UserPlus } from "@phosphor-icons/react"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactElement } from "react"
 import { Link } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
@@ -38,6 +39,7 @@ import {
 } from "@/components/sk"
 import { describeAvailability, AVAILABILITY_CHANGED_EVENT } from "@/lib/data/athlete/availability-data"
 import {
+  deleteAthleteInvitesForCurrentCoach,
   getAthleteInvitesForTeam,
   recordMockInviteEmail,
   revokeAthleteInviteForCurrentCoach,
@@ -116,6 +118,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
   const [roster, setRoster] = useState<TeamRoster | null>(null)
   const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
   const [invites, setInvites] = useState<TeamAthleteInvite[] | null>(null)
+  const undoableDelete = useUndoableDelete()
   const [invitesError, setInvitesError] = useState<string | null>(null)
   const [view, setView] = useState<"athletes" | "squads" | "invites">("athletes")
   const [squads, setSquads] = useState<Squad[] | null>(null)
@@ -268,6 +271,7 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
         }${unavailable > 0 ? `, ${unavailable} unavailable` : ""}.`
 
   const pendingInvites = (invites ?? []).filter((invite) => invite.status === "pending")
+  const oldInvites = (invites ?? []).filter((invite) => invite.status === "expired" || invite.status === "revoked")
   const shownInvites = (invites ?? []).filter((invite) => inviteFilter === "all" || invite.status === inviteFilter)
 
   const columns: Array<DataTableColumn<RosterAthlete>> = [
@@ -399,6 +403,22 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
     }
     setInvites((current) => (current ?? []).map((item) => (item.id === invite.id ? { ...item, status: "revoked" } : item)))
     notify("Invite cancelled")
+  }
+
+  // Expired and cancelled invites can be deleted. They leave the list at once; Undo puts them back.
+  const deleteOldInvites = (old: TeamAthleteInvite[]) => {
+    if (old.length === 0) return
+    const ids = new Set(old.map((invite) => invite.id))
+    undoableDelete({
+      message: old.length === 1 ? "Invite deleted" : `${old.length} invites deleted`,
+      failed: "The invites were not deleted",
+      hide: () => setInvites((current) => (current ?? []).filter((invite) => !ids.has(invite.id))),
+      restore: () => void loadInvites(),
+      commit: async () => {
+        const result = await deleteAthleteInvitesForCurrentCoach([...ids])
+        return result.ok ? { ok: true as const } : result
+      },
+    })
   }
 
   const inviteCount = (status: InviteFilter) => (status === "all" ? (invites ?? []).length : (invites ?? []).filter((invite) => invite.status === status).length)
@@ -562,6 +582,14 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
             />
           ) : (
             <div className="flex flex-col gap-3">
+              {oldInvites.length > 0 ? (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="secondary" onClick={() => deleteOldInvites(oldInvites)}>
+                    <Trash className="size-4" weight="bold" aria-hidden />
+                    Delete {oldInvites.length} expired or cancelled
+                  </Button>
+                </div>
+              ) : null}
               <FilterChips
                 label="Show"
                 value={inviteFilter}
@@ -592,7 +620,9 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                           { label: "Copy link", onSelect: () => void copyInvite(invite) },
                           { label: "Cancel invite", onSelect: () => setConfirmCancelId(invite.id), danger: true },
                         ]
-                      : []
+                      : invite.status === "expired" || invite.status === "revoked"
+                        ? [{ label: "Delete", onSelect: () => deleteOldInvites([invite]), danger: true }]
+                        : []
                     return (
                       <ActionRow
                         key={invite.id}

@@ -1,6 +1,7 @@
 "use client"
 
-import { UserPlus } from "@phosphor-icons/react"
+import { Trash, UserPlus } from "@phosphor-icons/react"
+import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
@@ -56,6 +57,7 @@ import {
   getCurrentClubAdminActivationState,
   insertAuditEvent,
   reviewAccountRequest,
+  deleteCoachInvites,
   revokeCoachInvite,
   updateProfileRoleAndStatus,
   type ClubAdminPeopleDirectory,
@@ -198,6 +200,7 @@ export default function ClubAdminUsersPage() {
 
   // The newest lists, for handlers that finish after other changes were made (a bulk invite emailing).
   const invitesRef = useRef(invites)
+  const undoableDelete = useUndoableDelete()
   invitesRef.current = invites
   const usersRef = useRef(users)
   usersRef.current = users
@@ -466,6 +469,7 @@ export default function ClubAdminUsersPage() {
   const pendingInvites = invites.filter((invite) => invite.status === "pending")
   const pendingRequests = requests.filter((request) => request.status === "pending")
   const sortedInvites = [...pendingInvites, ...invites.filter((invite) => invite.status !== "pending")]
+  const oldInvites = invites.filter((invite) => invite.status === "expired" || invite.status === "revoked")
   const shownInvites = sortedInvites.filter((invite) => inviteFilter === "all" || invite.status === inviteFilter)
   const sortedRequests = [...pendingRequests, ...requests.filter((request) => request.status !== "pending")]
 
@@ -625,6 +629,29 @@ export default function ClubAdminUsersPage() {
     await emitAudit("coach_invite_revoke", invite.email)
     notify(`Invite for ${invite.email} cancelled`, "Its link no longer works.")
     syncBackend()
+  }
+
+  // Expired and cancelled invites can be deleted. They leave the list at once; Undo puts them back.
+  const deleteOldInvites = (old: CoachInvite[]) => {
+    if (old.length === 0) return
+    const ids = new Set(old.map((invite) => invite.id))
+    const before = invitesRef.current
+    const label = old.length === 1 ? old[0].email : `${old.length} invites`
+    undoableDelete({
+      message: old.length === 1 ? "Invite deleted" : `${old.length} invites deleted`,
+      failed: "The invites were not deleted",
+      hide: () => saveInvites(invitesRef.current.filter((invite) => !ids.has(invite.id))),
+      restore: () => {
+        saveInvites(before)
+        syncBackend()
+      },
+      commit: async () => {
+        if (!isSupabaseMode) return { ok: true as const }
+        const result = await deleteCoachInvites([...ids])
+        return result.ok ? { ok: true as const } : result
+      },
+      done: () => void emitAudit("coach_invite_delete", label),
+    })
   }
 
   const handleRenewInvite = async (invite: CoachInvite) => {
@@ -1269,6 +1296,14 @@ export default function ClubAdminUsersPage() {
             />
           ) : (
             <div className="flex flex-col gap-3">
+              {oldInvites.length > 0 ? (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="secondary" onClick={() => deleteOldInvites(oldInvites)}>
+                    <Trash className="size-4" weight="bold" aria-hidden />
+                    Delete {oldInvites.length} expired or cancelled
+                  </Button>
+                </div>
+              ) : null}
               <FilterChips
                 label="Show"
                 value={inviteFilter}
@@ -1305,8 +1340,11 @@ export default function ClubAdminUsersPage() {
                             : []),
                           { label: "Cancel invite", onSelect: () => setConfirm({ kind: "cancel-invite", inviteId: invite.id }), danger: true },
                         ]
-                      : canRenew && !hasNewerPending
-                        ? [{ label: busy ? "Sending..." : "Send new invite", onSelect: () => void handleRenewInvite(invite), disabled: busy }]
+                      : canRenew
+                        ? [
+                            ...(hasNewerPending ? [] : [{ label: busy ? "Sending..." : "Send new invite", onSelect: () => void handleRenewInvite(invite), disabled: busy }]),
+                            { label: "Delete", onSelect: () => deleteOldInvites([invite]), danger: true },
+                          ]
                         : []
                     return (
                       <ActionRow

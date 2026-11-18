@@ -106,6 +106,7 @@ const SENTENCES: Record<string, { group: ActivityGroup; describe: Describe }> = 
   },
   coach_invite_resend: { group: "invites", describe: (row) => ({ title: `Sent the coach invite for ${named(row.target, "a coach")} again` }) },
   coach_invite_revoke: { group: "invites", describe: (row) => ({ title: `Cancelled the coach invite for ${named(row.target, "a coach")}` }) },
+  coach_invite_delete: { group: "invites", describe: (row) => ({ title: `Deleted old staff invites: ${named(row.target, "invites")}` }) },
   coach_invites_bulk_created: { group: "invites", describe: (row) => ({ title: "Invited several coaches at once", detail: words(row.detail) }) },
   coach_invite_email_sent: { group: "invites", describe: (row) => ({ title: `Emailed a coach invite to ${named(row.target, "a coach")}` }) },
   coach_invite_email_resent: { group: "invites", describe: (row) => ({ title: `Emailed the coach invite to ${named(row.target, "a coach")} again` }) },
