@@ -1,14 +1,39 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { cn } from "@/lib/utils"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
-import { EmptyState, Fact, FactList, List, ListRow, Notice, ReadinessText, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText } from "@/components/sk"
+import { Bars, EmptyState, Fact, FactList, List, ListRow, Notice, ReadinessBar, ReadinessText, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText } from "@/components/sk"
 import { getGuardianHealth } from "@/lib/data/guardian/guardian-data"
 import type { GuardianChild, GuardianHealth } from "@/lib/data/guardian/types"
 import { PAIN_SEVERITY_WORDS, painImpactLabel } from "@/lib/data/wellness/pain-report-types"
 import { healthRuleText } from "@/lib/guardian/health-visibility"
 
 const KIND_WORD = { injured: "Injured", sick: "Sick", away: "Away" } as const
+
+const READY_WORD = { green: "Ready", yellow: "Watch", red: "Review" } as const
+
+/** The latest check-in as one big word, how the recent ones split, and sleep as bars. */
+function CheckInSummary({ checkIns }: { checkIns: GuardianHealth["checkIns"] }) {
+  const latest = checkIns[0]
+  const count = (tone: "green" | "yellow" | "red") => checkIns.filter((entry) => entry.readiness === tone).length
+  const sleep = checkIns.filter((entry) => entry.sleepHours !== null).slice(0, 5).reverse()
+  return (
+    <div className="grid gap-2.5 sm:grid-cols-2" data-check-in-summary>
+      <div className="sk-tile flex flex-col gap-3 p-4">
+        <p className="text-sm font-bold text-sk-mute">Latest check-in, {shortDay(latest.date)}</p>
+        <p className={cn("font-display text-[3rem] font-black uppercase leading-[0.85]", latest.readiness === "green" ? "text-sk-green-ink" : latest.readiness === "yellow" ? "text-sk-amber-ink" : "text-sk-coral-ink")}>{READY_WORD[latest.readiness]}</p>
+        <ReadinessBar className="mt-auto" ready={count("green")} watch={count("yellow")} review={count("red")} />
+      </div>
+      {sleep.length > 1 ? (
+        <div className="sk-tile p-4">
+          <p className="mb-3 text-sm font-bold text-sk-mute">Sleep</p>
+          <Bars label="Hours slept, oldest first" bestWord="" items={sleep.map((entry) => ({ key: entry.date, label: shortDay(entry.date).replace(/^\w+, /, ""), value: entry.sleepHours ?? 0, display: `${entry.sleepHours}h` }))} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 function ChildHealth({ child }: { child: GuardianChild }) {
   const [health, setHealth] = useState<GuardianHealth | null>(null)
@@ -72,7 +97,9 @@ function ChildHealth({ child }: { child: GuardianChild }) {
               ) : health.checkIns.length === 0 ? (
                 <EmptyState title="No check-ins yet" body={`When ${child.firstName} does a daily check-in, it shows here.`} />
               ) : (
-                <List aria-label="Check-ins">
+                <>
+                <CheckInSummary checkIns={health.checkIns} />
+                <List aria-label="Check-ins" className="mt-3">
                   {health.checkIns.map((entry) => (
                     <ListRow
                       key={entry.date}
@@ -82,6 +109,7 @@ function ChildHealth({ child }: { child: GuardianChild }) {
                     />
                   ))}
                 </List>
+                </>
               )}
             </Section>
 

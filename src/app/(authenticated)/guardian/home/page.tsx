@@ -4,10 +4,10 @@ import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
-import { Avatar, EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText } from "@/components/sk"
+import { Avatar, Countdown, EmptyState, HeroAction, List, ListRow, Notice, Ring, Screen, ScreenHeader, Section, SkeletonRows, Split, WeekRail } from "@/components/sk"
 import { weekStartOf } from "@/lib/data/guardian/mock-guardian-content"
 import { getGuardianAnnouncements, getGuardianCoaches, getGuardianResults, getGuardianWeek } from "@/lib/data/guardian/guardian-data"
-import type { GuardianAnnouncement, GuardianChild, GuardianCoach, GuardianCompetition, GuardianWeek } from "@/lib/data/guardian/types"
+import type { GuardianAnnouncement, GuardianChild, GuardianCoach, GuardianCompetition, GuardianDayState, GuardianWeek } from "@/lib/data/guardian/types"
 import { teamCoachRoleLabel } from "@/lib/coach-permissions"
 import { useGuardianChildren } from "@/lib/guardian/children-store"
 import { guardianSeesHealth, healthRuleText } from "@/lib/guardian/health-visibility"
@@ -15,6 +15,23 @@ import { guardianSeesHealth, healthRuleText } from "@/lib/guardian/health-visibi
 /** Today as the club has it, the day the child's plan is written for. */
 function todayIso() {
   return clubToday()
+}
+
+/** The photo behind today's card (public/images/athlete, from Unsplash). */
+const WEEK_PHOTO = "/images/athlete/stride.webp"
+
+const DAY_WORD: Record<GuardianDayState, string> = { done: "Done", skipped: "Skipped", missed: "Missed", today: "Today", planned: "Planned", rest: "" }
+
+/** "Mon" for a YYYY-MM-DD day. */
+function weekday(day: string) {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short" })
+}
+
+/** Whole days from the club's today to a YYYY-MM-DD day. */
+function daysUntil(day: string) {
+  const from = new Date(`${todayIso()}T12:00:00`).getTime()
+  const to = new Date(`${day}T12:00:00`).getTime()
+  return Math.round((to - from) / 86_400_000)
 }
 
 type HomeData = { week: GuardianWeek | null; coaches: GuardianCoach[]; next: GuardianCompetition | null; news: GuardianAnnouncement[]; error: string | null }
@@ -58,40 +75,83 @@ function ChildHome({ child }: { child: GuardianChild }) {
       <Split
         main={
           <>
-            <Section title="This week" action={<ListLink to="/guardian/plan" label="Open the plan" />}>
-              {!data ? (
-                <SkeletonRows rows={2} />
-              ) : !data.week || data.week.planned === 0 ? (
-                <EmptyState title="Nothing planned this week" body={`When the coach publishes a plan for ${child.firstName}, the week shows here.`} />
-              ) : (
-                <List>
-                  <ListRow
-                    to="/guardian/plan"
-                    title={today?.title ?? (today ? "Session today" : "No session today")}
-                    subtitle={today ? (today.focus ?? "Planned for today") : "Today is a rest day in the plan."}
-                    trailing={today ? <StatusText tone="blue">Today</StatusText> : undefined}
-                  />
-                  <ListRow
-                    to="/guardian/plan"
-                    title={`${data.week.done} of ${data.week.planned} sessions done`}
-                    subtitle={data.week.skipped > 0 ? `${data.week.skipped} skipped. ${data.week.planName ?? "Training plan"}.` : (data.week.planName ?? "Training plan")}
-                  />
-                </List>
-              )}
-            </Section>
+            <section aria-labelledby="guardian-week-heading" data-guardian-week className="sk-hero-wrap">
+              <img src={WEEK_PHOTO} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+              <div className="sk-hero sk-hero-over">
+                <div className="flex items-baseline justify-between gap-4">
+                  <h2 id="guardian-week-heading" className="sk-hero-label">
+                    Today
+                  </h2>
+                  {data?.week?.planName ? <p className="sk-hero-label min-w-0 truncate">{data.week.planName}</p> : null}
+                </div>
+                {!data ? (
+                  <SkeletonRows rows={2} label="Loading this week" />
+                ) : !data.week || data.week.planned === 0 ? (
+                  <>
+                    <p className="sk-hero-title">Nothing planned</p>
+                    <p className="sk-hero-body">{`When the coach publishes a plan for ${child.firstName}, the week shows here.`}</p>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between 2xl:gap-8">
+                    <div className="min-w-0">
+                      <p className="sk-hero-title">{today ? (today.title ?? "Session today") : "Rest day"}</p>
+                      <p className="sk-hero-body">{today ? (today.focus ?? "Planned for today") : "Today is a rest day in the plan."}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="shrink-0 rounded-full bg-white p-1.5" role="img" aria-label={`${data.week.done} of ${data.week.planned} sessions done this week`}>
+                        <Ring progress={data.week.planned > 0 ? data.week.done / data.week.planned : 0} size={80}>
+                          <span className="font-display text-[1.75rem] font-black leading-none text-sk-ink">
+                            {data.week.done}
+                            <span className="text-[1rem]">/{data.week.planned}</span>
+                          </span>
+                        </Ring>
+                      </span>
+                      <span className="min-w-0 flex-1 2xl:flex-none">
+                        <HeroAction to="/guardian/plan">Open the plan</HeroAction>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {data?.week && data.week.planned > 0 ? (
+              <Section title="This week">
+                <WeekRail
+                  label={`${child.firstName}'s week`}
+                  days={data.week.days.map((day) => ({
+                    key: day.date,
+                    day: weekday(day.date),
+                    title: day.state === "rest" ? "Rest" : (day.title ?? "Session"),
+                    detail: DAY_WORD[day.state],
+                    today: day.state === "today",
+                    rest: day.state === "rest",
+                    to: "/guardian/plan",
+                  }))}
+                />
+              </Section>
+            ) : null}
 
             <Section title="Next competition" action={<ListLink to="/guardian/results" label="Results" />}>
               {!data ? (
                 <SkeletonRows rows={1} />
               ) : data.next ? (
-                <List>
-                  <ListRow
-                    to="/guardian/results"
-                    title={data.next.name}
-                    subtitle={[dayRange(data.next.startDate, data.next.endDate), data.next.place].filter(Boolean).join(", ")}
-                    trailing={data.next.events.length > 0 ? data.next.events.join(", ") : undefined}
-                  />
-                </List>
+                <Link to="/guardian/results" className="sk-tile flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between" data-guardian-next={data.next.name}>
+                  <span className="min-w-0">
+                    <span className="block font-display text-[1.75rem] font-black uppercase leading-none text-sk-ink">{data.next.name}</span>
+                    <span className="mt-1.5 block text-sm text-sk-mute">{[dayRange(data.next.startDate, data.next.endDate), data.next.place].filter(Boolean).join(", ")}</span>
+                    {data.next.events.length > 0 ? (
+                      <span className="mt-3 flex flex-wrap gap-1.5">
+                        {data.next.events.map((event) => (
+                          <span key={event} className="rounded-full bg-white px-3 py-1 text-sm font-bold text-sk-ink">
+                            {event}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
+                  <Countdown days={daysUntil(data.next.startDate)} />
+                </Link>
               ) : (
                 <EmptyState title="No competition coming up" body="Meets the coach adds for the team show here." />
               )}

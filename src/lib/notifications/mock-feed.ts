@@ -249,6 +249,25 @@ function readIds(role: NotificationRole): Set<string> {
 /** Fixed for the visit, so "Load more" pages line up. */
 const MOCK_NOW = Date.now()
 
+/**
+ * When a demo item was made: `minutesAgo` before now, kept on the day it is meant for. Just after
+ * midnight, "3 hours ago" would land on yesterday and "a day and 4 hours ago" two days back, and the
+ * Today and Yesterday groups would change with the clock. An item that would slip into an earlier day
+ * is moved into its own day instead, in the same order.
+ */
+function seededAt(now: number, minutesAgo: number) {
+  const days = Math.floor(minutesAgo / DAY)
+  const rest = minutesAgo % DAY
+  const today = new Date(now)
+  today.setHours(0, 0, 0, 0)
+  const dayStart = new Date(today)
+  dayStart.setDate(dayStart.getDate() - days)
+  const at = now - minutesAgo * 60_000
+  if (at >= dayStart.getTime()) return at
+  if (days === 0) return dayStart.getTime() + (now - dayStart.getTime()) * (1 - rest / DAY)
+  return dayStart.getTime() + (DAY - rest) * 60_000
+}
+
 function allItems(role: NotificationRole): NotificationItem[] {
   const now = MOCK_NOW
   const read = readIds(role)
@@ -262,7 +281,7 @@ function allItems(role: NotificationRole): NotificationItem[] {
       subject: seed.subject,
       body: seed.body,
       state: isRead ? "read" : "unread",
-      createdAt: new Date(now - seed.minutesAgo * 60_000).toISOString(),
+      createdAt: new Date(seededAt(now, seed.minutesAgo)).toISOString(),
       readAt: isRead ? new Date(now).toISOString() : null,
       href: seed.href,
     }

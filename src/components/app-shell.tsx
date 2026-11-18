@@ -240,7 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // The athlete side wears the "Stopwatch" skin (DESIGN.md, Athlete skin): a floating tab bar with a sliding highlight.
   const isAthlete = role === "athlete"
   // Athletes and coaches wear the "Stopwatch" skin (DESIGN.md): a floating tab bar with a sliding highlight.
-  const skinned = isAthlete || role === "coach" || role === "club-admin"
+  const skinned = isAthlete || role === "coach" || role === "club-admin" || role === "guardian"
   // Sheets, dialogs and toasts open outside the shell, so the skin goes on <html> as well.
   useLayoutEffect(() => {
     if (!skinned) return

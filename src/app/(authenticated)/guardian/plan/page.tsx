@@ -3,7 +3,7 @@
 import { clubToday } from "@/lib/club-day"
 import { useEffect, useState } from "react"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
-import { Button, DayLabel, EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText, WeekPager, type StateTone } from "@/components/sk"
+import { AttendanceTile, Button, DayLabel, EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText, WeekPager, type StateTone } from "@/components/sk"
 import { attendanceLabel, attendanceTone } from "@/lib/data/coach/attendance"
 import { getGuardianAttendance, getGuardianWeek } from "@/lib/data/guardian/guardian-data"
 import { weekStartOf } from "@/lib/data/guardian/mock-guardian-content"
@@ -134,17 +134,23 @@ function ChildPlan({ child }: { child: GuardianChild }) {
           </Section>
         }
         side={
-          <Section title="Attendance" hint="Marked by the coach at training." meta={attendance && attendance.length > 0 ? `${attended} of ${attendance.length} attended` : undefined}>
+          <Section title="Attendance" hint="Marked by the coach at training.">
             {!attendance ? (
               <SkeletonRows rows={4} />
             ) : attendance.length === 0 ? (
               <EmptyState title="No attendance marked yet" body="When the coach takes the register, each day shows here." />
             ) : (
-              <List aria-label="Attendance">
-                {attendance.slice(0, 12).map((row) => (
-                  <ListRow key={row.date} title={shortDay(row.date)} subtitle={row.reason ?? undefined} trailing={<StatusText tone={attendanceTone(row.status)}>{attendanceLabel(row.status)}</StatusText>} data-attendance={row.status} />
-                ))}
-              </List>
+              <>
+                <AttendanceTile
+                  attended={attended}
+                  marks={[...attendance].reverse().map((row) => ({ key: row.date, tone: attendanceTone(row.status), label: `${shortDay(row.date)}: ${attendanceLabel(row.status)}` }))}
+                />
+                <List aria-label="Attendance" className="mt-3">
+                  {attendance.slice(0, 12).map((row) => (
+                    <ListRow key={row.date} title={shortDay(row.date)} subtitle={row.reason ?? undefined} trailing={<StatusText tone={attendanceTone(row.status)}>{attendanceLabel(row.status)}</StatusText>} data-attendance={row.status} />
+                  ))}
+                </List>
+              </>
             )}
           </Section>
         }

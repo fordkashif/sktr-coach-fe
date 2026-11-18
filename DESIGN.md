@@ -198,9 +198,9 @@ Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus r
 
 Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weight="fill"` for the active tab. No Lucide, no Hugeicons. Icons support words; they do not replace them, except the bell, back, close and the athlete's log button, which carry an `aria-label`.
 
-## Athlete, coach and club admin skin: "Stopwatch"
+## The skin: "Stopwatch"
 
-The athlete, coach and club admin sides have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for those roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so guardian and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
+The athlete, coach, club admin and parent or guardian sides have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for those roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
 
 - One accent: blue `sk-accent` (#2152ff, white text on it) on ink (#0e1116) and white. The accent is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple. The accent is set in one place, the `--sk-accent*` tokens in `globals.css` (with `--sk-on-accent` for text on it and `--sk-accent-on-ink` for the accent as text on ink), so it can be changed without touching a screen.
 - Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words. Outfit stays for the rest of the app.
@@ -234,6 +234,7 @@ Coach screens (same skin, plus tiles from `@/components/sk`, file `tiles.tsx`):
 | `ReadinessBar` | How a group checked in as one bar in parts (ready, watch, review, no check-in) that grow in, with the counts in words under it. |
 | `UsageMeter` | Part of an allowance in use (4 of 5 teams) as a ring with the numbers; the words turn amber near the limit and coral at it. |
 | `FaceStack` | The first few people of a group as overlapping avatars that pop in, then "+3". |
+| `AttendanceTile` | How often someone turned up: a ring with the share, the count, and every marked session as a small block in its colour, oldest first. |
 
 Club admin screens (same skin and tiles):
 
@@ -241,6 +242,14 @@ Club admin screens (same skin and tiles):
 - Teams: each team is a tile with its lead coach, athletes as a big number and a `FaceStack` of the roster. The name is the link to the team (a stretched link, `sk-tile-link`); the status and the menu sit on top of it. The archive confirmation opens under the tile.
 - Billing: what is in use is a row of `UsageMeter`s.
 - Rings drawn on a grey tile get a white track.
+
+Parent or guardian screens (same skin and tiles):
+
+- Home: today leads, as the accent card over a photo (`stride.webp`): the session, sessions done this week in a ring, and "Open the plan". The week is a `WeekRail`; the next competition is a tile with its events as chips and a `Countdown`.
+- Plan: attendance opens with an `AttendanceTile` above the list of days.
+- Results: the event with the most marks gets `Bars`, mark by mark; records are scoreboard tiles, the first in the accent.
+- Health (when it is shared): the latest check-in as one big word with a `ReadinessBar`, and sleep as `Bars` (no "Best" word: `bestWord=""`).
+- Calendar: the next item is a tile with a `Countdown`; the rest is the list under it.
 
 Motion parts (from `@/components/sk`, file `motion.tsx`):
 
@@ -250,7 +259,7 @@ Motion parts (from `@/components/sk`, file `motion.tsx`):
 | `ReadinessGauge` | A half circle that sweeps up to the readiness score while the number counts up. |
 | `HoldButton` | Held on a touch screen until it fills with accent (finishing a session); a click or the keyboard acts at once. |
 | `Burst` | Lime and ink rays and a bounce around what it wraps, when `play` turns true. Used by `PbMoment` (`src/components/athlete/pb-moment.tsx`) after a new personal best. |
-| `Bars` | Values as chunky bars that grow in one after another, the best in accent. Rep times and attempts in the log. |
+| `Bars` | Values as chunky bars that grow in one after another, the best in accent (with `bestWord` on it, "Best" unless set). Rep times and attempts in the log. |
 | `useCountUp`, `CountUpNumber` | A number that counts up to its value. `Stat` uses `CountUpNumber` for a plain number, on the athlete side only. |
 | `SlideMarker` | The sliding highlight inside `Segmented`, `Tabs` and `NavTabs`. Only drawn under the skin. |
 | `Celebrate` | A accent tick in a circle that draws itself inside a burst, with one big word. Part of the page, never blocks a tap. |

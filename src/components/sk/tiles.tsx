@@ -292,3 +292,33 @@ export function FaceStack({ names, max = 5, label }: { names: string[]; max?: nu
     </span>
   )
 }
+
+const MARK_TONE: Record<string, string> = { green: "bg-sk-green", amber: "bg-sk-amber", coral: "bg-sk-coral", blue: "bg-sk-accent", neutral: "bg-sk-faint" }
+
+/**
+ * AttendanceTile: how often someone turned up, as a ring with the share, and every marked day as
+ * a small block (oldest on the left) in the colour of what the coach marked. The blocks pop in.
+ */
+export function AttendanceTile({ attended, marks }: { attended: number; marks: Array<{ key: string; tone: string; label: string }> }) {
+  const total = marks.length
+  const share = total > 0 ? attended / total : 0
+  return (
+    <div className="sk-tile flex items-center gap-4 p-4" data-attendance-tile>
+      <Ring progress={share} size={76} thickness={8}>
+        <span className="font-display text-[1.25rem] font-black leading-none text-sk-ink">{Math.round(share * 100)}%</span>
+      </Ring>
+      <div className="min-w-0 flex-1">
+        <p className="font-display text-[1.75rem] font-black leading-none tabular-nums text-sk-ink">
+          {attended}
+          <span className="ml-1 text-[1rem] text-sk-mute">of {total}</span>
+        </p>
+        <p className="text-sm text-sk-mute">sessions attended</p>
+        <ol aria-label="Each session, oldest first" className="mt-2.5 flex flex-wrap gap-1">
+          {marks.map((mark, index) => (
+            <li key={mark.key} title={mark.label} aria-label={mark.label} className={cn("sk-face block h-4 w-3 rounded-[4px]", MARK_TONE[mark.tone] ?? MARK_TONE.neutral)} style={{ animationDelay: `${index * 35}ms` }} />
+          ))}
+        </ol>
+      </div>
+    </div>
+  )
+}
