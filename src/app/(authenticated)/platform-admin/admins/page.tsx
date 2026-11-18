@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
-import { Button, DataTable, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText, TableSub, notify, type DataTableColumn } from "@/components/sk"
+import { Avatar, Button, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText, TileGrid, notify } from "@/components/sk"
+import { cn } from "@/lib/utils"
 import { PlatformHomeTabs } from "@/components/ops/platform-tabs"
 import { formatLocalDate, formatLocalDateTime } from "@/lib/data/platform-admin/tenants-data"
 import { addPlatformAdmin, listPlatformAdmins, setPlatformAdminActive } from "@/lib/data/platform-admin/tools-data"
@@ -72,73 +73,23 @@ export default function PlatformAdminAdminsPage() {
   const list = admins ?? []
   const activeCount = list.filter((admin) => admin.isActive).length
 
-  const columns: Array<DataTableColumn<PlatformAdminContact>> = [
-    {
-      key: "who",
-      header: "Platform admin",
-      cell: (admin) => (
-        <>
-          <span className="break-words font-bold text-sk-ink">
-            {admin.displayName ?? admin.email}
-            {admin.isSelf ? <span className="font-normal text-sk-mute"> (you)</span> : null}
-          </span>
-          {admin.displayName ? (
-            <TableSub>
-              <span className="break-all">{admin.email}</span>
-            </TableSub>
-          ) : null}
-        </>
-      ),
-    },
-    {
-      key: "state",
-      header: "Access",
-      phone: "plain",
-      cell: (admin) =>
-        admin.isActive ? (
-          <StatusText tone="green">Active</StatusText>
-        ) : (
-          <StatusText tone="neutral">Switched off{admin.deactivatedAt ? ` ${formatLocalDate(admin.deactivatedAt)}` : ""}</StatusText>
-        ),
-    },
-    {
-      key: "added",
-      header: "Added",
-      cell: (admin) => (
-        <span className="block">
-          {formatLocalDate(admin.addedAt)}
-          <span className="block text-sm text-sk-mute [overflow-wrap:anywhere]">{admin.addedByEmail ? `by ${admin.addedByEmail}` : "when the platform was set up"}</span>
-        </span>
-      ),
-    },
-    {
-      key: "signin",
-      header: "Last sign-in",
-      cell: (admin) => (admin.lastSignInAt ? formatLocalDateTime(admin.lastSignInAt) : <span className="text-sk-mute">{admin.hasAccount ? "Not recorded" : "Has not signed in yet"}</span>),
-    },
-    {
-      key: "action",
-      header: "Change",
-      align: "right",
-      phone: "plain",
-      cell: (admin) => {
-        if (!admin.isActive) {
-          return (
-            <Button size="sm" disabled={busy} onClick={() => void handleActive(admin, true)} aria-label={`Reactivate ${admin.email}`}>
-              Reactivate
-            </Button>
-          )
-        }
-        const problem = deactivateAdminProblem(admin, list)
-        if (problem) return <span className="text-sm text-sk-mute">{admin.isSelf && activeCount > 1 ? "You cannot switch yourself off" : "The last active admin"}</span>
-        return (
-          <Button size="sm" variant="danger" disabled={busy} aria-expanded={confirmId === admin.id} onClick={() => setConfirmId((current) => (current === admin.id ? null : admin.id))} aria-label={`Deactivate ${admin.email}`}>
-            Deactivate
-          </Button>
-        )
-      },
-    },
-  ]
+  const actionFor = (admin: PlatformAdminContact) => {
+    if (!admin.isActive) {
+      return (
+        <Button size="sm" disabled={busy} onClick={() => void handleActive(admin, true)} aria-label={`Reactivate ${admin.email}`}>
+          Reactivate
+        </Button>
+      )
+    }
+    const problem = deactivateAdminProblem(admin, list)
+    if (problem) return <span className="text-sm text-sk-mute">{admin.isSelf && activeCount > 1 ? "You cannot switch yourself off" : "The last active admin"}</span>
+    return (
+      <Button size="sm" variant="danger" disabled={busy} aria-expanded={confirmId === admin.id} onClick={() => setConfirmId((current) => (current === admin.id ? null : admin.id))} aria-label={`Deactivate ${admin.email}`}>
+        Deactivate
+      </Button>
+    )
+  }
+
 
   return (
     <Screen>
@@ -156,27 +107,52 @@ export default function PlatformAdminAdminsPage() {
         ) : list.length === 0 ? (
           <EmptyState title="No platform admins to show" body="The list could not be read. Check again in a moment." />
         ) : (
-          <DataTable
-            caption="Platform admins"
-            columns={columns}
-            rows={list}
-            rowKey={(admin) => admin.id}
-            rowProps={(admin) => ({ "data-admin": admin.email })}
-            rowBelow={(admin) =>
-              confirmId === admin.id ? (
-                <InlineConfirm
-                  question={`Switch off platform access for ${admin.email}? They are signed out of these screens straight away. You can switch them back on later.`}
-                  confirmLabel="Deactivate"
-                  cancelLabel="Keep access"
-                  busy={busy}
-                  onConfirm={() => void handleActive(admin, false)}
-                  onCancel={() => setConfirmId(null)}
-                />
-              ) : rowError?.id === admin.id ? (
-                <Notice tone="error">{rowError.text}</Notice>
-              ) : null
-            }
-          />
+          <TileGrid label="Platform admins">
+            {list.map((admin) => (
+              <li key={admin.id} className="sk-tile-item flex flex-col" data-admin={admin.email}>
+                <div className={cn("sk-tile flex flex-1 flex-col gap-3 p-4", !admin.isActive && "opacity-70")}>
+                  <div className="flex items-start justify-between gap-3">
+                    <Avatar name={admin.displayName ?? admin.email} size="lg" className={admin.isActive ? "bg-sk-ink text-white" : "bg-sk-soft-2 text-sk-mute"} />
+                    {admin.isActive ? <StatusText tone="green">Active</StatusText> : <StatusText tone="neutral">Switched off{admin.deactivatedAt ? ` ${formatLocalDate(admin.deactivatedAt)}` : ""}</StatusText>}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="break-words font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink">
+                      {admin.displayName ?? admin.email}
+                      {admin.isSelf ? <span className="ml-1.5 align-middle font-sans text-sm font-bold normal-case text-sk-mute">(you)</span> : null}
+                    </p>
+                    {admin.displayName ? <p className="mt-1 break-all text-sm text-sk-mute">{admin.email}</p> : null}
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-[14px] bg-white px-3 py-2">
+                      <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Added</dt>
+                      <dd className="font-semibold text-sk-ink">{formatLocalDate(admin.addedAt)}</dd>
+                      <dd className="text-[0.8125rem] text-sk-mute [overflow-wrap:anywhere]">{admin.addedByEmail ? `by ${admin.addedByEmail}` : "when the platform was set up"}</dd>
+                    </div>
+                    <div className="rounded-[14px] bg-white px-3 py-2">
+                      <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Last sign-in</dt>
+                      <dd className="font-semibold text-sk-ink">{admin.lastSignInAt ? formatLocalDateTime(admin.lastSignInAt) : <span className="font-normal text-sk-mute">{admin.hasAccount ? "Not recorded" : "Has not signed in yet"}</span>}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-auto flex justify-end">{actionFor(admin)}</div>
+                </div>
+                {confirmId === admin.id ? (
+                  <InlineConfirm
+                    className="mt-2"
+                    question={`Switch off platform access for ${admin.email}? They are signed out of these screens straight away. You can switch them back on later.`}
+                    confirmLabel="Deactivate"
+                    cancelLabel="Keep access"
+                    busy={busy}
+                    onConfirm={() => void handleActive(admin, false)}
+                    onCancel={() => setConfirmId(null)}
+                  />
+                ) : rowError?.id === admin.id ? (
+                  <Notice tone="error" className="mt-2">
+                    {rowError.text}
+                  </Notice>
+                ) : null}
+              </li>
+            ))}
+          </TileGrid>
         )}
       </Section>
 

@@ -115,7 +115,7 @@ test.describe("platform admin tools", () => {
   test("platform admins: add by email, guards, deactivate with an inline confirm, reactivate", async ({ page }) => {
     await page.goto("/platform-admin/admins")
     await expect(page.getByRole("heading", { level: 1, name: "Platform admins" })).toBeVisible()
-    const table = page.getByRole("table", { name: "Platform admins" })
+    const table = page.getByRole("list", { name: "Platform admins" })
     const self = table.locator('[data-admin="platformadmin@pacelab.local"]')
     await expect(self).toContainText("(you)")
     await expect(self).toContainText("Active")

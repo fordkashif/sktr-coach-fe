@@ -916,3 +916,10 @@ body {
 [data-skin="stopwatch"] h3.text-base { font-size: 1.375rem; line-height: 1; }
 /* Tags under the skin: round, small capitals, no outline. */
 [data-skin="stopwatch"] .sk-tag { border: 0; border-radius: 9999px; padding: 0.25rem 0.625rem; font-size: 0.6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; box-shadow: none; }
+/* Activity timelines: the entries land one after another down the rail. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] .sk-timeline-item { animation: sk-rise 0.4s ease-out both; }
+}
+/* A grey button on a grey tile would vanish: on tiles it is white. */
+[data-skin="stopwatch"] .sk-tile .sk-btn-secondary { background: #fff; }
+[data-skin="stopwatch"] .sk-tile .sk-btn-secondary:hover { background: var(--sk-accent-tint); }

@@ -22,6 +22,9 @@ import {
   StatStrip,
   StatusText,
   TableSub,
+  PercentCell,
+  ReadinessBar,
+  ScoreCell,
   Tabs,
   Tag,
   type DataTableColumn,
@@ -248,7 +251,7 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
       align: "right",
       strong: true,
       phone: "trailing",
-      cell: (row) => (row.adherence === null ? <span className="font-normal text-sk-mute">{NO_SESSIONS_DUE}</span> : `${row.adherence}%`),
+      cell: (row) => (row.adherence === null ? <span className="font-normal text-sk-mute">{NO_SESSIONS_DUE}</span> : <PercentCell value={row.adherence} />),
     },
   ]
 
@@ -256,10 +259,10 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
     { key: "athlete", header: "Athlete", cell: (row) => athleteCell(row.athleteId, row.athleteName, shortDay(row.date)) },
     { key: "readiness", header: "Readiness", phone: "trailing", cell: (row) => <ReadinessText status={row.readiness} /> },
     { key: "sleep", header: "Sleep (h)", align: "right", strong: true, cell: (row) => row.sleep },
-    { key: "soreness", header: "Soreness", align: "right", cell: (row) => row.soreness },
-    { key: "fatigue", header: "Fatigue", align: "right", cell: (row) => row.fatigue },
-    { key: "mood", header: "Mood", align: "right", cell: (row) => row.mood },
-    { key: "stress", header: "Stress", align: "right", cell: (row) => row.stress },
+    { key: "soreness", header: "Soreness", align: "right", cell: (row) => <ScoreCell value={row.soreness} higherIsWorse /> },
+    { key: "fatigue", header: "Fatigue", align: "right", cell: (row) => <ScoreCell value={row.fatigue} higherIsWorse /> },
+    { key: "mood", header: "Mood", align: "right", cell: (row) => <ScoreCell value={row.mood} /> },
+    { key: "stress", header: "Stress", align: "right", cell: (row) => <ScoreCell value={row.stress} higherIsWorse /> },
     { key: "notes", header: "Notes", className: "max-w-[16rem]", cell: (row) => row.notes ?? "" },
   ]
 
@@ -350,12 +353,24 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
           <Stat label="Under 75%" value={adherenceRows.filter((row) => row.adherence !== null && row.adherence < 75).length} />
         </StatStrip>
       ) : report === "wellness" ? (
-        <StatStrip aria-label="Wellness in this period">
-          <Stat label="Check-ins" value={wellnessRows.length} />
-          <Stat label="Average sleep" value={average(wellnessRows.map((row) => row.sleep)) ?? "None"} unit={wellnessRows.length ? "h" : undefined} />
-          <Stat label="Watch or review" value={wellnessRows.filter((row) => row.readiness !== "green").length} />
-          <Stat label="Athletes checking in" value={new Set(wellnessRows.map((row) => row.athleteId)).size} of={data?.athleteCount ?? 0} />
-        </StatStrip>
+        <>
+          <StatStrip aria-label="Wellness in this period">
+            <Stat label="Check-ins" value={wellnessRows.length} />
+            <Stat label="Average sleep" value={average(wellnessRows.map((row) => row.sleep)) ?? "None"} unit={wellnessRows.length ? "h" : undefined} />
+            <Stat label="Watch or review" value={wellnessRows.filter((row) => row.readiness !== "green").length} />
+            <Stat label="Athletes checking in" value={new Set(wellnessRows.map((row) => row.athleteId)).size} of={data?.athleteCount ?? 0} />
+          </StatStrip>
+          {wellnessRows.length > 0 ? (
+            <div className="sk-tile p-4" data-readiness-mix>
+              <p className="mb-2 text-sm font-bold text-sk-mute">How the check-ins came out</p>
+              <ReadinessBar
+                ready={wellnessRows.filter((row) => row.readiness === "green").length}
+                watch={wellnessRows.filter((row) => row.readiness === "yellow").length}
+                review={wellnessRows.filter((row) => row.readiness === "red").length}
+              />
+            </div>
+          ) : null}
+        </>
       ) : (
         <StatStrip aria-label="Records in this period">
           <Stat label="Events with a new best" value={recordRows.length} />

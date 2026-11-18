@@ -263,6 +263,18 @@ Platform admin screens (same skin and tiles):
 |---|---|
 | `Pipeline` | Stages one after another as numbered tiles joined by arrows, each with its count, a hint and a bar for its share of the busiest stage. `accent` for the stage that is the goal, `flag` for one that needs someone. |
 
+Data screens:
+
+- Reports keep their tables (what you see is what you download), with the numbers drawn in them: adherence as `PercentCell` (a short bar, amber under 75%), wellness scores as `ScoreCell` (five pips, amber on a hard score), team readiness as a `ReadinessBar`, and the wellness tab opens with the mix of all check-ins as one bar.
+- Activity logs (club and platform) are timelines: per day, a rail with each entry as a tile, its time in the scoreboard type and who did it.
+- Billing by club and the platform admins are tiles with their facts in small white boxes and the action at the foot.
+- On a tile, a secondary button is white so it does not vanish into the grey.
+
+| Part | What it is |
+|---|---|
+| `PercentCell` | A share in a table: a short bar that grows in beside the number, amber below `low` (75). |
+| `ScoreCell` | A 1 to 5 score in a table: five pips beside the number; `higherIsWorse` turns a 4 or 5 amber (otherwise a 1 or 2). |
+
 Shell, overlays and public pages:
 
 - Profile menu: an accent card with the avatar, name, email and role, then rows with a round icon and a chevron; Sign out in coral. It springs open and its rows land one after another.
