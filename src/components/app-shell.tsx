@@ -402,7 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const brand = (
     <Link
       to={homeHref}
-      className="shrink-0 rounded-[6px] text-xl font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue"
+      className="shrink-0 rounded-[6px] font-display text-[1.625rem] font-black uppercase leading-none text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue"
     >
       SKTR Coach
     </Link>
