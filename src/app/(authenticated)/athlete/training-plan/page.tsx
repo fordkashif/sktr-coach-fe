@@ -26,8 +26,10 @@ import {
   Select,
   SkeletonRows,
   Split,
+  Ring,
   StatusText,
   WeekPager,
+  WeekSegments,
   notify,
   notifyError,
   type StateTone,
@@ -43,6 +45,10 @@ import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, Training
 import { isWeekType, weekLine } from "@/lib/data/training-plan/plan-phases"
 import { getBackendMode } from "@/lib/supabase/config"
 import { useUnits } from "@/lib/units-store"
+
+
+/** The photo behind the block card (public/images/athlete, from Unsplash). */
+const PLAN_PHOTO = "/images/athlete/race.webp"
 
 function parseDateKey(key: string) {
   return new Date(`${key.slice(0, 10)}T00:00:00`)
@@ -582,6 +588,32 @@ export default function AthleteTrainingPlanPage() {
       {backendError ? <Notice tone="error">Some of your plan could not be loaded. {backendError}</Notice> : null}
 
       <div>{viewSwitch}</div>
+
+      <section aria-label="Your block" data-plan-block className="sk-hero-wrap">
+        <img src={PLAN_PHOTO} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+        <div className="sk-hero sk-hero-over">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="sk-hero-label">{selected === todayWeek ? "This week" : `Week of ${shortDate(selected.startKey)}`}</p>
+            <p className="sk-hero-label shrink-0">
+              Week {selected.week.weekNumber} of {totalWeeks}
+            </p>
+          </div>
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <p className="sk-hero-title">{trainingRows.length > 0 ? `${doneInWeek} of ${trainingRows.length} done` : "Rest week"}</p>
+              {selected.week.emphasis ? <p className="sk-hero-body">{selected.week.emphasis}</p> : null}
+              <WeekSegments total={totalWeeks} current={selected.week.weekNumber} className="sk-on-accent-segments mt-3" />
+            </div>
+            {trainingRows.length > 0 ? (
+              <span className="shrink-0 rounded-full bg-white p-1.5">
+                <Ring progress={doneInWeek / trainingRows.length} size={76}>
+                  <span className="font-display text-[1.375rem] font-black leading-none text-sk-ink">{Math.round((doneInWeek / trainingRows.length) * 100)}%</span>
+                </Ring>
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       <Split
         main={

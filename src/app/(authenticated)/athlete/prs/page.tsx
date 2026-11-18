@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
 import { RelayList } from "@/components/athlete/relay-parts"
-import { dayText, eventHistoryPath, markText, ProgressTabs, ResultMark } from "@/components/athlete/results-parts"
-import { EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows } from "@/components/sk"
+import { dayText, eventHistoryPath, markText, ProgressTabs } from "@/components/athlete/results-parts"
+import { EmptyState, LinkButton, Notice, Screen, ScreenHeader, Section, SkeletonRows, TileGrid } from "@/components/sk"
+import { Link } from "react-router-dom"
 import { SeasonPicker } from "@/components/seasons/season-picker"
 import { pickableSeasons, type ClubSeason } from "@/lib/data/club-admin/season-logic"
 import { listClubSeasons } from "@/lib/data/club-admin/seasons-data"
@@ -20,15 +21,25 @@ function seasonLine(event: EventHistory, pastSeason: string | null): string {
   return `${pastSeason ? `${pastSeason} best` : "Season best"} ${markText(seasonBest)}, ${dayText(seasonBest.date)}`
 }
 
-function EventRow({ event, pastSeason }: { event: EventHistory; pastSeason: string | null }) {
+/** One event as a scoreboard tile: the best mark big, where and when it was set, the season line under it. */
+function EventTile({ event, pastSeason, index }: { event: EventHistory; pastSeason: string | null; index: number }) {
   const { personalBest, windAssistedBest } = event.bests
   const lead = personalBest ?? windAssistedBest ?? event.results[0]
+  const seasonIsBest = Boolean(personalBest && event.bests.seasonBest && event.bests.seasonBest.id === personalBest.id)
   return (
-    <ListRow
-      to={eventHistoryPath(event.group)}
-      title={event.label}
-      subtitle={
-        <>
+    <li className="sk-tile-item" style={{ animationDelay: `${index * 60}ms` }}>
+      <Link to={eventHistoryPath(event.group)} className="sk-tile flex h-full flex-col gap-2 p-4 text-sk-ink" data-record-event={event.label}>
+        <span className="flex items-start justify-between gap-2">
+          <span className="font-display text-[1.375rem] font-black uppercase leading-none">{event.label}</span>
+          <span className="shrink-0 text-[0.75rem] font-bold text-sk-mute">
+            {event.results.length} {event.results.length === 1 ? "result" : "results"}
+          </span>
+        </span>
+        <span className="flex flex-wrap items-end gap-2">
+          <span className="font-display text-[2.75rem] font-black leading-[0.9] tabular-nums">{markText(lead).replace(/ \(.*\)$/, "")}</span>
+          {seasonIsBest && !pastSeason ? <span className="mb-1 rounded-full bg-sk-accent px-2 py-0.5 text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-on-accent">PB this season</span> : null}
+        </span>
+        <span className="mt-auto block text-[0.8125rem] leading-snug text-sk-mute">
           {personalBest ? (
             <>
               Personal best {[dayText(personalBest.date), personalBest.location].filter(Boolean).join(", ")}
@@ -37,19 +48,11 @@ function EventRow({ event, pastSeason }: { event: EventHistory; pastSeason: stri
           ) : (
             "No wind legal mark yet"
           )}
-          <span className="block">{seasonLine(event, pastSeason)}</span>
+          <span className="block font-semibold">{seasonLine(event, pastSeason)}</span>
           {windAssistedBest ? <span className="block">Wind assisted {markText(windAssistedBest)}</span> : null}
-        </>
-      }
-      trailing={
-        <span className="flex flex-col items-end gap-1">
-          <ResultMark result={lead} />
-          <span className="text-sm font-normal text-sk-mute">
-            {event.results.length} {event.results.length === 1 ? "result" : "results"}
-          </span>
         </span>
-      }
-    />
+      </Link>
+    </li>
   )
 }
 
@@ -157,11 +160,11 @@ export default function AthleteRecordsPage() {
         const inCategory = events.filter((event) => event.category === category)
         return (
           <Section key={category} title={category} meta={`${inCategory.length} ${inCategory.length === 1 ? "event" : "events"}`}>
-            <List>
-              {inCategory.map((event) => (
-                <EventRow key={event.group} event={event} pastSeason={chosen?.name ?? null} />
+            <TileGrid label={`${category} records`}>
+              {inCategory.map((event, index) => (
+                <EventTile key={event.group} event={event} pastSeason={chosen?.name ?? null} index={index} />
               ))}
-            </List>
+            </TileGrid>
           </Section>
         )
       })}

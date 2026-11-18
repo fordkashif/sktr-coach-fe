@@ -19,6 +19,7 @@ import {
   Notice,
   ReadinessText,
   Screen,
+  ProgressAvatar,
   ScreenHeader,
   Section,
   Select,
@@ -369,6 +370,35 @@ export default function AthleteProfilePage() {
       ) : null}
 
       {savedNotice && !editing ? <Notice tone="success">Profile saved.</Notice> : null}
+
+      {profile && !editing ? (
+        <section aria-label="Your athlete card" data-athlete-card className="sk-athlete-card relative overflow-hidden rounded-[28px] bg-sk-accent p-5 text-sk-on-accent sm:p-6">
+          <span aria-hidden className="sk-athlete-card-lane absolute -right-10 -top-16 size-64 rounded-full border-[18px] border-white/10" />
+          <span aria-hidden className="sk-athlete-card-lane absolute -right-2 -top-8 size-44 rounded-full border-[14px] border-white/10" />
+          <div className="relative flex items-center gap-4">
+            <span className="shrink-0 rounded-full bg-white p-1.5">
+              <ProgressAvatar value={profile.adherencePercent} size={92} label={profile.adherencePercent !== null ? `${profile.adherencePercent}% of sessions done, last 4 weeks` : undefined}>
+                <span className="font-display text-[1.625rem] font-black leading-none tabular-nums text-sk-ink">{profile.adherencePercent !== null ? `${profile.adherencePercent}%` : "-"}</span>
+              </ProgressAvatar>
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.75rem] font-extrabold uppercase tracking-[0.04em] opacity-85">{profile.teamName ?? "No team yet"}</p>
+              <p className="mt-1 font-display text-[2.5rem] font-black uppercase leading-[0.88] sm:text-[3rem]">{profile.primaryEvent ?? "Your event"}</p>
+              <p className="mt-1.5 text-[0.8125rem] opacity-85">Sessions done, last 4 weeks</p>
+            </div>
+          </div>
+          <dl className="relative mt-5 grid grid-cols-2 gap-2">
+            <div className="rounded-[18px] bg-white/15 p-3">
+              <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] opacity-85">Readiness</dt>
+              <dd className="mt-1 font-display text-[1.75rem] font-black uppercase leading-none">{profile.readiness === "green" ? "Ready" : profile.readiness === "yellow" ? "Watch" : profile.readiness === "red" ? "Review" : "-"}</dd>
+            </div>
+            <div className="rounded-[18px] bg-white/15 p-3">
+              <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] opacity-85">Last check-in</dt>
+              <dd className="mt-1 truncate text-[0.9375rem] font-bold leading-tight">{profile.lastWellness ?? "None yet"}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       {profile && editing && draft && detailsDraft ? (
         <form className="flex max-w-[720px] flex-col gap-7 lg:gap-9" onSubmit={(event) => void handleSave(event)} noValidate>
