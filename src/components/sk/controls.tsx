@@ -81,7 +81,7 @@ export function Field({
   const id = fixedId ?? generatedId
   const messageId = `${id}-message`
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <label htmlFor={id} className="sk-field-label">
         {label}
         {optional ? <span className="font-normal text-sk-mute"> (optional)</span> : null}
