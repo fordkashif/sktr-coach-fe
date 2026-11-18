@@ -421,6 +421,21 @@ body {
     @apply h-11 w-full rounded-[14px] border border-sk-line-strong bg-white px-3.5 text-base text-sk-ink placeholder:text-sk-faint focus:border-sk-blue focus:outline-none focus:ring-2 focus:ring-sk-blue/20 disabled:bg-sk-soft disabled:text-sk-mute;
   }
   textarea.sk-field { @apply h-auto min-h-24 py-2.5 leading-normal; }
+  /* Date and time fields: phones give the native control a minimum width of its own, which pushed
+     a field past its column and over the one beside it. They now fit their column like any field. */
+  .sk-field { min-width: 0; max-width: 100%; }
+  input.sk-field[type="date"], input.sk-field[type="time"], input.sk-field[type="datetime-local"], input.sk-field[type="month"] {
+    display: block;
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: left;
+    line-height: 2.75rem;
+  }
+  input.sk-field[type="date"]::-webkit-date-and-time-value,
+  input.sk-field[type="time"]::-webkit-date-and-time-value,
+  input.sk-field[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+  input.sk-field[type="date"]::-webkit-datetime-edit,
+  input.sk-field[type="time"]::-webkit-datetime-edit { padding: 0; }
   .sk-field[aria-invalid="true"] { @apply border-sk-coral-ink; }
   .sk-field-label { @apply text-sm font-semibold text-sk-ink; }
   .sk-field-hint { @apply text-sm text-sk-mute; }
