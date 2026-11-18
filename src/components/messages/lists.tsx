@@ -1,7 +1,8 @@
 import { useCallback } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { exactTime, firstLine, listTime } from "@/components/messages/format"
-import { Avatar, List, ListRow, StatusDot, StatusText } from "@/components/sk"
+import { Megaphone } from "@phosphor-icons/react"
+import { Avatar, StatusText } from "@/components/sk"
 import { useAvatarLookup } from "@/lib/account-store"
 import { announcementHref, threadHref } from "@/lib/data/messages/links"
 import { audiencePhrase, HIDDEN_MESSAGE_STUB, type Announcement, type MessagesRole, type OversightThread, type ThreadSummary } from "@/lib/data/messages/types"
@@ -40,98 +41,131 @@ export function sortThreads(threads: ThreadSummary[]): ThreadSummary[] {
 export function ThreadRows({ role, threads }: { role: "coach" | "athlete"; threads: ThreadSummary[] }) {
   const avatarOf = useAvatarLookup()
   return (
-    <List aria-label="Conversations">
-      {sortThreads(threads).map((thread) => {
+    <ul aria-label="Conversations" className="flex flex-col gap-2.5">
+      {sortThreads(threads).map((thread, index) => {
         const unread = thread.unreadCount > 0
         const name = role === "coach" ? thread.athleteName : thread.coachName
         const photo = role === "coach" ? avatarOf({ athleteId: thread.athleteId, userId: thread.athleteUserId }) : avatarOf({ userId: thread.coachUserId })
         const preview = thread.lastMessageHidden ? HIDDEN_MESSAGE_STUB : firstLine(thread.lastMessagePreview ?? "")
         return (
-          <ListRow key={thread.id} to={threadHref(role, thread.id)} className="items-start" leading={<Avatar name={name} src={photo} size="md" />} trailing={<Time value={thread.lastMessageAt} />}>
-            <span className={cn("sk-list-title", unread && "font-bold")}>
-              {name}
-              {unread ? <span className="sr-only"> ({thread.unreadCount} unread)</span> : null}
-            </span>
-            <span className={cn("sk-list-sub", unread && "font-semibold text-sk-ink")}>
-              {thread.lastMessageFromMe ? "You: " : ""}
-              {preview}
-            </span>
-            {unread ? (
-              <span className="mt-1 block text-sm">
-                <StatusText tone="blue">{thread.unreadCount === 1 ? "1 new message" : `${thread.unreadCount} new messages`}</StatusText>
+          <li key={thread.id} className="sk-tile-item" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+            <Link to={threadHref(role, thread.id)} className={cn("sk-tile group flex items-start gap-3.5 p-4", unread && "sk-chat-unread")} data-thread={thread.id}>
+              <span className={cn("shrink-0 rounded-full p-[3px]", unread ? "bg-sk-accent" : "bg-white")}>
+                <Avatar name={name} src={photo} size="md" />
               </span>
-            ) : !thread.canSend ? (
-              <span className="sk-list-sub">Read only</span>
-            ) : null}
-          </ListRow>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className={cn("truncate font-display text-[1.25rem] font-black uppercase leading-none text-sk-ink")}>
+                    {name}
+                    {unread ? <span className="sr-only"> ({thread.unreadCount} unread)</span> : null}
+                  </span>
+                  <Time value={thread.lastMessageAt} />
+                </span>
+                <span className={cn("sk-chat-bubble mt-2 inline-block max-w-full rounded-[16px] rounded-tl-[4px] px-3 py-2 text-[0.9375rem] leading-snug", unread ? "bg-sk-accent font-semibold text-sk-on-accent" : thread.lastMessageFromMe ? "bg-white text-sk-ink-2" : "bg-white text-sk-ink")}>
+                  <span className="line-clamp-2">
+                    {thread.lastMessageFromMe ? "You: " : ""}
+                    {preview}
+                  </span>
+                </span>
+                {unread ? null : !thread.canSend ? <span className="mt-1.5 block text-sm text-sk-mute">Read only</span> : null}
+              </span>
+              {unread ? (
+                <span className="sk-chat-count grid size-7 shrink-0 place-items-center self-center rounded-full bg-sk-accent text-[0.8125rem] font-extrabold text-sk-on-accent" aria-hidden>
+                  {thread.unreadCount}
+                </span>
+              ) : null}
+              {unread ? <span className="sr-only">{thread.unreadCount === 1 ? "1 new message" : `${thread.unreadCount} new messages`}</span> : null}
+            </Link>
+          </li>
         )
       })}
-    </List>
+    </ul>
   )
 }
 
 /** Announcements as rows. Unread ones (for a recipient) carry a blue dot and a bold first line. */
 export function AnnouncementRows({ role, announcements }: { role: MessagesRole; announcements: Announcement[] }) {
   return (
-    <List aria-label="Announcements">
-      {announcements.map((announcement) => {
+    <ul aria-label="Announcements" className="flex flex-col gap-2.5">
+      {announcements.map((announcement, index) => {
         const unread = announcement.isRecipient && !announcement.readAt
         const from = announcement.isMine ? "You" : announcement.senderName
+        const reach = announcement.canManage && announcement.recipientCount !== null ? announcement.recipientCount : null
+        const read = announcement.readCount ?? 0
         return (
-          <ListRow
-            key={announcement.id}
-            to={announcementHref(role, announcement.id)}
-            className="items-start"
-            // The dot keeps its space when read, so the lines start at the same place down the list.
-            leading={<StatusDot tone="blue" className={cn("mt-[7px]", !unread && "invisible")} />}
-            trailing={<Time value={announcement.createdAt} />}
-          >
-            <span className={cn("sk-list-title", unread && "font-bold")}>
-              {firstLine(announcement.body, 110)}
-              {unread ? <span className="sr-only"> (unread)</span> : null}
-            </span>
-            <span className="sk-list-sub">
-              {from} to {audiencePhrase(announcement)}
-            </span>
-            {announcement.canManage && announcement.recipientCount !== null ? (
-              <span className="sk-list-sub">
-                {announcement.recipientCount === 0 ? "No one to read it yet" : `Read by ${announcement.readCount ?? 0} of ${announcement.recipientCount}`}
+          <li key={announcement.id} className="sk-tile-item" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+            <Link to={announcementHref(role, announcement.id)} className="sk-tile flex items-start gap-3.5 p-4">
+              <span className={cn("grid size-11 shrink-0 place-items-center rounded-full", unread ? "bg-sk-accent text-sk-on-accent" : "bg-white text-sk-ink")} aria-hidden>
+                <Megaphone className="size-5" weight="bold" />
               </span>
-            ) : null}
-          </ListRow>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm font-bold text-sk-mute">
+                    {from} to {audiencePhrase(announcement)}
+                  </span>
+                  <Time value={announcement.createdAt} />
+                </span>
+                <span className={cn("mt-1 block leading-snug text-sk-ink", unread ? "font-bold" : "font-medium")}>
+                  {firstLine(announcement.body, 110)}
+                  {unread ? <span className="sr-only"> (unread)</span> : null}
+                </span>
+                {reach !== null ? (
+                  reach === 0 ? (
+                    <span className="mt-1.5 block text-sm text-sk-mute">No one to read it yet</span>
+                  ) : (
+                    <span className="mt-2 flex items-center gap-2.5 text-sm text-sk-mute">
+                      <span aria-hidden className="block h-1.5 w-24 overflow-hidden rounded-full bg-white">
+                        <span className="sk-anim-grow block h-full rounded-full bg-sk-ink" style={{ width: `${Math.round((read / reach) * 100)}%` }} />
+                      </span>
+                      {`Read by ${read} of ${reach}`}
+                    </span>
+                  )
+                ) : null}
+              </span>
+            </Link>
+          </li>
         )
       })}
-    </List>
+    </ul>
   )
 }
 
 /** Every conversation in the club, for a club admin. Reported ones come first and say so. */
 export function OversightRows({ threads }: { threads: OversightThread[] }) {
   return (
-    <List aria-label="Conversations in the club">
-      {threads.map((thread) => (
-        <ListRow
-          key={thread.id}
-          to={threadHref("club-admin", thread.id)}
-          className="items-start"
-          leading={<Avatar name={thread.athleteName} size="md" />}
-          trailing={<Time value={thread.lastMessageAt} />}
-        >
-          <span className="sk-list-title">
-            {thread.coachName} and {thread.athleteName}
-          </span>
-          <span className="sk-list-sub">
-            {[thread.teamName, thread.messageCount === 1 ? "1 message" : `${thread.messageCount} messages`, thread.hiddenCount > 0 ? `${thread.hiddenCount} hidden` : null, thread.isOpen ? null : "read only"]
-              .filter(Boolean)
-              .join(", ")}
-          </span>
-          {thread.openReportCount > 0 ? (
-            <span className="mt-1 block text-sm">
-              <StatusText tone="coral">{thread.openReportCount === 1 ? "1 reported message to review" : `${thread.openReportCount} reported messages to review`}</StatusText>
+    <ul aria-label="Conversations in the club" className="flex flex-col gap-2.5">
+      {threads.map((thread, index) => (
+        <li key={thread.id} className="sk-tile-item" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+          <Link to={threadHref("club-admin", thread.id)} className={cn("sk-tile flex items-start gap-3.5 p-4", thread.openReportCount > 0 && "sk-tile-flag")}>
+            <span className="flex shrink-0 -space-x-2">
+              <span className="rounded-full bg-white p-[2px]">
+                <Avatar name={thread.coachName} size="md" />
+              </span>
+              <span className="rounded-full bg-white p-[2px]">
+                <Avatar name={thread.athleteName} size="md" />
+              </span>
             </span>
-          ) : null}
-        </ListRow>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline justify-between gap-3">
+                <span className="font-display text-[1.25rem] font-black uppercase leading-none text-sk-ink">
+                  {thread.coachName} and {thread.athleteName}
+                </span>
+                <Time value={thread.lastMessageAt} />
+              </span>
+              <span className="mt-1 block text-sm text-sk-mute">
+                {[thread.teamName, thread.messageCount === 1 ? "1 message" : `${thread.messageCount} messages`, thread.hiddenCount > 0 ? `${thread.hiddenCount} hidden` : null, thread.isOpen ? null : "read only"]
+                  .filter(Boolean)
+                  .join(", ")}
+              </span>
+              {thread.openReportCount > 0 ? (
+                <span className="mt-1 block text-sm">
+                  <StatusText tone="coral">{thread.openReportCount === 1 ? "1 reported message to review" : `${thread.openReportCount} reported messages to review`}</StatusText>
+                </span>
+              ) : null}
+            </span>
+          </Link>
+        </li>
       ))}
-    </List>
+    </ul>
   )
 }

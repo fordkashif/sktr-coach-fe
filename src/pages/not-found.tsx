@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft } from "@phosphor-icons/react"
 import { Button, LinkButton, ScreenHeader } from "@/components/sk"
-import { PublicFrame, TrackArt } from "@/layouts/auth-layout"
+import { PublicFrame } from "@/layouts/auth-layout"
 
 export function NotFoundPage() {
   const navigate = useNavigate()
@@ -26,8 +26,12 @@ export function NotFoundPage() {
           </Button>
         ) : null}
       </div>
-      <div className="h-52 overflow-hidden rounded-3xl bg-sk-blue sm:h-64">
-        <TrackArt className="size-full" />
+      <div className="sk-brand-panel relative h-56 overflow-hidden rounded-[28px] sm:h-64" aria-hidden>
+        <img src="/images/athlete/sunrise.webp" alt="" className="sk-hero-photo absolute inset-0 size-full object-cover" />
+        <div className="sk-brand-card absolute bottom-4 left-4 rounded-[20px] bg-sk-accent px-5 py-4 text-sk-on-accent">
+          <p className="text-[0.75rem] font-extrabold uppercase tracking-[0.04em] opacity-85">Lane 4</p>
+          <p className="font-display text-[3rem] font-black uppercase leading-[0.85]">DNS</p>
+        </div>
       </div>
     </PublicFrame>
   )

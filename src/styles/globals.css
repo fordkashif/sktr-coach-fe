@@ -960,3 +960,15 @@ body {
   [data-skin="stopwatch"] .sk-table tbody tr[data-below] { background: var(--sk-sw-grey); border-radius: 0 0 18px 18px; padding: 0 1rem 1rem; }
   [data-skin="stopwatch"] .sk-table tbody tr[data-below] > td { padding: 0; background: transparent; }
 }
+/* Messages: an unread count pops in and breathes; bubbles rise into place. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] .sk-chat-count { animation: sk-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) 0.2s both, sk-breathe 2.4s ease-in-out 0.8s infinite; }
+  [data-skin="stopwatch"] .sk-chat-bubble { animation: sk-rise 0.45s ease-out 0.1s both; }
+}
+/* Chat bubbles pop out from their own side. */
+@keyframes sk-bubble-in-right { 0% { opacity: 0; transform: translateY(10px) scale(0.85); transform-origin: 100% 0 } 70% { opacity: 1; transform: translateY(-2px) scale(1.02); transform-origin: 100% 0 } 100% { opacity: 1; transform: none } }
+@keyframes sk-bubble-in-left { 0% { opacity: 0; transform: translateY(10px) scale(0.85); transform-origin: 0 0 } 70% { opacity: 1; transform: translateY(-2px) scale(1.02); transform-origin: 0 0 } 100% { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: no-preference) {
+  [data-sk-bubble="mine"] { animation: sk-bubble-in-right 0.4s ease-out both; }
+  [data-sk-bubble="theirs"] { animation: sk-bubble-in-left 0.4s ease-out both; }
+}

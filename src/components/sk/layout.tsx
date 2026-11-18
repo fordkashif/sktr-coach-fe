@@ -59,8 +59,9 @@ export function ScreenHeader({
           </button>
         )
       ) : null}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-5">
+        {/* The title keeps at least its longest word; when the actions do not fit beside it they go under it. */}
+        <div className="min-w-0 lg:min-w-min lg:flex-[1_1_0%]">
           {fact ? <p className="mb-0.5 text-sm font-semibold text-sk-mute">{fact}</p> : null}
           <h1 className={resolved === "detail" ? "sk-title-compact" : "sk-title"}>{title}</h1>
           {lede ? <p className="sk-lede mt-2 lg:mt-2.5">{lede}</p> : null}
