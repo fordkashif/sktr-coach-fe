@@ -210,7 +210,6 @@ export function PlanPublish({
                   <EmptyState
                     className="mt-3"
                     title="This team has no squads yet"
-                    body="A squad is a small group inside the team, such as Short sprints or 400m. Make one on the team page, then send it this plan."
                     action={
                       team ? (
                         <LinkButton size="sm" to={`/coach/teams/${team.id}`}>
@@ -257,23 +256,11 @@ export function PlanPublish({
                 <EmptyState
                   className="mt-3"
                   title="No athletes on this team yet"
-                  body={
-                    reachesLaterJoiners(plan)
-                      ? "You can publish now. Athletes you add or invite from the team page get this plan from the day they join."
-                      : "Add or invite athletes from the team page, then come back to publish."
-                  }
                 />
               ) : listed.length === 0 ? (
                 <EmptyState
                   className="mt-3"
                   title={query ? "Nobody matches that name" : plan.assign.target === "squads" ? "Nobody in these squads yet" : "Nobody in this event group"}
-                  body={
-                    query
-                      ? "Check the spelling or clear the search."
-                      : plan.assign.target === "squads"
-                        ? "You can still publish. Athletes get the plan when you add them to a squad."
-                        : "Pick another group, or choose athletes one by one."
-                  }
                 />
               ) : (
                 <List className="mt-2" aria-label={picking ? "Choose athletes" : "Athletes who get this plan"}>

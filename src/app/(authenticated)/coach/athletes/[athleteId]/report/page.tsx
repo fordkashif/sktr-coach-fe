@@ -126,7 +126,6 @@ export default function CoachCreateAthleteReportPage() {
   }
 
   const { athlete } = context.source
-  const first = athlete.name.split(" ")[0] || athlete.name
   const teamId = context.teamId
 
   const toggle = (key: ReportSectionKey, on: boolean) => setSections((current) => cleanReportSections(on ? [...current, key] : current.filter((item) => item !== key)))
@@ -208,7 +207,7 @@ export default function CoachCreateAthleteReportPage() {
               {kind === "season" && !season ? <p className="text-[0.9375rem] text-sk-mute">The club has no season set for today, so this is the calendar year so far.</p> : null}
             </Section>
 
-            <Section title="Your summary" hint={`What you want ${first}${context.isMinor ? " and their parent or guardian" : ""} to take from this period.`}>
+            <Section title="Your summary">
               <Field label="Summary" hint={`${summary.trim().length} of ${REPORT_SUMMARY_MAX} characters. You can change it until the report is shared.`}>
                 <Textarea rows={9} maxLength={REPORT_SUMMARY_MAX} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="How the period went, what improved, what to work on next." />
               </Field>
@@ -231,7 +230,7 @@ export default function CoachCreateAthleteReportPage() {
             </Section>
 
             {teamId ? (
-              <Section title="The whole team" hint="Make a draft for every athlete on the team with this period and these sections, then write the summaries one after another.">
+              <Section title="The whole team">
                 {teamConfirm ? (
                   <InlineConfirm
                     question={`Make a draft report for each athlete on ${athlete.teamName ?? "the team"}, for ${reportRangeText(range)}?`}
@@ -253,7 +252,7 @@ export default function CoachCreateAthleteReportPage() {
           </>
         }
         side={
-          <Section title="Preview" meta={refreshing ? "Updating..." : undefined} hint="This is the sheet that is saved, shared and printed." data-report-preview>
+          <Section title="Preview" meta={refreshing ? "Updating..." : undefined} data-report-preview>
             {refreshing && !snapshot ? <SkeletonRows rows={6} label="Loading the preview" /> : <ReportSheet snapshot={snapshot} />}
           </Section>
         }

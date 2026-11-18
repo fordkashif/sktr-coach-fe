@@ -872,11 +872,6 @@ export default function ClubAdminTeamsPage() {
               {team.athletes.length === 0 ? (
                 <EmptyState
                   title="No athletes on this team yet"
-                  body={
-                    team.status === "active"
-                      ? "Invite athletes by email or from a list, show the squad a QR code, or add an athlete who has no login. They appear here as they join."
-                      : "Athletes can be added once the team is active."
-                  }
                   action={
                     team.status === "active" ? (
                       <Button size="sm" disabled={athleteLimitReached} onClick={() => setAddAthletesTeam({ id: team.id, name: team.name })}>
@@ -1071,7 +1066,6 @@ export default function ClubAdminTeamsPage() {
           view === "active" ? (
             <EmptyState
               title="No teams yet"
-              body="Teams hold your coaches, rosters, plans and testing. Create the first one, give it a lead coach, then add athletes to it."
               action={
                 <Button size="sm" onClick={openCreate}>
                   New team
@@ -1079,7 +1073,7 @@ export default function ClubAdminTeamsPage() {
               }
             />
           ) : (
-            <EmptyState title="Nothing archived" body="Teams you archive are kept here with their roster and history, ready to restore." />
+            <EmptyState title="Nothing archived" />
           )
         ) : (
           <TileGrid label={view === "active" ? "Active teams" : "Archived teams"}>
@@ -1136,7 +1130,7 @@ export default function ClubAdminTeamsPage() {
         )}
       </Section>
 
-      <Section title="Stepping in for a coach" hint="As a club admin you can open any team's training and testing.">
+      <Section title="Stepping in for a coach">
         <List>
           <ListRow to="/coach/training-plan" title="Training plans" subtitle="Build, edit or publish a plan for any team." />
           <ListRow to="/coach/test-week" title="Test weeks" subtitle="Set up a test week or enter results." />

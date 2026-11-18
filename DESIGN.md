@@ -269,7 +269,8 @@ Forms on screens:
 - The exceptions are screens whose whole job is the form (the log, a check-in, a test week, a competition result) and search and filter fields.
 
 - A form that used to be its own page now opens as a sheet over the screen it belongs to, and keeps its address: adding or editing a competition, entering athletes in one, adding or correcting a result (coach and athlete), and the basics of a new plan. Closing the sheet goes back to the screen under it. The plan and test week builders stay full screens: they are workspaces, not forms.
-- No explanatory sentences on screens: section hints and empty state bodies that only explain the feature are gone. A short fact stays ("Scored 1 to 5"). Private sections carry a lock and "Coaches only".
+- No explanatory sentences on any screen: section hints, screen ledes and empty state bodies that only explain a feature are gone across every role. What stays: facts and counts, a state the person must act on (a missing lead coach, health hidden until a date of birth is added), privacy and safeguarding lines (who can read a conversation), legal and closing warnings, and sign-in and claim pages.
+- Writing an announcement opens as a sheet over Messages (coach and club admin). A short fact stays ("Scored 1 to 5"). Private sections carry a lock and "Coaches only".
 
 Lists and empty states:
 

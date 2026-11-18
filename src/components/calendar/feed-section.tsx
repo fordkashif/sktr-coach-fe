@@ -73,8 +73,7 @@ export function CalendarFeedSection({ role }: { role: "athlete" | "coach" | "clu
   return (
     <Section
       id="calendar-link"
-      title="Keep your phone's calendar up to date"
-      hint="A private link you add once to Apple, Google or Outlook calendar. Your calendar app then follows this one by itself."
+      title="Keep your phone's calendar up to date" hint="Add it once to Apple, Google or Outlook calendar."
     >
       <div className="flex max-w-2xl flex-col gap-4">
         {problem ? <Notice tone="error">{problem}</Notice> : null}

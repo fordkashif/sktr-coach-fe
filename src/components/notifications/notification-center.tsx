@@ -41,14 +41,6 @@ export function NotificationBell({ onOpen }: { onOpen: () => void }) {
   )
 }
 
-const EMPTY_BODY: Record<NotificationRole, string> = {
-  athlete: "New plans, test weeks and notes from your coach show up here.",
-  coach: "Finished sessions, test results and low readiness check-ins show up here.",
-  "club-admin": "Accepted invites and changes to your club's account show up here.",
-  "platform-admin": "New club requests show up here.",
-  guardian: "New plans, test weeks, reports and announcements for the athletes you follow show up here.",
-}
-
 /**
  * The sheet with the most recent notifications. Mounted once by the shell for as long as the bell
  * is shown, so it also owns keeping the notification centre fresh (see useNotificationRefresh).
@@ -103,7 +95,7 @@ export function NotificationSheet({ open, onOpenChange }: { open: boolean; onOpe
         </Notice>
       ) : null}
       {showSkeleton ? <SkeletonRows rows={4} label="Loading notifications" /> : null}
-      {showEmpty ? <EmptyState title="You are all caught up" body={EMPTY_BODY[appRole] ?? EMPTY_BODY.athlete} /> : null}
+      {showEmpty ? <EmptyState title="You are all caught up" /> : null}
       {center.recent.length > 0 ? <NotificationRows items={center.recent} onOpen={openItem} /> : null}
     </Sheet>
   )

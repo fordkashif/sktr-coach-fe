@@ -438,7 +438,6 @@ export default function AthleteHomePage() {
         <Section
           aria-label="Getting started"
           title="Three things to get set up"
-          hint="Your coach has not sent a session yet. Use the time to get your details right."
           action={
             <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
               {setupGuideSaving ? "Saving..." : "Hide these steps"}

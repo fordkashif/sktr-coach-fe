@@ -523,7 +523,6 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
               ) : (
                 <EmptyState
                   title="No athletes match"
-                  body="Nobody on this roster fits that search and those filters."
                   action={
                     <Button
                       size="sm"

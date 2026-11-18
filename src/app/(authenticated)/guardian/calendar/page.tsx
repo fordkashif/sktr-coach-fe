@@ -42,7 +42,7 @@ function ChildCalendar({ child }: { child: GuardianChild }) {
             <SkeletonRows rows={4} leading />
           )
         ) : items.length === 0 ? (
-          <EmptyState title="Nothing on the calendar" body="Events the coach or the club adds for the team show here." />
+          <EmptyState title="Nothing on the calendar" />
         ) : (
           <>
           <div className="sk-tile flex items-end justify-between gap-4 p-5" data-calendar-next={items[0].title}>

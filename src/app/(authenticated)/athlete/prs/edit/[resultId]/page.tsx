@@ -45,7 +45,6 @@ export default function AthleteEditResultPage() {
         <Section title="This result is gone">
           <EmptyState
             title="It may have been deleted"
-            body="Go back to your records to see what is there."
             action={
               <LinkButton to="/athlete/prs" size="sm">
                 Back to records

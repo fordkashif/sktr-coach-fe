@@ -146,7 +146,6 @@ export default function AthleteRecordsPage() {
         <Section title="No records yet">
           <EmptyState
             title="Your first result in an event becomes your record"
-            body="Results come in from test weeks and competitions, and you can add one yourself. Beat a mark and the new one takes its place here."
             action={
               <LinkButton to="/athlete/test-week" size="sm">
                 Go to tests
@@ -173,7 +172,6 @@ export default function AthleteRecordsPage() {
         <Section
           title="Relay teams"
           meta={`${relaysRun.length} ${relaysRun.length === 1 ? "relay" : "relays"}`}
-          hint="Relays you ran a leg of. A relay time belongs to the team, so it is not one of your own records."
         >
           <RelayList aria-label="Relays you ran in" relays={relaysRun} ownAthleteId={relays?.athleteId} showMeet />
         </Section>

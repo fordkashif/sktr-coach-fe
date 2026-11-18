@@ -101,7 +101,7 @@ function ChildPlan({ child }: { child: GuardianChild }) {
                 <SkeletonRows rows={5} leading />
               )
             ) : week.planned === 0 ? (
-              <EmptyState title="Nothing planned this week" body={`When the coach publishes a plan for ${child.firstName}, each day shows here with what was done.`} />
+              <EmptyState title="Nothing planned this week" />
             ) : (
               <List aria-label={`${child.firstName}'s week`}>
                 {week.days.map((day) => {
@@ -134,11 +134,11 @@ function ChildPlan({ child }: { child: GuardianChild }) {
           </Section>
         }
         side={
-          <Section title="Attendance" hint="Marked by the coach at training.">
+          <Section title="Attendance">
             {!attendance ? (
               <SkeletonRows rows={4} />
             ) : attendance.length === 0 ? (
-              <EmptyState title="No attendance marked yet" body="When the coach takes the register, each day shows here." />
+              <EmptyState title="No attendance marked yet" />
             ) : (
               <>
                 <AttendanceTile

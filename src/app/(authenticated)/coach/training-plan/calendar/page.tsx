@@ -43,7 +43,7 @@ export default function CoachTeamCalendarPage() {
         <ScreenHeader title="Calendar" />
         <PlansNav />
         <Section aria-label="Calendar">
-          <EmptyState title="No team yet" body="When a club admin assigns you to a team, its sessions, test weeks, competitions and club events show up here." />
+          <EmptyState title="No team yet" />
         </Section>
       </Screen>
     )
@@ -88,7 +88,6 @@ export default function CoachTeamCalendarPage() {
         eventTools={{ viewer: { role: "coach", teamIds: coachTeams.map((candidate) => candidate.id) }, teams: coachTeams.map((candidate) => ({ id: candidate.id, name: candidate.name })), defaultTeamIds: [team.id] }}
         eventDialog={eventDialog}
         onEventDialogChange={setEventDialog}
-        emptyBody="Planned sessions, test weeks, competitions and club events for this team show up here."
       />
 
       <CalendarFeedSection role="coach" />

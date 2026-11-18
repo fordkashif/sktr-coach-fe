@@ -216,7 +216,6 @@ export default function ClubAdminAuditPage() {
           <Section>
             <EmptyState
               title="No activity yet"
-              body="When someone sends an invite, changes a role, moves an athlete, downloads a report or updates club settings, it shows up here with their name and the time."
             />
           </Section>
         )
@@ -224,7 +223,6 @@ export default function ClubAdminAuditPage() {
         <Section>
           <EmptyState
             title="No activity matches these filters"
-            body={`There are ${plural(all.length, "event")} in the log, but none fit the current search and filters.`}
             action={
               <Button size="sm" onClick={clearFilters}>
                 Clear filters

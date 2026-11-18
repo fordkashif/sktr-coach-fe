@@ -176,7 +176,7 @@ export function NameSection() {
   }
 
   return (
-    <Section title="Name" hint={hasName || !loaded ? "How you appear to your club and in emails we send for you." : `You have not added a name yet, so we show "${displayName}" from your email.`}>
+    <Section title="Name" hint={hasName || !loaded ? undefined : `No name yet, so we show "${displayName}" from your email.`}>
       {saved ? (
         <Notice tone="success" className="mb-3">
           Name saved.

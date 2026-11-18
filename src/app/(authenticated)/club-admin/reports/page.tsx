@@ -207,7 +207,6 @@ export default function ClubAdminReportsPage() {
   const loading = data === null && !error
   const rangeText = describeReportRange(range)
   const teamLabel = teamFilter === "all" ? "All teams" : teamFilter === NO_TEAM ? "No team" : (teamById.get(teamFilter)?.name ?? "All teams")
-  const filtersActive = Boolean(query) || teamFilter !== "all" || (hasReadiness && readinessFilter !== "all")
   const clearFilters = () => {
     setSearch("")
     setTeamFilter("all")
@@ -627,7 +626,6 @@ export default function ClubAdminReportsPage() {
         ) : !data ? null : data.teams.length === 0 && data.athleteCount === 0 ? (
           <EmptyState
             title="No teams yet"
-            body="Create a team and add athletes. Their sessions, check-ins, records and competition results show up here."
             action={
               <LinkButton to="/club-admin/teams" size="sm">
                 Go to teams
@@ -663,7 +661,6 @@ export default function ClubAdminReportsPage() {
         ) : active.count === 0 ? (
           <EmptyState
             title="Nothing matches these filters"
-            body={`There are ${active.total.toLocaleString()} ${active.noun} in this period, but none fit the ${filtersActive ? "search and filters" : "search"}.`}
             action={
               <Button size="sm" onClick={clearFilters}>
                 Clear filters

@@ -306,7 +306,6 @@ export default function AthleteTrendsPage() {
     <Screen>
       <ScreenHeader
         title="Progress"
-        lede="Your results and records first, then how training has been going."
         actions={
           <>
             <LinkButton to="/athlete/prs/add" variant="primary">
@@ -363,7 +362,6 @@ export default function AthleteTrendsPage() {
             ) : (
               <EmptyState
                 title="No results yet"
-                body="Marks from test weeks and competitions land here, and you can add one yourself. Your bests are worked out from them."
                 action={
                   <LinkButton to="/athlete/prs/add" size="sm">
                     Add a result
@@ -390,7 +388,6 @@ export default function AthleteTrendsPage() {
               ) : (
                 <EmptyState
                   title="Nothing on the calendar"
-                  body="Meets your coach enters you in show up here. You can add one you entered yourself."
                   action={
                     <LinkButton to="/athlete/competitions/new" size="sm">
                       Add a competition
@@ -435,7 +432,6 @@ export default function AthleteTrendsPage() {
               ) : (
                 <EmptyState
                   title="No test results yet"
-                  body="When your coach opens a test week and you submit your marks, they show here with the change from last time."
                   action={
                     <LinkButton to="/athlete/test-week" size="sm">
                       Go to tests
@@ -448,7 +444,7 @@ export default function AthleteTrendsPage() {
         }
       />
 
-      <Section title="Training over time" hint="Readiness from your check-ins and the sessions you finished. Pick how far back to look.">
+      <Section title="Training over time">
         <Segmented value={range} onChange={setRange} options={RANGE_OPTIONS} label="Time range for both charts" className="mt-2 self-start" />
       </Section>
 
@@ -464,7 +460,6 @@ export default function AthleteTrendsPage() {
             ) : trend.length === 0 ? (
               <EmptyState
                 title="No check-ins yet"
-                body="Do your wellness check-in and your readiness score is charted here."
                 action={
                   <LinkButton to="/athlete/wellness" size="sm">
                     Do a check-in
@@ -498,7 +493,6 @@ export default function AthleteTrendsPage() {
             ) : completionDays.length === 0 ? (
               <EmptyState
                 title="No finished sessions yet"
-                body="Each session you mark as done counts toward its week here."
                 action={
                   <LinkButton to="/athlete/home" size="sm">
                     Go to today

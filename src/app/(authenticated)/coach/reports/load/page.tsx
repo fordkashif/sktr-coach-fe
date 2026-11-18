@@ -125,7 +125,7 @@ function TeamLoadScreen({ teamId, teamName }: { teamId: string | null; teamName:
         </StatStrip>
       ) : null}
 
-      <Section title="Athletes" hint="Well above usual first. An athlete who is injured, sick or away is marked and not flagged." aria-label="Load per athlete">
+      <Section title="Athletes" aria-label="Load per athlete">
         {squads.length > 0 ? (
           <FilterBar activeCount={squadId === "all" ? 0 : 1} onClear={() => setSquadId("all")} className="mb-2">
             <FilterChips label="Squad" value={squadId} onChange={setSquadId} options={[{ value: "all", label: "All" }, ...squads.map((squad) => ({ value: squad.id, label: squad.name }))]} />
@@ -136,7 +136,6 @@ function TeamLoadScreen({ teamId, teamName }: { teamId: string | null; teamName:
         {data && rows.length === 0 ? (
           <EmptyState
             title={data.rows.length === 0 ? "No athletes yet" : "No athletes in this squad"}
-            body={data.rows.length === 0 ? "Load shows here once athletes on your team finish sessions with an effort and a time." : "Pick another squad, or All."}
             action={data.rows.length === 0 ? <LinkButton to="/coach/teams" size="sm">Open the team</LinkButton> : undefined}
           />
         ) : null}

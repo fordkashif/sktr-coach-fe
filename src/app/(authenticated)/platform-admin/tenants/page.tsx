@@ -476,7 +476,6 @@ export default function PlatformAdminTenantsPage() {
           {visibleClubs.length === 0 ? (
             <EmptyState
               title="No club matches"
-              body={`There are ${plural(clubs.length, "club")}, but none fit that search${filtersActive ? " and those filters" : ""}.`}
               action={
                 <Button size="sm" onClick={clearFilters}>
                   Clear filters

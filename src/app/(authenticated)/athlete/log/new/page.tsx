@@ -55,7 +55,7 @@ export default function AthleteAddSessionPage() {
       <ScreenHeader
         back={{ to: "/athlete/log", label: "Log" }}
         title="Add a session"
-        lede="Log something that was not in your plan. Your coach sees it marked as added by you. It does not change your plan adherence."
+        lede="Not in your plan. It does not change your adherence."
       />
 
       <Section aria-label="Session details" className="gap-5">

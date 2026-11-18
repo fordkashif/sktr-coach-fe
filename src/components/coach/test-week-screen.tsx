@@ -601,7 +601,6 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         ) : (
           <EmptyState
             title="This test week is not here any more"
-            body="It may have been deleted, or it belongs to another team."
             action={
               <Button size="sm" onClick={() => goTo({ kind: "list" })}>
                 Back to test weeks

@@ -157,7 +157,6 @@ export default function CoachPlanTemplatesPage() {
         ) : templates.length === 0 ? (
           <EmptyState
             title="No templates yet"
-            body="Open a plan, choose Save as template, and it is listed here for every coach in the club."
             action={
               <LinkButton size="sm" to="/coach/training-plan">
                 Go to plans
@@ -192,13 +191,6 @@ export default function CoachPlanTemplatesPage() {
             {visible.length === 0 ? (
               <EmptyState
                 title={inView.length === 0 ? (view === "archived" ? "Nothing archived" : "No templates in use") : "No template matches"}
-                body={
-                  inView.length === 0
-                    ? view === "archived"
-                      ? "Templates you archive are kept here and can be restored."
-                      : "Every template is archived. Restore one, or save a plan as a new template."
-                    : "Try another word, or clear the filters."
-                }
               />
             ) : (
               <List aria-label={view === "archived" ? "Archived templates" : "Templates"} className="mt-2">

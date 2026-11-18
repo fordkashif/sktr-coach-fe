@@ -173,11 +173,11 @@ export default function PlatformAdminNoticesPage() {
 
       {error ? <Notice tone="error">{error}</Notice> : null}
 
-      <Section title="Sent notices" hint="Reach is counted when the notice is sent: active people in clubs that are open." meta={notices && list.length > 0 ? plural(list.length, "notice") : undefined}>
+      <Section title="Sent notices" meta={notices && list.length > 0 ? plural(list.length, "notice") : undefined}>
         {notices === null ? (
           <SkeletonRows rows={3} label="Loading notices" />
         ) : list.length === 0 ? (
-          <EmptyState title="No notices sent yet" body="Use New notice to write one. It shows as a banner at the top of the app and in each person's notifications." />
+          <EmptyState title="No notices sent yet" />
         ) : (
           <DataTable
             caption="Sent notices"

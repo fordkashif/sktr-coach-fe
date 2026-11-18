@@ -42,7 +42,7 @@ export function ClubUnitsSection() {
   }
 
   return (
-    <Section title="Units" hint="What members read and type in until they choose their own under Your account. Nothing that is saved changes.">
+    <Section title="Units">
       {loadError ? <Notice tone="error">{loadError}</Notice> : null}
       {saveError ? (
         <Notice tone="error" className="mb-3">

@@ -360,7 +360,6 @@ export default function AthleteProfilePage() {
         <Section title="No team yet">
           <EmptyState
             title="You are not on a team yet"
-            body="Your athlete profile is created when you join a team. Ask your coach for an invite, then enter the code."
             action={
               <LinkButton to="/athlete/join" variant="primary">
                 Join a team
@@ -410,7 +409,7 @@ export default function AthleteProfilePage() {
       >
       {profile && editing && draft && detailsDraft ? (
         <form className="flex flex-col gap-7" onSubmit={(event) => void handleSave(event)} noValidate>
-          <Section title="About you" hint="Your coaches see these on the roster.">
+          <Section title="About you">
             <div className="grid gap-4 pt-2 sm:grid-cols-2">
               <Field label="First name" error={fieldErrors.firstName}>
                 <Input autoComplete="given-name" maxLength={60} value={draft.firstName} onChange={(event) => updateDraft("firstName", event.target.value)} />
@@ -591,7 +590,6 @@ export default function AthleteProfilePage() {
                 ) : (
                   <EmptyState
                     title="No emergency contact yet"
-                    body="Add the person your club should call if something happens at training or a meet."
                     action={
                       <Button size="sm" onClick={startEditing}>
                         Add a contact
@@ -625,7 +623,7 @@ export default function AthleteProfilePage() {
 
               <GuardianSharingSection />
 
-              <Section title="Training" hint="From your coach and your own logging.">
+              <Section title="Training">
                 <FactList>
                   <Fact label="Readiness" empty="Not set yet">
                     {profile.readiness ? <ReadinessText status={profile.readiness} /> : null}
@@ -674,7 +672,6 @@ export default function AthleteProfilePage() {
                 ) : (
                   <EmptyState
                     title="You are not on a team"
-                    body="Ask your coach for an invite link or code to see your plan and test weeks."
                     action={
                       <LinkButton to="/athlete/join" size="sm">
                         Join a team

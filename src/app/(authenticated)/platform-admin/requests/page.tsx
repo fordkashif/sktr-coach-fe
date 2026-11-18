@@ -1195,7 +1195,6 @@ export default function PlatformAdminRequestsPage() {
         <Section>
           <EmptyState
             title="No club requests yet"
-            body="When a club fills in the request form on the sign-in page, it shows up here. You review it, approve or decline, and the first club admin gets their access link."
           />
         </Section>
       ) : requests.length > 0 ? (
@@ -1215,17 +1214,6 @@ export default function PlatformAdminRequestsPage() {
             {visible.length === 0 ? (
               <EmptyState
                 title={search.trim() ? "Nothing matches that search" : "Nothing in this stage"}
-                body={
-                  search.trim()
-                    ? `Nothing in ${stage === "all" ? "any stage" : `"${STAGE_LABEL[stage]}"`} matches that search.`
-                    : stage === "new"
-                      ? "No new requests. Nothing is waiting for a decision."
-                      : stage === "setup"
-                        ? "No approved clubs are waiting on an invite or billing."
-                        : stage === "active"
-                          ? "No clubs are active yet."
-                          : "No clubs are suspended, declined or cancelled."
-                }
                 action={
                   search.trim() || stage !== "all" ? (
                     <Button

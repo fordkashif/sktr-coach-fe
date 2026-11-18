@@ -35,7 +35,6 @@ export default function AthleteReportPage() {
         <Section aria-label="Report">
           <EmptyState
             title="This report is not here"
-            body={missing === "not-found" ? "Your coach may have removed it. Reports your coach shares with you are listed under Progress." : `Could not load it: ${missing}`}
             action={
               <LinkButton to="/athlete/trends" size="sm">
                 Back to Progress

@@ -34,7 +34,6 @@ import {
   type PlatformFailedNotificationEmail,
 } from "@/lib/data/platform-admin/ops-data"
 import { csvFileName, downloadCsv, formatDateTime, localDayOf, localIsoDay, plural } from "@/lib/format/ops-format"
-import { getBackendMode } from "@/lib/supabase/config"
 
 const PAGE_SIZE = 50
 const NO_CLUB = "__none__"
@@ -76,7 +75,6 @@ function kindLabel(eventType: string) {
 
 /** What happened across every club, and the notification emails that failed. */
 export default function PlatformAdminAuditPage() {
-  const isSupabaseMode = getBackendMode() === "supabase"
   const today = localIsoDay()
   const [searchParams, setSearchParams] = useSearchParams()
   const view: View = searchParams.get("view") === "emails" ? "emails" : "activity"
@@ -358,7 +356,6 @@ export default function PlatformAdminAuditPage() {
               <Section>
                 <EmptyState
                   title="No platform activity yet"
-                  body="When a club asks for a workspace, or you approve a request, change a club's status or package, decide a package request or download a list, it shows up here with who did it and when."
                 />
               </Section>
             )
@@ -366,7 +363,6 @@ export default function PlatformAdminAuditPage() {
             <Section>
               <EmptyState
                 title="No activity matches these filters"
-                body={`There are ${plural(entries.length, "event")} in the log, but none fit the current search and filters.`}
                 action={
                   <Button size="sm" onClick={clearFilters}>
                     Clear filters
@@ -395,8 +391,7 @@ export default function PlatformAdminAuditPage() {
         <>
           {emailNotice ? <Notice tone={emailNotice.tone}>{emailNotice.text}</Notice> : null}
           <Section
-            title="Emails that failed"
-            hint="An email is tried five times with a growing wait. After that, or straight away when the provider will never accept it, it stops. Try again puts it back in the queue and sends it now. An email more than 72 hours old is not sent."
+            title="Emails that failed" hint="Tried five times, then it stops. Try again sends it now."
             meta={failedEmails && failedEmails.length > 0 ? plural(failedEmails.length, "email") : undefined}
           >
             {failedEmails === undefined ? (
@@ -409,7 +404,6 @@ export default function PlatformAdminAuditPage() {
             ) : failedEmails.length === 0 ? (
               <EmptyState
                 title="No emails have failed"
-                body={isSupabaseMode ? "Notification emails that could not be delivered in the last 8 days show up here with the reason." : "This is the demo, which has no email queue. On the live platform, emails that could not be delivered show up here with the reason."}
               />
             ) : (
               <DataTable caption="Notification emails that failed" columns={emailColumns} rows={failedEmails} rowKey={(email) => email.id} rowProps={(email) => ({ "data-failed-email": email.id })} />

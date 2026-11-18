@@ -180,7 +180,6 @@ export default function ClubAdminSeasonsPage() {
         {seasons && seasons.length === 0 ? (
           <EmptyState
             title="No seasons yet"
-            body="Add your first season and season bests will be counted inside it."
             action={
               <Button size="sm" onClick={() => openForm(null)}>
                 Add a season

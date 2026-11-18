@@ -268,7 +268,6 @@ export default function AthleteLogPage() {
           </List>
           <EmptyState
             title="Did it after all?"
-            body="Undo the skip and log it like any other session."
             action={
               <Button size="sm" disabled={busy} onClick={() => void handleUnskip()}>
                 {busy ? "Saving..." : "Undo skip and log it"}
@@ -282,7 +281,6 @@ export default function AthleteLogPage() {
         <Section title="This session is excused" aria-label="Excused session">
           <EmptyState
             title="You are marked as unavailable on this day."
-            body="You do not need to do anything. If you trained anyway, log it and it counts."
             action={
               <Button size="sm" onClick={() => setLogAnyway(true)}>
                 Log anyway
@@ -418,7 +416,6 @@ export default function AthleteLogPage() {
               ) : (
                 <EmptyState
                   title="Add what you did"
-                  body="One exercise at a time: its name, then the sets, reps, times or marks."
                   action={
                     <Button size="sm" onClick={() => setExerciseOpen(true)}>
                       <Plus className="size-4" weight="bold" aria-hidden />

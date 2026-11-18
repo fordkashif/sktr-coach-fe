@@ -416,7 +416,7 @@ export function JoinTeamForm({ initialCode = "" }: { initialCode?: string }) {
         </div>
       </form>
 
-      <Section title="Your team right now" hint="You are not on a team yet. Once you join one, your plan and test weeks appear in the app.">
+      <Section title="Your team right now">
         <p className="sk-field-hint pt-3">No code? Ask your coach to invite you from their team page. The invite goes to your email.</p>
       </Section>
     </Screen>

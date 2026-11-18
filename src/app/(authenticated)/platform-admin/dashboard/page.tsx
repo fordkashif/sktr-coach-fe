@@ -266,7 +266,7 @@ export default function PlatformAdminDashboardPage() {
       <Split
         main={
           <>
-            <Section title="Across all clubs" hint={people ? "Counted now: teams that are not archived, active coaches and every athlete on a roster." : undefined}>
+            <Section title="Across all clubs">
               {loading ? (
                 <SkeletonRows rows={3} label="Loading totals" />
               ) : people ? (
@@ -323,7 +323,7 @@ export default function PlatformAdminDashboardPage() {
                   ))}
                 </List>
               ) : (
-                <EmptyState title="No activity yet" body="Requests, approvals, status changes and exports are listed here as they happen." />
+                <EmptyState title="No activity yet" />
               )}
             </Section>
 

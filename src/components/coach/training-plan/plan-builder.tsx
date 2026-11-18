@@ -468,7 +468,6 @@ export function PlanBuilder({
     <Section title={isDesktop ? selectedDayName : undefined} hint={isDesktop ? `Week ${activeWeek}` : undefined}>
       <EmptyState
         title="Rest day"
-        body="Nothing is planned on this day. Pick another day to edit its session, or add one here."
         action={
           <Button size="sm" onClick={() => openDay(dayIndex)}>
             <Plus className="size-4" weight="bold" aria-hidden />

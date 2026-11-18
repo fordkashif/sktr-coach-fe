@@ -125,7 +125,6 @@ export function ThreadView({ role, threadId }: { role: MessagesRole; threadId: s
           <Section title="This conversation is not available">
             <EmptyState
               title="You can no longer open it"
-              body="It may belong to a team you are no longer on. Your messages list shows every conversation you can read."
               action={
                 <LinkButton to={backTo} size="sm">
                   Back to messages
@@ -253,7 +252,6 @@ export function ThreadView({ role, threadId }: { role: MessagesRole; threadId: s
         <EmptyState
           className="flex-1"
           title="No messages yet"
-          body={thread.canSend ? `Write the first message to ${otherName} below. Keep it to training.` : "Nothing was sent in this conversation."}
         />
       ) : (
         <MessageList label={oversight ? `Messages between ${thread.coachName} and ${thread.athleteName}` : `Messages with ${otherName}`}>

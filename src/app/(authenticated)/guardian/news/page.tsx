@@ -36,7 +36,7 @@ export default function GuardianNewsPage() {
 
   return (
     <Screen width="narrow">
-      <ScreenHeader title="Announcements" lede="What the coach and the club posted to the team. To reach the coach, use the contact shown on Home." />
+      <ScreenHeader title="Announcements" />
       {error ? <Notice tone="error">{`Announcements could not be loaded. ${error}`}</Notice> : null}
       <Section aria-label="Announcements">
         {!items ? (
@@ -44,7 +44,7 @@ export default function GuardianNewsPage() {
             <SkeletonRows rows={3} />
           )
         ) : items.length === 0 ? (
-          <EmptyState title="No announcements yet" body="What the coach or the club posts to the team shows here." />
+          <EmptyState title="No announcements yet" />
         ) : (
           <List aria-label="Announcements">
             {items.map((item) => (

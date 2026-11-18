@@ -41,7 +41,7 @@ export function UnitsSection() {
   const chosen = settings ? settings.own.weight !== null || settings.own.height !== null : false
 
   return (
-    <Section title="Units" hint="How weights and body height are shown to you, on every device. Nothing that is saved changes.">
+    <Section title="Units">
       {error ? (
         <Notice tone="error" className="mb-3">
           {error}

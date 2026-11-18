@@ -253,7 +253,7 @@ export function ClubDataAndOwnership() {
   }, [load])
 
   return (
-    <Section title="Club data and ownership" hint="Who owns the club, a copy of everything it stores, and closing it.">
+    <Section title="Club data and ownership">
       {loadError ? <Notice tone="error">We could not load who owns the club. {loadError}</Notice> : null}
       {!ownership && !loadError ? <SkeletonRows rows={3} label="Loading club ownership" /> : null}
       {ownership ? (

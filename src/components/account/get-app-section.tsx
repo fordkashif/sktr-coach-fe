@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Button, Section, StatusText } from "@/components/sk"
-import { INSTALL_REASON, InstallSteps, InstallStepsBody } from "@/components/install-banner"
+import { InstallSteps, InstallStepsBody } from "@/components/install-banner"
 import { useInstallOffer } from "@/lib/install-prompt"
 
 /**
@@ -14,7 +14,7 @@ export function GetAppSection() {
 
   if (offer.installed) {
     return (
-      <Section title="Get the app" hint="Open SKTR Coach from your Home Screen. Notifications arrive there.">
+      <Section title="Get the app">
         <div data-install-state="installed" className="border-y border-sk-line py-4">
           <StatusText tone="green">Installed on this device</StatusText>
         </div>
@@ -29,7 +29,7 @@ export function GetAppSection() {
   }
 
   return (
-    <Section title="Get the app" hint={INSTALL_REASON}>
+    <Section title="Get the app">
       <div data-install-state={offer.canPrompt ? "one-tap" : "steps"} className="flex flex-col items-start gap-4">
         {offer.canPrompt ? (
           <Button variant="primary" disabled={busy} onClick={() => void install()}>

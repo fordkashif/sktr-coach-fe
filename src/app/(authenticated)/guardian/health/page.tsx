@@ -91,11 +91,11 @@ function ChildHealth({ child }: { child: GuardianChild }) {
       <Split
         main={
           <>
-            <Section title="Check-ins" hint="How they said they felt before training.">
+            <Section title="Check-ins">
               {!health ? (
                 <SkeletonRows rows={4} />
               ) : health.checkIns.length === 0 ? (
-                <EmptyState title="No check-ins yet" body={`When ${child.firstName} does a daily check-in, it shows here.`} />
+                <EmptyState title="No check-ins yet" />
               ) : (
                 <>
                 <CheckInSummary checkIns={health.checkIns} />
@@ -135,7 +135,7 @@ function ChildHealth({ child }: { child: GuardianChild }) {
         }
         side={
           <>
-            <Section title="Medical notes" hint="What the club holds, so the coach knows in an emergency.">
+            <Section title="Medical notes">
               {!health ? (
                 <SkeletonRows rows={1} />
               ) : (
@@ -147,7 +147,7 @@ function ChildHealth({ child }: { child: GuardianChild }) {
               )}
             </Section>
 
-            <Section title="Time off" hint="When they were marked injured, sick or away.">
+            <Section title="Time off">
               {!health ? (
                 <SkeletonRows rows={1} />
               ) : health.availability.length === 0 ? (

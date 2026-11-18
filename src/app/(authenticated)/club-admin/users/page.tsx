@@ -1129,7 +1129,6 @@ export default function ClubAdminUsersPage() {
           ) : staff.length === 0 ? (
             <EmptyState
               title="Nobody here yet"
-              body="Coaches and club admins appear here once they accept an invite. Start by inviting your first coach."
               action={
                 <Button size="sm" onClick={() => openInvite()}>
                   Invite staff
@@ -1203,7 +1202,6 @@ export default function ClubAdminUsersPage() {
               ) : (
                 <EmptyState
                   title="Nobody matches"
-                  body="No coach or club admin fits that search and those filters."
                   action={
                     <Button
                       size="sm"
@@ -1251,15 +1249,13 @@ export default function ClubAdminUsersPage() {
       {view === "invites" ? (
         <Section
           aria-label="Invites"
-          title="Staff invites"
-          hint={`Each invite is emailed with a personal link that works for ${COACH_INVITE_VALID_DAYS} days. Open the menu on a waiting invite to email it again, copy its link or cancel it. Athlete invites are on each team.`}
+          title="Staff invites" hint={`Links work for ${COACH_INVITE_VALID_DAYS} days.`}
         >
           {backendLoading ? (
             <SkeletonRows rows={3} label="Loading invites" />
           ) : sortedInvites.length === 0 ? (
             <EmptyState
               title="No staff invites yet"
-              body="Invite a coach or a club admin and we email them a link to join. The invite appears here, so you can see who has joined and who is still waiting."
               action={
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => openInvite()}>
@@ -1285,7 +1281,7 @@ export default function ClubAdminUsersPage() {
                 ]}
               />
               {shownInvites.length === 0 ? (
-                <EmptyState title="None like that" body="No staff invite is in that state right now." />
+                <EmptyState title="None like that" />
               ) : (
                 <List aria-label="Staff invites">
                   {shownInvites.map((invite) => {
@@ -1357,11 +1353,11 @@ export default function ClubAdminUsersPage() {
       ) : null}
 
       {view === "requests" ? (
-        <Section aria-label="Requests" title="Account requests" hint="People who asked to join your club. Approving a coach or a club admin emails them an invite.">
+        <Section aria-label="Requests" title="Account requests">
           {backendLoading ? (
             <SkeletonRows rows={3} leading label="Loading requests" />
           ) : sortedRequests.length === 0 ? (
-            <EmptyState title="No requests waiting" body="When someone asks to join your club, their request shows up here for you to approve or decline." />
+            <EmptyState title="No requests waiting" />
           ) : (
             <List aria-label="Account requests">
               {sortedRequests.map((request) => {

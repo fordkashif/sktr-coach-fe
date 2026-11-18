@@ -477,7 +477,6 @@ export function ClubAthletesView({
       ) : all.length === 0 ? (
         <EmptyState
           title="No athletes yet"
-          body="Every athlete of the club shows up here: on a team or not, with their own login or added by a coach. Add them to a team to get started."
           action={
             <Button size="sm" onClick={onAddAthletes}>
               Add athletes
@@ -558,7 +557,6 @@ export function ClubAthletesView({
           ) : (
             <EmptyState
               title="No athletes match"
-              body="Nobody fits that search and those filters."
               action={
                 <Button
                   size="sm"

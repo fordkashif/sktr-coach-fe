@@ -153,7 +153,7 @@ function ChildHome({ child }: { child: GuardianChild }) {
                   <Countdown days={daysUntil(data.next.startDate)} />
                 </Link>
               ) : (
-                <EmptyState title="No competition coming up" body="Meets the coach adds for the team show here." />
+                <EmptyState title="No competition coming up" />
               )}
             </Section>
 
@@ -161,7 +161,7 @@ function ChildHome({ child }: { child: GuardianChild }) {
               {!data ? (
                 <SkeletonRows rows={2} />
               ) : data.news.length === 0 ? (
-                <EmptyState title="No announcements yet" body="What the coach or the club posts to the team shows here." />
+                <EmptyState title="No announcements yet" />
               ) : (
                 <List>
                   {data.news.map((item) => (
@@ -174,11 +174,11 @@ function ChildHome({ child }: { child: GuardianChild }) {
         }
         side={
           <>
-            <Section title={data && data.coaches.length > 1 ? "Coaches" : "Coach"} hint="To reach the coach, use the contact shown here.">
+            <Section title={data && data.coaches.length > 1 ? "Coaches" : "Coach"}>
               {!data ? (
                 <SkeletonRows rows={1} leading />
               ) : data.coaches.length === 0 ? (
-                <EmptyState title="No coach on this team yet" body="Contact the club if you need to reach someone." />
+                <EmptyState title="No coach on this team yet" />
               ) : (
                 <List>
                   {data.coaches.map((coach) => (

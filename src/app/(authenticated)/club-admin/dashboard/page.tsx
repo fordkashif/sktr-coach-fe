@@ -347,8 +347,7 @@ export default function ClubAdminDashboardPage() {
 
       {setupIncomplete && !setupGuideDismissedAt ? (
         <Section
-          title="Get your club running in three steps"
-          hint={stepsDone === 0 ? "Do these in order and this dashboard fills itself in." : `${stepsDone} of ${setupSteps.length} done. Keep going and this dashboard fills itself in.`}
+          title="Get your club running in three steps" hint={stepsDone === 0 ? undefined : `${stepsDone} of ${setupSteps.length} done.`}
           action={
             <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void handleSetupGuideStateChange(true)}>
               {setupGuideSaving ? "Saving..." : "Hide for now"}
@@ -439,7 +438,6 @@ export default function ClubAdminDashboardPage() {
         ) : (
           <EmptyState
             title="No teams yet"
-            body="Create a team and it appears here with its lead coach, roster size, readiness and plan adherence."
             action={
               <LinkButton to="/club-admin/teams" size="sm">
                 Create a team
