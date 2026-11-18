@@ -268,6 +268,15 @@ Forms on screens:
 - Adding or changing something opens a dialog (or, for a long form like the athlete's profile, a sheet from the side). The screen keeps the button: "New admin", "New notice", "Add a season", "Change package", "New lift", "Change" beside a fact. A form never sits open at the bottom or in the middle of a screen.
 - The exceptions are screens whose whole job is the form (the log, a check-in, a test week, a competition result) and search and filter fields.
 
+Messages and notifications:
+
+- Conversations are tiles: the avatar (an accent ring while unread), the name in the scoreboard type, the last message in a bubble (the accent while unread) and the unread count in a circle that pops and breathes. Club oversight shows both people's avatars; a reported conversation is outlined in amber.
+- Announcements are tiles with a megaphone (the accent while unread) and, for the sender, a bar of how many have read it.
+- In a conversation every message is a bubble that pops out from its own side: the accent on the right for yours, grey on the left for theirs.
+- Notifications (the bell's sheet and the full page) are tiles with a round picture of what each is about (alarm, heart, timer, calendar, megaphone and so on), in the accent while unread.
+- A screen header keeps at least the title's longest word; when the actions do not fit beside the title they go under it.
+- The not found page shows a photo with "DNS" on an accent card, never a dark panel.
+
 Data screens:
 
 - Reports keep their tables (what you see is what you download), with the numbers drawn in them: adherence as `PercentCell` (a short bar, amber under 75%), wellness scores as `ScoreCell` (five pips, amber on a hard score), team readiness as a `ReadinessBar`, and the wellness tab opens with the mix of all check-ins as one bar.

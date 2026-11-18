@@ -46,9 +46,8 @@ export function MessageDay({ children }: { children: ReactNode }) {
 }
 
 /**
- * MessageItem: one message. Not a chat bubble: the sender's name and the time on one line, the text
- * under it, and a thin rule down the side that says whose it is (blue on the right for `mine`, grey
- * on the left for the other person). `status` is one quiet word under the sender's last message
+ * MessageItem: one message. The sender's name and the time on one line, the text under it in a
+ * bubble that pops in: the accent on the right for `mine`, grey on the left for the other person. `status` is one quiet word under the sender's last message
  * ("Seen"). `hidden` replaces the text with a stub ("Message hidden by a club admin"). `flag` is a
  * line of state above the text (a StatusText: "Reported"). `headerAction` is one MessageAction at
  * the end of the name line ("Report"); `actions` is what goes under the text (an InlineConfirm, or
@@ -88,7 +87,7 @@ export function MessageItem({
 }) {
   return (
     <li className={cn("flex max-w-full flex-col", mine ? "items-end" : "items-start", className)} data-mine={mine ? "true" : "false"} {...rest}>
-      <div className={cn("min-w-0 max-w-[min(34rem,88%)]", mine ? "border-r-2 border-sk-blue pr-3.5" : "border-l-2 border-sk-line-strong pl-3.5")}>
+      <div className={cn("flex min-w-0 max-w-[min(34rem,88%)] flex-col", mine ? "items-end" : "items-start")}>
         <p className={cn("flex flex-wrap items-baseline gap-x-2 text-sm leading-snug", mine && "justify-end")}>
           <span className="font-bold text-sk-ink">{name}</span>
           <time dateTime={dateTime} title={timeTitle} className="text-sk-mute tabular-nums">
@@ -97,14 +96,14 @@ export function MessageItem({
           {headerAction ? <span className="-my-3 inline-flex">{headerAction}</span> : null}
         </p>
         {flag ? <p className={cn("mt-1 flex", mine && "justify-end")}>{flag}</p> : null}
-        {hidden ? (
-          <p className="mt-1 text-[0.9375rem] italic leading-normal text-sk-mute">{hidden}</p>
-        ) : (
-          <p className="mt-1 whitespace-pre-wrap break-words text-base leading-normal text-sk-ink [overflow-wrap:anywhere]">{children}</p>
-        )}
-        {hidden && children ? (
-          <p className="mt-1 whitespace-pre-wrap break-words text-[0.9375rem] leading-normal text-sk-ink-2 [overflow-wrap:anywhere]">{children}</p>
-        ) : null}
+        <div data-sk-bubble={mine ? "mine" : "theirs"} className={cn("sk-bubble mt-1.5 rounded-[20px] px-4 py-2.5", mine ? "rounded-tr-[6px] bg-sk-accent text-sk-on-accent" : "rounded-tl-[6px] bg-sk-sw-grey text-sk-ink", hidden && "bg-sk-sw-grey text-sk-mute")}>
+          {hidden ? (
+            <p className="text-[0.9375rem] italic leading-normal">{hidden}</p>
+          ) : (
+            <p className="whitespace-pre-wrap break-words text-base leading-normal [overflow-wrap:anywhere]">{children}</p>
+          )}
+          {hidden && children ? <p className="mt-1 whitespace-pre-wrap break-words text-[0.9375rem] leading-normal text-sk-ink-2 [overflow-wrap:anywhere]">{children}</p> : null}
+        </div>
         {actions ? <div className={cn("-mx-2 mt-0.5 flex flex-wrap gap-x-1", mine && "justify-end")}>{actions}</div> : null}
       </div>
       {status ? <p className="mt-1 text-sm font-semibold text-sk-mute">{status}</p> : null}
