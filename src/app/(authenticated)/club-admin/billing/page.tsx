@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react"
-import { PaperPlaneTilt, PencilSimple } from "@phosphor-icons/react"
+import { ArrowsDownUp, PaperPlaneTilt, PencilSimple } from "@phosphor-icons/react"
+import { cn } from "@/lib/utils"
 import {
   Button,
-  DataTable,
+  Dialog,
   EmptyState,
   Fact,
   FactList,
@@ -21,9 +22,7 @@ import {
   TileGrid,
   UsageMeter,
   StatusText,
-  Tag,
   Textarea,
-  type DataTableColumn,
   type StateTone,
 } from "@/components/sk"
 import { getPackageById, packageOptions, type PackageDefinition, type PackageId } from "@/lib/billing/package-catalog"
@@ -203,6 +202,8 @@ export default function ClubAdminBillingPage() {
   const atLimit =
     currentPackage && usage ? RESOURCES.filter((resource) => Number.isFinite(currentPackage.limits[resource.key]) && usage[resource.key] >= currentPackage.limits[resource.key]) : []
 
+  const [requestOpen, setRequestOpen] = useState(false)
+
   const startEditingContact = () => {
     setContactDraft(contact ?? { name: "", email: "" })
     setContactErrors({})
@@ -301,25 +302,11 @@ export default function ClubAdminBillingPage() {
     }
     setRequestSending(false)
     setRequestSent(true)
+    setRequestOpen(false)
     setRequestedPackage("")
     setReason("")
   }
 
-  const packageColumns: Array<DataTableColumn<PackageDefinition>> = [
-    {
-      key: "package",
-      header: "Package",
-      cell: (option) => (
-        <span className="inline-flex flex-wrap items-center gap-2">
-          {option.label}
-          {option.id === packageId ? <Tag tone="blue">Your package</Tag> : null}
-        </span>
-      ),
-    },
-    ...RESOURCES.map(
-      (resource): DataTableColumn<PackageDefinition> => ({ key: resource.key, header: resource.label, align: "right", cell: (option) => limitText(option, resource.key) }),
-    ),
-  ]
 
   return (
     <Screen>
@@ -379,18 +366,50 @@ export default function ClubAdminBillingPage() {
           <Split
             main={
               <>
-                <Section title="Packages" hint={currentPackage ? currentPackage.description : "What each package allows."}>
-                  <DataTable caption="What each package allows" columns={packageColumns} rows={packageOptions} rowKey={(option) => option.id} />
-                </Section>
-
-                <Section title="Change package" hint="Tell us which package you want. The SKTR team reviews every request and the answer shows in the history.">
+                <Section
+                  title="Packages"
+                  hint={currentPackage ? currentPackage.description : "What each package allows."}
+                  action={
+                    !pendingRequest ? (
+                      <Button variant="primary" size="sm" onClick={() => setRequestOpen(true)}>
+                        <ArrowsDownUp className="size-4" weight="bold" aria-hidden />
+                        Change package
+                      </Button>
+                    ) : null
+                  }
+                >
                   {requestSent ? (
-                    <Notice tone="success" className="mb-4">
+                    <Notice tone="success" className="mb-3">
                       Request sent. You will see the decision in the history.
                     </Notice>
                   ) : null}
+                  <ul aria-label="What each package allows" className="grid gap-2.5 sm:grid-cols-3">
+                    {packageOptions.map((option, index) => {
+                      const mine = option.id === packageId
+                      return (
+                        <li key={option.id} className="sk-tile-item" style={{ animationDelay: `${index * 70}ms` }} data-package={option.id}>
+                          <div className={cn("sk-tile flex h-full flex-col gap-3 p-4", mine && "sk-tile-accent")}>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-display text-[1.75rem] font-black uppercase leading-none">{option.label}</p>
+                              {mine ? <span className="rounded-full bg-white px-2.5 py-1 text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-ink">Your package</span> : null}
+                            </div>
+                            <dl className="flex flex-col gap-1.5">
+                              {RESOURCES.map((resource) => (
+                                <div key={resource.key} className="flex items-baseline justify-between gap-3">
+                                  <dt className={cn("text-sm", mine ? "opacity-85" : "text-sk-mute")}>{resource.label}</dt>
+                                  <dd className="font-display text-[1.375rem] font-black leading-none tabular-nums">{limitText(option, resource.key)}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
                   {pendingRequest ? (
-                    <FactList aria-label="Request in review">
+                    <div className="sk-tile sk-tile-flag mt-3 p-4" data-pending-package>
+                      <p className="mb-2 font-display text-[1.375rem] font-black uppercase leading-none text-sk-ink">Change in review</p>
+                      <FactList aria-label="Request in review">
                       <Fact label="Asked to move to">{packageLabel(pendingRequest.requestedPackage)}</Fact>
                       <Fact label="Sent">{formatDateTime(pendingRequest.createdAt)}</Fact>
                       <Fact label="Status">
@@ -400,9 +419,19 @@ export default function ClubAdminBillingPage() {
                         You can send another request once this one has an answer.
                       </Fact>
                     </FactList>
-                  ) : (
-                    <form className="mt-2 flex flex-col gap-4" onSubmit={(event) => void sendRequest(event)} noValidate>
-                      <Field label="Package you want" error={requestError} className="sm:max-w-xs">
+                    </div>
+                  ) : null}
+                </Section>
+
+                <Dialog
+                  open={requestOpen}
+                  onOpenChange={(open) => (requestSending ? undefined : setRequestOpen(open))}
+                  title="Change package"
+                  description="Tell us which package you want. The SKTR team reviews every request and the answer shows in the history."
+                  className="sm:max-w-lg"
+                >
+                    <form className="flex flex-col gap-4" onSubmit={(event) => void sendRequest(event)} noValidate>
+                      <Field label="Package you want" error={requestError} >
                         <Select
                           value={requestedPackage}
                           onChange={(event) => {
@@ -427,15 +456,17 @@ export default function ClubAdminBillingPage() {
                       <Field label="Why you need the change" optional>
                         <Textarea rows={3} maxLength={500} placeholder="We are adding a second sprint group in January" value={reason} onChange={(event) => setReason(event.target.value)} />
                       </Field>
-                      <FormActions className="sm:justify-start">
+                      <FormActions>
+                        <Button variant="quiet" disabled={requestSending} onClick={() => setRequestOpen(false)}>
+                          Cancel
+                        </Button>
                         <Button type="submit" variant="primary" disabled={requestSending}>
                           <PaperPlaneTilt className="size-5" weight="bold" aria-hidden />
                           {requestSending ? "Sending..." : "Send request"}
                         </Button>
                       </FormActions>
                     </form>
-                  )}
-                </Section>
+                </Dialog>
               </>
             }
             side={
@@ -444,7 +475,7 @@ export default function ClubAdminBillingPage() {
                   title="Billing contact"
                   hint="The person the SKTR team gets in touch with about your package."
                   action={
-                    contact && !editingContact ? (
+                    contact ? (
                       <Button variant="quiet" size="sm" className="-my-2" onClick={startEditingContact}>
                         <PencilSimple className="size-4" weight="bold" aria-hidden />
                         Edit
@@ -454,7 +485,38 @@ export default function ClubAdminBillingPage() {
                 >
                   {contactLoadError ? (
                     <Notice tone="error">We could not load the billing contact. {contactLoadError}</Notice>
-                  ) : editingContact ? (
+                  ) : contact ? (
+                    <>
+                      {contactSaved ? (
+                        <Notice tone="success" className="mb-3">
+                          Billing contact saved.
+                        </Notice>
+                      ) : null}
+                      {contactAuditError ? (
+                        <Notice tone="warning" className="mb-3">
+                          Saved, but we could not add the change to the activity log. {contactAuditError}
+                        </Notice>
+                      ) : null}
+                      <FactList aria-label="Billing contact">
+                        <Fact label="Name" empty="Not added yet">
+                          {contact.name}
+                        </Fact>
+                        <Fact label="Email" empty="Not added yet">
+                          {contact.email}
+                        </Fact>
+                        {billingCycle ? <Fact label="Billing cycle chosen at setup">{billingCycle === "annual" ? "Annual" : "Monthly"}</Fact> : null}
+                      </FactList>
+                    </>
+                  ) : null}
+                </Section>
+
+                <Dialog
+                  open={editingContact}
+                  onOpenChange={(open) => (contactSaving ? undefined : setEditingContact(open))}
+                  title="Billing contact"
+                  description="The person the SKTR team gets in touch with about your package."
+                  className="sm:max-w-lg"
+                >
                     <form className="flex flex-col gap-4" onSubmit={(event) => void saveContact(event)} noValidate>
                       <Field label="Billing contact name" error={contactErrors.name}>
                         <Input
@@ -485,35 +547,12 @@ export default function ClubAdminBillingPage() {
                         <Button variant="quiet" onClick={() => setEditingContact(false)} disabled={contactSaving}>
                           Cancel
                         </Button>
-                        <Button type="submit" disabled={contactSaving}>
+                        <Button type="submit" variant="primary" disabled={contactSaving}>
                           {contactSaving ? "Saving..." : "Save billing contact"}
                         </Button>
                       </FormActions>
                     </form>
-                  ) : contact ? (
-                    <>
-                      {contactSaved ? (
-                        <Notice tone="success" className="mb-3">
-                          Billing contact saved.
-                        </Notice>
-                      ) : null}
-                      {contactAuditError ? (
-                        <Notice tone="warning" className="mb-3">
-                          Saved, but we could not add the change to the activity log. {contactAuditError}
-                        </Notice>
-                      ) : null}
-                      <FactList aria-label="Billing contact">
-                        <Fact label="Name" empty="Not added yet">
-                          {contact.name}
-                        </Fact>
-                        <Fact label="Email" empty="Not added yet">
-                          {contact.email}
-                        </Fact>
-                        {billingCycle ? <Fact label="Billing cycle chosen at setup">{billingCycle === "annual" ? "Annual" : "Monthly"}</Fact> : null}
-                      </FactList>
-                    </>
-                  ) : null}
-                </Section>
+                </Dialog>
 
                 <Section title="Request history" meta={requests.length > 0 ? `${requests.length} ${requests.length === 1 ? "request" : "requests"}` : undefined}>
                   {requestsError ? (

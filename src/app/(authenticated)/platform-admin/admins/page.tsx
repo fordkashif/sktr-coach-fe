@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
-import { Avatar, Button, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText, TileGrid, notify } from "@/components/sk"
+import { Avatar, Button, Dialog, EmptyState, Field, FormActions, InlineConfirm, Input, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText, TileGrid, notify } from "@/components/sk"
 import { cn } from "@/lib/utils"
+import { UserPlus } from "@phosphor-icons/react"
 import { PlatformHomeTabs } from "@/components/ops/platform-tabs"
 import { formatLocalDate, formatLocalDateTime } from "@/lib/data/platform-admin/tenants-data"
 import { addPlatformAdmin, listPlatformAdmins, setPlatformAdminActive } from "@/lib/data/platform-admin/tools-data"
@@ -17,6 +18,7 @@ export default function PlatformAdminAdminsPage() {
   const [busy, setBusy] = useState(false)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [rowError, setRowError] = useState<{ id: string; text: string } | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
 
   const load = useCallback(async () => {
     const result = await listPlatformAdmins()
@@ -52,6 +54,7 @@ export default function PlatformAdminAdminsPage() {
     setEmail("")
     setName("")
     setFormError(null)
+    setAddOpen(false)
     await load()
   }
 
@@ -96,6 +99,12 @@ export default function PlatformAdminAdminsPage() {
       <ScreenHeader
         title="Platform admins"
         lede={admins === null ? "Who can use these screens." : `${plural(activeCount, "person", "people")} can use these screens. Every change here is written to the platform activity.`}
+        actions={
+          <Button variant="primary" onClick={() => setAddOpen(true)}>
+            <UserPlus className="size-5" weight="bold" aria-hidden />
+            New admin
+          </Button>
+        }
       />
       <PlatformHomeTabs />
 
@@ -156,35 +165,44 @@ export default function PlatformAdminAdminsPage() {
         )}
       </Section>
 
-      <Section
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (busy) return
+          setAddOpen(open)
+          if (!open) setFormError(null)
+        }}
         title="Add a platform admin"
-        hint="They get in by signing in with an account whose confirmed email is this one, an account they have already or a new one. The email must not be used by anyone in a club."
+        description="They get in by signing in with an account whose confirmed email is this one, an account they have already or a new one. The email must not be used by anyone in a club."
+        className="sm:max-w-lg"
       >
-        <form noValidate onSubmit={(event) => void handleAdd(event)} className="mt-3 flex max-w-[720px] flex-col gap-4">
-          <FormGrid>
-            <Field label="Email" error={formError ?? undefined}>
-              <Input
-                type="email"
-                autoComplete="off"
-                value={email}
-                disabled={busy}
-                onChange={(event) => {
-                  setEmail(event.target.value)
-                  setFormError(null)
-                }}
-              />
-            </Field>
-            <Field label="Name" optional>
-              <Input value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} />
-            </Field>
-          </FormGrid>
+        <form noValidate onSubmit={(event) => void handleAdd(event)} className="flex flex-col gap-4" data-add-admin>
+          <Field label="Email" error={formError ?? undefined}>
+            <Input
+              type="email"
+              autoComplete="off"
+              autoFocus
+              value={email}
+              disabled={busy}
+              onChange={(event) => {
+                setEmail(event.target.value)
+                setFormError(null)
+              }}
+            />
+          </Field>
+          <Field label="Name" optional>
+            <Input value={name} maxLength={120} disabled={busy} onChange={(event) => setName(event.target.value)} />
+          </Field>
           <FormActions>
+            <Button variant="quiet" disabled={busy} onClick={() => setAddOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit" variant="primary" disabled={busy || email.trim() === ""}>
               {busy ? "Saving..." : "Add platform admin"}
             </Button>
           </FormActions>
         </form>
-      </Section>
+      </Dialog>
     </Screen>
   )
 }

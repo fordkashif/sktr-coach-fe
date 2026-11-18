@@ -20,6 +20,7 @@ import {
   ReadinessText,
   Screen,
   ProgressAvatar,
+  Sheet,
   ScreenHeader,
   Section,
   Select,
@@ -371,7 +372,7 @@ export default function AthleteProfilePage() {
 
       {savedNotice && !editing ? <Notice tone="success">Profile saved.</Notice> : null}
 
-      {profile && !editing ? (
+      {profile ? (
         <section aria-label="Your athlete card" data-athlete-card className="sk-athlete-card relative overflow-hidden rounded-[28px] bg-sk-accent p-5 text-sk-on-accent sm:p-6">
           <span aria-hidden className="sk-athlete-card-lane absolute -right-10 -top-16 size-64 rounded-full border-[18px] border-white/10" />
           <span aria-hidden className="sk-athlete-card-lane absolute -right-2 -top-8 size-44 rounded-full border-[14px] border-white/10" />
@@ -400,8 +401,15 @@ export default function AthleteProfilePage() {
         </section>
       ) : null}
 
+      <Sheet
+        open={Boolean(profile && editing && draft && detailsDraft)}
+        onOpenChange={(open) => (!open && !saving ? cancelEditing() : undefined)}
+        title="Edit your profile"
+        description="Your coaches see what is in About you. The rest is private to you and your club."
+        className="sm:max-w-xl"
+      >
       {profile && editing && draft && detailsDraft ? (
-        <form className="flex max-w-[720px] flex-col gap-7 lg:gap-9" onSubmit={(event) => void handleSave(event)} noValidate>
+        <form className="flex flex-col gap-7" onSubmit={(event) => void handleSave(event)} noValidate>
           <Section title="About you" hint="Your coaches see these on the roster.">
             <div className="grid gap-4 pt-2 sm:grid-cols-2">
               <Field label="First name" error={fieldErrors.firstName}>
@@ -529,18 +537,19 @@ export default function AthleteProfilePage() {
 
           {saveError ? <Notice tone="error">{saveError}</Notice> : null}
 
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving..." : "Save profile"}
-            </Button>
+          <div className="sticky bottom-0 -mx-1 flex flex-wrap justify-end gap-2 bg-white px-1 py-3">
             <Button variant="quiet" onClick={cancelEditing} disabled={saving}>
               Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? "Saving..." : "Save profile"}
             </Button>
           </div>
         </form>
       ) : null}
+      </Sheet>
 
-      {profile && !editing ? (
+      {profile ? (
         <Split
           main={
             <>

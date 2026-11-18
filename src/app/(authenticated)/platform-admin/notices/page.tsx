@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
-import { Button, CheckRow, DataTable, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, List, Notice, Screen, ScreenHeader, Section, Select, SkeletonRows, StatusText, TableSub, Textarea, notify, type DataTableColumn, type StateTone } from "@/components/sk"
+import { Megaphone } from "@phosphor-icons/react"
+import { Button, CheckRow, DataTable, Dialog, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, List, Notice, Screen, ScreenHeader, Section, Select, SkeletonRows, StatusText, TableSub, Textarea, notify, type DataTableColumn, type StateTone } from "@/components/sk"
 import { PlatformHomeTabs } from "@/components/ops/platform-tabs"
 import { formatLocalDateTime } from "@/lib/data/platform-admin/tenants-data"
 import { listPlatformNotices, sendPlatformNotice, withdrawPlatformNotice, type PlatformNotice } from "@/lib/data/platform-admin/tools-data"
@@ -34,6 +35,7 @@ export default function PlatformAdminNoticesPage() {
   const [confirmSend, setConfirmSend] = useState(false)
   const [busy, setBusy] = useState(false)
   const [withdrawId, setWithdrawId] = useState<string | null>(null)
+  const [writeOpen, setWriteOpen] = useState(false)
 
   const load = useCallback(async () => {
     const result = await listPlatformNotices()
@@ -75,6 +77,7 @@ export default function PlatformAdminNoticesPage() {
     notify(`Notice sent to ${plural(result.data.reachInApp, "person", "people")}`)
     setDraft(EMPTY)
     setErrors({})
+    setWriteOpen(false)
     await load()
   }
 
@@ -159,6 +162,12 @@ export default function PlatformAdminNoticesPage() {
       <ScreenHeader
         title="Notices"
         lede={notices === null ? "A short notice to every club." : live === 0 ? "No notice is showing in the app right now." : `${plural(live, "notice")} showing in the app right now.`}
+        actions={
+          <Button variant="primary" onClick={() => setWriteOpen(true)}>
+            <Megaphone className="size-5" weight="bold" aria-hidden />
+            New notice
+          </Button>
+        }
       />
       <PlatformHomeTabs />
 
@@ -168,7 +177,7 @@ export default function PlatformAdminNoticesPage() {
         {notices === null ? (
           <SkeletonRows rows={3} label="Loading notices" />
         ) : list.length === 0 ? (
-          <EmptyState title="No notices sent yet" body="Write one on this screen. It shows as a banner at the top of the app and in each person's notifications." />
+          <EmptyState title="No notices sent yet" body="Use New notice to write one. It shows as a banner at the top of the app and in each person's notifications." />
         ) : (
           <DataTable
             caption="Sent notices"
@@ -192,8 +201,18 @@ export default function PlatformAdminNoticesPage() {
         )}
       </Section>
 
-      <Section title="Write a notice" hint="Keep it short. It cannot be edited after it is sent, only withdrawn.">
-        <form noValidate onSubmit={handleReview} className="mt-3 flex max-w-[720px] flex-col gap-4">
+      <Dialog
+        open={writeOpen}
+        onOpenChange={(open) => {
+          if (busy) return
+          setWriteOpen(open)
+          if (!open) setConfirmSend(false)
+        }}
+        title="Write a notice"
+        description="Keep it short. It cannot be edited after it is sent, only withdrawn."
+        className="sm:max-w-xl"
+      >
+        <form noValidate onSubmit={handleReview} className="flex flex-col gap-4" data-notice-form>
           <Field label="Title" error={errors.title}>
             <Input value={draft.title} maxLength={NOTICE_TITLE_MAX} disabled={busy} onChange={(event) => change({ title: event.target.value })} />
           </Field>
@@ -245,13 +264,16 @@ export default function PlatformAdminNoticesPage() {
             </div>
           ) : (
             <FormActions>
+              <Button variant="quiet" disabled={busy} onClick={() => setWriteOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" variant="primary" disabled={busy}>
                 Review and send
               </Button>
             </FormActions>
           )}
         </form>
-      </Section>
+      </Dialog>
     </Screen>
   )
 }

@@ -1,11 +1,13 @@
 "use client"
 
-import { UserPlus } from "@phosphor-icons/react"
+import { Plus, UserPlus } from "@phosphor-icons/react"
 import { Navigate } from "react-router-dom"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { AddAthletesDialog } from "@/components/coach/add-athletes-dialog"
 import {
   ActionRow,
+  Dialog,
+  FormActions,
   Button,
   EmptyState,
   Field,
@@ -88,6 +90,8 @@ export default function CoachTeamsPage() {
     return () => window.removeEventListener(ROSTER_CHANGED_EVENT, refresh)
   }, [load])
 
+  const [createOpen, setCreateOpen] = useState(false)
+
   const createTeam = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const selectedLeadCoach = assignableCoaches.find((coach) => coach.userId === newTeamLeadCoachUserId)
@@ -108,6 +112,7 @@ export default function CoachTeamsPage() {
     setNewTeamEventGroup("Sprint")
     setNewTeamLeadCoachUserId("none")
     setError(null)
+    setCreateOpen(false)
     invalidateCoachTeamsSnapshot()
     void load()
   }
@@ -146,7 +151,18 @@ export default function CoachTeamsPage() {
 
   return (
     <Screen>
-      <ScreenHeader title="Teams" lede={lede} />
+      <ScreenHeader
+        title="Teams"
+        lede={lede}
+        actions={
+          isClubAdminViewer && isSupabaseMode ? (
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-5" weight="bold" aria-hidden />
+              Add a team
+            </Button>
+          ) : null
+        }
+      />
 
       {error ? <Notice tone="error">Something went wrong: {error}</Notice> : null}
 
@@ -162,7 +178,7 @@ export default function CoachTeamsPage() {
         ) : visibleTeams.length === 0 ? (
           <EmptyState
             title="No teams yet"
-            body={isClubAdminViewer ? "Create your first team below, then add athletes to it." : "Teams you are assigned to appear here with their roster."}
+            body={isClubAdminViewer ? "Create your first team with Add a team, then add athletes to it." : "Teams you are assigned to appear here with their roster."}
           />
         ) : (
           <List aria-label="Teams">
@@ -188,10 +204,9 @@ export default function CoachTeamsPage() {
         )}
       </Section>
 
-      {isClubAdminViewer && isSupabaseMode ? (
-        <Section title="Add a team">
+      <Dialog open={createOpen} onOpenChange={(open) => (creatingTeam ? undefined : setCreateOpen(open))} title="Add a team" className="sm:max-w-lg">
           <form className="flex flex-col gap-4" onSubmit={(event) => void createTeam(event)}>
-            <FormGrid columns={4}>
+            <FormGrid>
               <Field label="Team name" className="sm:col-span-2">
                 <Input value={newTeamName} onChange={(event) => setNewTeamName(event.target.value)} placeholder="Sprint Group B" />
               </Field>
@@ -215,14 +230,16 @@ export default function CoachTeamsPage() {
                 </Select>
               </Field>
             </FormGrid>
-            <div>
-              <Button type="submit" disabled={creatingTeam || !newTeamName.trim()}>
+            <FormActions>
+              <Button variant="quiet" disabled={creatingTeam} onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={creatingTeam || !newTeamName.trim()}>
                 {creatingTeam ? "Creating..." : "Create team"}
               </Button>
-            </div>
+            </FormActions>
           </form>
-        </Section>
-      ) : null}
+      </Dialog>
 
       {addTo ? (
         <AddAthletesDialog

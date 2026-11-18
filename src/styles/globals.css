@@ -923,3 +923,40 @@ body {
 /* A grey button on a grey tile would vanish: on tiles it is white. */
 [data-skin="stopwatch"] .sk-tile .sk-btn-secondary { background: #fff; }
 [data-skin="stopwatch"] .sk-tile .sk-btn-secondary:hover { background: var(--sk-accent-tint); }
+
+/* Tables under the skin: each row is a grey band with round ends that lifts on hover, the header in
+   small capitals, and the rows land one after another. On a phone each row is a grey card. */
+[data-skin="stopwatch"] .sk-table { border-collapse: separate; border-spacing: 0 6px; margin-top: -6px; }
+[data-skin="stopwatch"] .sk-table thead th { border-bottom: 0; padding-top: 0.25rem; padding-bottom: 0.25rem; font-size: 0.6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+[data-skin="stopwatch"] .sk-table thead th:first-child { padding-left: 1rem; }
+[data-skin="stopwatch"] .sk-table thead th:last-child { padding-right: 1rem; }
+[data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > * { border-bottom: 0; background: var(--sk-sw-grey); transition: background-color 0.2s ease; }
+[data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > :first-child { border-radius: 18px 0 0 18px; padding-left: 1rem; }
+[data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > :last-child { border-radius: 0 18px 18px 0; padding-right: 1rem; }
+[data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > :only-child { border-radius: 18px; }
+[data-skin="stopwatch"] .sk-table tbody tr:has(+ tr[data-below]) > :first-child { border-bottom-left-radius: 0; }
+[data-skin="stopwatch"] .sk-table tbody tr:has(+ tr[data-below]) > :last-child { border-bottom-right-radius: 0; }
+[data-skin="stopwatch"] .sk-table tbody tr[data-below] > td { background: var(--sk-sw-grey); border-radius: 0 0 18px 18px; padding: 0 1rem 1rem; }
+@media (hover: hover) {
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]):hover > * { background: #e9ebe3; }
+  [data-skin="stopwatch"] .sk-table tbody tr.cursor-pointer:hover > * { background: var(--sk-accent-tint); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) { animation: sk-rise 0.4s ease-out both; }
+  [data-skin="stopwatch"] .sk-table tbody tr:nth-child(2) { animation-delay: 30ms; }
+  [data-skin="stopwatch"] .sk-table tbody tr:nth-child(3) { animation-delay: 60ms; }
+  [data-skin="stopwatch"] .sk-table tbody tr:nth-child(4) { animation-delay: 90ms; }
+  [data-skin="stopwatch"] .sk-table tbody tr:nth-child(5) { animation-delay: 120ms; }
+  [data-skin="stopwatch"] .sk-table tbody tr:nth-child(n + 6) { animation-delay: 150ms; }
+}
+@media (max-width: 639px) {
+  [data-skin="stopwatch"] .sk-table { border-spacing: 0; margin-top: 0; }
+  [data-skin="stopwatch"] .sk-table tbody { display: flex; flex-direction: column; gap: 8px; }
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) { border-bottom: 0; border-radius: 18px; background: var(--sk-sw-grey); padding: 0.875rem 1rem; }
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > *,
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > :first-child,
+  [data-skin="stopwatch"] .sk-table tbody tr:not([data-below]) > :last-child { background: transparent; border-radius: 0; padding-left: 0; padding-right: 0; }
+  [data-skin="stopwatch"] .sk-table tbody tr:has(+ tr[data-below]) { border-radius: 18px 18px 0 0; margin-bottom: -8px; }
+  [data-skin="stopwatch"] .sk-table tbody tr[data-below] { background: var(--sk-sw-grey); border-radius: 0 0 18px 18px; padding: 0 1rem 1rem; }
+  [data-skin="stopwatch"] .sk-table tbody tr[data-below] > td { padding: 0; background: transparent; }
+}
