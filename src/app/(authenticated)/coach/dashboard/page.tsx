@@ -1,19 +1,22 @@
 import { clubToday, weekdayShortOf } from "@/lib/club-day"
 import { useEffect, useState } from "react"
-import { ArrowDown, ArrowUp, Minus } from "@phosphor-icons/react"
+import { ArrowDown, ArrowUp, CheckSquare, Minus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { useCoachPermissions, useCoachTeamScope } from "@/lib/coach-teams"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import {
   Button,
+  Countdown,
   DataTable,
-  DayLabel,
   EmptyState,
+  HeroAction,
   LinkButton,
   List,
   ListRow,
   Notice,
+  PersonTile,
   ReadinessText,
+  Ring,
   Screen,
   ScreenHeader,
   Section,
@@ -23,7 +26,8 @@ import {
   StatStrip,
   StatusDot,
   StatusText,
-  TableSub,
+  TileGrid,
+  WeekRail,
   type DataTableColumn,
 } from "@/components/sk"
 import type { Athlete, PR, Team, TestWeekResult } from "@/lib/mock-data"
@@ -40,7 +44,7 @@ import { getCurrentPlanWeekForCoachTeam, pickTeamPlanWeek, type TeamPlanWeek } f
 import { describeAvailability } from "@/lib/data/athlete/availability-data"
 import { getCoachTodaySnapshot, type CoachTodaySnapshot, type TodaySessionRow } from "@/lib/data/coach/dashboard-today"
 import { PAIN_SEVERITY_WORDS, bodyAreasSummary, painImpactLabel } from "@/lib/data/wellness/pain-report-types"
-import { adherenceText, averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
+import { averageAdherence, NO_SESSIONS_DUE } from "@/lib/data/session/adherence"
 import { getBackendMode } from "@/lib/supabase/config"
 
 const TEST_COLUMNS: Array<{ header: string; pick: (row: TestWeekResult) => TestWeekResult["thirtyM"] }> = [
@@ -69,10 +73,12 @@ function dayDate(isoDay: string) {
 }
 
 /** "today", "tomorrow", "in 12 days". */
-function daysAway(isoDay: string, todayKey: string) {
-  const days = Math.round((dayDate(isoDay).getTime() - dayDate(todayKey).getTime()) / 86_400_000)
-  return days <= 0 ? "on now" : days === 1 ? "tomorrow" : `in ${days} days`
+function daysUntil(isoDay: string, todayKey: string) {
+  return Math.round((dayDate(isoDay).getTime() - dayDate(todayKey).getTime()) / 86_400_000)
 }
+
+/** The photo behind today's session (public/images/athlete, from Unsplash). */
+const TODAY_PHOTO = "/images/athlete/race.webp"
 
 function names(rows: TodaySessionRow[]) {
   return rows.map((row) => (row.reason ? `${row.name} (${row.reason})` : row.name)).join(", ")
@@ -255,37 +261,6 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
           ? `${weekLine}${athleteTotal} ${athleteTotal === 1 ? "athlete" : "athletes"}, all on track today.`
           : `${weekLine}${needLookCount} ${needLookCount === 1 ? "athlete needs" : "athletes need"} a look today.`
 
-  // Readiness, availability (injured, sick) and check-ins are health information.
-  const healthColumnKeys = new Set(["readiness", "availability", "checkin"])
-  const allAthleteColumns: Array<DataTableColumn<Athlete>> = [
-    {
-      key: "athlete",
-      header: "Athlete",
-      cell: (athlete) => (
-        <Link to={`/coach/athletes/${athlete.id}`} className="flex items-center gap-3 hover:text-sk-blue-link">
-          <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
-          <span className="min-w-0">
-            {athlete.name}
-            <TableSub>{athlete.primaryEvent}</TableSub>
-          </span>
-        </Link>
-      ),
-    },
-    { key: "readiness", header: "Readiness", phone: "plain", cell: (athlete) => <ReadinessText status={athlete.readiness} /> },
-    {
-      key: "availability",
-      header: "Availability",
-      phone: "plain",
-      cell: (athlete) => {
-        const period = today?.availability[athlete.id]
-        // Injured, sick or away, now or coming up. Athletes with nothing set need no line on a phone.
-        return period ? <StatusText tone="amber">{sentenceCase(describeAvailability(period, todayKey))}</StatusText> : <span className="text-sk-mute max-sm:hidden">Available</span>
-      },
-    },
-    { key: "checkin", header: "Last check-in", phone: "hide", cell: (athlete) => athlete.lastWellness || "None yet" },
-    { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
-  ]
-  const athleteColumns = permissions.canSeeHealth ? allAthleteColumns : allAthleteColumns.filter((column) => !healthColumnKeys.has(column.key))
 
   const testColumns: Array<DataTableColumn<TestWeekResult>> = [
     {
@@ -391,6 +366,72 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         </Notice>
       ) : null}
 
+      <section aria-labelledby="coach-today-heading" data-coach-today className="sk-hero-wrap">
+        <img src={TODAY_PHOTO} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+        <div className="sk-hero sk-hero-over">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 id="coach-today-heading" className="sk-hero-label">
+              Today&apos;s session
+            </h2>
+            {planWeek ? <p className="sk-hero-label shrink-0">Week {planWeek.weekNumber} of {planWeek.totalWeeks}</p> : null}
+          </div>
+          {today === null && scopedAthletes.length > 0 ? (
+            <SkeletonRows rows={2} label="Loading today's session" />
+          ) : today?.todaySession ? (
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
+              <div className="min-w-0">
+                <p className="sk-hero-title">{today.todaySession.title}</p>
+                <ul className="mt-3 flex flex-col gap-1.5 text-[0.9375rem]" aria-label="Who has done it">
+                  <li className="flex gap-2">
+                    <span className="font-extrabold">Done</span>
+                    <span className="min-w-0 opacity-90">{sessionDone.length > 0 ? names(sessionDone) : "Nobody yet"}</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="shrink-0 font-extrabold">Not yet</span>
+                    <span className="min-w-0 opacity-90">{sessionOpen.length > 0 ? names(sessionOpen) : "Nobody left"}</span>
+                  </li>
+                  {sessionSkipped.length > 0 ? (
+                    <li className="flex gap-2">
+                      <span className="shrink-0 font-extrabold">Skipped</span>
+                      <span className="min-w-0 opacity-90">{names(sessionSkipped)}</span>
+                    </li>
+                  ) : null}
+                  {sessionExcused.length > 0 ? (
+                    <li className="flex gap-2">
+                      <span className="shrink-0 font-extrabold">Excused</span>
+                      <span className="min-w-0 opacity-90">{names(sessionExcused)}</span>
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="shrink-0 rounded-full bg-white p-1.5">
+                  <Ring progress={sessionDone.length + sessionOpen.length > 0 ? sessionDone.length / (sessionDone.length + sessionOpen.length) : 0} size={80}>
+                    <span className="font-display text-[1.75rem] font-black leading-none text-sk-ink">
+                      {sessionDone.length}
+                      <span className="text-[1rem]">/{sessionDone.length + sessionOpen.length}</span>
+                    </span>
+                  </Ring>
+                </span>
+                {attendanceTeamId && scopedAthletes.length > 0 ? (
+                  <span className="min-w-0 flex-1 lg:flex-none">
+                    <HeroAction to={`/coach/teams/${attendanceTeamId}/attendance`}>
+                      <CheckSquare className="size-[18px] shrink-0" weight="bold" aria-hidden />
+                      Take attendance
+                    </HeroAction>
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="sk-hero-title">Rest day</p>
+              <p className="sk-hero-body">No session planned today. A rest day, or the plan has nothing on this date.</p>
+            </>
+          )}
+        </div>
+      </section>
+
       <StatStrip aria-label="Today at a glance">
         {adherenceAverage === null ? (
           <Stat label="Plan adherence" value="None" hint={NO_SESSIONS_DUE} />
@@ -402,126 +443,115 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         <Stat label="Personal records" value={scopedPrs.length} />
       </StatStrip>
 
+      <Section title="Athletes" action={<Link to={rosterHref} className="sk-link">Open roster</Link>}>
+        {loading ? (
+          <SkeletonRows rows={4} label="Loading athletes" />
+        ) : scopedAthletes.length > 0 ? (
+          <TileGrid label="Athletes on this team" wide className="mt-1">
+            {scopedAthletes.map((athlete) => {
+              const period = today?.availability[athlete.id]
+              const needsLook = permissions.canSeeHealth && (athlete.readiness !== "green" || (athlete.adherence !== null && athlete.adherence < 75))
+              return (
+                <PersonTile
+                  key={athlete.id}
+                  to={`/coach/athletes/${athlete.id}`}
+                  name={athlete.name}
+                  detail={athlete.primaryEvent}
+                  avatar={<PersonAvatar name={athlete.name} athleteId={athlete.id} size="md" />}
+                  adherence={athlete.adherence}
+                  flag={needsLook}
+                  status={
+                    permissions.canSeeHealth ? (
+                      period ? <StatusText tone="amber">{sentenceCase(describeAvailability(period, todayKey))}</StatusText> : <ReadinessText status={athlete.readiness} />
+                    ) : undefined
+                  }
+                  meta={permissions.canSeeHealth ? (athlete.lastWellness ? athlete.lastWellness : "No check-in") : undefined}
+                />
+              )
+            })}
+          </TileGrid>
+        ) : (
+          <EmptyState
+            title="No athletes yet"
+            body={permissions.canManageRoster ? "Readiness and adherence show up here once athletes are on your roster." : "Athletes show up here once the lead coach has added them to the team."}
+            action={
+              permissions.canManageRoster ? (
+                <LinkButton to={rosterHref} size="sm">
+                  Invite athletes
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        )}
+      </Section>
+
+      <Section title="This week's plan" action={permissions.canEditPlans ? <Link to="/coach/training-plan/calendar" className="sk-link">Calendar</Link> : undefined}>
+        {planWeek === undefined ? (
+          <SkeletonRows rows={2} label="Loading this week's plan" />
+        ) : planWeek && planWeek.days.length > 0 ? (
+          <WeekRail
+            label="This week's sessions"
+            className="mt-1"
+            days={planWeek.days.map((day) => {
+              const isToday = backendMode === "supabase" ? day.date === todayKey : day.dayLabel === weekdayShortOf(todayKey)
+              return { key: day.id, day: day.dayLabel, title: day.title, detail: day.summary, today: isToday }
+            })}
+          />
+        ) : (
+          <EmptyState
+            title="No plan this week"
+            body={permissions.canEditPlans ? "Publish a training plan and the week's sessions are listed here." : "Once the lead coach publishes a plan, the week's sessions are listed here."}
+            action={
+              permissions.canEditPlans ? (
+                <LinkButton to="/coach/training-plan" size="sm">
+                  Open plans
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        )}
+      </Section>
+
       <Split
         main={
-          <Section title="Athletes" action={<Link to={rosterHref} className="sk-link">Open roster</Link>}>
+          <Section title="Latest test results" action={<Link to="/coach/test-week" className="sk-link">Test weeks</Link>}>
             {loading ? (
-              <SkeletonRows rows={4} label="Loading athletes" />
-            ) : scopedAthletes.length > 0 ? (
-              <DataTable caption="Athletes on this team" columns={athleteColumns} rows={scopedAthletes} rowKey={(athlete) => athlete.id} />
+              <SkeletonRows rows={3} label="Loading test results" />
+            ) : scopedTests.length > 0 ? (
+              <DataTable caption="Latest test results by athlete" columns={testColumns} rows={scopedTests} rowKey={(row) => row.athleteId} />
             ) : (
-              <EmptyState
-                title="No athletes yet"
-                body={permissions.canManageRoster ? "Readiness and adherence show up here once athletes are on your roster." : "Athletes show up here once the lead coach has added them to the team."}
-                action={
-                  permissions.canManageRoster ? (
-                    <LinkButton to={rosterHref} size="sm">
-                      Invite athletes
-                    </LinkButton>
-                  ) : undefined
-                }
-              />
+              <EmptyState title="No test results yet" body="Publish a test week and results appear here as athletes submit them." />
             )}
           </Section>
         }
         side={
-          <>
-          <Section
-            title="Today's session"
-            hint={today?.todaySession?.title}
-            meta={today?.todaySession ? `${sessionDone.length} of ${sessionDone.length + sessionOpen.length} done` : undefined}
-            action={
-              attendanceTeamId && scopedAthletes.length > 0 ? (
-                <Link to={`/coach/teams/${attendanceTeamId}/attendance`} className="sk-link">
-                  Take attendance
-                </Link>
-              ) : undefined
-            }
-          >
-            {today === null && scopedAthletes.length > 0 ? (
-              <SkeletonRows rows={2} label="Loading today's session" />
-            ) : today?.todaySession ? (
-              <List>
-                <ListRow leading={<StatusDot tone="green" />} title="Done" subtitle={sessionDone.length > 0 ? names(sessionDone) : "Nobody yet"} trailing={sessionDone.length} />
-                <ListRow leading={<StatusDot tone={sessionOpen.length > 0 ? "blue" : "neutral"} />} title="Not yet" subtitle={sessionOpen.length > 0 ? names(sessionOpen) : "Nobody left"} trailing={sessionOpen.length} />
-                {sessionSkipped.length > 0 ? <ListRow leading={<StatusDot tone="neutral" />} title="Skipped" subtitle={names(sessionSkipped)} trailing={sessionSkipped.length} /> : null}
-                {sessionExcused.length > 0 ? <ListRow leading={<StatusDot tone="amber" />} title="Excused" subtitle={names(sessionExcused)} trailing={sessionExcused.length} /> : null}
-              </List>
-            ) : (
-              <EmptyState title="No session planned today" body="A rest day, or the plan has nothing on this date." />
-            )}
-          </Section>
-          <Section title="This week's plan" action={permissions.canEditPlans ? <Link to="/coach/training-plan/calendar" className="sk-link">Calendar</Link> : undefined}>
-            {planWeek === undefined ? (
-              <SkeletonRows rows={4} label="Loading this week's plan" />
-            ) : planWeek && planWeek.days.length > 0 ? (
-              <List>
-                {planWeek.days.map((day) => {
-                  const isToday = backendMode === "supabase" ? day.date === todayKey : day.dayLabel === weekdayShortOf(todayKey)
-                  return (
-                    <ListRow
-                      key={day.id}
-                      className="items-start"
-                      aria-current={isToday ? "date" : undefined}
-                      leading={<span className={isToday ? "w-10 text-left font-bold text-sk-blue" : "w-10 text-left font-bold text-sk-mute"}>{day.dayLabel}</span>}
-                      title={<span className="font-bold">{day.title}</span>}
-                      subtitle={isToday && day.summary ? `Today. ${day.summary}` : isToday ? "Today" : day.summary}
-                    />
-                  )
-                })}
-              </List>
-            ) : (
-              <EmptyState
-                title="No plan this week"
-                body={permissions.canEditPlans ? "Publish a training plan and the week's sessions are listed here." : "Once the lead coach publishes a plan, the week's sessions are listed here."}
-                action={
-                  permissions.canEditPlans ? (
-                    <LinkButton to="/coach/training-plan" size="sm">
-                      Open plans
-                    </LinkButton>
-                  ) : undefined
-                }
-              />
-            )}
-          </Section>
-          {permissions.canEditAthleteRecords && today?.nextCompetition ? (
+          permissions.canEditAthleteRecords && today?.nextCompetition ? (
             <Section title="Next competition" action={<Link to={COMPETITIONS_PATH} className="sk-link">All competitions</Link>}>
-              <List>
-                <ListRow
-                  to={`${COMPETITIONS_PATH}/${today.nextCompetition.id}`}
-                  leading={
-                    <DayLabel
-                      weekday={dayDate(today.nextCompetition.startDate).toLocaleDateString(undefined, { month: "short" })}
-                      number={dayDate(today.nextCompetition.startDate).getDate()}
-                    />
-                  }
-                  title={<span className="font-bold">{today.nextCompetition.name}</span>}
-                  subtitle={sentenceCase(
-                    [
-                      today.nextCompetition.venue,
-                      daysAway(today.nextCompetition.startDate, todayKey),
-                      today.nextCompetition.enteredCount > 0 ? `${today.nextCompetition.enteredCount} entered` : "nobody entered yet",
-                    ]
-                      .filter(Boolean)
-                      .join(", "),
-                  )}
-                />
-              </List>
+              <Link to={`${COMPETITIONS_PATH}/${today.nextCompetition.id}`} className="sk-tile mt-1 flex flex-col gap-3 p-5" data-next-competition>
+                <Countdown days={daysUntil(today.nextCompetition.startDate, todayKey)} />
+                <span>
+                  <span className="block text-lg font-bold leading-tight text-sk-ink">{today.nextCompetition.name}</span>
+                  <span className="block text-sm text-sk-mute">
+                    {sentenceCase(
+                      [
+                        dayDate(today.nextCompetition.startDate).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }),
+                        today.nextCompetition.venue,
+                        today.nextCompetition.enteredCount > 0 ? `${today.nextCompetition.enteredCount} entered` : "nobody entered yet",
+                      ]
+                        .filter(Boolean)
+                        .join(", "),
+                    )}
+                  </span>
+                </span>
+              </Link>
             </Section>
-          ) : null}
-          </>
+          ) : (
+            <Section title="Next competition" action={<Link to={COMPETITIONS_PATH} className="sk-link">All competitions</Link>}>
+              <EmptyState title="Nothing on the calendar" body="Meets you enter your athletes in show up here with a countdown." />
+            </Section>
+          )
         }
       />
-
-      <Section title="Latest test results" action={<Link to="/coach/test-week" className="sk-link">Test weeks</Link>}>
-        {loading ? (
-          <SkeletonRows rows={3} label="Loading test results" />
-        ) : scopedTests.length > 0 ? (
-          <DataTable caption="Latest test results by athlete" columns={testColumns} rows={scopedTests} rowKey={(row) => row.athleteId} />
-        ) : (
-          <EmptyState title="No test results yet" body="Publish a test week and results appear here as athletes submit them." />
-        )}
-      </Section>
     </Screen>
   )
 }

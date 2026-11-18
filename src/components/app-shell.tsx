@@ -47,7 +47,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, List, ListRow, Sheet } from "@/components/sk"
+import { Avatar, List, ListRow, Sheet, SlideMarker } from "@/components/sk"
 import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
 import { InstallBanner } from "@/components/install-banner"
 import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
@@ -239,17 +239,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const moreLinks = [...placedInMore, ...(overflows ? tabCandidates.slice(PHONE_TAB_LIMIT - 1) : [])]
   // The athlete side wears the "Stopwatch" skin (DESIGN.md, Athlete skin): a floating tab bar with a sliding highlight.
   const isAthlete = role === "athlete"
+  // Athletes and coaches wear the "Stopwatch" skin (DESIGN.md): a floating tab bar with a sliding highlight.
+  const skinned = isAthlete || role === "coach"
   // Sheets, dialogs and toasts open outside the shell, so the skin goes on <html> as well.
   useLayoutEffect(() => {
-    if (!isAthlete) return
+    if (!skinned) return
     document.documentElement.dataset.skin = "stopwatch"
     return () => {
       delete document.documentElement.dataset.skin
     }
-  }, [isAthlete])
+  }, [skinned])
   const tabColumns = phoneTabs.length + (moreLinks.length > 0 ? 1 : 0)
-  const athleteActiveIndex = isAthlete ? phoneTabs.findIndex((link) => link.id !== ATHLETE_LOG_ID && isLinkActive(link)) : -1
   const moreActive = moreLinks.some(isLinkActive)
+  const activeTabIndex = skinned
+    ? (() => {
+        const index = phoneTabs.findIndex((link) => !(isAthlete && link.id === ATHLETE_LOG_ID) && isLinkActive(link))
+        return index >= 0 ? index : moreActive ? phoneTabs.length : -1
+      })()
+    : -1
   const messagesInAppBar = messagesLink?.phone === "icon"
   const messagesLabel = useMessagesLabel()
 
@@ -367,7 +374,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-white text-sk-ink" data-skin={isAthlete ? "stopwatch" : undefined}>
+    <div className="flex h-dvh flex-col overflow-hidden bg-white text-sk-ink" data-skin={skinned ? "stopwatch" : undefined}>
       <a
         href="#main-content"
         className="sr-only z-[60] rounded-[12px] bg-sk-blue px-4 py-2.5 font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
@@ -385,7 +392,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <ShellClubBrand compact={showTeamSwitcher || showChildSwitcher} />
           {showTeamSwitcher ? <CoachTeamSwitcher variant="topbar" onSwitched={handleTeamSwitched} /> : null}
           {showChildSwitcher ? <GuardianChildSwitcher variant="topbar" /> : null}
-          <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+          <nav aria-label="Main" data-shell-tabs className="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+            {skinned ? <SlideMarker variant="pill" watch={pathname} /> : null}
             {desktopTabs.map((link) => {
               const isActive = isLinkActive(link)
               return (
@@ -393,6 +401,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={link.id}
                   to={link.href}
                   {...prefetchHandlers(link.id)}
+                  data-active={isActive}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "shrink-0 whitespace-nowrap rounded-[12px] px-3.5 py-2.5 text-[0.9375rem] leading-5 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sk-blue",
@@ -458,7 +467,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Main"
           data-shell="tabbar"
           className={cn(
-            isAthlete
+            skinned
               ? "relative z-40 shrink-0 bg-transparent px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden"
               : "relative z-40 shrink-0 border-t border-sk-line bg-white px-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 lg:hidden",
             hideMobileNav && "hidden",
@@ -467,17 +476,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div
             className={cn(
               "relative mx-auto grid max-w-lg items-center",
-              isAthlete && "h-[68px] rounded-[26px] bg-white px-1.5 shadow-[0_10px_30px_rgb(14_17_22/0.14),0_0_0_1px_rgb(14_17_22/0.04)]",
+              skinned && "h-[68px] rounded-[26px] bg-white px-1.5 shadow-[0_10px_30px_rgb(14_17_22/0.14),0_0_0_1px_rgb(14_17_22/0.04)]",
             )}
             style={{ gridTemplateColumns: `repeat(${tabColumns}, minmax(0, 1fr))` }}
           >
-            {isAthlete && athleteActiveIndex >= 0 ? (
+            {skinned && activeTabIndex >= 0 ? (
               // The accent highlight slides to the open tab.
               <span
                 aria-hidden
                 data-tab-highlight
-                className="pointer-events-none absolute top-2 h-[52px] w-[62px] rounded-[20px] bg-sk-accent transition-[left] duration-500 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
-                style={{ left: `calc(0.375rem + (100% - 0.75rem) / ${tabColumns} * ${athleteActiveIndex + 0.5} - 31px)` }}
+                className="pointer-events-none absolute top-2 h-[52px] w-[66px] rounded-[20px] bg-sk-accent transition-[left] duration-500 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
+                style={{ left: `calc(0.375rem + (100% - 0.75rem) / ${tabColumns} * ${activeTabIndex + 0.5} - 33px)` }}
               />
             ) : null}
             {phoneTabs.map((link) => {
@@ -496,19 +505,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </Link>
                 )
               }
-              if (isAthlete) {
+              if (skinned) {
                 return (
                   <Link
                     key={link.id}
                     to={link.href}
                     {...prefetchHandlers(link.id)}
                     aria-current={isActive ? "page" : undefined}
+                    aria-label={link.id === MESSAGES_ID ? messagesLabel : undefined}
                     className="relative flex h-[52px] flex-col items-center justify-center rounded-[20px] outline-offset-0 focus-visible:outline-2 focus-visible:outline-sk-blue"
                   >
                     <span key={isActive ? "on" : "off"} className={cn("relative", isActive && "sk-anim-bounce")}>
                       <LinkIcon className={cn("size-6", isActive ? "text-sk-on-accent" : "text-sk-mute")} weight={isActive ? "bold" : "regular"} aria-hidden />
+                      {link.id === MESSAGES_ID ? <MessagesCount className="absolute -right-2.5 -top-1.5" /> : null}
                     </span>
-                    <span className={cn("mt-0.5 text-[0.625rem] leading-none", isActive ? "font-extrabold text-sk-on-accent" : "font-semibold text-sk-mute")}>{link.short ?? link.label}</span>
+                    <span className={cn("mt-0.5 max-w-full truncate text-[0.625rem] leading-none", isActive ? "font-extrabold text-sk-on-accent" : "font-semibold text-sk-mute")}>{link.short ?? link.label}</span>
                   </Link>
                 )
               }
@@ -536,13 +547,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 aria-haspopup="dialog"
+                data-active={moreActive}
                 onClick={() => setMoreOpen(true)}
                 className={cn(
-                  "flex min-h-12 cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[12px] text-xs focus-visible:outline-2 focus-visible:outline-sk-blue",
-                  moreActive ? "font-bold text-sk-blue" : "font-semibold text-sk-mute",
+                  skinned
+                    ? "relative flex h-[52px] cursor-pointer flex-col items-center justify-center rounded-[20px] text-[0.625rem] leading-none focus-visible:outline-2 focus-visible:outline-sk-blue"
+                    : "flex min-h-12 cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[12px] text-xs focus-visible:outline-2 focus-visible:outline-sk-blue",
+                  skinned
+                    ? moreActive
+                      ? "font-extrabold text-sk-on-accent"
+                      : "font-semibold text-sk-mute"
+                    : moreActive
+                      ? "font-bold text-sk-blue"
+                      : "font-semibold text-sk-mute",
                 )}
               >
-                <DotsThree className="size-6" weight="bold" aria-hidden />
+                <DotsThree className={cn("size-6", skinned && "mb-0.5")} weight="bold" aria-hidden />
                 More
               </button>
             ) : null}

@@ -1,12 +1,23 @@
 import { Plus } from "@phosphor-icons/react"
 import { useState } from "react"
-import { ActionRow, Button, EmptyState, InlineConfirm, List, Notice, RowMenu, Screen, ScreenHeader, Section, Segmented, SkeletonRows } from "@/components/sk"
+import { ActionRow, Button, EmptyState, InlineConfirm, List, Notice, RowMenu, Screen, ScreenHeader, Section, Segmented, SkeletonRows, WeekSegments } from "@/components/sk"
 import { addDaysIso, formatDateRange, type PlanStatus } from "@/lib/data/training-plan/plan-builder-model"
 import type { PlanListItem, TeamOption } from "./storage"
 import { PlansNav } from "./plans-nav"
 import { PlanStatusText, plural } from "./ui"
 
 type Filter = "all" | PlanStatus
+
+/** The week of a block that today falls in (1 based), or null before it starts or after it ends. */
+function currentWeek(startDate: string, weeks: number): number | null {
+  const start = new Date(`${startDate.slice(0, 10)}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.floor((today.getTime() - start.getTime()) / 86_400_000)
+  if (days < 0) return null
+  const week = Math.floor(days / 7) + 1
+  return week > weeks ? null : week
+}
 
 export function PlanList({
   plans,
@@ -144,7 +155,12 @@ export function PlanList({
                   key={plan.id}
                   data-plan-status={plan.status}
                   title={name}
-                  subtitle={[showTeam ? (team?.name ?? "No team") : null, range, plural(plan.weeks, "week"), audience].filter(Boolean).join(", ")}
+                  subtitle={
+                    <>
+                      {[showTeam ? (team?.name ?? "No team") : null, range, plural(plan.weeks, "week"), audience].filter(Boolean).join(", ")}
+                      <WeekSegments className="mt-2" total={plan.weeks} current={plan.status === "published" ? currentWeek(plan.startDate, plan.weeks) : null} />
+                    </>
+                  }
                   trailing={<PlanStatusText status={plan.status} />}
                   disabled={busy}
                   onClick={() => (editable ? onOpen(plan) : onDuplicate(plan))}

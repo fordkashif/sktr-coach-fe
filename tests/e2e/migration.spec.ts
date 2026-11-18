@@ -266,7 +266,7 @@ test("a coach's phone tabs are Dashboard, Athletes, Plans, Messages and More", a
   await expect(page).toHaveURL(/\/coach\/competitions$/)
   await expect(sheet).toBeHidden()
   // More stays lit on a screen that lives behind it.
-  await expect(tabBar.getByRole("button", { name: "More" })).toHaveClass(/text-sk-blue/)
+  await expect(tabBar.getByRole("button", { name: "More" })).toHaveAttribute("data-active", "true")
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
   expect(fits).toBe(true)
 })
@@ -314,20 +314,21 @@ test("athlete home shows today's session, the week and what is left to do", asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
-test("coach dashboard lists the team's athletes in a table that links to each athlete", async ({ page }) => {
+test("coach dashboard shows today's session and the team's athletes as tiles that link to each athlete", async ({ page }) => {
   await seedSession(page, "coach")
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/dashboard")
 
   const main = page.locator("#main-content")
   await expect(main.getByRole("heading", { level: 1, name: "Throws Group" })).toBeVisible()
-  const table = main.getByRole("table", { name: "Athletes on this team" })
-  await expect(table.getByRole("columnheader")).toHaveText(["Athlete", "Readiness", "Availability", "Last check-in", "Adherence"])
-  // Who has done today's planned session sits beside the table.
+  // Today's session leads the screen, with who has done it.
   await expect(main.getByRole("heading", { level: 2, name: "Today's session" })).toBeVisible()
-  await expect(table.getByRole("rowheader")).toHaveCount(2)
-  await expect(main.locator("[data-sk-hero]")).toHaveCount(0)
-  await table.getByRole("link", { name: /Mia Anderson/ }).click()
+  await expect(main.locator("[data-coach-today]")).toHaveCount(1)
+  // The squad: one tile per athlete, each with their adherence and readiness.
+  const tiles = main.getByRole("list", { name: "Athletes on this team" })
+  await expect(tiles.getByRole("listitem")).toHaveCount(2)
+  await expect(tiles.getByRole("link", { name: /Mia Anderson/ })).toContainText("Ready")
+  await tiles.getByRole("link", { name: /Mia Anderson/ }).click()
   await expect(page).toHaveURL(/\/coach\/athletes\/a8$/)
 })
 

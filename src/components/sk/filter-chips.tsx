@@ -40,6 +40,7 @@ export function FilterChips<T extends string>({
               role="radio"
               aria-checked={on}
               onClick={() => onChange(option.value)}
+              data-sk-chip
               className={cn(
                 "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[12px] border px-3.5 text-[0.9375rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue lg:min-h-10",
                 on ? "border-sk-blue bg-sk-blue-tint text-sk-blue-ink" : "border-sk-line-strong bg-white text-sk-ink-2 hover:border-sk-blue",
