@@ -46,7 +46,7 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          supabase db push --linked
+          supabase db push --linked --yes
 
       - name: Sync Edge Function Secrets (dev)
         env:
@@ -152,7 +152,7 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          supabase db push --linked
+          supabase db push --linked --yes
 
       - name: Sync Edge Function Secrets (prod)
         env:
