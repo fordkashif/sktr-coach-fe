@@ -117,7 +117,7 @@ export default function AthleteWellnessHistoryPage() {
       <ScreenHeader
         back={{ to: "/athlete/wellness", label: "Wellness" }}
         title="Wellness history"
-        lede="Your check-ins and pain reports. Your coaches see the same."
+        lede="Your coaches see the same."
         actions={<Segmented label="Period" value={range} onChange={setRange} options={[{ value: "4", label: "4 weeks" }, { value: "12", label: "12 weeks" }]} />}
       />
 
@@ -131,7 +131,6 @@ export default function AthleteWellnessHistoryPage() {
         <Section title="Readiness trend">
           <EmptyState
             title={`No check-ins in the last ${range} weeks`}
-            body="Each daily check-in adds a row here and a point on your readiness trend."
             action={
               <LinkButton to="/athlete/wellness" size="sm">
                 Do today&apos;s check-in
@@ -166,7 +165,6 @@ export default function AthleteWellnessHistoryPage() {
           {painReports.length === 0 ? (
             <EmptyState
               title="No pain reports"
-              body="When something hurts, report it so your coach can adjust your training. It shows up here with the date."
               action={
                 <LinkButton to="/athlete/wellness/pain" size="sm">
                   Report pain or an injury

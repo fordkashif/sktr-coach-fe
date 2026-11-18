@@ -340,7 +340,7 @@ export default function CoachAthleteReportPage() {
         main={
           <>
             {editing ? (
-              <Section title="Your summary" hint="You can change it until the report is shared.">
+              <Section title="Your summary">
                 <Field label="Summary" hint={`${draft.trim().length} of ${REPORT_SUMMARY_MAX} characters`}>
                   <Textarea rows={8} maxLength={REPORT_SUMMARY_MAX} value={draft} onChange={(event) => setDraft(event.target.value)} />
                 </Field>
@@ -379,7 +379,7 @@ export default function CoachAthleteReportPage() {
         }
         side={
           <>
-            <Section title={`Share with ${first}`} hint={`${first} sees it under Progress, read only, and can print it.`} data-report-share-athlete>
+            <Section title={`Share with ${first}`} data-report-share-athlete>
               {shared ? (
                 <List aria-label="Shared in the app">
                   <ListRow leading={<StatusDot tone="green" />} title={`${first} can see it`} subtitle={`Since ${dayOf(report.sharedWithAthleteAt as string)}`} />
@@ -405,8 +405,7 @@ export default function CoachAthleteReportPage() {
             </Section>
 
             <Section
-              title="Share with a parent or guardian"
-              hint="A private link that opens this report without signing in. It ends on its own and you can stop it."
+              title="Share with a parent or guardian" hint="Ends on its own. You can stop it."
               data-report-links
             >
               {health ? <Notice tone="warning">{HEALTH_CONSENT_LINE}</Notice> : null}

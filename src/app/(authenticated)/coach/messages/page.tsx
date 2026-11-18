@@ -104,7 +104,7 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
       {error ? <Notice tone="error">Your messages could not be loaded. {error}</Notice> : null}
 
       {tab === "direct" ? (
-        <Section title="Athletes" hint="One to one with an athlete on your team. Club admins can read these conversations.">
+        <Section title="Athletes" hint="Club admins can read these conversations.">
           {threads === null && !error ? (
             <SkeletonRows rows={3} leading label="Loading conversations" />
           ) : (threads ?? []).length > 0 ? (
@@ -112,11 +112,6 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
           ) : (
             <EmptyState
               title="No conversations yet"
-              body={
-                permissions.canMessageAthletes
-                  ? "Pick an athlete to ask how a session went or to sort out a change. They are told in the app and by email."
-                  : "On this team assistant coaches do not message athletes directly. The lead coach or a club admin can turn that on."
-              }
               action={
                 permissions.canMessageAthletes ? (
                   <Button size="sm" onClick={() => setPicking(true)}>
@@ -128,7 +123,7 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
           )}
         </Section>
       ) : (
-        <Section title="Announcements" hint="One message to the whole team. Open one to see who has read it.">
+        <Section title="Announcements">
           {announcements === null && !error ? (
             <SkeletonRows rows={3} label="Loading announcements" />
           ) : (announcements ?? []).length > 0 ? (
@@ -136,7 +131,6 @@ function CoachMessages({ teamId, teamName, waiting }: { teamId: string | null; t
           ) : (
             <EmptyState
               title="No announcements yet"
-              body={permissions.canPostAnnouncements ? "Tell the whole team something once: training moved, kit to bring, where to meet." : "Announcements the lead coach sends to the team show up here."}
               action={
                 permissions.canPostAnnouncements ? (
                   <LinkButton to={newAnnouncementHref("coach")} size="sm">

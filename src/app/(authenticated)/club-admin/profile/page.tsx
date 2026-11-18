@@ -443,7 +443,7 @@ export default function ClubAdminProfilePage() {
           }
           side={
             <>
-              <Section title="Logo" hint="Everyone in your club sees it at the top of the app, and it goes on printed plans.">
+              <Section title="Logo">
                 <div className="flex items-center gap-4">
                   <ClubMark name={clubName} shortName={profile.shortName} color={profile.primaryColor} logoUrl={logoUrl} size="lg" />
                   <div className="flex min-w-0 flex-wrap items-center gap-2">

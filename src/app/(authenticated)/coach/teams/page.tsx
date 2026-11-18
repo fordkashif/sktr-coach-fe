@@ -127,7 +127,6 @@ export default function CoachTeamsPage() {
         {coachTeams.error ? <Notice tone="error">Could not load your teams: {coachTeams.error}</Notice> : null}
         <EmptyState
           title="No team on your account"
-          body="Your roster, plans, reports and invites appear once a club admin assigns you to a team. Ask them to add you, or reopen your coach invite if you did not finish setting up."
           action={
             <LinkButton to="/coach/dashboard" size="sm">
               Back to dashboard
@@ -172,13 +171,12 @@ export default function CoachTeamsPage() {
         <Stat label="Need a look" value={needLook} hint={needLook > 0 ? "Watch or review" : "Nobody flagged"} />
       </StatStrip>
 
-      <Section title="All teams" hint={visibleTeams.length > 0 ? "Open a team for its roster and invites." : undefined}>
+      <Section title="All teams">
         {teams === null ? (
           <SkeletonRows rows={4} label="Loading teams" />
         ) : visibleTeams.length === 0 ? (
           <EmptyState
             title="No teams yet"
-            body={isClubAdminViewer ? "Create your first team with Add a team, then add athletes to it." : "Teams you are assigned to appear here with their roster."}
           />
         ) : (
           <List aria-label="Teams">

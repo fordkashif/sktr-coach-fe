@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { Megaphone } from "@phosphor-icons/react"
-import { Button, Choices, Field, LinkButton, Notice, Screen, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
+import { Button, Choices, Field, LinkButton, Notice, Select, Sheet, Textarea } from "@/components/sk"
 import { getStaffTeams, type StaffTeam } from "@/lib/data/competition/staff-roster"
 import { announcementHref, messagesHomeHref } from "@/lib/data/messages/links"
 import { postAnnouncement } from "@/lib/data/messages/messages-data"
@@ -56,13 +56,14 @@ export function AnnouncementCompose({ role, team }: { role: "coach" | "club-admi
   const who = audience === "club" ? "everyone in the club" : audience === "coaches" ? "every coach in the club" : choosesAudience ? "the athletes and coaches of that team" : `the athletes and coaches of ${team?.name ?? "your team"}`
 
   return (
-    <Screen width="narrow">
-      <ScreenHeader
-        back={{ to: backTo, label: "Announcements" }}
-        title="New announcement"
-        lede={choosesAudience ? "One message to many people. They read it; they cannot reply to it." : `One message to everyone on ${team?.name ?? "your team"}. They read it; they cannot reply to it.`}
-      />
-      <Section aria-label="Announcement">
+    <Sheet
+      open
+      onOpenChange={(open) => (open ? undefined : navigate(backTo))}
+      title="New announcement"
+      description={choosesAudience ? "They read it, they cannot reply." : `To everyone on ${team?.name ?? "your team"}. They read it, they cannot reply.`}
+      className="sm:max-w-lg"
+    >
+      <section aria-label="Announcement">
         <form className="flex flex-col gap-5" onSubmit={(event) => void submit(event)} noValidate>
           {choosesAudience ? (
             <>
@@ -111,7 +112,7 @@ export function AnnouncementCompose({ role, team }: { role: "coach" | "club-admi
             </LinkButton>
           </div>
         </form>
-      </Section>
-    </Screen>
+      </section>
+    </Sheet>
   )
 }

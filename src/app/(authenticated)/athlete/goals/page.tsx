@@ -24,7 +24,6 @@ export default function AthleteGoalsPage() {
     <Screen>
       <ScreenHeader
         title="Goals"
-        lede="A mark to aim for in an event. Progress is counted from your best when you set the goal to your best now."
         actions={
           <Button variant="primary" onClick={openAdd} disabled={!view}>
             <Plus className="size-[18px]" weight="bold" aria-hidden />
@@ -46,7 +45,6 @@ export default function AthleteGoalsPage() {
         <Section title="No goals yet">
           <EmptyState
             title="Pick an event and the mark you want"
-            body="You will see how far you have come from your best today, and the goal is ticked off by itself when a result reaches it. Your coaches can see your goals and can set one for you."
             action={
               <Button size="sm" onClick={openAdd}>
                 Set a goal

@@ -136,7 +136,6 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
   const loading = data === null && !error
   const rangeText = describeReportRange(range)
   const teamLabel = data?.teamName ?? "All teams"
-  const filtersActive = Boolean(query) || (report !== "records" && readinessFilter !== "all")
   const clearFilters = () => {
     setSearch("")
     setReadinessFilter("all")
@@ -391,7 +390,6 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
         ) : (data?.athleteCount ?? 0) === 0 ? (
           <EmptyState
             title="No athletes on your roster yet"
-            body="Once athletes are on your team, their sessions, check-ins and records show up here."
             action={
               <LinkButton to="/coach/teams" size="sm">
                 Go to teams
@@ -411,7 +409,6 @@ function CoachReports({ scopeTeamId }: { scopeTeamId: string | null }) {
         ) : active.count === 0 ? (
           <EmptyState
             title="Nothing matches these filters"
-            body={`There are ${active.total} ${active.noun} in this period, but none fit the search${filtersActive && report !== "records" ? " and readiness filter" : ""}.`}
             action={
               <Button size="sm" onClick={clearFilters}>
                 Clear filters

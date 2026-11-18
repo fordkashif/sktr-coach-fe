@@ -33,7 +33,7 @@ export function AthleteCalendarScreen({ layout, switcher, notice }: { layout: Ca
   const calendar = useCalendarData(month, "me", (range) => loadAthleteCalendar({ range, today }))
   return (
     <Screen>
-      <ScreenHeader title="Your calendar" lede="Your sessions, test weeks, competitions and club events." />
+      <ScreenHeader title="Your calendar" />
       {notice}
       <CalendarBoard
         label="Your calendar"
@@ -47,7 +47,6 @@ export function AthleteCalendarScreen({ layout, switcher, notice }: { layout: Ca
         layout={layout}
         switcher={switcher}
         timezone={timezone}
-        emptyBody="Sessions from your plan, test weeks, the competitions you are entered in and club events show up here."
       />
       <CalendarFeedSection role="athlete" />
     </Screen>

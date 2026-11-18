@@ -24,8 +24,7 @@ export function MyLoadSection() {
   const week = data ? currentWeek(data.load) : null
   return (
     <Section
-      title="Training load"
-      hint={data ? athleteLoadSummary(data.load, data.asOf) : "How hard times how long, for each session you finish."}
+      title="Training load" hint={data ? athleteLoadSummary(data.load, data.asOf) : undefined}
       meta={week && data?.load.firstLoadOn ? `${formatLoad(week.load)} this week` : undefined}
       aria-label="Training load"
     >

@@ -95,7 +95,6 @@ export default function AthleteEventHistoryPage() {
           <Section title="No results in this event">
             <EmptyState
               title="There is nothing here yet"
-              body="You have no results in this event, or the last one was removed."
               action={
                 <LinkButton to="/athlete/prs" size="sm">
                   Back to records
@@ -247,7 +246,6 @@ export default function AthleteEventHistoryPage() {
       {legalOldestFirst.length >= 2 ? (
         <Section
           title="Progression"
-          hint={`Every wind legal mark, oldest to newest. ${event.lowerIsBetter ? "The line going down is you getting faster." : "The line going up is you improving."}`}
         >
           <TrendLine
             className="mt-2"

@@ -402,7 +402,7 @@ export default function AthleteTestWeekPage() {
             })}
         </List>
       ) : (
-        <EmptyState title="No past test weeks yet" body="After your first test week, your results stay here so you can see how each test moves." />
+        <EmptyState title="No past test weeks yet" />
       )}
     </Section>
   )
@@ -448,7 +448,6 @@ export default function AthleteTestWeekPage() {
             <Section title="No open test week">
               <EmptyState
                 title="Nothing to enter right now"
-                body="When your coach opens a test week for your team, its tests show up here with a box for each result."
                 action={
                   <LinkButton to="/athlete/prs" size="sm">
                     See your records
@@ -543,7 +542,7 @@ export default function AthleteTestWeekPage() {
         main={
           tests.length === 0 ? (
             <Section title="No tests in this week yet">
-              <EmptyState title="Your coach has not added any tests" body="Check back soon. Once tests are added, each one gets a box for your result." />
+              <EmptyState title="Your coach has not added any tests" />
             </Section>
           ) : canEdit ? (
             <form id="test-week-form" className="flex flex-col gap-7 lg:gap-9" onSubmit={(event) => void handleSubmit(event)} noValidate>

@@ -67,7 +67,7 @@ export default function ClubAdminMessagesPage() {
       {error ? <Notice tone="error">The club's messages could not be loaded. {error}</Notice> : null}
 
       {tab === "announcements" ? (
-        <Section title="Announcements" hint="To the whole club, to all coaches or to one team. Open one to see who has read it.">
+        <Section title="Announcements">
           {announcements === null && !error ? (
             <SkeletonRows rows={3} label="Loading announcements" />
           ) : (announcements ?? []).length > 0 ? (
@@ -75,7 +75,6 @@ export default function ClubAdminMessagesPage() {
           ) : (
             <EmptyState
               title="No announcements yet"
-              body="Tell the whole club something once: an AGM, a kit day, a closed track."
               action={
                 <LinkButton to={newAnnouncementHref("club-admin")} size="sm">
                   New announcement
@@ -95,7 +94,7 @@ export default function ClubAdminMessagesPage() {
           ) : (threads ?? []).length > 0 ? (
             <OversightRows threads={threads ?? []} />
           ) : (
-            <EmptyState title="No conversations yet" body="When a coach and an athlete message each other, the conversation is listed here. Reported messages come first." />
+            <EmptyState title="No conversations yet" />
           )}
           <p className="mt-4 text-sm text-sk-mute" data-guardian-cc>
             Guardian copies are {guardianCc ? "on" : "off"} for this club: guardians are not sent a copy of messages to athletes under 18.

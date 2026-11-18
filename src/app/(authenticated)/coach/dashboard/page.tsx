@@ -316,7 +316,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       {backendError ? <Notice tone="error">Could not load the latest data: {backendError}</Notice> : null}
 
       {permissions.canSeeHealth && today && today.painReports.length > 0 ? (
-        <Section title="Needs you" hint="Open pain reports that change training." meta={`${today.painReports.length} open`}>
+        <Section title="Needs you" meta={`${today.painReports.length} open`}>
           <List>
             {today.painReports.slice(0, 5).map((report) => (
               <ListRow
@@ -335,7 +335,6 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
       {coachNeedsGuide && !setupGuideDismissedAt ? (
         <Section
           title="Get set up in three steps"
-          hint="Do these in order and your dashboard fills itself in."
           action={
             <Button variant="quiet" size="sm" disabled={setupGuideSaving} onClick={() => void toggleGuide(true)}>
               {setupGuideSaving ? "Saving..." : "Hide for now"}
@@ -473,7 +472,6 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         ) : (
           <EmptyState
             title="No athletes yet"
-            body={permissions.canManageRoster ? "Readiness and adherence show up here once athletes are on your roster." : "Athletes show up here once the lead coach has added them to the team."}
             action={
               permissions.canManageRoster ? (
                 <LinkButton to={rosterHref} size="sm">
@@ -500,7 +498,6 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
         ) : (
           <EmptyState
             title="No plan this week"
-            body={permissions.canEditPlans ? "Publish a training plan and the week's sessions are listed here." : "Once the lead coach publishes a plan, the week's sessions are listed here."}
             action={
               permissions.canEditPlans ? (
                 <LinkButton to="/coach/training-plan" size="sm">
@@ -520,7 +517,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             ) : scopedTests.length > 0 ? (
               <DataTable caption="Latest test results by athlete" columns={testColumns} rows={scopedTests} rowKey={(row) => row.athleteId} />
             ) : (
-              <EmptyState title="No test results yet" body="Publish a test week and results appear here as athletes submit them." />
+              <EmptyState title="No test results yet" />
             )}
           </Section>
         }
@@ -547,7 +544,7 @@ function CoachDashboard({ role, coachTeamId }: { role: string | null; coachTeamI
             </Section>
           ) : (
             <Section title="Next competition" action={<Link to={COMPETITIONS_PATH} className="sk-link">All competitions</Link>}>
-              <EmptyState title="Nothing on the calendar" body="Meets you enter your athletes in show up here with a countdown." />
+              <EmptyState title="Nothing on the calendar" />
             </Section>
           )
         }

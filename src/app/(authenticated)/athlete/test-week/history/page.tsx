@@ -31,7 +31,7 @@ function TestOverTime({ series }: { series: TestSeries[] }) {
   const latestIsBest = chosen.best !== null && chosen.best.testWeekId === chosen.latest.testWeekId
 
   return (
-    <Section title="One test over time" hint={`Pick a test to see every time you did it. ${direction}`}>
+    <Section title="One test over time" hint={direction}>
       <FormGrid>
       <Field label="Test">
         <Select value={chosen.key} onChange={(event) => setChosenKey(event.target.value)}>
@@ -127,7 +127,6 @@ export default function AthleteTestWeekHistoryPage() {
       <ScreenHeader
         back={{ to: "/athlete/test-week", label: "Test week" }}
         title="Test week history"
-        lede="Every test week you have results in, newest first. Each result is compared with the last time you did that test, and with your best ever."
       />
 
       {error ? <Notice tone="error">Your test history could not be loaded. {error}</Notice> : null}
@@ -142,7 +141,6 @@ export default function AthleteTestWeekHistoryPage() {
         <Section title="No test weeks yet">
           <EmptyState
             title="Your results will collect here"
-            body="After you submit results in a test week, it is kept here so you can see how each test moves from one test week to the next."
             action={
               <LinkButton to="/athlete/test-week" size="sm">
                 Go to the test week

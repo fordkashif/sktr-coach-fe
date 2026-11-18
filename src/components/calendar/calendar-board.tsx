@@ -92,7 +92,6 @@ export function CalendarBoard({
   eventTools,
   eventDialog,
   onEventDialogChange,
-  emptyBody,
 }: {
   /** "Team calendar": names the grid and list for screen readers. */
   label: string
@@ -111,7 +110,6 @@ export function CalendarBoard({
   /** The add or edit form: null when closed. Kept by the screen so its header button can open it. */
   eventDialog?: { event: ClubEvent | null; day: string | null } | null
   onEventDialogChange?: (next: { event: ClubEvent | null; day: string | null } | null) => void
-  emptyBody: string
 }) {
   const isMobile = useIsMobile()
   const [openDay, setOpenDay] = useState<string | null>(null)
@@ -275,7 +273,7 @@ export function CalendarBoard({
                 )}
               </List>
             ) : (
-              <EmptyState title={isCurrentMonth && earlierCount > 0 ? "Nothing else this month" : `Nothing in ${monthLabel(month)}`} body={emptyBody} />
+              <EmptyState title={isCurrentMonth && earlierCount > 0 ? "Nothing else this month" : `Nothing in ${monthLabel(month)}`} />
             )}
           </>
         )}
@@ -303,7 +301,7 @@ export function CalendarBoard({
           ) : undefined
         }
       >
-        {dayItems.length > 0 ? <List aria-label="On this day">{dayItems.map((item) => row(item, openDay ?? item.startsOn, null))}</List> : <EmptyState title="Nothing on this day" body={emptyBody} />}
+        {dayItems.length > 0 ? <List aria-label="On this day">{dayItems.map((item) => row(item, openDay ?? item.startsOn, null))}</List> : <EmptyState title="Nothing on this day" />}
       </Sheet>
 
       {/* Who is unavailable. Names only: the reason stays on the athlete's own screen. */}

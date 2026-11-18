@@ -67,7 +67,6 @@ export function AnnouncementView({ role, announcementId }: { role: MessagesRole;
           <Section title="This announcement is not available">
             <EmptyState
               title="It was not sent to you"
-              body="Your announcements list shows everything you have received."
               action={
                 <LinkButton to={backTo} size="sm">
                   Back to announcements

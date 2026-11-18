@@ -192,7 +192,7 @@ export function PushDeviceSection({ snapshot, copy, reload }: { snapshot: PushSn
           Your list of devices could not be loaded. Check your connection and reload the page.
         </Notice>
       ) : snapshot.devices.length > 0 ? (
-        <SubSection title="Your devices" hint="Every phone, tablet or computer where you turned push on." className="mt-6">
+        <SubSection title="Your devices" className="mt-6">
           <List>
             {snapshot.devices.map((device) => (
               <ActionRow

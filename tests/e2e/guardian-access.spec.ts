@@ -40,7 +40,7 @@ test("phone: the bottom bar is Home, Plan, Results, More, with no messages anywh
   await expect(bar.getByRole("link")).toHaveText(["Home", "Plan", "Results"])
   await expect(bar.getByRole("button", { name: "More" })).toBeVisible()
   await expect(page.getByRole("link", { name: /Messages/ })).toHaveCount(0)
-  await expect(page.locator("#main-content")).toContainText("To reach the coach, use the contact shown here.")
+  await expect(page.locator("#main-content").getByRole("heading", { name: /^Coach(es)?$/ })).toBeVisible()
 
   await bar.getByRole("button", { name: "More" }).click()
   const sheet = page.getByRole("dialog", { name: "More" })
@@ -313,7 +313,7 @@ test("club admin People lists guardians on their own, with remove, and never as 
   await page.getByRole("tab", { name: /Guardians/ }).click()
   const list = page.locator("[data-club-guardians]")
   await expect(list.locator("[data-guardian-row]")).toHaveCount(2)
-  await expect(list).toContainText("They are not staff and take no seat.")
+  await expect(list).toContainText("Not staff, no seat")
 
   const mia = list.locator('[data-guardian-row="guardian@pacelab.local|Mia Anderson"]')
   await mia.getByRole("button", { name: /Remove access for Dana Anderson and Mia Anderson/ }).click()

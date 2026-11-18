@@ -26,7 +26,7 @@ test("a coach posts an announcement, the athlete reads it and the unread badge c
   await signIn(page, "coach")
   await page.goto("/coach/messages?tab=announcements")
   await page.getByRole("link", { name: "New announcement" }).first().click()
-  await expect(page.getByRole("heading", { level: 1, name: "New announcement" })).toBeVisible()
+  await expect(page.getByRole("dialog", { name: "New announcement" })).toBeVisible()
   // Nothing to post yet.
   await expect(page.getByRole("button", { name: "Post announcement" })).toBeDisabled()
   await page.getByLabel("What do you want to say").fill(text)

@@ -258,13 +258,12 @@ export default function NotificationSettingsPage() {
     <Screen width="narrow">
       <ScreenHeader
         title="Notification settings"
-        lede="Choose what SKTR Coach tells you about and where it reaches you."
         back={role === "athlete" ? { to: "/athlete/profile", label: "Profile" } : { to: "/notifications", label: "Notifications" }}
       />
 
       {error ? <Notice tone="error">{error}</Notice> : info ? <Notice tone="success">{info}</Notice> : null}
 
-      <Section title="How we reach you" hint="Turn a whole channel off here and nothing is sent that way.">
+      <Section title="How we reach you">
         {loading ? (
           <SkeletonRows rows={2} label="Loading your settings" />
         ) : (
@@ -293,12 +292,7 @@ export default function NotificationSettingsPage() {
       <PushDeviceSection snapshot={push.snapshot} copy={push.copy} reload={push.reload} />
 
       <Section
-        title="What you hear about"
-        hint={
-          push.copy?.showSwitches
-            ? "Fine tune each kind of update. A push is sent for what also shows under the bell, so it needs In app on."
-            : "Fine tune each kind of update."
-        }
+        title="What you hear about" hint={push.copy?.showSwitches ? "A push needs In app on." : undefined}
       >
         {loading ? (
           <SkeletonRows rows={Math.max(2, everyday.length)} label="Loading your settings" />

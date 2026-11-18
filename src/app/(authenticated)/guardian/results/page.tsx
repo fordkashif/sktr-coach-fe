@@ -58,7 +58,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
 
   return (
     <Screen>
-      <ScreenHeader fact={child.teamName ?? undefined} title={`${child.firstName}'s results`} lede="Competitions, results, records, goals and test weeks. Reports the coach shared are here too." />
+      <ScreenHeader fact={child.teamName ?? undefined} title={`${child.firstName}'s results`} />
 
       {error ? <Notice tone="error">{`Results could not be loaded. ${error}`}</Notice> : null}
 
@@ -69,7 +69,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
               {loading ? (
                 <SkeletonRows rows={2} />
               ) : !data || data.upcoming.length === 0 ? (
-                <EmptyState title="No competition coming up" body="Meets the coach adds for the team show here." />
+                <EmptyState title="No competition coming up" />
               ) : (
                 <List aria-label="Upcoming competitions">
                   {data.upcoming.map((meet) => (
@@ -95,11 +95,11 @@ function ChildResults({ child }: { child: GuardianChild }) {
               </Section>
             ) : null}
 
-            <Section title="Results" hint="Newest first.">
+            <Section title="Results">
               {loading ? (
                 <SkeletonRows rows={4} />
               ) : !data || data.results.length === 0 ? (
-                <EmptyState title="No results yet" body={`Marks from competitions, training and test weeks show here once ${child.firstName} or the coach adds them.`} />
+                <EmptyState title="No results yet" />
               ) : (
                 <List aria-label="Results">
                   {data.results.map((result) => (
@@ -118,7 +118,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
               {loading ? (
                 <SkeletonRows rows={3} />
               ) : !data || data.testWeeks.length === 0 ? (
-                <EmptyState title="No test week yet" body="When the coach opens a test week for the team, the tests and results show here." />
+                <EmptyState title="No test week yet" />
               ) : (
                 data.testWeeks.map((week) => (
                   <div key={week.id} className="pt-2" data-test-week={week.id}>
@@ -143,7 +143,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
         }
         side={
           <>
-            <Section title="Records" hint="Best mark in each event.">
+            <Section title="Records">
               {loading ? (
                 <SkeletonRows rows={2} />
               ) : !data || data.records.length === 0 ? (
@@ -167,7 +167,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
               {loading ? (
                 <SkeletonRows rows={2} />
               ) : !data || data.goals.length === 0 ? (
-                <EmptyState title="No goals set" body={`Goals ${child.firstName} or the coach sets show here.`} />
+                <EmptyState title="No goals set" />
               ) : (
                 <List aria-label="Goals">
                   {data.goals.map((goal) => (
@@ -182,7 +182,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
               )}
             </Section>
 
-            <Section title="Reports from the coach" hint={`Reports the coach shared with ${child.firstName}.`}>
+            <Section title="Reports from the coach">
               {!reports ? (
                 <SkeletonRows rows={1} />
               ) : reports.length === 0 ? (

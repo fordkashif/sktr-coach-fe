@@ -200,7 +200,7 @@ for (const viewport of [
       await page.goto("/coach/training-plan/maxes")
       await expect(page.getByRole("heading", { level: 1, name: "Best lifts" })).toBeVisible()
       await expect(page.locator("#main-content")).toContainText("in pounds")
-      await expect(page.locator("#main-content")).toContainText("to the nearest 5 lb")
+      await expect(page.locator("#main-content")).toContainText("round to 5 lb")
       await expect(page.getByLabel("Marcus Johnson, Back squat")).toHaveValue("408")
       await page.getByRole("button", { name: "New lift" }).click()
       await page.getByLabel("Add a lift").fill("Bench press")

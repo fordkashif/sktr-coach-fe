@@ -80,17 +80,17 @@ export default function AthleteMessagesPage() {
       {coaches !== null && coaches.length === 0 ? <Notice tone="info">You are not on a team yet, so there is no coach to message. Join a team from your profile menu.</Notice> : null}
 
       {tab === "announcements" ? (
-        <Section title="Announcements" hint="From your coach and your club. They are one way: to reply, message your coach.">
+        <Section title="Announcements">
           {announcements === null && !error ? (
             <SkeletonRows rows={3} label="Loading announcements" />
           ) : (announcements ?? []).length > 0 ? (
             <AnnouncementRows role="athlete" announcements={announcements ?? []} />
           ) : (
-            <EmptyState title="No announcements yet" body="When your coach or club has something for the whole team, like a change of time or place, it shows up here." />
+            <EmptyState title="No announcements yet" />
           )}
         </Section>
       ) : (
-        <Section title="Your coaches" hint="One to one with a coach of your team. Club admins can read these conversations.">
+        <Section title="Your coaches" hint="Club admins can read these conversations.">
           {threads === null && !error ? (
             <SkeletonRows rows={2} leading label="Loading conversations" />
           ) : (threads ?? []).length > 0 ? (
@@ -98,7 +98,6 @@ export default function AthleteMessagesPage() {
           ) : (
             <EmptyState
               title="No conversations yet"
-              body="Ask your coach about a session, or tell them how something felt."
               action={
                 canMessage ? (
                   <Button size="sm" onClick={startMessage}>

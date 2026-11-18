@@ -267,22 +267,16 @@ export function AttendanceScreen({ teamId, teamName }: { teamId: string; teamNam
 
       <Section
         title="Athletes"
-        hint={
-          rows.some((row) => row.period)
-            ? "Every tap saves. Athletes who are injured, sick or away are excused when you mark everyone."
-            : "Every tap saves. Mark everyone present, then change the ones who were not."
-        }
         meta={day ? `${marked} of ${rows.length} marked` : undefined}
         action={<SaveState state={saveState} />}
       >
         {!day ? (
           <SkeletonRows rows={6} leading label="Loading the roster" />
         ) : rows.length === 0 && squad ? (
-          <EmptyState title={`Nobody in ${squad.name} yet`} body="Choose its athletes on the team page, or show the whole team." />
+          <EmptyState title={`Nobody in ${squad.name} yet`} />
         ) : rows.length === 0 ? (
           <EmptyState
             title="Nobody on this team yet"
-            body="Add athletes to the roster first. They show up here the same day."
             action={
               <LinkButton to={backTo} size="sm">
                 Open the roster

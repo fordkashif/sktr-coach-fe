@@ -128,7 +128,7 @@ export default function CoachLiftMaxesPage() {
   }
 
   const fromResults = maxes.filter((max) => max.source === "result").length
-  const lede = `Each athlete's best single lift (1RM), in ${units.weightWord}. A plan load written as a percentage is worked out from these, to the nearest ${units.weight === "lb" ? "5 lb" : "2.5 kg"}.`
+  const lede = `1RM, in ${units.weightWord}. Percent loads round to ${units.weight === "lb" ? "5 lb" : "2.5 kg"}.`
 
   return (
     <Screen>
@@ -180,11 +180,11 @@ export default function CoachLiftMaxesPage() {
             </form>
       </Dialog>
 
-      <Section title="By athlete" hint="Type a number and move on. It saves by itself, and athletes see the new weight in sessions they have not finished." meta={athletes.length > 0 ? `${athletes.length} ${athletes.length === 1 ? "athlete" : "athletes"}` : undefined}>
+      <Section title="By athlete" meta={athletes.length > 0 ? `${athletes.length} ${athletes.length === 1 ? "athlete" : "athletes"}` : undefined}>
         {loading || coachTeamsLoading ? (
           <SkeletonRows rows={5} label="Loading best lifts" />
         ) : athletes.length === 0 ? (
-          <EmptyState title="No athletes yet" body="Athletes on your team are listed here once they are added." />
+          <EmptyState title="No athletes yet" />
         ) : (
           <>
             <EntryGrid

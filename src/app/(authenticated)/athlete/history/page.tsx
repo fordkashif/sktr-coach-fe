@@ -186,7 +186,6 @@ export default function AthleteHistoryPage() {
             <Section aria-label="Sessions">
               <EmptyState
                 title={reachedStart ? "No sessions yet" : `No sessions since ${sinceText}`}
-                body="Sessions from your plan and sessions you add yourself show up here once their day has come."
                 action={
                   <LinkButton size="sm" to="/athlete/training-plan">
                     Open your plan
@@ -198,7 +197,6 @@ export default function AthleteHistoryPage() {
             <Section aria-label="Sessions">
               <EmptyState
                 title={`No ${filterWord} sessions since ${sinceText}`}
-                body="Show all sessions, or look further back."
                 action={
                   <Button size="sm" onClick={() => setFilter("all")}>
                     Show all

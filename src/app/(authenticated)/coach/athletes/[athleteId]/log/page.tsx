@@ -151,7 +151,6 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
         <Section aria-label="No session">
           <EmptyState
             title={`No session for ${first} on this day`}
-            body="Pick another day above. Sessions come from the training plan published to their team."
             action={
               permissions.canEditPlans ? (
                 <LinkButton size="sm" to="/coach/training-plan">
@@ -213,7 +212,7 @@ function CoachLogForAthlete({ athleteId }: { athleteId: string }) {
 
           <SessionMediaSection media={media} mode="log" labels={mediaLabels} hint={`Add a photo or video of ${first} to their log.`} staff />
 
-          <Section title="How hard was it?" hint={`Ask ${first}, or leave it empty. 1 is very easy, 10 is everything they had.`}>
+          <Section title="How hard was it?" hint="1 is very easy, 10 is everything they had.">
             <EffortScale className="mt-2" label="Effort from 1 to 10" words={EFFORT_WORDS} value={log.wrapUp.rpe} onChange={(rpe) => log.updateWrapUp({ rpe })} />
             <Field label="How long did it take?" hint="In minutes. With the effort it gives the session's load. Leave it empty if you do not know." className="mt-4">
               <Input

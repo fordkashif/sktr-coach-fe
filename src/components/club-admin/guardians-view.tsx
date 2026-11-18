@@ -97,14 +97,14 @@ export function ClubGuardiansView({ onCount }: { onCount?: (count: number) => vo
     <Section
       aria-label="Guardians"
       title="Parents and guardians"
-      hint="People who can read about one athlete: the plan, results and team news. They are not staff and take no seat. A coach or a club admin invites them from the athlete's page."
+      meta="Not staff, no seat"
       data-club-guardians
     >
       {error ? <Notice tone="error">{`Guardians could not be loaded. ${error}`}</Notice> : null}
       {rows === null ? (
         <SkeletonRows rows={3} />
       ) : rows.length === 0 ? (
-        <EmptyState title="No guardian has access" body="Open an athlete from their team and choose Invite a guardian. Each guardian gets their own sign-in and sees only the athletes they were invited for." />
+        <EmptyState title="No guardian has access" />
       ) : (
         <DataTable
           caption="Parents and guardians with access, and open invites"

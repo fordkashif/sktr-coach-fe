@@ -525,7 +525,6 @@ export default function AthleteTrainingPlanPage() {
         <Section aria-label="Plan">
           <EmptyState
             title="No plan assigned yet"
-            body="When your coach publishes a training plan for you or your team, every week of it shows up here."
             action={
               <LinkButton size="sm" to="/athlete/home">
                 Back to home
@@ -565,7 +564,7 @@ export default function AthleteTrainingPlanPage() {
         {header}
         <AvailabilityNotice current={availability.current} />
         <Section aria-label="Plan">
-          <EmptyState title="No sessions in this plan yet" body="Your coach has assigned this plan but has not added any weeks or sessions to it. Check back soon." />
+          <EmptyState title="No sessions in this plan yet" />
         </Section>
         {moreSection}
         <AvailabilityDialog open={availabilityOpen} onOpenChange={setAvailabilityOpen} />

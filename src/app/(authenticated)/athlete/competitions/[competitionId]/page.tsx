@@ -273,7 +273,6 @@ export default function AthleteCompetitionDetailPage() {
           <Section title="This competition is not on your calendar">
             <EmptyState
               title="It may have been removed"
-              body="Or it belongs to another team. Your calendar shows every meet you can see."
               action={
                 <LinkButton to="/athlete/competitions" size="sm">
                   Back to competitions
@@ -345,7 +344,6 @@ export default function AthleteCompetitionDetailPage() {
       <Section
         title="Your events"
         meta={competition.entries.length > 0 ? `${entered.length} entered` : undefined}
-        hint={started && entered.some((entry) => !entry.result) ? "Tap an event to enter your result. It goes straight into your records." : undefined}
       >
         {competition.entries.length > 0 ? (
           <List>
@@ -402,7 +400,6 @@ export default function AthleteCompetitionDetailPage() {
         ) : (
           <EmptyState
             title="You are not entered in anything yet"
-            body={over ? "If you competed here, add the event and then your result." : "Add the events you are entered in. After the meet you enter your results here."}
           />
         )}
         <Button className="mt-3 self-start" size="sm" onClick={() => setAdding(true)}>
@@ -412,7 +409,7 @@ export default function AthleteCompetitionDetailPage() {
       </Section>
 
       {relays && relays.relays.length > 0 ? (
-        <Section title="Relays" hint="A relay counts for the team, not as your own record. You see the legs of the relays you run in.">
+        <Section title="Relays">
           <RelayList aria-label="Your relays at this competition" relays={relays.relays} ownAthleteId={relays.athleteId} />
         </Section>
       ) : null}

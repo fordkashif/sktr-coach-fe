@@ -160,7 +160,6 @@ export default function CoachExercisesPage() {
         ) : exercises.length === 0 ? (
           <EmptyState
             title="No exercises yet"
-            body="Exercises you save here are suggested while you type in the plan builder."
             action={
               <Button size="sm" onClick={openNew}>
                 Add the first exercise
@@ -189,13 +188,6 @@ export default function CoachExercisesPage() {
             {visible.length === 0 ? (
               <EmptyState
                 title={inView.length === 0 ? (view === "archived" ? "Nothing archived" : "No exercises in use") : "No exercise matches"}
-                body={
-                  inView.length === 0
-                    ? view === "archived"
-                      ? "Exercises you archive are kept here and can be restored."
-                      : "Every exercise is archived. Restore one or add a new one."
-                    : "Try another word or category, or add it as a new exercise."
-                }
                 action={
                   view === "active" ? (
                     <Button size="sm" onClick={openNew}>

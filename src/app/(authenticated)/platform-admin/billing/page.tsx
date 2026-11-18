@@ -214,7 +214,7 @@ export default function PlatformAdminBillingPage() {
 
   return (
     <Screen>
-      <ScreenHeader title="Club billing" lede="Every club's package, billing setup, cycle and billing contact, exactly as stored." />
+      <ScreenHeader title="Club billing" />
 
       {loadError ? (
         <Notice tone="error">
@@ -239,7 +239,6 @@ export default function PlatformAdminBillingPage() {
           <Section>
             <EmptyState
               title="No clubs to bill yet"
-              body="A club appears here once you approve its request. You will see its package, whether billing setup is done, and who to contact."
               action={
                 <LinkButton to="/platform-admin/requests" size="sm">
                   Open club requests
@@ -292,7 +291,6 @@ export default function PlatformAdminBillingPage() {
             {filtered.length === 0 ? (
               <EmptyState
                 title="No clubs match these filters"
-                body={`There are ${plural(clubs.length, "club")}, but none fit the current search and filters.`}
                 action={
                   <Button size="sm" onClick={clearFilters}>
                     Clear filters

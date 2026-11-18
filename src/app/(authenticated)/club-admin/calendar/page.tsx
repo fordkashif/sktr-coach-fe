@@ -37,7 +37,6 @@ export default function ClubAdminCalendarPage() {
       <ScreenHeader
         back={{ to: "/club-admin/dashboard", label: "Dashboard" }}
         title="Club calendar"
-        lede="Test weeks, competitions and club events of every team, with how many sessions each team has planned per day."
         actions={
           <Button variant="primary" onClick={() => setEventDialog({ event: null, day: null })}>
             <CalendarPlus className="size-5" weight="bold" aria-hidden />
@@ -80,7 +79,6 @@ export default function ClubAdminCalendarPage() {
         eventTools={{ viewer: { role: "club-admin", teamIds: [] }, teams, defaultTeamIds: teamId ? [teamId] : [] }}
         eventDialog={eventDialog}
         onEventDialogChange={setEventDialog}
-        emptyBody="Test weeks, competitions, club events and planned sessions show up here."
       />
 
       <CalendarFeedSection role="club-admin" />

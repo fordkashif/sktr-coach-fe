@@ -56,7 +56,6 @@ export default function AthleteCompetitionsPage() {
     <Screen>
       <ScreenHeader
         title="Competitions"
-        lede="Your season calendar: what is coming up, what you are entered in and how past meets went."
         actions={
           <LinkButton to="/athlete/competitions/new" variant="primary">
             <Plus className="size-[18px]" weight="bold" aria-hidden />
@@ -100,7 +99,6 @@ export default function AthleteCompetitionsPage() {
         ) : (
           <EmptyState
             title="Nothing coming up"
-            body="Meets your coach enters you in appear here. If you have entered an open meet yourself, add it so your results have a home."
             action={
               <LinkButton to="/athlete/competitions/new" size="sm">
                 Add a competition
@@ -145,7 +143,7 @@ export default function AthleteCompetitionsPage() {
             })}
           </List>
         ) : (
-          <EmptyState title="No past competitions" body="Once a meet is over it moves here with your results." />
+          <EmptyState title="No past competitions" />
         )}
       </Section>
     </Screen>

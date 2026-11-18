@@ -473,7 +473,6 @@ export default function ClubAdminBillingPage() {
               <>
                 <Section
                   title="Billing contact"
-                  hint="The person the SKTR team gets in touch with about your package."
                   action={
                     contact ? (
                       <Button variant="quiet" size="sm" className="-my-2" onClick={startEditingContact}>
@@ -558,7 +557,7 @@ export default function ClubAdminBillingPage() {
                   {requestsError ? (
                     <Notice tone="error">We could not load your package requests. {requestsError}</Notice>
                   ) : requests.length === 0 ? (
-                    <EmptyState title="No package requests yet" body="When you ask for a different package, the request and the SKTR team's decision are listed here." />
+                    <EmptyState title="No package requests yet" />
                   ) : (
                     <List aria-label="Package requests">
                       {requests.map((request) => {

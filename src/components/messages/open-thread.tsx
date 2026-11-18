@@ -37,7 +37,6 @@ export function OpenThread({ role, target }: { role: "coach" | "athlete"; target
         <Section title="This conversation cannot be opened">
           <EmptyState
             title={error}
-            body={role === "coach" ? "You can message athletes who are on a team you coach and have their own login." : "You can message the coaches of the team you are on."}
             action={
               <LinkButton to={backTo} size="sm">
                 Back to messages

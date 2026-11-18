@@ -37,7 +37,6 @@ function ChildReport({ child, reportId }: { child: GuardianChild; reportId: stri
         <Section aria-label="Report">
           <EmptyState
             title="This report is not here"
-            body={missing === "not-found" ? `It may have been removed, or it is about another athlete. Reports shared with ${child.firstName} are listed under Results.` : `Could not load it: ${missing}`}
             action={
               <LinkButton to="/guardian/results" size="sm">
                 Back to Results
