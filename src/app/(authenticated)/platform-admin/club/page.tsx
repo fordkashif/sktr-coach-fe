@@ -1,3 +1,4 @@
+import { Eye } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { DataTable, EmptyState, Fact, FactList, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, Stat, StatStrip, StatusText, Tag, type DataTableColumn } from "@/components/sk"
@@ -104,10 +105,13 @@ export default function PlatformAdminClubOverviewPage() {
       <ScreenHeader
         back={back}
         title={overview.clubName}
-        lede="For support. You see facts and counts, never an athlete's health, results, notes or messages, and you cannot act as anyone in the club."
+        lede="Facts and counts only."
       />
 
-      <Notice>Opening this screen is written to the platform activity with your email and the time.</Notice>
+      <p className="sk-visit-logged" data-visit-logged>
+        <Eye className="size-4" weight="bold" aria-hidden />
+        Your visit is logged
+      </p>
 
       <StatStrip aria-label="The last 28 days and totals">
         <Stat label="Sessions logged" value={overview.counts.sessionsLogged28d.toLocaleString()} hint="Last 28 days" />
@@ -121,9 +125,9 @@ export default function PlatformAdminClubOverviewPage() {
           <>
             <Section title="Owner and club admins">
               {overview.admins.length === 0 ? (
-                <EmptyState title="No club admin yet" body="The club admin has not signed in for the first time." />
+                <EmptyState title="No club admin yet" />
               ) : (
-                <List aria-label="Owner and club admins">
+                <List tiles aria-label="Owner and club admins">
                   {overview.admins.map((admin) => (
                     <ListRow
                       key={`${admin.email ?? admin.name}`}
@@ -146,17 +150,17 @@ export default function PlatformAdminClubOverviewPage() {
 
             <Section title="Teams" meta={`${liveTeams.length} active of ${overview.teams.length}`}>
               {overview.teams.length === 0 ? (
-                <EmptyState title="No teams yet" body="The club has not created a team." />
+                <EmptyState title="No teams yet" />
               ) : (
                 <DataTable caption="Teams with their size" columns={teamColumns} rows={overview.teams} rowKey={(team) => `${team.name}:${team.archived}`} />
               )}
             </Section>
 
-            <Section title="Recent activity" hint="From the club's own log: the kind of event, the role that did it and when. Events about messages or health are left out, and so are names.">
+            <Section title="Recent activity">
               {overview.activity.length === 0 ? (
-                <EmptyState title="Nothing in the club's log yet" body="Things like a season starting, people being invited or a package request show up here." />
+                <EmptyState title="Nothing in the club's log yet" />
               ) : (
-                <List aria-label="Recent club activity">
+                <List tiles aria-label="Recent club activity">
                   {overview.activity.map((item, index) => (
                     <ListRow
                       key={`${item.occurredAt}:${index}`}
@@ -201,7 +205,7 @@ export default function PlatformAdminClubOverviewPage() {
               </FactList>
             </Section>
 
-            <Section title="Last sign-in by role" hint="The newest sign-in of anyone with that role.">
+            <Section title="Last sign-in by role">
               <FactList>
                 {ROLE_ROWS.map((row) => (
                   <Fact key={row.role} label={row.label} empty="Never">

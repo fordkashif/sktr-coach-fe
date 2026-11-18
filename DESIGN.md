@@ -281,6 +281,13 @@ Lists and empty states:
 - Test week days carry a "Day 1" badge in the accent.
 - Leaving a team is one grey pill at the foot of the roster.
 
+Platform admin pages:
+
+- Status opens on a board of four tiles (email, reminders, push, storage), each with its icon in a circle and its state: green and a pulsing dot when working, amber when not set up, coral when it needs a look. Each part below is a grey tile; a part that is not working is outlined in its colour.
+- One club's overview says "Facts and counts only." and shows a "Your visit is logged" pill instead of a notice. Admins and recent activity are tile lists.
+- Usage and package requests keep their numbers and tables; the explaining sentences are gone (a short fact like "All clubs, 12 weeks" sits on the right of the title instead).
+- A table wider than its column scrolls inside its own box on tablet and desktop, never off the screen.
+
 Messages and notifications:
 
 - Conversations are tiles: the avatar (an accent ring while unread), the name in the scoreboard type, the last message in a bubble (the accent while unread) and the unread count in a circle that pops and breathes. Club oversight shows both people's avatars; a reported conversation is outlined in amber.

@@ -206,6 +206,7 @@ export function DataTable<Row>({
 }) {
   const [first, ...others] = columns
   return (
+    <div className="sk-table-wrap">
     <table className={cn("sk-table", className)}>
       <caption className="sr-only">{caption}</caption>
       <thead>
@@ -250,6 +251,7 @@ export function DataTable<Row>({
         })}
       </tbody>
     </table>
+    </div>
   )
 }
 

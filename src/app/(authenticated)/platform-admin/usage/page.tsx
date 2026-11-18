@@ -171,7 +171,7 @@ export default function PlatformAdminUsagePage() {
 
       <Split
         main={
-          <Section title="Sessions logged per week" hint="Every club together, the last 12 weeks. Not changed by the period above.">
+          <Section title="Sessions logged per week" meta="All clubs, 12 weeks">
             {!usage ? (
               <SkeletonRows rows={4} label="Loading the chart" />
             ) : (
@@ -190,7 +190,7 @@ export default function PlatformAdminUsagePage() {
           </Section>
         }
         side={
-          <Section title="All clubs" hint={`The last ${days} days.`}>
+          <Section title="All clubs" meta={`Last ${days} days`}>
             {!shown ? (
               <SkeletonRows rows={6} label="Loading totals" />
             ) : (
@@ -211,13 +211,13 @@ export default function PlatformAdminUsagePage() {
         }
       />
 
-      <Section title="No activity" hint={`Live clubs where nobody signed in, logged, published or messaged in the last ${days} days.`} meta={shown && atRisk.length > 0 ? plural(atRisk.length, "club") : undefined}>
+      <Section title="No activity" meta={shown && atRisk.length > 0 ? plural(atRisk.length, "club") : undefined}>
         {!shown ? (
           <SkeletonRows rows={2} label="Loading clubs with no activity" />
         ) : atRisk.length === 0 ? (
-          <EmptyState title="Every live club was active" body="A club shows up here when nobody in it signs in or does anything for the whole period." />
+          <EmptyState title="Every live club was active" />
         ) : (
-          <List aria-label="Clubs with no activity">
+          <List tiles aria-label="Clubs with no activity">
             {atRisk.map((club) => (
               <ListRow
                 key={club.tenantId}
@@ -231,11 +231,11 @@ export default function PlatformAdminUsagePage() {
         )}
       </Section>
 
-      <Section title="By club" hint="People who signed in or did something, and what the club did. Counts only. New is new athletes." meta={shown ? plural(clubs.length, "club") : undefined}>
+      <Section title="By club" meta={shown ? plural(clubs.length, "club") : undefined}>
         {!shown ? (
           <SkeletonRows rows={5} label="Loading usage by club" />
         ) : clubs.length === 0 ? (
-          <EmptyState title="No clubs yet" body="Approve a club request and its usage appears here." />
+          <EmptyState title="No clubs yet" />
         ) : (
           <DataTable caption={`Usage by club, last ${days} days`} columns={columns} rows={clubs} rowKey={(club) => club.tenantId} rowProps={(club) => ({ "data-club": club.clubName })} />
         )}
