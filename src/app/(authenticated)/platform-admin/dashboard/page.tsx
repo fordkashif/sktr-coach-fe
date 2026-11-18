@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { EmptyState, Fact, FactList, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, Stat, StatStrip, StatusDot } from "@/components/sk"
+import { EmptyState, Fact, FactList, LinkButton, List, ListRow, Notice, Pipeline, Screen, ScreenHeader, Section, SkeletonRows, Split } from "@/components/sk"
+import { CaretRight } from "@phosphor-icons/react"
 import {
   getPlatformAdminPackageUpgradeRequests,
   getPlatformAdminRequestQueue,
@@ -25,6 +26,16 @@ const EMAIL_MODE: Record<PlatformNotificationEmailStats["deliveryMode"], string>
 }
 
 /** "Kingston Striders, Bolt Academy and 2 more" */
+
+/** "2 new club requests waiting" as "New club requests waiting": the count already stands beside it. */
+function withoutCount(title: string) {
+  const rest = title.replace(/^\d+\s+/, "")
+  return rest.charAt(0).toUpperCase() + rest.slice(1)
+}
+
+/** The photo behind "Needs you" (public/images/athlete, from Unsplash). */
+const PLATFORM_PHOTO = "/images/athlete/sunrise.webp"
+
 function nameList(names: string[]) {
   if (names.length <= 2) return names.join(" and ")
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
@@ -171,13 +182,16 @@ export default function PlatformAdminDashboardPage() {
     ].filter((item) => item.count > 0)
   }, [clubNames, clubs, emailStats, requests, upgradeRequests])
 
+  const waiting = needsYou.reduce((sum, item) => sum + item.count, 0)
+  const pendingRequests = requests.filter((item) => item.status === "pending").length
+
   const recentAudit = useMemo(() => auditEvents.slice(0, 8), [auditEvents])
 
   const lede = loading
     ? "Loading the platform..."
     : size.total === 0
       ? "No clubs yet. New club requests show up here as soon as someone asks to join."
-      : `${plural(size.total, "club")}, ${size.active} active. ${needsYou.length === 0 ? "Nothing is waiting on you." : `${plural(needsYou.length, "thing")} ${needsYou.length === 1 ? "needs" : "need"} you.`}`
+      : `${plural(size.total, "club")}, ${size.active} live.`
 
   const otherStates = [size.suspended > 0 ? `${size.suspended} suspended` : null, size.cancelled > 0 ? `${size.cancelled} cancelled` : null].filter(Boolean).join(", ")
 
@@ -200,42 +214,76 @@ export default function PlatformAdminDashboardPage() {
 
       {error ? <Notice tone="error">Could not load everything: {error}</Notice> : null}
 
-      <StatStrip aria-label="Platform size">
-        <Stat label="Clubs" value={loading ? "-" : size.total} hint={otherStates || "Approved so far"} />
-        <Stat label="Active" value={loading ? "-" : size.active} hint="Setup finished" />
-        <Stat label="Onboarding" value={loading ? "-" : size.onboarding} hint="Billing done, setup not finished" />
-        <Stat label="Waiting on billing" value={loading ? "-" : size.billing} hint={size.billingFailed > 0 ? `${size.billingFailed} with failed billing` : "Approved, billing not set up"} />
-      </StatStrip>
+      {loading ? null : (
+        <section aria-labelledby="platform-needs-you" data-platform-needs-you className="sk-hero-wrap">
+          <img src={PLATFORM_PHOTO} alt="" aria-hidden className="sk-hero-photo" loading="eager" decoding="async" />
+          <div className="sk-hero sk-hero-over">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 id="platform-needs-you" className="sk-hero-label">
+                Needs you
+              </h2>
+              {needsYou.length === 0 ? <p className="sk-hero-label shrink-0">All clear</p> : null}
+            </div>
+            {needsYou.length > 0 ? (
+              <>
+                <p className="sk-hero-title">
+                  {waiting} {waiting === 1 ? "thing" : "things"} waiting
+                </p>
+                <ul className="mt-1 flex flex-col gap-2" aria-label="Needs you">
+                  {needsYou.map((item) => (
+                    <li key={item.key}>
+                      <Link to={item.to} className="group flex items-center gap-3 rounded-[18px] bg-white/12 px-4 py-3 transition-[background-color,transform] duration-200 hover:bg-white/20 active:scale-[0.98]">
+                        <span className="font-display text-[2rem] font-black leading-none tabular-nums">{item.count}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-bold leading-tight">{withoutCount(item.title)}</span>
+                          <span className="block text-sm opacity-85">{item.body}</span>
+                        </span>
+                        <CaretRight className="size-5 shrink-0 transition-transform duration-200 group-hover:translate-x-1" weight="bold" aria-hidden />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="sk-hero-title">Nothing waiting</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      <Section title="Club pipeline" meta={otherStates || undefined}>
+        <Pipeline
+          label="Clubs at each stage"
+          stages={[
+            { key: "requests", label: "New requests", count: loading ? "-" : pendingRequests, hint: "Waiting for your decision", to: "/platform-admin/requests", flag: pendingRequests > 0 },
+            { key: "billing", label: "Waiting on billing", count: loading ? "-" : size.billing, hint: size.billingFailed > 0 ? `${size.billingFailed} with failed billing` : "Approved, billing not set up", to: "/platform-admin/billing", flag: size.billingFailed > 0 },
+            { key: "onboarding", label: "Onboarding", count: loading ? "-" : size.onboarding, hint: "Billing done, setup not finished", to: "/platform-admin/tenants" },
+            { key: "active", label: "Live", count: loading ? "-" : size.active, hint: `${size.total} approved so far`, to: "/platform-admin/tenants", accent: true },
+          ]}
+        />
+      </Section>
 
       <Split
         main={
           <>
-            <Section title="Needs you" hint="New requests, unfinished setup, package changes, and invites or emails that failed." meta={loading || needsYou.length === 0 ? undefined : `${needsYou.length} open`}>
-              {loading ? (
-                <SkeletonRows rows={3} label="Loading what needs you" />
-              ) : needsYou.length > 0 ? (
-                <List aria-label="Needs you">
-                  {needsYou.map((item) => (
-                    <ListRow key={item.key} to={item.to} leading={<StatusDot tone="coral" />} title={item.title} subtitle={item.body} />
-                  ))}
-                </List>
-              ) : (
-                <EmptyState
-                  title="Nothing is waiting on you"
-                  body="New club requests, clubs that have not finished setup, package change requests and failed invites or emails show up here."
-                />
-              )}
-            </Section>
-
             <Section title="Across all clubs" hint={people ? "Counted now: teams that are not archived, active coaches and every athlete on a roster." : undefined}>
               {loading ? (
                 <SkeletonRows rows={3} label="Loading totals" />
               ) : people ? (
-                <FactList aria-label="Totals across all clubs">
-                  <Fact label="Teams">{people.teams.toLocaleString()}</Fact>
-                  <Fact label="Active coaches">{people.coaches.toLocaleString()}</Fact>
-                  <Fact label="Athletes">{people.athletes.toLocaleString()}</Fact>
-                </FactList>
+                <ul aria-label="Totals across all clubs" className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { label: "Teams", value: people.teams },
+                    { label: "Active coaches", value: people.coaches },
+                    { label: "Athletes", value: people.athletes },
+                  ].map((item) => (
+                    <li key={item.label} className="sk-tile-item">
+                      <span className="sk-tile flex h-full flex-col p-4">
+                        <span className="text-sm font-bold text-sk-mute">{item.label}</span>
+                        <span className="mt-1 font-display text-[2.5rem] font-black leading-none tabular-nums text-sk-ink">{item.value.toLocaleString()}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <EmptyState
                   title="Live totals are not available"

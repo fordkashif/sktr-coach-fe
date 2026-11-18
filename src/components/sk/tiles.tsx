@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Ring } from "./motion"
 import { Avatar } from "./status"
+import { CaretRight } from "@phosphor-icons/react"
 
 /*
  * Tiles of the "Stopwatch" skin for the coach side (DESIGN.md, Coach screens). Grey tiles on white,
@@ -320,5 +321,58 @@ export function AttendanceTile({ attended, marks }: { attended: number; marks: A
         </ol>
       </div>
     </div>
+  )
+}
+
+/**
+ * Pipeline: stages one after another (a club asks, is approved, sets up billing, goes live) as
+ * numbered tiles joined by arrows. Each shows how many are at that stage, with a bar for its share
+ * of the busiest stage. `flag` outlines a stage that needs someone in amber.
+ */
+export function Pipeline({
+  label,
+  stages,
+}: {
+  label: string
+  stages: Array<{ key: string; label: string; count: number | string; hint?: ReactNode; to?: string; flag?: boolean; accent?: boolean }>
+}) {
+  const counts = stages.map((stage) => (typeof stage.count === "number" ? stage.count : 0))
+  const peak = Math.max(1, ...counts)
+  return (
+    <ol aria-label={label} className="grid grid-cols-2 gap-2.5 lg:grid-cols-4 lg:gap-3" data-pipeline>
+      {stages.map((stage, index) => {
+        const share = typeof stage.count === "number" ? stage.count / peak : 0
+        const body = (
+          <>
+            <span className="flex items-center gap-2">
+              <span className={cn("grid size-7 place-items-center rounded-full text-[0.8125rem] font-extrabold", stage.accent ? "bg-white/20" : "bg-white text-sk-ink")}>{index + 1}</span>
+              <span className={cn("text-sm font-bold", stage.accent ? "" : "text-sk-mute")}>{stage.label}</span>
+            </span>
+            <span className="mt-3 block font-display text-[3rem] font-black leading-[0.85] tabular-nums">{stage.count}</span>
+            {stage.hint ? <span className={cn("mt-1 block text-[0.8125rem] leading-snug", stage.accent ? "opacity-85" : "text-sk-mute")}>{stage.hint}</span> : null}
+            <span className={cn("mt-auto block h-1.5 w-full overflow-hidden rounded-full pt-0", stage.accent ? "bg-white/25" : "bg-white")}>
+              <span className={cn("sk-anim-grow block h-full rounded-full", stage.accent ? "bg-white" : stage.flag ? "bg-sk-amber" : "bg-sk-ink")} style={{ width: `${Math.round(share * 100)}%`, animationDelay: `${index * 120}ms` }} />
+            </span>
+          </>
+        )
+        const className = cn("sk-tile relative flex h-full min-h-[168px] flex-col gap-0 p-4", stage.accent && "sk-tile-accent", stage.flag && !stage.accent && "sk-tile-flag")
+        return (
+          <li key={stage.key} className="sk-tile-item relative" style={{ animationDelay: `${index * 80}ms` }}>
+            {stage.to ? (
+              <Link to={stage.to} className={className}>
+                {body}
+              </Link>
+            ) : (
+              <span className={className}>{body}</span>
+            )}
+            {index < stages.length - 1 ? (
+              <span aria-hidden className="sk-pipeline-arrow absolute -right-[13px] top-1/2 z-10 hidden size-6 -translate-y-1/2 place-items-center rounded-full bg-white text-sk-ink shadow-[0_2px_8px_rgb(14_17_22/0.18)] lg:grid">
+                <CaretRight className="size-3.5" weight="bold" />
+              </span>
+            ) : null}
+          </li>
+        )
+      })}
+    </ol>
   )
 }

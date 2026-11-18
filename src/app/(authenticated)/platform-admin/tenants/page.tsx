@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { DownloadSimple } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
+import { cn } from "@/lib/utils"
 import {
+  Avatar,
   Button,
-  DataTable,
   EmptyState,
   Fact,
   FactList,
@@ -24,10 +25,9 @@ import {
   StatusText,
   SubSection,
   SubSections,
-  TableSub,
   Tag,
   Textarea,
-  type DataTableColumn,
+  TileGrid,
 } from "@/components/sk"
 import { ClosedClubsSection } from "@/components/platform-admin/closed-clubs-section"
 import { getPackageById, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
@@ -380,71 +380,6 @@ export default function PlatformAdminTenantsPage() {
     })
   }
 
-  const columns: Array<DataTableColumn<PlatformClubRecord>> = [
-    {
-      key: "club",
-      header: "Club",
-      cell: (club) => (
-        <>
-          <button
-            type="button"
-            className="cursor-pointer rounded-[6px] text-left font-bold text-sk-ink hover:text-sk-blue-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-            aria-label={`Open ${club.organizationName}`}
-            onClick={(event) => {
-              event.stopPropagation()
-              openClub(club.id)
-            }}
-          >
-            <span className="break-words">{club.organizationName}</span>
-          </button>
-          {club.region ? <TableSub>{club.region}</TableSub> : null}
-        </>
-      ),
-    },
-    { key: "package", header: "Package", cell: (club) => packageLabel(club.requestedPlan) },
-    {
-      key: "admin",
-      header: "Club admin",
-      phone: "plain",
-      cell: (club) => (
-        <span className="min-w-0">
-          <span className="block text-sk-ink">{club.requestorName}</span>
-          <span className="block break-all text-sm text-sk-mute">{club.requestorEmail}</span>
-        </span>
-      ),
-    },
-    {
-      key: "size",
-      header: sizes ? "Size now" : "Expected at sign-up",
-      cell: (club) => {
-        const live = liveSizeOf(club, sizes)
-        // Live counts when the platform has them. A club with no workspace yet only has its sign-up numbers.
-        const text = live ? liveSizeText(live) : expectedSize(club)
-        return text ? (
-          <>
-            {text}
-            {!live && sizes ? <span className="block text-sm text-sk-mute">Expected at sign-up</span> : null}
-          </>
-        ) : (
-          <span className="text-sk-mute">Not given</span>
-        )
-      },
-    },
-    { key: "created", header: "Created", phone: "hide", cell: (club) => <time dateTime={club.createdAt}>{formatLocalDate(club.createdAt)}</time> },
-    {
-      key: "status",
-      header: "Status",
-      phone: "trailing",
-      cell: (club) => {
-        const state = lifecycleOf(club)
-        return (
-          <Tag tone={LIFECYCLE_META[state].tone} className="whitespace-nowrap">
-            {LIFECYCLE_META[state].label}
-          </Tag>
-        )
-      },
-    },
-  ]
 
   const lede = loading
     ? "Every club, with its package, status and size."
@@ -550,13 +485,47 @@ export default function PlatformAdminTenantsPage() {
               }
             />
           ) : (
-            <DataTable
-              caption={`Clubs${filtersActive ? ", filtered" : ""}`}
-              columns={columns}
-              rows={visibleClubs}
-              rowKey={(club) => club.id}
-              rowProps={(club) => ({ "data-club": club.organizationName, onClick: () => openClub(club.id) })}
-            />
+            <TileGrid label={`Clubs${filtersActive ? ", filtered" : ""}`} wide>
+              {visibleClubs.map((club, index) => {
+                const state = lifecycleOf(club)
+                const live = liveSizeOf(club, sizes)
+                const size = live ? liveSizeText(live) : expectedSize(club)
+                return (
+                  <li key={club.id} className="sk-tile-item" style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
+                    <button
+                      type="button"
+                      data-club={club.organizationName}
+                      aria-label={`Open ${club.organizationName}`}
+                      onClick={() => openClub(club.id)}
+                      className={cn(
+                        "sk-tile group flex h-full w-full cursor-pointer flex-col gap-3 p-4 text-left hover:-translate-y-[3px] hover:shadow-[0_14px_28px_-16px_rgb(14_17_22/0.35)] active:scale-[0.97]",
+                        state === "billing_failed" || state === "suspended" ? "sk-tile-flag" : null,
+                      )}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <Avatar name={club.organizationName} size="lg" className="bg-sk-ink text-white" />
+                        <Tag tone={LIFECYCLE_META[state].tone} className="whitespace-nowrap">
+                          {LIFECYCLE_META[state].label}
+                        </Tag>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-display text-[1.625rem] font-black uppercase leading-[0.92] text-sk-ink">{club.organizationName}</span>
+                        <span className="mt-1 block text-sm text-sk-mute">{[club.region, `${packageLabel(club.requestedPlan)} package`].filter(Boolean).join(", ")}</span>
+                      </span>
+                      <span className="mt-auto flex items-end justify-between gap-3 border-t border-white pt-3 text-sm">
+                        <span className="min-w-0">
+                          <span className="block truncate font-semibold text-sk-ink">{club.requestorName}</span>
+                          <span className="block truncate text-sk-mute">{size ?? "Size not given"}</span>
+                        </span>
+                        <time dateTime={club.createdAt} className="shrink-0 text-[0.8125rem] text-sk-mute">
+                          {formatLocalDate(club.createdAt)}
+                        </time>
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </TileGrid>
           )}
         </Section>
       )}
