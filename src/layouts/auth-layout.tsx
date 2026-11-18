@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from "react"
+import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { Timer } from "@phosphor-icons/react"
 import { Link, Outlet } from "react-router-dom"
 import { Screen } from "@/components/sk"
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support"
@@ -18,7 +19,7 @@ export function AuthBrand({ className }: { className?: string }) {
     <Link
       to="/login"
       className={cn(
-        "inline-flex min-h-11 items-center gap-2.5 self-start rounded-lg text-lg font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue",
+        "inline-flex min-h-11 items-center gap-2.5 self-start rounded-lg font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue",
         className,
       )}
     >
@@ -131,23 +132,83 @@ export function TrackArt({ className }: { className?: string }) {
   )
 }
 
-/** The blue panel of the public pages: one plain line about the product over the track drawing. */
+/** The photo on the public pages (public/images/athlete, from Unsplash): starting blocks. */
+const PANEL_PHOTO = "/images/athlete/blocks-tall.webp"
+
+/**
+ * FinishClock: a race clock that runs up to a time and stops on it, then a "New best" stamp lands.
+ * It runs once when the page opens; with less motion asked for, it shows the time at once.
+ */
+function FinishClock({ to = 10.28 }: { to?: number }) {
+  const [shown, setShown] = useState(0)
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setShown(to)
+      setDone(true)
+      return
+    }
+    let frame = 0
+    const started = performance.now()
+    const run = (now: number) => {
+      const share = Math.min(1, (now - started) / 1600)
+      setShown(to * (1 - Math.pow(1 - share, 3)))
+      if (share < 1) frame = requestAnimationFrame(run)
+      else setDone(true)
+    }
+    const wait = window.setTimeout(() => (frame = requestAnimationFrame(run)), 350)
+    return () => {
+      window.clearTimeout(wait)
+      cancelAnimationFrame(frame)
+    }
+  }, [to])
+  return (
+    <div className="sk-finish-clock inline-flex items-center gap-3 rounded-[22px] bg-white px-4 py-3 text-sk-ink shadow-[0_18px_40px_-20px_rgb(14_17_22/0.6)]" aria-hidden>
+      <span className="grid size-10 place-items-center rounded-full bg-sk-accent text-sk-on-accent">
+        <Timer className="size-5" weight="bold" />
+      </span>
+      <span>
+        <span className="block text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Lane 4, 100m</span>
+        <span className="block font-display text-[2.25rem] font-black leading-none tabular-nums">{shown.toFixed(2)}</span>
+      </span>
+      <span className={cn("rounded-full bg-sk-accent px-2.5 py-1 text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-on-accent transition-all duration-300", done ? "scale-100 opacity-100" : "scale-50 opacity-0")}>New best</span>
+    </div>
+  )
+}
+
+/** The panel of the public pages: a photo, a race clock on it, and one plain line about the product on an accent card. */
 function BrandPanel({ headline, body, compact = false }: { headline: string[]; body?: ReactNode; compact?: boolean }) {
   return (
-    <div className={cn("relative isolate overflow-hidden bg-sk-blue text-white", compact ? "min-h-[400px] rounded-3xl" : "h-full rounded-[28px]")}>
-      <TrackArt className={cn("absolute bottom-0 right-0 -z-10 aspect-square max-w-full", compact ? "h-[270px]" : "h-[66%]")} />
-      <div className={compact ? "p-6" : "p-9 xl:p-12"}>
-        <p className={cn("font-extrabold tracking-[-0.045em]", compact ? "text-[2.125rem] leading-[1.02]" : "text-[2.75rem] leading-none xl:text-[3.75rem] xl:leading-[0.98]")}>
+    <div className={cn("sk-brand-panel relative isolate flex flex-col justify-between overflow-hidden bg-sk-sw-grey", compact ? "min-h-[420px] rounded-[26px] p-4" : "h-full rounded-[30px] p-6 xl:p-8")}>
+      <img src={PANEL_PHOTO} alt="" aria-hidden className="sk-hero-photo absolute inset-0 -z-10 size-full object-cover" decoding="async" />
+      <div className="flex justify-end">
+        <FinishClock />
+      </div>
+      <div className={cn("sk-brand-card rounded-[24px] bg-sk-accent text-sk-on-accent", compact ? "p-5" : "p-7 xl:p-9")}>
+        <p className={cn("font-display font-black uppercase", compact ? "text-[2.5rem] leading-[0.9]" : "text-[3.5rem] leading-[0.88] xl:text-[4.5rem]")}>
           {headline.map((line) => (
             <span key={line} className="block">
               {line}
             </span>
           ))}
         </p>
-        {body && !compact ? <p className="mt-5 max-w-[34ch] text-[1.0625rem] leading-relaxed text-white/90 xl:text-lg">{body}</p> : null}
+        {body && !compact ? <p className="mt-4 max-w-[38ch] text-[1.0625rem] leading-relaxed opacity-90">{body}</p> : null}
       </div>
     </div>
   )
+}
+
+/** Puts the skin on the page and on <html> (dialogs open outside it) while a public page is open. */
+function useStopwatchSkin() {
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const had = root.dataset.skin
+    root.dataset.skin = "stopwatch"
+    return () => {
+      if (had) root.dataset.skin = had
+      else delete root.dataset.skin
+    }
+  }, [])
 }
 
 /**
@@ -168,8 +229,9 @@ export function AuthSplit({
   wide?: boolean
   children: ReactNode
 }) {
+  useStopwatchSkin()
   return (
-    <div className="min-h-dvh bg-white lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
+    <div data-skin="stopwatch" className="min-h-dvh bg-white lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
       <main className={cn("mx-auto flex w-full min-w-0 flex-col pt-3 lg:pt-0", wide ? "max-w-[720px]" : "max-w-[560px]")}>
         <Screen width="narrow" className={cn("flex-1", !wide && "lg:justify-center")}>
           <AuthBrand />
@@ -194,8 +256,9 @@ export function AuthSplit({
  * chrome: the brand, the page's kit parts, the footer. The same shape as the invite pages.
  */
 export function PublicFrame({ children, width = "narrow" }: { children: ReactNode; width?: "narrow" | "reading" }) {
+  useStopwatchSkin()
   return (
-    <div className="min-h-dvh bg-white">
+    <div data-skin="stopwatch" className="min-h-dvh bg-white">
       <main className={cn("mx-auto w-full py-3 sm:py-8", width === "reading" ? "max-w-[720px]" : "max-w-[560px]")}>
         <Screen width="narrow">
           <AuthBrand />

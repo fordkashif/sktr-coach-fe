@@ -83,7 +83,7 @@
 }
 
 @theme inline {
-  --font-sans: "Outfit Variable", "Outfit", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Sora Variable", "Sora", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -139,7 +139,7 @@
 
 /* ------------------------------------------------------------------
    SKTR Coach visual system v2: "Clean lists". See DESIGN.md.
-   White page, hairlines, type does the work. Light only, Outfit only.
+   White page, hairlines, type does the work. Light only. Sora for words, Big Shoulders Display for titles and numbers.
    No bordered section boxes, no drop shadows, no grey canvas.
 ------------------------------------------------------------------- */
 :root {
@@ -227,7 +227,8 @@ body {
 }
 
 body {
-  font-family: "Outfit Variable", "Outfit", system-ui, sans-serif;
+  font-family: "Sora Variable", "Sora", system-ui, sans-serif;
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   color: var(--sk-ink);
 }
@@ -539,8 +540,8 @@ body {
   --sk-accent-on-ink: #9db3ff;
   --sk-sw-ink: #0e1116;
   --sk-sw-grey: #f2f3ee;
-  --sk-font-display: "Big Shoulders Display", "Outfit Variable", sans-serif;
-  --sk-font-body: "Sora Variable", "Sora", "Outfit Variable", system-ui, sans-serif;
+  --sk-font-display: "Big Shoulders Display", "Sora Variable", sans-serif;
+  --sk-font-body: "Sora Variable", "Sora", system-ui, sans-serif;
 }
 
 @theme inline {
@@ -822,7 +823,7 @@ body {
 /* Desktop top bar under the skin: the accent pill slides to the open destination. */
 [data-skin="stopwatch"] [data-shell-tabs] > a { position: relative; z-index: 1; background: transparent !important; transition: color 0.3s ease, transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1); }
 [data-skin="stopwatch"] [data-shell-tabs] > a[aria-current="page"] { color: var(--sk-on-accent); font-weight: 700; }
-/* Sora runs wider than Outfit: below 1440px the tabs tighten so the bar stays on one row with the team switcher. */
+/* Sora runs wide: below 1440px the tabs tighten so the bar stays on one row with the team switcher. */
 @media (max-width: 1439px) {
   [data-skin="stopwatch"] [data-shell-tabs] > a { padding-inline: 0.625rem; font-size: 0.875rem; }
 }
@@ -867,3 +868,37 @@ body {
 [data-skin="stopwatch"] [data-sk-chip]:active { transform: scale(0.93); }
 [data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] { background: var(--sk-sw-ink); color: #fff; }
 [data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] span { color: rgb(255 255 255 / 0.75); }
+
+/* Profile menu and the phone's More sheet: they spring open and their parts land one after another. */
+@keyframes sk-menu-in { from { opacity: 0; transform: translateY(-8px) scale(0.92) } to { opacity: 1; transform: none } }
+@keyframes sk-more-in { 0% { opacity: 0; transform: translateY(16px) scale(0.9) } 65% { opacity: 1; transform: translateY(-3px) scale(1) } 100% { opacity: 1; transform: none } }
+.sk-menu { transform-origin: var(--radix-dropdown-menu-content-transform-origin, top right); }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-menu[data-state="open"] { animation: sk-menu-in 0.26s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+  .sk-menu[data-state="open"] .sk-menu-card { animation: sk-rise 0.35s ease-out 0.05s both; }
+  .sk-menu[data-state="open"] .sk-menu-item { animation: sk-rise 0.3s ease-out both; }
+  .sk-menu[data-state="open"] .sk-menu-item:nth-of-type(2) { animation-delay: 40ms; }
+  .sk-menu[data-state="open"] .sk-menu-item:nth-of-type(3) { animation-delay: 80ms; }
+  .sk-menu[data-state="open"] .sk-menu-item:nth-of-type(n + 4) { animation-delay: 120ms; }
+  .sk-more-item { animation: sk-more-in 0.45s ease-out both; }
+}
+.sk-menu-item:active { transform: scale(0.97); }
+/* Titles of sheets and dialogs under the skin: scoreboard type like the screens. */
+[data-skin="stopwatch"] [data-sk-overlay-title] { font-family: var(--font-display); font-weight: 900; text-transform: uppercase; font-size: 1.875rem; line-height: 0.95; letter-spacing: 0; }
+/* The sign out mark pops in and sends out a soft ring, then the arrow leans toward the door. */
+@keyframes sk-signout-ring { 0% { transform: scale(1); opacity: 0.9 } 100% { transform: scale(1.5); opacity: 0 } }
+@keyframes sk-signout-lean { 0%, 100% { transform: translateX(0) } 50% { transform: translateX(5px) } }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-signout-mark { animation: sk-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) 0.08s both; }
+  .sk-signout-mark > span { animation: sk-signout-ring 1.6s ease-out 0.5s infinite; }
+  .sk-signout-mark > svg { animation: sk-signout-lean 1.4s ease-in-out 0.6s infinite; }
+}
+/* The public pages' panel: the photo fades in, the clock drops in, the card rises. */
+@media (prefers-reduced-motion: no-preference) {
+  .sk-brand-panel .sk-finish-clock { animation: sk-menu-in 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) 0.2s both; }
+  .sk-brand-panel .sk-brand-card { animation: sk-rise 0.6s ease-out 0.1s both; }
+  .sk-brand-panel .sk-hero-photo { animation: sk-photo-in 1.1s ease-out both; }
+}
+/* Sub headings under the skin: scoreboard type too, so no heading is left in the body font. */
+[data-skin="stopwatch"] h3 { font-family: var(--sk-font-display); font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; }
+[data-skin="stopwatch"] h3.text-base { font-size: 1.375rem; line-height: 1; }

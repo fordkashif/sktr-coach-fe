@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { ArrowLeft, ArrowRight, Buildings, PersonSimpleRun, ShieldCheck, Strategy, UsersThree, type Icon } from "@phosphor-icons/react"
 import { InviteSteps } from "@/components/auth/invite-frame"
-import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, ListRow, Notice, PasswordInput, RadioRow, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
+import { Button, CheckRow, Field, FormGrid, Input, LinkButton, List, Notice, PasswordInput, RadioRow, ScreenHeader, Section, Select, Textarea } from "@/components/sk"
 import { AuthSplit } from "@/layouts/auth-layout"
 import { safeReturnPath } from "@/lib/return-path"
 import { describeAccessRequestError, describeAuthLinkError, describeNoAccessError, describeSignInError } from "@/lib/auth-errors"
@@ -710,18 +710,26 @@ export default function LoginPage() {
 
           {!isSupabaseMode ? (
             <Section title="Try the demo" hint="Open a sample club as any role. Nothing here touches real data.">
-              <List>
-                {demoAccounts.map((account) => (
-                  <ListRow
-                    key={account.key}
-                    leading={<account.icon className="size-6 text-sk-blue" weight="bold" aria-hidden />}
-                    title={account.label}
-                    subtitle={account.hint}
-                    disabled={!demoCredentials || isSigningIn}
-                    onClick={() => handleDemoSignIn(account.key)}
-                  />
+              <ul className="grid grid-cols-2 gap-2.5 pt-1" aria-label="Demo roles">
+                {demoAccounts.map((account, index) => (
+                  <li key={account.key} className="sk-tile-item" style={{ animationDelay: `${index * 60}ms` }}>
+                    <button
+                      type="button"
+                      disabled={!demoCredentials || isSigningIn}
+                      onClick={() => handleDemoSignIn(account.key)}
+                      className="sk-tile group flex h-full w-full cursor-pointer flex-col gap-3 p-4 text-left hover:-translate-y-[3px] hover:shadow-[0_14px_28px_-16px_rgb(14_17_22/0.35)] active:scale-[0.97] disabled:cursor-default disabled:opacity-60"
+                    >
+                      <span className="grid size-11 place-items-center rounded-full bg-white text-sk-ink transition-[transform,background-color,color] duration-300 group-hover:rotate-[-8deg] group-hover:scale-110 group-hover:bg-sk-accent group-hover:text-sk-on-accent">
+                        <account.icon className="size-6" weight="bold" aria-hidden />
+                      </span>
+                      <span>
+                        <span className="block font-display text-[1.375rem] font-black uppercase leading-none text-sk-ink">{account.label}</span>
+                        <span className="mt-1 block text-[0.8125rem] leading-snug text-sk-mute">{account.hint}</span>
+                      </span>
+                    </button>
+                  </li>
                 ))}
-              </List>
+              </ul>
             </Section>
           ) : null}
         </>

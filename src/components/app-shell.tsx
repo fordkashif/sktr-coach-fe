@@ -2,6 +2,8 @@
 
 import {
   ArrowLeft,
+  BellRinging,
+  CaretRight,
   Briefcase,
   Buildings,
   CalendarBlank,
@@ -17,11 +19,14 @@ import {
   Megaphone,
   Plus,
   Receipt,
+  SignOut,
   SquaresFour,
   Timer,
   Tray,
   TrendUp,
   User,
+  UserCircle,
+  UserPlus,
   UsersThree,
 } from "@phosphor-icons/react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
@@ -47,7 +52,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, List, ListRow, Sheet, SlideMarker } from "@/components/sk"
+import { Avatar, Sheet, SlideMarker } from "@/components/sk"
 import { PlatformNoticeBanner } from "@/components/ops/platform-notice-banner"
 import { InstallBanner } from "@/components/install-banner"
 import { PLATFORM_HOME_PATHS } from "@/components/ops/platform-tabs"
@@ -319,46 +324,76 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const coachTeamIdList = useMemo(() => coachTeams.map((team) => team.id), [coachTeams])
   const messagesButton = showChrome && messagesLink ? <MessagesButton to={messagesLink.href} active={isLinkActive(messagesLink)} /> : null
 
-  const menuItem = "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold text-sk-ink focus:bg-sk-soft"
+  const menuItem = "sk-menu-item group flex min-h-12 cursor-pointer items-center gap-3 rounded-[16px] px-2 text-[0.9375rem] font-semibold text-sk-ink outline-none focus:bg-sk-sw-grey data-[highlighted]:bg-sk-sw-grey"
+  const menuIcon = "grid size-9 shrink-0 place-items-center rounded-full bg-sk-sw-grey text-sk-ink transition-transform duration-200 group-hover:scale-110 group-focus:bg-white"
   const profileMenu = (size: "md" | "lg") => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
+          className="cursor-pointer rounded-full transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
           aria-label="Open profile menu"
         >
           <Avatar name={displayName} src={avatarUrl} size={size} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="w-64 rounded-2xl border-sk-line-strong bg-white p-1.5">
+      <DropdownMenuContent align="end" sideOffset={10} className="sk-menu w-[19rem] rounded-[26px] border-0 bg-white p-2 shadow-[0_28px_56px_-24px_rgb(14_17_22/0.45),0_0_0_1px_rgb(14_17_22/0.06)]" data-profile-menu>
         {/* Phone: the app bar has no room for the club, so it leads the menu. */}
         {size === "lg" ? <MenuClubBrand /> : null}
-        <div className="px-3 pb-2 pt-2">
-          <p className="truncate text-base font-bold text-sk-ink">{displayName}</p>
-          <p className="truncate text-sm text-sk-mute">{userEmail ?? getRoleLabel(role)}</p>
+        <div className="sk-menu-card flex items-center gap-3 rounded-[20px] bg-sk-accent p-3 text-sk-on-accent">
+          <span className="shrink-0 rounded-full bg-white p-[3px]">
+            <Avatar name={displayName} src={avatarUrl} size="lg" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-display text-[1.375rem] font-black uppercase leading-none">{displayName}</p>
+            <p className="mt-1 truncate text-[0.8125rem] opacity-85">{userEmail ?? getRoleLabel(role)}</p>
+            <p className="mt-1.5 inline-block rounded-full bg-white/20 px-2.5 py-0.5 text-[0.6875rem] font-extrabold uppercase tracking-[0.04em]">{getRoleLabel(role)}</p>
+          </div>
         </div>
-        <div className="my-1 h-px bg-sk-line" />
-        <DropdownMenuItem asChild className={menuItem}>
-          <Link to={accountHref}>Your account</Link>
-        </DropdownMenuItem>
-        {role === "athlete" && athleteOnTeam === false ? (
+        <div className="mt-1.5 flex flex-col gap-0.5">
           <DropdownMenuItem asChild className={menuItem}>
-            <Link to="/athlete/join">Join a team</Link>
+            <Link to={accountHref}>
+              <span className={menuIcon}>
+                <UserCircle className="size-5" weight="bold" aria-hidden />
+              </span>
+              <span className="flex-1">Your account</span>
+              <CaretRight className="size-4 text-sk-mute transition-transform duration-200 group-hover:translate-x-0.5" weight="bold" aria-hidden />
+            </Link>
           </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem asChild className={menuItem}>
-          <Link to="/settings/notifications">Notification settings</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className={menuItem}
-          onSelect={() => {
-            // After the menu has closed, so the dialog takes focus cleanly.
-            window.setTimeout(() => setSignOutOpen(true), 0)
-          }}
-        >
-          Sign out
-        </DropdownMenuItem>
+          {role === "athlete" && athleteOnTeam === false ? (
+            <DropdownMenuItem asChild className={menuItem}>
+              <Link to="/athlete/join">
+                <span className={menuIcon}>
+                  <UserPlus className="size-5" weight="bold" aria-hidden />
+                </span>
+                <span className="flex-1">Join a team</span>
+                <CaretRight className="size-4 text-sk-mute transition-transform duration-200 group-hover:translate-x-0.5" weight="bold" aria-hidden />
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild className={menuItem}>
+            <Link to="/settings/notifications">
+              <span className={menuIcon}>
+                <BellRinging className="size-5" weight="bold" aria-hidden />
+              </span>
+              <span className="flex-1">Notification settings</span>
+              <CaretRight className="size-4 text-sk-mute transition-transform duration-200 group-hover:translate-x-0.5" weight="bold" aria-hidden />
+            </Link>
+          </DropdownMenuItem>
+          <div className="mx-2 my-1 h-px bg-sk-line" />
+          <DropdownMenuItem
+            className={cn(menuItem, "text-sk-coral-ink")}
+            onSelect={() => {
+              // After the menu has closed, so the dialog takes focus cleanly.
+              window.setTimeout(() => setSignOutOpen(true), 0)
+            }}
+          >
+            <span className={cn(menuIcon, "bg-sk-coral-tint text-sk-coral-ink")}>
+              <SignOut className="size-5" weight="bold" aria-hidden />
+            </span>
+            Sign out
+          </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -367,7 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const brand = (
     <Link
       to={homeHref}
-      className="shrink-0 rounded-[6px] text-xl font-extrabold tracking-[-0.03em] text-sk-blue focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue"
+      className="shrink-0 rounded-[6px] font-display text-[1.625rem] font-black uppercase leading-none text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sk-blue"
     >
       SKTR Coach
     </Link>
@@ -572,23 +607,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {moreLinks.length > 0 ? (
         <Sheet open={moreOpen} onOpenChange={setMoreOpen} side="bottom" title="More">
-          <List>
-            {moreLinks.map((link) => {
+          <ul className="grid grid-cols-2 gap-2.5" aria-label="More destinations">
+            {moreLinks.map((link, index) => {
               const LinkIcon = link.icon
               const isActive = isLinkActive(link)
               return (
-                <ListRow
-                  key={link.id}
-                  to={link.href}
-                  onNavigate={() => setMoreOpen(false)}
-                  aria-current={isActive ? "page" : undefined}
-                  leading={<LinkIcon className={cn("size-6", isActive ? "text-sk-blue" : "text-sk-ink-2")} weight={isActive ? "fill" : "regular"} aria-hidden />}
-                  title={link.label}
-                  trailing={link.id === MESSAGES_ID ? <MessagesCount /> : undefined}
-                />
+                <li key={link.id} className="sk-more-item" style={{ animationDelay: `${60 + index * 50}ms` }}>
+                  <Link
+                    to={link.href}
+                    onClick={() => setMoreOpen(false)}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn(
+                      "group relative flex min-h-[112px] flex-col justify-between rounded-[22px] p-4 transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue",
+                      isActive ? "bg-sk-accent text-sk-on-accent" : "bg-sk-sw-grey text-sk-ink",
+                    )}
+                  >
+                    <span className={cn("grid size-11 place-items-center rounded-full transition-transform duration-300 group-hover:rotate-[-8deg] group-hover:scale-110", isActive ? "bg-white/20" : "bg-white")}>
+                      <LinkIcon className="size-6" weight={isActive ? "fill" : "bold"} aria-hidden />
+                    </span>
+                    <span className="flex items-end justify-between gap-2">
+                      <span className="font-display text-[1.375rem] font-black uppercase leading-none">{link.label}</span>
+                      {link.id === MESSAGES_ID ? <MessagesCount /> : null}
+                    </span>
+                  </Link>
+                </li>
               )
             })}
-          </List>
+          </ul>
         </Sheet>
       ) : null}
 
