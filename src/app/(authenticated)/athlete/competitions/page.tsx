@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
+import { NextMeetTile } from "@/components/athlete/next-meet-tile"
 import { meetDatesText, ordinal, ProgressTabs } from "@/components/athlete/results-parts"
 import { DayLabel, EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText } from "@/components/sk"
 import { getCompetitionsForCurrentAthlete, splitCompetitions } from "@/lib/data/competition/competition-data"
@@ -71,8 +72,11 @@ export default function AthleteCompetitionsPage() {
         {loading ? (
           <SkeletonRows rows={2} leading label="Loading competitions" />
         ) : upcoming.length > 0 ? (
-          <List>
-            {upcoming.map((competition) => {
+          <>
+          <NextMeetTile competition={upcoming[0]} today={today} />
+          {upcoming.length > 1 ? (
+          <List className="mt-3" aria-label="After that">
+            {upcoming.slice(1).map((competition) => {
               const entered = competition.entries.filter((entry) => entry.status === "entered")
               return (
                 <ListRow
@@ -91,6 +95,8 @@ export default function AthleteCompetitionsPage() {
               )
             })}
           </List>
+          ) : null}
+          </>
         ) : (
           <EmptyState
             title="Nothing coming up"

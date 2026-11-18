@@ -215,6 +215,15 @@ The athlete, coach, club admin and parent or guardian sides have to feel like a 
   - opening: sheets spring up from the bottom, dialogs pop, a rest or stopwatch pops into the bar;
   - finishing: `Celebrate` (a accent tick that draws itself in a burst) when a session is done, `PbMoment` after a new personal best.
 
+Athlete screens beyond Home and the log:
+
+- Plan: the week leads as the accent card over a photo: sessions done as the title and in a ring, the focus, and the block as `WeekSegments` (on the accent: weeks gone white, this week ink).
+- Progress: the event with the most wind legal marks this season gets `Bars`, mark by mark. The next competition is `NextMeetTile` (`src/components/athlete/next-meet-tile.tsx`): the accent tile with the events as chips and the days to go.
+- Records: each event is a scoreboard tile with the best mark big, a "PB this season" chip, and where and when under it.
+- Competitions: the next meet is `NextMeetTile`, the rest a list under it.
+- Goals: each goal has its progress in a `Ring` beside it.
+- Profile: the athlete card (accent, slow turning lane rings): sessions done in a ring, the team and main event, readiness and the last check-in.
+
 Coach screens (same skin, plus tiles from `@/components/sk`, file `tiles.tsx`):
 
 - Desktop top bar: the accent pill slides to the open destination (`SlideMarker` in the bar).

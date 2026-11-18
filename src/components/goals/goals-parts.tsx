@@ -3,7 +3,7 @@
 import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { UNIT_WORDS } from "@/components/athlete/results-parts"
-import { ActionRow, Button, Dialog, Field, FormGrid, InlineConfirm, Input, List, Meter, Notice, RowMenu, Select, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
+import { ActionRow, Button, Dialog, Field, FormGrid, InlineConfirm, Input, List, Meter, Notice, Ring, RowMenu, Select, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
 import { currentBest, daysUntil, goalProgressPercent, goalState, remainingToTarget, type AthleteGoal, type GoalState } from "@/lib/data/goals/goal-logic"
 import { addAthleteGoal, deleteAthleteGoal, setAthleteGoalAchieved, updateAthleteGoal, type AthleteGoalsView } from "@/lib/data/goals/goals-data"
 import { formatMark, formatMarkWithUnit, groupResultsByEvent, RESULT_EVENTS, seasonFor, type AthleteResult, type MarkUnit } from "@/lib/data/pr/marks"
@@ -287,6 +287,11 @@ function GoalRow({
     <ActionRow
       data-goal={goal.eventLabel}
       data-goal-state={progress.state.kind}
+      leading={
+        <Ring progress={progress.percent / 100} size={60} thickness={6}>
+          <span className="font-display text-[1rem] font-black leading-none tabular-nums text-sk-ink">{progress.percent}%</span>
+        </Ring>
+      }
       title={
         <>
           {goal.eventLabel} <span className="tabular-nums">{target}</span>

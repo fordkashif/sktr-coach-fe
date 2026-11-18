@@ -868,6 +868,18 @@ body {
 [data-skin="stopwatch"] [data-sk-chip]:active { transform: scale(0.93); }
 [data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] { background: var(--sk-sw-ink); color: #fff; }
 [data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] span { color: rgb(255 255 255 / 0.75); }
+/* WeekSegments on the accent card: weeks gone white, this week ink, weeks to come faint. */
+.sk-on-accent-segments .bg-sk-ink { background: #fff; }
+.sk-on-accent-segments .bg-sk-blue { background: var(--sk-sw-ink); }
+.sk-on-accent-segments .bg-sk-soft-2 { background: rgb(255 255 255 / 0.3); }
+.sk-on-accent-segments > span:last-child { color: var(--sk-on-accent); }
+/* The athlete card on Profile: the lane rings turn slowly behind it. */
+@keyframes sk-lane-turn { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-athlete-card { animation: sk-rise 0.5s ease-out both; }
+  .sk-athlete-card-lane { border-top-color: rgb(255 255 255 / 0.35); animation: sk-lane-turn 9s linear infinite; }
+  .sk-athlete-card-lane + .sk-athlete-card-lane { animation-duration: 6s; animation-direction: reverse; }
+}
 
 /* Profile menu and the phone's More sheet: they spring open and their parts land one after another. */
 @keyframes sk-menu-in { from { opacity: 0; transform: translateY(-8px) scale(0.92) } to { opacity: 1; transform: none } }

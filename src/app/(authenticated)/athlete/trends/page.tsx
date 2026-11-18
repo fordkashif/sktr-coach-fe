@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react"
 import { ClockCounterClockwise, Plus } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { MyLoadSection } from "@/components/load/my-load-section"
-import { BestStatus, eventHistoryPath, meetDatesText, ProgressTabs, ResultMark, whenAndWhere } from "@/components/athlete/results-parts"
+import { NextMeetTile } from "@/components/athlete/next-meet-tile"
+import { BestStatus, eventHistoryPath, ProgressTabs, ResultMark, whenAndWhere } from "@/components/athlete/results-parts"
 import {
-  DayLabel,
+  Bars,
   EmptyState,
   LinkButton,
   List,
@@ -131,11 +132,6 @@ function buildMockCompletionDays(today: Date): string[] {
 function readMockCompletionDays(): string[] {
   if (typeof window === "undefined") return []
   return parseSessionCompletions(window.localStorage.getItem(tenantStorageKey(SESSION_COMPLETIONS_STORAGE_KEY)))
-}
-
-function daysUntil(date: string, today: Date): number {
-  const day = parseLocalDay(date)
-  return day ? Math.round((day.getTime() - today.getTime()) / 86_400_000) : 0
 }
 
 export default function AthleteTrendsPage() {
@@ -264,6 +260,21 @@ export default function AthleteTrendsPage() {
   const rangeWords = range === "4w" ? "the last 4 weeks" : range === "3m" ? "the last 3 months" : "your history"
   const rangeFrom = (buckets: Bucket[]) => (buckets.length > 0 ? `${formatFullDay(buckets[0].start)} to ${formatFullDay(today)}` : "")
 
+  // The event with the most marks this season (two or more): its last six, oldest first, as bars.
+  const progression = (() => {
+    const byEvent = new Map<string, AthleteResult[]>()
+    for (const result of seasonResults.filter((item) => item.windLegal)) byEvent.set(result.eventGroup, [...(byEvent.get(result.eventGroup) ?? []), result])
+    const [group, marks] = [...byEvent.entries()].sort((left, right) => right[1].length - left[1].length)[0] ?? []
+    if (!group || !marks || marks.length < 2) return null
+    const recent = [...marks].sort((left, right) => left.date.localeCompare(right.date)).slice(-6)
+    return {
+      group,
+      label: recent[0].eventLabel,
+      lowerIsBetter: recent[0].lowerIsBetter,
+      items: recent.map((result) => ({ key: result.id, label: formatShortDay(parseLocalDay(result.date) ?? today).replace(/^\w+, /, ""), value: result.compareValue, display: viewText(result.display) })),
+    }
+  })()
+
   const resultRow = (result: AthleteResult) => {
     const conditions = resultConditions(result)
     return (
@@ -327,6 +338,12 @@ export default function AthleteTrendsPage() {
 
       <MyReportsSection />
 
+      {progression ? (
+        <Section title={`${progression.label}, mark by mark`} action={<Link className="sk-link" to={eventHistoryPath(progression.group)}>All of them</Link>}>
+          <Bars label={`Your wind legal ${progression.label} marks this season, oldest first`} lowerIsBetter={progression.lowerIsBetter} items={progression.items} />
+        </Section>
+      ) : null}
+
       <Split
         main={
           <Section
@@ -369,32 +386,7 @@ export default function AthleteTrendsPage() {
               {competitions === null ? (
                 <SkeletonRows rows={1} label="Loading competitions" />
               ) : nextCompetition ? (
-                <List>
-                  <ListRow
-                    to={`/athlete/competitions/${nextCompetition.id}`}
-                    leading={
-                      <DayLabel
-                        weekday={(parseLocalDay(nextCompetition.startDate) ?? today).toLocaleDateString(undefined, { month: "short" })}
-                        number={(parseLocalDay(nextCompetition.startDate) ?? today).getDate()}
-                      />
-                    }
-                    title={nextCompetition.name}
-                    subtitle={
-                      <>
-                        {meetDatesText(nextCompetition.startDate, nextCompetition.endDate)}
-                        {daysUntil(nextCompetition.startDate, today) > 0 ? `, in ${daysUntil(nextCompetition.startDate, today)} ${daysUntil(nextCompetition.startDate, today) === 1 ? "day" : "days"}` : ", on now"}
-                        <span className="block">
-                          {nextCompetition.entries.filter((entry) => entry.status === "entered").length > 0
-                            ? nextCompetition.entries
-                                .filter((entry) => entry.status === "entered")
-                                .map((entry) => entry.eventLabel)
-                                .join(", ")
-                            : "You are not entered yet"}
-                        </span>
-                      </>
-                    }
-                  />
-                </List>
+                <NextMeetTile competition={nextCompetition} today={today} />
               ) : (
                 <EmptyState
                   title="Nothing on the calendar"
