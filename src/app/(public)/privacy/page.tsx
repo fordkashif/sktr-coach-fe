@@ -63,7 +63,7 @@ export default function PrivacyPage() {
             "Photos and short videos you add to a session log to show your coach, with any caption you write. Photos are made smaller on your phone before they are sent, which also removes where they were taken.",
             "Wellness check-ins: sleep, soreness, fatigue, stress and mood, and any note you add.",
             "Pain and injury reports: where it hurts, how bad it is, when it started, whether it stops you training, and your note.",
-            "Private details, if you or your club add them: date of birth, preferred name, pronouns, height, weight, an emergency contact, medical notes and allergies, a bib or registration number, and your school or club affiliation.",
+            "Private details, if you or your club add them: date of birth, preferred name, pronouns, height, weight, an emergency contact, and medical notes and allergies.",
             "For athletes under 18, the name, phone number and email address of a parent or guardian may be stored.",
             "A parent or guardian the club invited gets their own account. For them we store their name, email address, password (scrambled), how they are related to the athlete, which athletes they follow, who invited them and when, and their notification choices.",
           ]}

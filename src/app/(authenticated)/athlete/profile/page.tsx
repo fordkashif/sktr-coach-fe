@@ -446,12 +446,6 @@ export default function AthleteProfilePage() {
               <Field label="Primary event" error={fieldErrors.primaryEvent}>
                 <Input placeholder="100m, long jump, shot put" maxLength={60} value={draft.primaryEvent ?? ""} onChange={(event) => updateDraft("primaryEvent", event.target.value)} />
               </Field>
-              <Field label="School or club" optional error={fieldErrors.affiliation}>
-                <Input autoComplete="organization" maxLength={120} {...detailField("affiliation")} />
-              </Field>
-              <Field label="Bib or registration number" optional hint="The number you compete under." error={fieldErrors.bibNumber}>
-                <Input maxLength={40} autoCapitalize="characters" {...detailField("bibNumber")} />
-              </Field>
             </div>
           </Section>
 
@@ -564,8 +558,6 @@ export default function AthleteProfilePage() {
                   <Fact label="Primary event" empty="Not set">
                     {profile.primaryEvent}
                   </Fact>
-                  <Fact label="School or club">{details.affiliation}</Fact>
-                  <Fact label="Bib or registration number">{details.bibNumber}</Fact>
                   {profile.email ? <Fact label="Email">{profile.email}</Fact> : null}
                 </FactList>
               </Section>
