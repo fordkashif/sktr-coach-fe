@@ -1329,6 +1329,31 @@ export async function revokeCoachInvite(inviteId: string): Promise<Result<void>>
   return ok(undefined)
 }
 
+/**
+ * Delete staff invites that are finished with: expired or cancelled. A joined invite is kept (it
+ * links the person to their email), and so is one still waiting.
+ */
+export async function deleteCoachInvites(inviteIds: string[]): Promise<Result<number>> {
+  if (inviteIds.length === 0) return ok(0)
+  const clientResult = requireSupabaseClient("deleteCoachInvites")
+  if (!clientResult.ok) return clientResult
+
+  const contextResult = await getCurrentClubAdminContext(clientResult.client)
+  if (!contextResult.ok) return contextResult
+
+  const now = new Date().toISOString()
+  const { data, error } = await clientResult.client
+    .from("coach_invites")
+    .delete()
+    .in("id", inviteIds)
+    .eq("tenant_id", contextResult.data.tenantId)
+    .or(`status.eq.revoked,status.eq.expired,and(status.eq.pending,expires_at.lt.${now})`)
+    .select("id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(data?.length ?? 0)
+}
+
 export type ClubAdminPeopleDirectory = {
   currentUserId: string
   /** Every team in the club, including draft and archived ones, for labels. */

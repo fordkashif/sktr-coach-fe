@@ -358,6 +358,45 @@ export async function getAthleteInvitesForTeam(teamId: string): Promise<Result<T
 }
 
 /** Cancels a pending invite so its link stops working. */
+/**
+ * Delete team invites that are finished with: expired or cancelled. Joined and waiting invites are
+ * kept.
+ */
+export async function deleteAthleteInvitesForCurrentCoach(inviteIds: string[]): Promise<Result<number>> {
+  if (inviteIds.length === 0) return ok(0)
+  const now = new Date().toISOString()
+  if (getBackendMode() !== "supabase") {
+    let removed = 0
+    try {
+      updateMockRoster((state) => ({
+        ...state,
+        invites: state.invites.filter((invite) => {
+          const old = invite.status === "revoked" || invite.status === "expired" || (invite.status === "pending" && Boolean(invite.expiresAt) && String(invite.expiresAt) < now)
+          const drop = inviteIds.includes(invite.id) && old
+          if (drop) removed += 1
+          return !drop
+        }),
+      }))
+    } catch {
+      return err("UNKNOWN", "Could not save in this browser. Storage may be full or blocked.")
+    }
+    return ok(removed)
+  }
+
+  const clientResult = requireSupabaseClient("deleteAthleteInvitesForCurrentCoach")
+  if (!clientResult.ok) return clientResult
+
+  const { data, error } = await clientResult.client
+    .from("athlete_invites")
+    .delete()
+    .in("id", inviteIds)
+    .or(`status.eq.revoked,status.eq.expired,and(status.eq.pending,expires_at.lt.${now})`)
+    .select("id")
+
+  if (error) return { ok: false, error: mapPostgrestError(error) }
+  return ok(data?.length ?? 0)
+}
+
 export async function revokeAthleteInviteForCurrentCoach(inviteId: string): Promise<Result<void>> {
   if (getBackendMode() !== "supabase") {
     try {
