@@ -93,16 +93,16 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF" --yes
 
       # Lets the function tell the database where it lives (so the database scheduler can call it) and
       # sends anything already waiting. Not required: the address is also learned the first time a
@@ -197,16 +197,16 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy platform-admin-send-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy dispatch-notification-emails --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy platform-admin-preview-club-admin-invite --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy local-preview-password-reset --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-coach-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-athlete-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy claim-guardian-invite-account --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy send-invite-email --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy purge-deleted-storage --project-ref "$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy calendar-feed --project-ref "$SUPABASE_PROJECT_REF" --yes
 
       # Lets the function tell the database where it lives (so the database scheduler can call it) and
       # sends anything already waiting. Not required: the address is also learned the first time a
