@@ -532,11 +532,6 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
           ) : shownWeeks.length === 0 ? (
             <EmptyState
               title="No test weeks yet"
-              body={
-                canCreateWeek
-                  ? "A test week is a set of tests, such as 30m or squat 1RM, that your athletes do over a few days. Results land here as they come in, or you type them in yourself."
-                  : "A test week is a set of tests, such as 30m or squat 1RM, that the athletes do over a few days. Once the lead coach sets one up, you can enter results here."
-              }
               action={
                 canCreateWeek ? (
                   <Button size="sm" onClick={openNew}>
@@ -937,19 +932,12 @@ function DetailBody({
 
       <Section
         title="Results"
-        hint={
-          activeLens === "enter"
-            ? "Type a result and press Enter to go down or Tab to go across. Each one saves as you leave it."
-            : week.status === "closed"
-              ? "Closed to athletes. You can still enter and correct results."
-              : undefined
-        }
         meta={activeLens === "enter" ? <SaveState state={summary.state}>{summary.text}</SaveState> : undefined}
       >
         {detail.athletes.length === 0 ? (
-          <EmptyState title="No athletes on this team yet" body="Add or invite athletes to the team and they show up here." />
+          <EmptyState title="No athletes on this team yet" />
         ) : detail.tests.length === 0 ? (
-          <EmptyState title="No tests yet" body="Edit this test week to add the tests athletes should do." />
+          <EmptyState title="No tests yet" />
         ) : (
           <>
             <Tabs<Lens>
@@ -1017,13 +1005,18 @@ function DetailBody({
 
       <Section title="Tests by day">
         {testsByDay.length === 0 ? (
-          <EmptyState title="Nothing scheduled yet" body="Edit this test week to add tests to its days." />
+          <EmptyState title="Nothing scheduled yet" />
         ) : (
-          <List>
+          <List tiles aria-label="Tests by day">
             {testsByDay.map(([dayIndex, tests]) => (
               <ListRow
                 key={dayIndex}
-                leading={<span className="w-12 text-left font-bold text-sk-mute">Day {dayIndex + 1}</span>}
+                leading={
+                  <span className="sk-day-badge" aria-label={`Day ${dayIndex + 1}`}>
+                    <span aria-hidden>Day</span>
+                    <span aria-hidden>{dayIndex + 1}</span>
+                  </span>
+                }
                 title={tests.map((test) => test.name).join(", ")}
                 subtitle={weekdayDate(addDays(week.startDate, dayIndex))}
                 trailing={<span className="font-normal text-sk-mute">{plural(tests.length, "test")}</span>}
@@ -1133,12 +1126,11 @@ function Builder({
       <ScreenHeader
         back={{ onClick: onCancel, label: draft.id ? "Back to results" : "All test weeks" }}
         title={draft.id ? "Edit test week" : "New test week"}
-        lede="Name it, set the dates, then add the tests for each day."
       />
 
       <Split
         main={
-          <Section title="Tests" hint="Pick a day, then add what athletes should do on it." meta={`${plural(namedTests.length, "test")}, ${plural(usedDays, "day")}`}>
+          <Section title="Tests" meta={`${plural(namedTests.length, "test")}, ${plural(usedDays, "day")}`}>
             <Tabs<string>
               label="Day"
               className="mt-2"

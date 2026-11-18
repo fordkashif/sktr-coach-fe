@@ -1,17 +1,19 @@
 "use client"
 
+import { useNavigate } from "react-router-dom"
+import AthleteCompetitionsPage from "@/app/(authenticated)/athlete/competitions/page"
 import { CompetitionForm } from "@/components/athlete/competition-form"
-import { Screen, ScreenHeader } from "@/components/sk"
+import { Sheet } from "@/components/sk"
 
+/** Adding a meet of their own: a sheet over the athlete's competitions. */
 export default function AthleteNewCompetitionPage() {
+  const navigate = useNavigate()
   return (
-    <Screen width="narrow">
-      <ScreenHeader
-        back={{ to: "/athlete/competitions", label: "Competitions" }}
-        title="Add a competition"
-        lede="For a meet you entered yourself. Only you and your coach see it. Meets your coach sets up appear on their own."
-      />
-      <CompetitionForm cancelTo="/athlete/competitions" />
-    </Screen>
+    <>
+      <AthleteCompetitionsPage />
+      <Sheet open onOpenChange={(open) => (open ? undefined : navigate("/athlete/competitions"))} title="Add a competition" description="Only you and your coach see it." className="sm:max-w-lg">
+        <CompetitionForm cancelTo="/athlete/competitions" />
+      </Sheet>
+    </>
   )
 }

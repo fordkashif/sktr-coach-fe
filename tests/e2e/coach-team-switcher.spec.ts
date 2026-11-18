@@ -68,7 +68,7 @@ test("a coach on two teams can switch team and every screen follows", async ({ p
 
   // A new plan starts on the selected team, and the picker offers both of the coach's teams.
   await page.getByRole("button", { name: "New plan" }).click()
-  const planTeam = main(page).getByLabel(/^Team/)
+  const planTeam = page.getByRole("dialog").getByLabel(/^Team/)
   await expect(planTeam).toBeEnabled()
   await expect(planTeam).toHaveValue("t4")
   await expect(planTeam.locator("option")).toHaveText(["Sprint Group", "Throws Group"])

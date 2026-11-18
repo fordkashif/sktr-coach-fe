@@ -22,8 +22,8 @@ test.describe("athlete report (mock mode)", () => {
     await page.goto("/coach/athletes/a1")
     const notes = page.locator("[data-coach-notes]")
     await notes.getByRole("button", { name: "Add note" }).click()
-    await notes.getByRole("textbox", { name: "Note" }).fill("Private worry about commitment")
-    await notes.getByRole("button", { name: "Save note" }).click()
+    await page.getByRole("dialog").getByRole("textbox", { name: "Note" }).fill("Private worry about commitment")
+    await page.getByRole("dialog").getByRole("button", { name: "Save note" }).click()
     await expect(notes.locator("[data-coach-note]")).toHaveCount(1)
 
     await page.getByRole("link", { name: "Create report" }).first().click()

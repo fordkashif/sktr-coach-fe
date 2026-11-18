@@ -24,7 +24,6 @@ export function CoachAthleteGoals({ athleteId, athleteName }: { athleteId: strin
   return (
     <Section
       title="Goals"
-      hint={`Marks ${first} is aiming for. ${first} sees these under Progress, Goals.`}
       action={
         view ? (
           <Button variant="quiet" size="sm" onClick={openAdd}>
@@ -36,7 +35,7 @@ export function CoachAthleteGoals({ athleteId, athleteName }: { athleteId: strin
       {error ? <Notice tone="error">Could not load goals: {error}</Notice> : null}
       {view === null && !error ? <SkeletonRows rows={2} label="Loading goals" /> : null}
       {view && view.goals.length === 0 ? (
-        <EmptyState title="No goals yet" body={`Set a mark for ${first} to aim for, or wait for ${first} to set one. It is ticked off by itself when a result reaches it.`} />
+        <EmptyState title="No goals yet" />
       ) : null}
       {view && view.goals.length > 0 ? <GoalList aria-label={`Goals of ${athleteName}`} view={view} goals={view.goals} audience="staff" athleteName={first} onChanged={reload} /> : null}
       {view && adding ? <GoalDialog key={addKey} open onOpenChange={setAdding} view={view} goal={null} audience="staff" athleteName={first} onSaved={reload} /> : null}

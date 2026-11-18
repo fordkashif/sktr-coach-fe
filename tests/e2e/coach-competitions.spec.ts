@@ -20,11 +20,11 @@ async function asCoach(page: Page) {
 async function addMeet(page: Page, name: string, offset: number) {
   await page.goto("/coach/competitions")
   await page.getByRole("link", { name: "Add competition" }).first().click()
-  await expect(page.getByRole("heading", { level: 1, name: "Add competition" })).toBeVisible()
+  await expect(page.getByRole("dialog", { name: "Add competition" })).toBeVisible()
   await page.getByLabel("Name").fill(name)
   await page.getByLabel("Date", { exact: true }).fill(day(offset))
   await page.getByLabel("Venue").fill("National Stadium")
-  await page.getByRole("button", { name: "Add competition" }).click()
+  await page.getByRole("button", { name: "Add competition", exact: true }).click()
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible()
 }
 
@@ -44,14 +44,14 @@ test("a coach adds a meet, enters two athletes, records results and sees the per
 
   // Enter two athletes in one go. Each starts on their primary event.
   await main(page).getByRole("link", { name: "Enter athletes" }).first().click()
-  await expect(page.getByRole("heading", { level: 1, name: "Enter athletes" })).toBeVisible()
+  await expect(page.getByRole("dialog", { name: "Enter athletes" })).toBeVisible()
   await page.getByRole("checkbox", { name: /Marcus Johnson/ }).check()
   await page.getByRole("checkbox", { name: /Sarah Chen/ }).check()
   await expect(page.getByRole("combobox", { name: "Event 1 for Marcus Johnson" })).toHaveValue("100m")
   await expect(page.getByRole("combobox", { name: "Event 1 for Sarah Chen" })).toHaveValue("200m")
   await page.getByRole("button", { name: "Add another event for Sarah Chen" }).click()
   await page.getByRole("combobox", { name: "Event 2 for Sarah Chen" }).selectOption("100m")
-  await expect(main(page)).toContainText("2 athletes, 3 events")
+  await expect(page.getByRole("dialog")).toContainText("2 athletes, 3 events")
   await page.getByRole("button", { name: "Enter 2 athletes" }).click()
 
   await expect(page.getByRole("heading", { level: 1, name: "Twilight Sprint Meet" })).toBeVisible()
@@ -122,7 +122,7 @@ test("a meet an athlete added for themselves shows on their coach's calendar", a
   await page.goto("/athlete/competitions/new")
   await page.getByLabel("Name").fill("Parish Open")
   await page.getByLabel("Date", { exact: true }).fill(day(-1))
-  await page.getByRole("button", { name: "Add competition" }).click()
+  await page.getByRole("button", { name: "Add competition", exact: true }).click()
   await expect(page.getByRole("heading", { level: 1, name: "Parish Open" })).toBeVisible()
   await page.getByRole("button", { name: "Add an event" }).click()
   await page.getByRole("dialog").getByLabel("Event").selectOption("200m")
@@ -156,16 +156,16 @@ test("entering an athlete who is unavailable on the day warns and does not block
   }, day(0))
 
   await page.goto("/coach/competitions/mock-comp-classic/enter")
-  await expect(page.getByRole("heading", { level: 1, name: "Enter athletes" })).toBeVisible()
+  await expect(page.getByRole("dialog", { name: "Enter athletes" })).toBeVisible()
   const sarah = page.getByRole("checkbox", { name: /Sarah Chen/ })
-  await expect(main(page).locator("li", { has: sarah })).toContainText("Injured until further notice")
-  await expect(main(page).locator("li", { has: page.getByRole("checkbox", { name: /David Okafor/ }) })).toContainText("Available")
+  await expect(page.getByRole("dialog").locator("li", { has: sarah })).toContainText("Injured until further notice")
+  await expect(page.getByRole("dialog").locator("li", { has: page.getByRole("checkbox", { name: /David Okafor/ }) })).toContainText("Available")
   // Marcus is already in the 100m and 200m: his row says so and those events cannot be picked twice.
-  await expect(main(page).locator("li", { has: page.getByRole("checkbox", { name: /Marcus Johnson/ }) })).toContainText("Already in: 100m, 200m")
+  await expect(page.getByRole("dialog").locator("li", { has: page.getByRole("checkbox", { name: /Marcus Johnson/ }) })).toContainText("Already in: 100m, 200m")
 
   await sarah.check()
-  await expect(main(page)).toContainText("Sarah Chen is marked injured until further notice. You can still enter them.")
-  await page.getByRole("button", { name: "Enter athlete" }).click()
+  await expect(page.getByRole("dialog")).toContainText("Sarah Chen is marked injured until further notice. You can still enter them.")
+  await page.getByRole("button", { name: "Enter athlete", exact: true }).click()
 
   await expect(page.getByRole("heading", { level: 1, name: "City Sprint Classic" })).toBeVisible()
   const entries = main(page).getByRole("table", { name: "Entries for City Sprint Classic" })

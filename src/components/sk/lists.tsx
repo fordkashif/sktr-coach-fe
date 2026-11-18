@@ -4,11 +4,26 @@ import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { CountUpNumber } from "./motion"
 
-/** List: rows separated by hairlines. Children are ListRow (or any <li>). */
-export function List({ children, className, ordered = false, ...rest }: { children: ReactNode; className?: string; ordered?: boolean; "aria-label"?: string }) {
+/**
+ * List: rows separated by hairlines. Children are ListRow (or any <li>).
+ * `tiles`: under the Stopwatch skin every row is its own grey tile that rises in, one after another.
+ */
+export function List({
+  children,
+  className,
+  ordered = false,
+  tiles = false,
+  ...rest
+}: {
+  children: ReactNode
+  className?: string
+  ordered?: boolean
+  tiles?: boolean
+  "aria-label"?: string
+}) {
   const Element = ordered ? "ol" : "ul"
   return (
-    <Element className={cn("sk-list", className)} {...rest}>
+    <Element className={cn("sk-list", className)} data-sk-tiles={tiles ? "" : undefined} {...rest}>
       {children}
     </Element>
   )
@@ -292,8 +307,13 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("sk-empty", className)}>
+      <span className="sk-empty-mark" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </span>
       <div>
-        <p className="text-base font-semibold text-sk-ink">{title}</p>
+        <p className="sk-empty-title text-base font-semibold text-sk-ink">{title}</p>
         {body ? <p className="mt-0.5 max-w-[56ch] text-[0.9375rem] leading-normal text-sk-mute">{body}</p> : null}
       </div>
       {action}

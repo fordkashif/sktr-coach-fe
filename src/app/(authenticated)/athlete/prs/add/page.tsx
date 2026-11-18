@@ -1,25 +1,26 @@
 "use client"
 
-import { useSearchParams } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import AthletePrsPage from "@/app/(authenticated)/athlete/prs/page"
 import { ResultForm } from "@/components/athlete/result-form"
 import { eventHistoryPath } from "@/components/athlete/results-parts"
-import { Screen, ScreenHeader } from "@/components/sk"
+import { Sheet } from "@/components/sk"
 import { findResultEvent } from "@/lib/data/pr/marks"
 
+/** Adding a result: a sheet over the athlete's records. */
 export default function AthleteAddResultPage() {
   const [params] = useSearchParams()
+  const navigate = useNavigate()
   const eventKey = params.get("event") ?? undefined
   const event = findResultEvent(eventKey)
   const backTo = event && event.kind !== "other" ? eventHistoryPath(`k:${event.key}`) : "/athlete/prs"
 
   return (
-    <Screen width="narrow">
-      <ScreenHeader
-        back={{ to: backTo, label: event && event.kind !== "other" ? event.name : "Records" }}
-        title="Add a result"
-        lede="A mark from a meet or from training. It joins your history and counts for your personal and season bests."
-      />
-      <ResultForm initialEventKey={eventKey} cancelTo={backTo} />
-    </Screen>
+    <>
+      <AthletePrsPage />
+      <Sheet open onOpenChange={(open) => (open ? undefined : navigate(backTo))} title="Add a result" className="sm:max-w-lg">
+        <ResultForm initialEventKey={eventKey} cancelTo={backTo} />
+      </Sheet>
+    </>
   )
 }

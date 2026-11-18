@@ -101,7 +101,7 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
             </span>
             <Countdown days={Math.max(0, Math.round(((parseLocalDay(upcoming[0].startDate) ?? today).getTime() - today.getTime()) / 86_400_000))} />
           </Link>
-          <List>
+          <List tiles>
             {upcoming.map((competition) => (
               <ListRow
                 key={competition.id}
@@ -122,7 +122,6 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
         ) : (
           <EmptyState
             title="Nothing coming up"
-            body="Add a meet, then enter your athletes in their events. They are told straight away, and meets they add themselves show up here too."
             action={
               <LinkButton to={`${COMPETITIONS_PATH}/new`} size="sm">
                 Add competition
@@ -136,7 +135,7 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
         {loading ? (
           <SkeletonRows rows={3} leading label="Loading past competitions" />
         ) : past.length > 0 ? (
-          <List>
+          <List tiles>
             {past.map((competition) => {
               const competed = competition.entries.filter((entry) => entry.status === "entered")
               const missing = competed.filter((entry) => !entry.result).length
@@ -163,13 +162,13 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
             })}
           </List>
         ) : (
-          <EmptyState title="No past competitions" body="Once a meet is over it moves here, ready for you to type in the results." />
+          <EmptyState title="No past competitions" />
         )}
       </Section>
 
       {relayRecords.length > 0 ? (
-        <Section title="Relay records" hint="The fastest time of each team in each relay, from the relay teams entered at your competitions.">
-          <List aria-label="Relay records">
+        <Section title="Relay records">
+          <List tiles aria-label="Relay records">
             {relayRecords.map((record) => (
               <ListRow
                 key={`${record.teamId}:${record.eventKey}`}

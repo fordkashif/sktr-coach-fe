@@ -128,7 +128,6 @@ export function PlanList({
         ) : plans.length === 0 ? (
           <EmptyState
             title="No plans yet"
-            body="Your drafts and published plans are listed here with who they go to."
             action={
               <Button size="sm" onClick={onNew}>
                 Build your first plan
@@ -138,10 +137,9 @@ export function PlanList({
         ) : visible.length === 0 ? (
           <EmptyState
             title={filter === "draft" ? "No drafts" : filter === "archived" ? "Nothing archived" : "No active plans"}
-            body={filter === "draft" ? "Start a new plan and save it to come back to it later." : "Plans you archive are kept here. Duplicate one to use it again."}
           />
         ) : (
-          <List aria-label="Training plans">
+          <List tiles aria-label="Training plans">
             {visible.map((plan) => {
               const team = teams.find((candidate) => candidate.id === plan.teamId)
               const busy = busyPlanId === plan.id

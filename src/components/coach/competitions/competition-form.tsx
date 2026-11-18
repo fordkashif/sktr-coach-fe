@@ -166,7 +166,7 @@ export function StaffCompetitionForm({ existing, teamId, cancelTo }: { existing?
       </Section>
 
       {existing ? (
-        <Section title="Delete this competition" hint="Its entries go with it. Results already recorded stay in each athlete's history.">
+        <Section title="Delete this competition" hint="Results already recorded stay in each athlete's history.">
           {confirmDelete ? (
             <InlineConfirm question="Delete this competition for good?" confirmLabel="Delete competition" busy={deleting} onConfirm={() => void handleDelete()} onCancel={() => setConfirmDelete(false)} />
           ) : (

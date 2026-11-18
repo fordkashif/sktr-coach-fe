@@ -361,8 +361,8 @@ test("undo: a coach note, and leaving the screen makes the delete final", async 
   await page.goto("/coach/athletes/a2")
   const notes = page.locator("[data-coach-notes]")
   await notes.getByRole("button", { name: "Add note" }).click()
-  await notes.getByRole("textbox", { name: "Note" }).fill("Keep an eye on the left hamstring")
-  await notes.getByRole("button", { name: "Save note" }).click()
+  await page.getByRole("dialog").getByRole("textbox", { name: "Note" }).fill("Keep an eye on the left hamstring")
+  await page.getByRole("dialog").getByRole("button", { name: "Save note" }).click()
   await expect(notes.locator("[data-coach-note]")).toHaveCount(1)
 
   const remove = async () => {

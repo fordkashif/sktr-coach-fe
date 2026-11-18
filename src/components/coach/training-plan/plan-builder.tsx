@@ -295,13 +295,13 @@ export function PlanBuilder({
           />
         </Field>
       </div>
-      <p className="mt-2 text-sm text-sk-mute" data-week-planned-load>
-        {weekPlanned.load !== null
-          ? `Planned load ${weekPlanned.load.toLocaleString("en-GB")}${weekTarget !== null ? ` of a target of ${weekTarget.toLocaleString("en-GB")}` : ""}, from ${weekPlanned.counted} of ${plural(weekPlanned.sessions, "session")}.`
-          : "Planned load shows once a session has minutes and an intended effort."}
-      </p>
+      {weekPlanned.load !== null ? (
+        <p className="mt-2 text-sm text-sk-mute" data-week-planned-load>
+          {`Planned load ${weekPlanned.load.toLocaleString("en-GB")}${weekTarget !== null ? ` of a target of ${weekTarget.toLocaleString("en-GB")}` : ""}, from ${weekPlanned.counted} of ${plural(weekPlanned.sessions, "session")}.`}
+        </p>
+      ) : null}
 
-      <List className="mt-2" aria-label={`Week ${activeWeek} days`}>
+      <List tiles className="sk-plan-days mt-3" aria-label={`Week ${activeWeek} days`}>
         {DAY_INDEXES.map((index) => {
           const date = slotDate(plan, activeWeek, index)
           const daySession = getSession(plan, activeWeek, index)
@@ -432,11 +432,10 @@ export function PlanBuilder({
 
       <Section
         title="Blocks"
-        hint={session.blocks.length === 0 ? "The parts of the session, in the order athletes do them." : undefined}
         meta={session.blocks.length > 0 ? plural(session.blocks.length, "block") : undefined}
       >
         {session.blocks.length > 0 ? (
-          <ol className="sk-list">
+          <ol className="sk-list sk-plan-blocks" data-sk-tiles="">
             {session.blocks.map((block, blockIndex) => (
               <SessionBlock
                 key={block.id}
@@ -570,7 +569,7 @@ function SessionBlock({
   return (
     <li data-block data-block-id={block.id} className="py-4 first:pt-2">
       <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_2.75rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,13rem)_minmax(0,1fr)_2.75rem]">
-        <span className="text-center text-base font-extrabold tabular-nums text-sk-mute" aria-hidden>
+        <span className="sk-block-num text-center text-base font-extrabold tabular-nums text-sk-mute" aria-hidden>
           {index + 1}
         </span>
         <input

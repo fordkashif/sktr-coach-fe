@@ -268,6 +268,19 @@ Forms on screens:
 - Adding or changing something opens a dialog (or, for a long form like the athlete's profile, a sheet from the side). The screen keeps the button: "New admin", "New notice", "Add a season", "Change package", "New lift", "Change" beside a fact. A form never sits open at the bottom or in the middle of a screen.
 - The exceptions are screens whose whole job is the form (the log, a check-in, a test week, a competition result) and search and filter fields.
 
+- A form that used to be its own page now opens as a sheet over the screen it belongs to, and keeps its address: adding or editing a competition, entering athletes in one, adding or correcting a result (coach and athlete), and the basics of a new plan. Closing the sheet goes back to the screen under it. The plan and test week builders stay full screens: they are workspaces, not forms.
+- No explanatory sentences on screens: section hints and empty state bodies that only explain the feature are gone. A short fact stays ("Scored 1 to 5"). Private sections carry a lock and "Coaches only".
+
+Lists and empty states:
+
+- `List tiles`: every row is its own grey tile with round corners, rising in one after another. Used for sessions, notes, goals, bests, attendance, reports, guardians, squads, invites, plans, competitions, relay records and the days of a plan week. In a tile or a dialog the rows are white.
+- An empty state is a grey tile with three accent lane lines that run in, and the title in the scoreboard type. It has a title and, at most, one action.
+- The coach's athlete screen shows availability as its own tile: green with a tick when available, amber with a first aid kit when not, the state in the scoreboard type.
+- A competition opens on four number tiles: the countdown (the accent tile), athletes, events and relay teams.
+- In the plan builder each week of the overview is a tile with its load bar (or a dot per session); the open week is the accent tile. The days of the week are tiles, the open day outlined in the accent, and each block is a tile with its number in an accent circle.
+- Test week days carry a "Day 1" badge in the accent.
+- Leaving a team is one grey pill at the foot of the roster.
+
 Messages and notifications:
 
 - Conversations are tiles: the avatar (an accent ring while unread), the name in the scoreboard type, the last message in a bubble (the accent while unread) and the unread count in a circle that pops and breathes. Club oversight shows both people's avatars; a reported conversation is outlined in amber.

@@ -164,7 +164,7 @@ for (const viewport of [
       await page.goto("/coach/training-plan")
       await page.getByRole("button", { name: "New plan" }).click()
       await page.getByLabel("Plan name").fill("Autumn strength")
-      await page.getByLabel("Weeks").fill("3")
+      await page.getByLabel("Weeks", { exact: true }).fill("3")
       await page.getByRole("button", { name: "Continue to build" }).click()
       await expect(page.getByRole("heading", { name: "Autumn strength" })).toBeVisible()
 
@@ -232,7 +232,7 @@ for (const viewport of [
       // Start a plan from it.
       await page.getByRole("button", { name: "More for Autumn strength block" }).click()
       await page.getByRole("menuitem", { name: "Start a plan from it" }).click()
-      await expect(page.getByRole("heading", { level: 1, name: "New plan" })).toBeVisible()
+      await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
       await expect(page).toHaveURL(/\/coach\/training-plan$/)
       await expect(page.getByRole("tab", { name: "Template", exact: true })).toHaveAttribute("aria-selected", "true")
       const picker = page.getByRole("radiogroup", { name: "Template" })
@@ -304,7 +304,7 @@ for (const viewport of [
 
       // The preview starts a plan too.
       await preview.getByRole("button", { name: "Start a plan from it" }).click()
-      await expect(page.getByRole("heading", { level: 1, name: "New plan" })).toBeVisible()
+      await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
       await expect(page.getByRole("radiogroup", { name: "Template" }).getByRole("radio", { name: /Autumn strength block/ })).toBeChecked()
     })
 

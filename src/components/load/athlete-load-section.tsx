@@ -43,7 +43,6 @@ export function AthleteLoadSection({ athleteId, athleteName, availability }: { a
   return (
     <Section
       title="Training load"
-      hint="Effort times minutes for each finished session, added up per week."
       meta={week ? `This week ${formatLoad(week.load)}${week.planned !== null ? ` of ${formatLoad(week.planned)} planned` : ""}` : undefined}
       aria-label="Training load"
     >
@@ -86,7 +85,7 @@ export function AthleteLoadSection({ athleteId, athleteName, availability }: { a
 
           <h3 className="mt-5 text-base font-bold text-sk-ink">Sessions in the last 7 days</h3>
           {detail.sessions.length > 0 ? (
-            <List aria-label="Sessions in the last 7 days">
+            <List tiles aria-label="Sessions in the last 7 days">
               {detail.sessions.map((session) => (
                 <ListRow
                   key={session.id}
