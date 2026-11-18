@@ -115,7 +115,7 @@ test.describe("platform admin tools", () => {
   test("platform admins: add by email, guards, deactivate with an inline confirm, reactivate", async ({ page }) => {
     await page.goto("/platform-admin/admins")
     await expect(page.getByRole("heading", { level: 1, name: "Platform admins" })).toBeVisible()
-    const table = page.getByRole("table", { name: "Platform admins" })
+    const table = page.getByRole("list", { name: "Platform admins" })
     const self = table.locator('[data-admin="platformadmin@pacelab.local"]')
     await expect(self).toContainText("(you)")
     await expect(self).toContainText("Active")
@@ -123,33 +123,39 @@ test.describe("platform admin tools", () => {
     await expect(self.getByRole("button")).toHaveCount(0)
     await expect(self).toContainText("You cannot switch yourself off")
 
-    // An email that belongs to a club member is refused.
-    await page.getByLabel("Email").fill("coach@pacelab.local")
-    await page.getByRole("button", { name: "Add platform admin" }).click()
-    await expect(page.locator("#main-content")).toContainText("That email belongs to a club member")
+    // Adding opens a dialog. An email that belongs to a club member is refused there.
+    await page.getByRole("button", { name: "New admin" }).click()
+    const add = page.getByRole("dialog", { name: "Add a platform admin" })
+    await add.getByLabel("Email").fill("coach@pacelab.local")
+    await add.getByRole("button", { name: "Add platform admin" }).click()
+    await expect(add).toContainText("That email belongs to a club member")
     await expect(table.locator('[data-admin="coach@pacelab.local"]')).toHaveCount(0)
 
     // So is the owner of a club (they get club admin access by that email).
-    await page.getByLabel("Email").fill("olive@toolstest.example")
-    await page.getByRole("button", { name: "Add platform admin" }).click()
-    await expect(page.locator("#main-content")).toContainText("That email belongs to a club member")
+    await add.getByLabel("Email").fill("olive@toolstest.example")
+    await add.getByRole("button", { name: "Add platform admin" }).click()
+    await expect(add).toContainText("That email belongs to a club member")
 
-    await page.getByLabel("Email").fill("not-an-email")
-    await page.getByRole("button", { name: "Add platform admin" }).click()
-    await expect(page.locator("#main-content")).toContainText("Enter a full email address.")
+    await add.getByLabel("Email").fill("not-an-email")
+    await add.getByRole("button", { name: "Add platform admin" }).click()
+    await expect(add).toContainText("Enter a full email address.")
 
-    await page.getByLabel("Email").fill("New.Admin@sktr.example")
-    await page.getByLabel(/^Name/).fill("New Admin")
-    await page.getByRole("button", { name: "Add platform admin" }).click()
+    await add.getByLabel("Email").fill("New.Admin@sktr.example")
+    await add.getByLabel(/^Name/).fill("New Admin")
+    await add.getByRole("button", { name: "Add platform admin" }).click()
+    await expect(add).toBeHidden()
     const added = table.locator('[data-admin="new.admin@sktr.example"]')
     await expect(added).toContainText("New Admin")
     await expect(added).toContainText("by platformadmin@pacelab.local")
     await expect(added).toContainText("Has not signed in yet")
 
     // The same email twice is refused.
-    await page.getByLabel("Email").fill("new.admin@sktr.example")
-    await page.getByRole("button", { name: "Add platform admin" }).click()
-    await expect(page.locator("#main-content")).toContainText("already a platform admin")
+    await page.getByRole("button", { name: "New admin" }).click()
+    await add.getByLabel("Email").fill("new.admin@sktr.example")
+    await add.getByRole("button", { name: "Add platform admin" }).click()
+    await expect(add).toContainText("already a platform admin")
+    await add.getByRole("button", { name: "Cancel" }).click()
+    await expect(add).toBeHidden()
 
     // Deactivate asks in place, and backing out changes nothing.
     await added.getByRole("button", { name: "Deactivate new.admin@sktr.example" }).click()
@@ -221,10 +227,12 @@ test.describe("platform admin tools", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Notices" })).toBeVisible()
     await expect(page.locator("#main-content")).toContainText("No notices sent yet")
 
-    // Nothing is sent without a title and a body.
-    await page.getByRole("button", { name: "Review and send" }).click()
-    await expect(page.locator("#main-content")).toContainText("Give the notice a title of at least 3 characters.")
-    await expect(page.locator("#main-content")).toContainText("Write the notice.")
+    // Writing opens a dialog. Nothing is sent without a title and a body.
+    await page.getByRole("button", { name: "New notice" }).click()
+    const write = page.getByRole("dialog", { name: "Write a notice" })
+    await write.getByRole("button", { name: "Review and send" }).click()
+    await expect(write).toContainText("Give the notice a title of at least 3 characters.")
+    await expect(write).toContainText("Write the notice.")
 
     // A notice for staff only.
     await page.getByLabel("Title").fill("Staff briefing")
@@ -232,7 +240,7 @@ test.describe("platform admin tools", () => {
     await page.getByLabel(/^Link/).fill("http://insecure.example")
     await page.getByLabel("Who is it for").selectOption("staff")
     await page.getByRole("button", { name: "Review and send" }).click()
-    await expect(page.locator("#main-content")).toContainText("The link must start with https://")
+    await expect(write).toContainText("The link must start with https://")
     await page.getByLabel(/^Link/).fill("/settings/notifications")
     await page.getByRole("button", { name: "Review and send" }).click()
     await expect(page.getByRole("group", { name: "Confirm" })).toContainText("Send this to staff only in every open club?")
@@ -246,6 +254,8 @@ test.describe("platform admin tools", () => {
     await expect(staffRow).toContainText("No email")
 
     // And one for everyone, emailed to club admins, with an end date.
+    await expect(write).toBeHidden()
+    await page.getByRole("button", { name: "New notice" }).click()
     await page.getByLabel("Title").fill("Planned maintenance")
     await page.getByLabel("Notice", { exact: true }).fill("The app is offline on Sunday from 6 to 7 am.")
     await page.getByLabel(/Stop showing on/).fill("2030-01-01T10:00")

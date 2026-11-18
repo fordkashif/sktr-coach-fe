@@ -1,28 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { Plus } from "@phosphor-icons/react"
-import {
-  ActionRow,
-  Button,
-  EmptyState,
-  Field,
-  FormActions,
-  FormGrid,
-  InlineConfirm,
-  Input,
-  LinkButton,
-  List,
-  Notice,
-  RowMenu,
-  Screen,
-  ScreenHeader,
-  Section,
-  SkeletonRows,
-  StatusDot,
-  StatusText,
-  notify,
-  type RowMenuItem,
-  type StateTone,
-} from "@/components/sk"
+import { ActionRow, Button, Dialog, EmptyState, Field, FormActions, FormGrid, InlineConfirm, Input, LinkButton, List, Notice, notify, RowMenu, type RowMenuItem, Screen, ScreenHeader, Section, SkeletonRows, type StateTone, StatusDot, StatusText } from "@/components/sk"
 import { addDays, currentSeason, SEASON_NAME_MAX, validateSeasonDraft, type ClubSeason, type SeasonDraft, type SeasonDraftErrors } from "@/lib/data/club-admin/season-logic"
 import { deleteClubSeason, listClubSeasons, saveClubSeason } from "@/lib/data/club-admin/seasons-data"
 import { formatDay } from "../ops-format"
@@ -142,7 +120,7 @@ export default function ClubAdminSeasonsPage() {
             : undefined
         }
         actions={
-          seasons && editing === null ? (
+          seasons ? (
             <Button variant="primary" onClick={() => openForm(null)}>
               <Plus className="size-[18px]" weight="bold" aria-hidden />
               Add a season
@@ -153,17 +131,21 @@ export default function ClubAdminSeasonsPage() {
 
       {loadError ? <Notice tone="error">Your seasons could not be loaded. {loadError}</Notice> : null}
 
-      {editing ? (
-        <Section
-          title={editedSeason ? `Change ${editedSeason.name}` : "Add a season"}
-          hint={
-            editedSeason
-              ? editedSeason.status === "current"
-                ? "Season bests follow these dates straight away."
-                : undefined
-              : "It is added as upcoming. Nothing changes for coaches or athletes until you start it."
-          }
-        >
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open && !saving) closeForm()
+        }}
+        title={editedSeason ? `Change ${editedSeason.name}` : "Add a season"}
+        description={
+          editedSeason
+            ? editedSeason.status === "current"
+              ? "Season bests follow these dates straight away."
+              : undefined
+            : "It is added as upcoming. Nothing changes for coaches or athletes until you start it."
+        }
+        className="sm:max-w-lg"
+      >
           <form className="flex flex-col gap-4" onSubmit={(event) => void save(event)} noValidate>
             <Field label="Name" error={errors.name}>
               <Input name="season-name" placeholder="2026/27 outdoor" maxLength={SEASON_NAME_MAX} autoComplete="off" value={draft.name} onChange={(event) => update("name", event.target.value)} />
@@ -186,8 +168,7 @@ export default function ClubAdminSeasonsPage() {
               </Button>
             </FormActions>
           </form>
-        </Section>
-      ) : null}
+      </Dialog>
 
       <Section title="All seasons" meta={seasons && seasons.length > 0 ? `${seasons.length} ${seasons.length === 1 ? "season" : "seasons"}` : undefined}>
         {rowError ? (

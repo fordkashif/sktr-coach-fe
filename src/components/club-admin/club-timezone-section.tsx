@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { PencilSimple } from "@phosphor-icons/react"
-import { Button, Fact, FactList, Field, FormActions, Notice, Section, Select, SkeletonRows, notify } from "@/components/sk"
+import { Button, Dialog, Fact, FactList, Field, FormActions, Notice, Section, Select, SkeletonRows, notify } from "@/components/sk"
 import { localClockIn, timezoneLabel, timezoneOffsetLabel, timezoneOptions } from "@/lib/club-timezone"
 import { getClubTimezone, saveClubTimezone } from "@/lib/data/club-admin/club-timezone-data"
 
@@ -55,7 +55,7 @@ export function ClubTimezoneSection() {
       title="Time zone"
       hint="Reminders go out at local time in this time zone."
       action={
-        timezone && !editing ? (
+        timezone ? (
           <Button
             variant="quiet"
             size="sm"
@@ -75,7 +75,7 @@ export function ClubTimezoneSection() {
     >
       {loadError ? <Notice tone="error">{loadError}</Notice> : null}
       {!timezone && !loadError ? <SkeletonRows rows={2} label="Loading the time zone" /> : null}
-      {timezone && editing ? (
+      <Dialog open={Boolean(timezone) && editing} onOpenChange={(open) => (!open && !saving ? setEditing(false) : undefined)} title="Club time zone" description="Reminders go out at local time in this time zone." className="sm:max-w-lg">
         <form className="flex flex-col gap-4" onSubmit={(event) => void save(event)} noValidate>
           <Field label="Time zone" hint={draft ? `It is ${localClockIn(draft)} there now (${timezoneOffsetLabel(draft)}).` : undefined}>
             <Select value={draft} onChange={(event) => setDraft(event.target.value)}>
@@ -107,8 +107,8 @@ export function ClubTimezoneSection() {
             </Button>
           </FormActions>
         </form>
-      ) : null}
-      {timezone && !editing ? (
+      </Dialog>
+      {timezone ? (
         <FactList aria-label="Time zone">
           <Fact label="Time zone">{timezoneLabel(timezone)}</Fact>
           <Fact label="Time there now">{`${localClockIn(timezone)} (${timezoneOffsetLabel(timezone)})`}</Fact>

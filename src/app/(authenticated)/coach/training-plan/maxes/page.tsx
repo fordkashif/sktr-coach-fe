@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { PlansNav } from "@/components/coach/training-plan/plans-nav"
 import type { PlanDirectory, PlanScope } from "@/components/coach/training-plan/storage"
-import { Button, EmptyState, EntryGrid, Field, Notice, Screen, ScreenHeader, Section, SkeletonRows, SuggestInput, TableSub, type SaveStateValue } from "@/components/sk"
+import { Button, Dialog, EmptyState, EntryGrid, Field, FormActions, Notice, Screen, ScreenHeader, Section, SkeletonRows, SuggestInput, TableSub, type SaveStateValue } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { listLibraryExercises, listLiftMaxes, removeLiftMax, saveLiftMax } from "@/lib/data/exercises/exercise-data"
 import { liftKey } from "@/lib/data/exercises/loads"
@@ -98,11 +98,14 @@ export default function CoachLiftMaxesPage() {
   const teamName = (teamId: string) => directory.teams.find((team) => team.id === teamId)?.name ?? ""
   const showTeam = !isCoach || !coachTeamId
 
+  const [liftOpen, setLiftOpen] = useState(false)
+
   const addLift = () => {
     const name = newLift.trim()
     if (!liftKey(name)) return
     setExtraLifts((current) => [...current, name])
     setNewLift("")
+    setLiftOpen(false)
   }
 
   const commit = async (athleteId: string, key: string, text: string) => {
@@ -129,10 +132,53 @@ export default function CoachLiftMaxesPage() {
 
   return (
     <Screen>
-      <ScreenHeader title="Best lifts" lede={lede} />
+      <ScreenHeader
+        title="Best lifts"
+        lede={lede}
+        actions={
+          athletes.length > 0 ? (
+            <Button variant="primary" onClick={() => setLiftOpen(true)}>
+              <Plus className="size-5" weight="bold" aria-hidden />
+              New lift
+            </Button>
+          ) : null
+        }
+      />
       <PlansNav />
 
       {error ? <Notice tone="error">{error}</Notice> : null}
+
+      <Dialog open={liftOpen} onOpenChange={setLiftOpen} title="New column" description="A new column for every athlete. Pick one from the library or type your own." className="sm:max-w-md">
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                addLift()
+              }}
+            >
+              <Field label="Add a lift">
+                <SuggestInput
+                  value={newLift}
+                  onValueChange={setNewLift}
+                  options={libraryLifts.filter((name) => !lifts.some((lift) => lift.key === liftKey(name))).map((name) => ({ id: name, label: name }))}
+                  onPick={(option) => setNewLift(option.label)}
+                  aria-label="Add a lift"
+                  listLabel="Strength exercises in the library"
+                  placeholder="Power clean"
+                  maxLength={80}
+                />
+              </Field>
+              <FormActions>
+                <Button variant="quiet" onClick={() => setLiftOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={!liftKey(newLift) || lifts.some((lift) => lift.key === liftKey(newLift))}>
+                  <Plus className="size-5" weight="bold" aria-hidden />
+                  Add column
+                </Button>
+              </FormActions>
+            </form>
+      </Dialog>
 
       <Section title="By athlete" hint="Type a number and move on. It saves by itself, and athletes see the new weight in sessions they have not finished." meta={athletes.length > 0 ? `${athletes.length} ${athletes.length === 1 ? "athlete" : "athletes"}` : undefined}>
         {loading || coachTeamsLoading ? (
@@ -171,30 +217,7 @@ export default function CoachLiftMaxesPage() {
             />
             {fromResults > 0 ? <p className="sk-list-sub mt-2">A number with a dot comes from the athlete's results (a test week, for example). Type over it to correct it.</p> : null}
 
-            <form
-              className="mt-5 flex max-w-md items-end gap-2"
-              onSubmit={(event) => {
-                event.preventDefault()
-                addLift()
-              }}
-            >
-              <Field label="Add a lift" className="min-w-0 flex-1">
-                <SuggestInput
-                  value={newLift}
-                  onValueChange={setNewLift}
-                  options={libraryLifts.filter((name) => !lifts.some((lift) => lift.key === liftKey(name))).map((name) => ({ id: name, label: name }))}
-                  onPick={(option) => setNewLift(option.label)}
-                  aria-label="Add a lift"
-                  listLabel="Strength exercises in the library"
-                  placeholder="Power clean"
-                  maxLength={80}
-                />
-              </Field>
-              <Button type="submit" disabled={!liftKey(newLift) || lifts.some((lift) => lift.key === liftKey(newLift))}>
-                <Plus className="size-5" weight="bold" aria-hidden />
-                Add column
-              </Button>
-            </form>
+
           </>
         )}
       </Section>

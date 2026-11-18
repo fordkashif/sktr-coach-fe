@@ -29,6 +29,7 @@ test("coach changes their name and photo and both show in the top bar after a re
   await expect(page.getByRole("alert")).toHaveCount(0)
   await expect(topbar(page).getByRole("button", { name: "Open profile menu" }).locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
 
+  await page.getByRole("button", { name: "Change name" }).click()
   await page.getByLabel("Full name").fill("  ")
   await page.getByRole("button", { name: "Save name" }).click()
   await expect(page.getByText("Enter your name.")).toBeVisible()
@@ -39,7 +40,7 @@ test("coach changes their name and photo and both show in the top bar after a re
 
   await page.reload()
 
-  await expect(page.getByLabel("Full name")).toHaveValue("Jordan Blake-Coach")
+  await expect(page.locator("#main-content")).toContainText("Jordan Blake-Coach")
   const menuButton = topbar(page).getByRole("button", { name: "Open profile menu" })
   await expect(menuButton.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/)
   await menuButton.click()
@@ -110,6 +111,7 @@ test("a platform admin sets their own name on the account screen", async ({ page
   await seedMockSession(page, { role: "platform-admin", tenantId: "platform" })
   await page.goto("/account")
   await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible()
+  await page.getByRole("button", { name: "Change name" }).click()
   await page.getByLabel("Full name").fill("Pat Platform")
   await page.getByRole("button", { name: "Save name" }).click()
   await expect(page.getByText("Name saved.")).toBeVisible()

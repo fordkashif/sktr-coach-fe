@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { ImageSquare, PencilSimple } from "@phosphor-icons/react"
 import {
   Button,
+  Dialog,
   ClubMark,
   Fact,
   FactList,
@@ -393,31 +394,6 @@ export default function ClubAdminProfilePage() {
           main={
             <>
               <Section title="Club" action={editAction("club", "Edit club name and colour")}>
-                {editing === "club" && draft ? (
-                  <form className="flex flex-col gap-4" onSubmit={(event) => void saveProfile(event, "club")} noValidate>
-                    <FormGrid>
-                      <Field label="Club name" error={errors.clubName} className="sm:col-span-2">
-                        <Input autoComplete="organization" maxLength={80} value={draft.clubName} onChange={(event) => updateDraft("clubName", event.target.value)} />
-                      </Field>
-                      <Field label="Short name" error={errors.shortName} hint="A few letters, like ETC. Shown where there is no logo.">
-                        <Input placeholder="ETC" maxLength={12} value={draft.shortName} onChange={(event) => updateDraft("shortName", event.target.value)} />
-                      </Field>
-                      <Field label="Club colour" error={errors.primaryColor} hint="Sits behind your short name where there is no logo, and marks printed plans. It never changes buttons or links.">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            aria-label="Pick the club colour"
-                            className="h-11 w-14 shrink-0 cursor-pointer rounded-[12px] border border-sk-line-strong bg-white p-1"
-                            value={HEX_COLOR.test(draft.primaryColor) ? draft.primaryColor : "#2152ff"}
-                            onChange={(event) => updateDraft("primaryColor", event.target.value)}
-                          />
-                          <Input placeholder="#2152ff" maxLength={7} spellCheck={false} value={draft.primaryColor} onChange={(event) => updateDraft("primaryColor", event.target.value)} />
-                        </div>
-                      </Field>
-                    </FormGrid>
-                    {formEnd("Save club details")}
-                  </form>
-                ) : (
                   <FactList aria-label="Club">
                     <Fact label="Club name" empty="Not added yet">
                       {profile.clubName.trim()}
@@ -432,36 +408,11 @@ export default function ClubAdminProfilePage() {
                       </span>
                     </Fact>
                   </FactList>
-                )}
               </Section>
 
               <Section title="Contact and location" hint="Only club admins and the SKTR team see these." action={editAction("contact", "Edit contact and location")}>
                 {contactLoadError ? <Notice tone="error">We could not load the contact details. {contactLoadError}</Notice> : null}
-                {editing === "contact" ? (
-                  <form className="mt-2 flex flex-col gap-4" onSubmit={(event) => void saveContact(event)} noValidate>
-                    <FormGrid>
-                      <Field label="Contact email" optional error={contactErrors.contactEmail}>
-                        <Input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" maxLength={254} value={contactDraft.contactEmail} onChange={(event) => updateContactDraft("contactEmail", event.target.value)} />
-                      </Field>
-                      <Field label="Phone" optional error={contactErrors.contactPhone}>
-                        <Input type="tel" inputMode="tel" autoComplete="tel" maxLength={40} placeholder="+1 876 555 0100" value={contactDraft.contactPhone} onChange={(event) => updateContactDraft("contactPhone", event.target.value)} />
-                      </Field>
-                      <Field label="City or town" optional error={contactErrors.city}>
-                        <Input autoComplete="address-level2" maxLength={80} value={contactDraft.city} onChange={(event) => updateContactDraft("city", event.target.value)} />
-                      </Field>
-                      <Field label="Parish, state or region" optional error={contactErrors.region}>
-                        <Input autoComplete="address-level1" maxLength={80} value={contactDraft.region} onChange={(event) => updateContactDraft("region", event.target.value)} />
-                      </Field>
-                      <Field label="Country" optional error={contactErrors.country}>
-                        <Input autoComplete="country-name" maxLength={80} value={contactDraft.country} onChange={(event) => updateContactDraft("country", event.target.value)} />
-                      </Field>
-                      <Field label="Website" optional error={contactErrors.website}>
-                        <Input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} maxLength={200} placeholder="yourclub.com" value={contactDraft.website} onChange={(event) => updateContactDraft("website", event.target.value)} />
-                      </Field>
-                    </FormGrid>
-                    {formEnd("Save contact details")}
-                  </form>
-                ) : contact ? (
+                {contact ? (
                   <FactList aria-label="Contact and location">
                     <Fact label="Contact email" empty="Not added yet">
                       {contact.contactEmail ? (
@@ -546,6 +497,72 @@ export default function ClubAdminProfilePage() {
       ) : null}
 
       {profile ? <ClubDataAndOwnership /> : null}
+
+      <Dialog
+        open={editing === "club" && draft !== null}
+        onOpenChange={(open) => (!open && !saving ? stopEditing() : undefined)}
+        title="Club details"
+        description="The name and colour everyone in the club sees."
+        className="sm:max-w-xl"
+      >
+                  {draft ? (
+                  <form className="flex flex-col gap-4" onSubmit={(event) => void saveProfile(event, "club")} noValidate>
+                    <FormGrid>
+                      <Field label="Club name" error={errors.clubName} className="sm:col-span-2">
+                        <Input autoComplete="organization" maxLength={80} value={draft.clubName} onChange={(event) => updateDraft("clubName", event.target.value)} />
+                      </Field>
+                      <Field label="Short name" error={errors.shortName} hint="A few letters, like ETC. Shown where there is no logo.">
+                        <Input placeholder="ETC" maxLength={12} value={draft.shortName} onChange={(event) => updateDraft("shortName", event.target.value)} />
+                      </Field>
+                      <Field label="Club colour" error={errors.primaryColor} hint="Sits behind your short name where there is no logo, and marks printed plans. It never changes buttons or links.">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            aria-label="Pick the club colour"
+                            className="h-11 w-14 shrink-0 cursor-pointer rounded-[12px] border border-sk-line-strong bg-white p-1"
+                            value={HEX_COLOR.test(draft.primaryColor) ? draft.primaryColor : "#2152ff"}
+                            onChange={(event) => updateDraft("primaryColor", event.target.value)}
+                          />
+                          <Input placeholder="#2152ff" maxLength={7} spellCheck={false} value={draft.primaryColor} onChange={(event) => updateDraft("primaryColor", event.target.value)} />
+                        </div>
+                      </Field>
+                    </FormGrid>
+                    {formEnd("Save club details")}
+                  </form>
+                  ) : null}
+      </Dialog>
+
+      <Dialog
+        open={editing === "contact"}
+        onOpenChange={(open) => (!open && !saving ? stopEditing() : undefined)}
+        title="Contact and location"
+        description="Only club admins and the SKTR team see these."
+        className="sm:max-w-xl"
+      >
+                  <form className="flex flex-col gap-4" onSubmit={(event) => void saveContact(event)} noValidate>
+                    <FormGrid>
+                      <Field label="Contact email" optional error={contactErrors.contactEmail}>
+                        <Input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" maxLength={254} value={contactDraft.contactEmail} onChange={(event) => updateContactDraft("contactEmail", event.target.value)} />
+                      </Field>
+                      <Field label="Phone" optional error={contactErrors.contactPhone}>
+                        <Input type="tel" inputMode="tel" autoComplete="tel" maxLength={40} placeholder="+1 876 555 0100" value={contactDraft.contactPhone} onChange={(event) => updateContactDraft("contactPhone", event.target.value)} />
+                      </Field>
+                      <Field label="City or town" optional error={contactErrors.city}>
+                        <Input autoComplete="address-level2" maxLength={80} value={contactDraft.city} onChange={(event) => updateContactDraft("city", event.target.value)} />
+                      </Field>
+                      <Field label="Parish, state or region" optional error={contactErrors.region}>
+                        <Input autoComplete="address-level1" maxLength={80} value={contactDraft.region} onChange={(event) => updateContactDraft("region", event.target.value)} />
+                      </Field>
+                      <Field label="Country" optional error={contactErrors.country}>
+                        <Input autoComplete="country-name" maxLength={80} value={contactDraft.country} onChange={(event) => updateContactDraft("country", event.target.value)} />
+                      </Field>
+                      <Field label="Website" optional error={contactErrors.website}>
+                        <Input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} maxLength={200} placeholder="yourclub.com" value={contactDraft.website} onChange={(event) => updateContactDraft("website", event.target.value)} />
+                      </Field>
+                    </FormGrid>
+                    {formEnd("Save contact details")}
+                  </form>
+      </Dialog>
     </Screen>
   )
 }

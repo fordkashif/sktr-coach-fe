@@ -112,7 +112,7 @@ test.describe("reminders on desktop", () => {
     await expect(facts).toContainText("Jamaica (America)")
     await expect(facts).toContainText("UTC-5")
     await page.getByRole("button", { name: "Edit time zone" }).click()
-    await page.getByLabel("Time zone").selectOption("Europe/London")
+    await page.getByRole("dialog").getByRole("combobox", { name: "Time zone" }).selectOption("Europe/London")
     await expect(page.getByText(/It is \d\d:\d\d there now/)).toBeVisible()
     await page.getByRole("button", { name: "Save time zone" }).click()
     await expect(facts).toContainText("London (Europe)")

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { Camera, Eye, EyeSlash } from "@phosphor-icons/react"
-import { Avatar, Button, Field, InlineConfirm, Input, List, ListRow, Notice, Section, notify } from "@/components/sk"
+import { Avatar, Button, Dialog, Field, FormActions, InlineConfirm, Input, List, ListRow, Notice, Section, notify } from "@/components/sk"
 import { refreshAccount, useCurrentAccount } from "@/lib/account-store"
 import { clearSessionCookies } from "@/lib/auth-session"
 import { SignOutDialog } from "@/components/account/sign-out-dialog"
@@ -146,6 +146,7 @@ export function NameSection() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const current = account?.displayName ?? ""
   const value = draft ?? current
@@ -171,10 +172,37 @@ export function NameSection() {
     setSaving(false)
     setDraft(null)
     setSaved(true)
+    setEditing(false)
   }
 
   return (
     <Section title="Name" hint={hasName || !loaded ? "How you appear to your club and in emails we send for you." : `You have not added a name yet, so we show "${displayName}" from your email.`}>
+      {saved ? (
+        <Notice tone="success" className="mb-3">
+          Name saved.
+        </Notice>
+      ) : null}
+      <List>
+        <ListRow
+          title="Full name"
+          subtitle={current || "Not added yet"}
+          trailing={
+            <Button
+              size="sm"
+              disabled={!loaded}
+              onClick={() => {
+                setDraft(null)
+                setError(null)
+                setSaved(false)
+                setEditing(true)
+              }}
+            >
+              Change<span className="sr-only"> name</span>
+            </Button>
+          }
+        />
+      </List>
+      <Dialog open={editing} onOpenChange={(next) => (!next && !saving ? setEditing(false) : undefined)} title="Your name" className="sm:max-w-lg">
       <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)} noValidate>
         <Field label="Full name" error={error}>
           <Input
@@ -190,13 +218,16 @@ export function NameSection() {
             }}
           />
         </Field>
-        {saved && !changed ? <Notice tone="success">Name saved.</Notice> : null}
-        <div>
-          <Button type="submit" disabled={!loaded || saving || !changed}>
+        <FormActions>
+          <Button variant="quiet" disabled={saving} onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!loaded || saving || !changed}>
             {saving ? "Saving..." : "Save name"}
           </Button>
-        </div>
+        </FormActions>
       </form>
+      </Dialog>
     </Section>
   )
 }
@@ -291,7 +322,51 @@ export function SignInSection() {
 
   return (
     <Section title="Sign-in">
-      {open === "email" ? (
+      <>
+        {pendingEmail ? (
+          <Notice tone="info" className="mb-3">
+            Check {pendingEmail} for a confirmation link (and your current inbox, in case we sent one there too). Your email changes once the links are opened. Until then you sign in with {email ?? "your current email"}.
+          </Notice>
+        ) : null}
+        {passwordChanged ? (
+          <Notice tone="success" className="mb-3">
+            Password changed. Use the new one next time you sign in.
+          </Notice>
+        ) : null}
+        <List>
+          <ListRow
+            title="Email"
+            subtitle={<span className="break-all">{email ?? "Not available"}</span>}
+            trailing={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPasswordChanged(false)
+                  setOpen("email")
+                }}
+              >
+                Change<span className="sr-only"> email</span>
+              </Button>
+            }
+          />
+          <ListRow
+            title="Password"
+            subtitle="Choose a new password for this account."
+            trailing={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPasswordChanged(false)
+                  setOpen("password")
+                }}
+              >
+                Change<span className="sr-only"> password</span>
+              </Button>
+            }
+          />
+        </List>
+      </>
+      <Dialog open={open === "email"} onOpenChange={(next) => (!next && !emailBusy ? closeForms() : undefined)} title="Change your email" className="sm:max-w-lg">
         <form className="flex flex-col gap-4" onSubmit={(event) => void handleEmailSubmit(event)} noValidate>
           <p className="sk-list-sub">
             You sign in with <span className="break-all font-semibold text-sk-ink">{email ?? "your current email"}</span>. We will send a confirmation link to the new address, and you may get one at your current address too, to check it is really you. Your email changes only after the links are opened. Until then you keep signing in with the current one.
@@ -311,16 +386,17 @@ export function SignInSection() {
               }}
             />
           </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={emailBusy}>
-              {emailBusy ? "Sending..." : "Send confirmation link"}
-            </Button>
+          <FormActions>
             <Button variant="quiet" onClick={closeForms} disabled={emailBusy}>
               Cancel
             </Button>
-          </div>
+            <Button type="submit" variant="primary" disabled={emailBusy}>
+              {emailBusy ? "Sending..." : "Send confirmation link"}
+            </Button>
+          </FormActions>
         </form>
-      ) : open === "password" ? (
+      </Dialog>
+      <Dialog open={open === "password"} onOpenChange={(next) => (!next && !passwordBusy ? closeForms() : undefined)} title="Change your password" className="sm:max-w-lg">
         <form className="flex flex-col gap-4" onSubmit={(event) => void handlePasswordSubmit(event)} noValidate>
           {/* Lets password managers attach the new password to the right account. */}
           <input type="email" name="username" autoComplete="username" value={email ?? ""} readOnly hidden />
@@ -364,61 +440,16 @@ export function SignInSection() {
             <ShowPasswordToggle shown={showPasswords} onToggle={() => setShowPasswords((previous) => !previous)} />
           </div>
           {passwordError ? <Notice tone="error">{passwordError}</Notice> : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={passwordBusy}>
-              {passwordBusy ? "Saving..." : "Change password"}
-            </Button>
+          <FormActions>
             <Button variant="quiet" onClick={closeForms} disabled={passwordBusy}>
               Cancel
             </Button>
-          </div>
+            <Button type="submit" variant="primary" disabled={passwordBusy}>
+              {passwordBusy ? "Saving..." : "Change password"}
+            </Button>
+          </FormActions>
         </form>
-      ) : (
-        <>
-          {pendingEmail ? (
-            <Notice tone="info" className="mb-3">
-              Check {pendingEmail} for a confirmation link (and your current inbox, in case we sent one there too). Your email changes once the links are opened. Until then you sign in with {email ?? "your current email"}.
-            </Notice>
-          ) : null}
-          {passwordChanged ? (
-            <Notice tone="success" className="mb-3">
-              Password changed. Use the new one next time you sign in.
-            </Notice>
-          ) : null}
-          <List>
-            <ListRow
-              title="Email"
-              subtitle={<span className="break-all">{email ?? "Not available"}</span>}
-              trailing={
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setPasswordChanged(false)
-                    setOpen("email")
-                  }}
-                >
-                  Change<span className="sr-only"> email</span>
-                </Button>
-              }
-            />
-            <ListRow
-              title="Password"
-              subtitle="Choose a new password for this account."
-              trailing={
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setPasswordChanged(false)
-                    setOpen("password")
-                  }}
-                >
-                  Change<span className="sr-only"> password</span>
-                </Button>
-              }
-            />
-          </List>
-        </>
-      )}
+      </Dialog>
     </Section>
   )
 }

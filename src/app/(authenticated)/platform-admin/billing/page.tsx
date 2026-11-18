@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { cn } from "@/lib/utils"
 import {
   Button,
-  DataTable,
+  Avatar,
   Dialog,
   EmptyState,
   FilterBar,
@@ -18,9 +19,8 @@ import {
   SkeletonRows,
   Stat,
   StatStrip,
-  TableSub,
   Tag,
-  type DataTableColumn,
+  TileGrid,
   type TagTone,
 } from "@/components/sk"
 import { getPackageById, packageOptions, type PackageId } from "@/lib/billing/package-catalog"
@@ -193,81 +193,24 @@ export default function PlatformAdminBillingPage() {
     setBusy(false)
   }
 
-  const columns: Array<DataTableColumn<PlatformAdminRequestRecord>> = [
-    {
-      key: "club",
-      header: "Club",
-      cell: (club) => (
-        <>
-          <span className="break-words">{club.organizationName}</span>
-          <TableSub>{club.lifecycleStatus ? (tenantLifecycleLabels[club.lifecycleStatus] ?? club.lifecycleStatus) : "Status not set"}</TableSub>
-        </>
-      ),
-    },
-    { key: "package", header: "Package", cell: (club) => packageLabel(club.requestedPlan) },
-    {
-      key: "status",
-      header: "Billing status",
-      phone: "trailing",
-      cell: (club) => {
-        const status = statusOf(club)
-        const info = BILLING_STATUS[status]
-        const provider = realProvider(club)
-        return (
-          <span className="inline-flex flex-col items-start gap-1 max-sm:items-end">
-            <Tag tone={info?.tone ?? "plain"}>{info?.label ?? status}</Tag>
-            {club.billingFailedAt && (status === "failed" || club.lifecycleStatus === "billing_failed") ? <span className="text-sm text-sk-mute">{formatDateTime(club.billingFailedAt)}</span> : null}
-            {provider ? <span className="text-sm text-sk-mute">Provider: {provider}</span> : null}
-          </span>
-        )
-      },
-    },
-    { key: "cycle", header: "Cycle", cell: (club) => (club.billingCycle ? cycleLabel(club.billingCycle) : <span className="text-sk-mute">Not chosen</span>) },
-    {
-      key: "contact",
-      header: "Billing contact",
-      phone: "plain",
-      cell: (club) =>
-        club.billingContactName?.trim() || club.billingContactEmail ? (
-          <span className="min-w-0">
-            <span className="block break-words text-sk-ink">{club.billingContactName?.trim() || "No name"}</span>
-            {club.billingContactEmail ? (
-              <a href={`mailto:${club.billingContactEmail}`} className="sk-link block break-all text-sm font-semibold">
-                {club.billingContactEmail}
-              </a>
-            ) : (
-              <span className="block text-sm text-sk-mute">No email</span>
-            )}
-          </span>
-        ) : (
-          <span className="text-sk-mute">Not added yet</span>
-        ),
-    },
-    { key: "setup", header: "Setup done on", cell: (club) => (club.billingStartedAt ? formatDateTime(club.billingStartedAt) : <span className="text-sk-mute">Not yet</span>) },
-    {
-      key: "action",
-      header: "Action",
-      align: "right",
-      phone: "plain",
-      cell: (club) => {
-        const canFail = club.lifecycleStatus === "approved_pending_billing" || club.lifecycleStatus === "active_onboarding" || club.lifecycleStatus === "active"
-        const canReopen = club.lifecycleStatus === "billing_failed"
-        if (!canFail && !canReopen) return null
-        return (
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setActionError(null)
-              setConfirm({ club, action: canFail ? "fail" : "reopen" })
-            }}
-          >
-            {canFail ? "Mark failed" : "Reopen setup"}
-          </Button>
-        )
-      },
-    },
-  ]
+  const actionFor = (club: PlatformAdminRequestRecord) => {
+    const canFail = club.lifecycleStatus === "approved_pending_billing" || club.lifecycleStatus === "active_onboarding" || club.lifecycleStatus === "active"
+    const canReopen = club.lifecycleStatus === "billing_failed"
+    if (!canFail && !canReopen) return null
+    return (
+      <Button
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setActionError(null)
+          setConfirm({ club, action: canFail ? "fail" : "reopen" })
+        }}
+      >
+        {canFail ? "Mark failed" : "Reopen setup"}
+      </Button>
+    )
+  }
+
 
   return (
     <Screen>
@@ -358,7 +301,60 @@ export default function PlatformAdminBillingPage() {
               />
             ) : (
               <>
-                <DataTable caption={`Billing state for each club${activeFilters > 0 || query.trim() ? ", filtered" : ""}`} columns={columns} rows={shown} rowKey={(club) => club.id} rowProps={(club) => ({ "data-club": club.organizationName })} />
+                <TileGrid label={`Billing state for each club${activeFilters > 0 || query.trim() ? ", filtered" : ""}`} wide>
+                  {shown.map((club) => {
+                    const status = statusOf(club)
+                    const info = BILLING_STATUS[status]
+                    const provider = realProvider(club)
+                    const failed = status === "failed" || club.lifecycleStatus === "billing_failed"
+                    return (
+                      <li key={club.id} className="sk-tile-item" data-club={club.organizationName}>
+                        <div className={cn("sk-tile flex h-full flex-col gap-3 p-4", failed && "sk-tile-flag")}>
+                          <div className="flex items-start justify-between gap-3">
+                            <Avatar name={club.organizationName} size="lg" className="bg-sk-ink text-white" />
+                            <Tag tone={info?.tone ?? "plain"}>{info?.label ?? status}</Tag>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="break-words font-display text-[1.5rem] font-black uppercase leading-none text-sk-ink">{club.organizationName}</p>
+                            <p className="mt-1 text-sm text-sk-mute">
+                              {club.lifecycleStatus ? (tenantLifecycleLabels[club.lifecycleStatus] ?? club.lifecycleStatus) : "Status not set"}, {packageLabel(club.requestedPlan)} package
+                            </p>
+                          </div>
+                          <dl className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="rounded-[14px] bg-white px-3 py-2">
+                              <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Cycle</dt>
+                              <dd className="font-semibold text-sk-ink">{club.billingCycle ? cycleLabel(club.billingCycle) : <span className="font-normal text-sk-mute">Not chosen</span>}</dd>
+                            </div>
+                            <div className="rounded-[14px] bg-white px-3 py-2">
+                              <dt className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Setup done on</dt>
+                              <dd className="font-semibold text-sk-ink">{club.billingStartedAt ? formatDateTime(club.billingStartedAt) : <span className="font-normal text-sk-mute">Not yet</span>}</dd>
+                            </div>
+                          </dl>
+                          <div className="min-w-0 text-sm">
+                            <p className="text-[0.6875rem] font-extrabold uppercase tracking-[0.04em] text-sk-mute">Billing contact</p>
+                            {club.billingContactName?.trim() || club.billingContactEmail ? (
+                              <>
+                                <p className="break-words font-semibold text-sk-ink">{club.billingContactName?.trim() || "No name"}</p>
+                                {club.billingContactEmail ? (
+                                  <a href={`mailto:${club.billingContactEmail}`} className="sk-link break-all text-sm font-semibold">
+                                    {club.billingContactEmail}
+                                  </a>
+                                ) : (
+                                  <p className="text-sk-mute">No email</p>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-sk-mute">Not added yet</p>
+                            )}
+                          </div>
+                          {club.billingFailedAt && failed ? <p className="text-sm text-sk-coral-ink">Failed {formatDateTime(club.billingFailedAt)}</p> : null}
+                          {provider ? <p className="text-sm text-sk-mute">Provider: {provider}</p> : null}
+                          <div className="mt-auto flex justify-end">{actionFor(club)}</div>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </TileGrid>
                 {filtered.length > shown.length ? (
                   <Button className="mt-3 self-start" onClick={() => setVisible((current) => current + PAGE_SIZE)}>
                     Load {Math.min(PAGE_SIZE, filtered.length - shown.length)} more

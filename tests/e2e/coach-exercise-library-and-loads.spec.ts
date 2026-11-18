@@ -189,6 +189,7 @@ for (const viewport of [
       await squat.press("Tab")
       await expect(page.getByLabel("Marcus Johnson, Back squat")).toHaveValue("200")
 
+      await page.getByRole("button", { name: "New lift" }).click()
       await page.getByLabel("Add a lift").fill("Zercher carry")
       await page.getByRole("button", { name: "Add column" }).click()
       const carry = page.getByLabel("Marcus Johnson, Zercher carry")
