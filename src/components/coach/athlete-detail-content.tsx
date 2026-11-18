@@ -1099,12 +1099,6 @@ function DetailsTab({
           <Fact label="Weight" empty="Not added">
             {privateDetails?.weightKg ? formatBodyWeight(privateDetails.weightKg, viewerUnits().weight) : null}
           </Fact>
-          <Fact label="Bib number" empty="Not added">
-            {privateDetails?.bibNumber}
-          </Fact>
-          <Fact label="Affiliation" empty="Not added">
-            {privateDetails?.affiliation}
-          </Fact>
         </FactList>
       </Section>
 

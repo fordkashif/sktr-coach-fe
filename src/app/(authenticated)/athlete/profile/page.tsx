@@ -420,9 +420,6 @@ export default function AthleteProfilePage() {
               <Field label="Preferred name" optional hint="What you like to be called." error={fieldErrors.preferredName}>
                 <Input autoComplete="nickname" maxLength={60} {...detailField("preferredName")} />
               </Field>
-              <Field label="Pronouns" optional error={fieldErrors.pronouns}>
-                <Input maxLength={40} placeholder="she/her, he/him, they/them" {...detailField("pronouns")} />
-              </Field>
               <Field label="Date of birth" error={fieldErrors.dateOfBirth}>
                 <Input
                   type="date"
@@ -445,12 +442,6 @@ export default function AthleteProfilePage() {
               </Field>
               <Field label="Primary event" error={fieldErrors.primaryEvent}>
                 <Input placeholder="100m, long jump, shot put" maxLength={60} value={draft.primaryEvent ?? ""} onChange={(event) => updateDraft("primaryEvent", event.target.value)} />
-              </Field>
-              <Field label="School or club" optional error={fieldErrors.affiliation}>
-                <Input autoComplete="organization" maxLength={120} {...detailField("affiliation")} />
-              </Field>
-              <Field label="Bib or registration number" optional hint="The number you compete under." error={fieldErrors.bibNumber}>
-                <Input maxLength={40} autoCapitalize="characters" {...detailField("bibNumber")} />
               </Field>
             </div>
           </Section>
@@ -556,7 +547,6 @@ export default function AthleteProfilePage() {
                 <FactList>
                   <Fact label="Name">{fullName}</Fact>
                   <Fact label="Preferred name">{details.preferredName}</Fact>
-                  <Fact label="Pronouns">{details.pronouns}</Fact>
                   <Fact label="Date of birth">{profile.dateOfBirth ? `${formatDate(profile.dateOfBirth)}${age !== null ? ` (${age})` : ""}` : null}</Fact>
                   <Fact label="Event group" empty="Not set">
                     {eventGroupLabel(profile.eventGroup)}
@@ -564,8 +554,6 @@ export default function AthleteProfilePage() {
                   <Fact label="Primary event" empty="Not set">
                     {profile.primaryEvent}
                   </Fact>
-                  <Fact label="School or club">{details.affiliation}</Fact>
-                  <Fact label="Bib or registration number">{details.bibNumber}</Fact>
                   {profile.email ? <Fact label="Email">{profile.email}</Fact> : null}
                 </FactList>
               </Section>

@@ -402,12 +402,9 @@ export default function ClubAdminGetStartedPage() {
             </Section>
             <Section title="Your season" hint="Plans, records and season bests follow these dates.">
               <div className="flex flex-col gap-4 pt-3">
-                <Field label="Season year" className="sm:max-w-40">
-                  <Input name="season-year" inputMode="numeric" autoComplete="off" required value={profile.seasonYear} onChange={(event) => setProfile({ ...profile, seasonYear: event.target.value })} />
-                </Field>
                 <FormGrid>
                   <Field label="Season starts">
-                    <Input name="season-start" type="date" autoComplete="off" required value={profile.seasonStart} onChange={(event) => setProfile({ ...profile, seasonStart: event.target.value })} />
+                    <Input name="season-start" type="date" autoComplete="off" required value={profile.seasonStart} onChange={(event) => setProfile({ ...profile, seasonStart: event.target.value, seasonYear: event.target.value.slice(0, 4) || profile.seasonYear })} />
                   </Field>
                   <Field label="Season ends">
                     <Input
