@@ -169,6 +169,9 @@ export function CoachTeamsProvider({ children }: { children: ReactNode }) {
       const preferred = [fromLink, ...(stateRef.current.teams === null ? [candidates[1], candidates[2], candidates[0]] : candidates)]
       const nextId = preferred.find((id): id is string => Boolean(id && assigned.has(id))) ?? result.teams[0]?.id ?? null
 
+      // The ref is read by syncSelectedTeam, which a screen's effect can call before this provider's
+      // own effect copies the new state over. Bring it up to date now.
+      stateRef.current = { ...stateRef.current, teams: result.teams, selectedTeamId: nextId }
       setError(null)
       setTeams(result.teams)
       setSelectedTeamId(nextId)
