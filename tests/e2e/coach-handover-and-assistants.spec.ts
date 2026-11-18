@@ -223,9 +223,10 @@ test("an assistant coach sees and records, with no buttons for what is not their
   await expect(nav.getByRole("link", { name: "Reports" })).toHaveCount(0)
   await expect(nav.getByRole("link", { name: "Athletes" })).toBeVisible()
   await expect(nav.getByRole("link", { name: "Test weeks" })).toBeVisible()
-  // No health columns on the dashboard.
-  await expect(page.getByRole("columnheader", { name: "Readiness" })).toHaveCount(0)
-  await expect(page.getByRole("columnheader", { name: "Adherence" })).toBeVisible()
+  // No health on the dashboard: the athlete tiles show adherence, never readiness or check-ins.
+  const tiles = page.getByRole("list", { name: "Athletes on this team" })
+  await expect(tiles.getByRole("link").first()).toContainText("% done")
+  await expect(tiles).not.toContainText(/Ready|Watch|Review|check-in/)
 
   // The roster: attendance yes, inviting and squads no.
   await page.goto("/coach/teams/t1")
@@ -279,7 +280,8 @@ test("a lead coach and a coach see everything they did before", async ({ page })
     await page.goto("/coach/dashboard")
     await expect(page.locator("[data-assistant-line]")).toHaveCount(0)
     await expect(page.getByRole("link", { name: "Build a plan" })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: "Readiness" })).toBeVisible()
+    // Readiness is on each athlete tile.
+    await expect(page.getByRole("list", { name: "Athletes on this team" })).toContainText(/Ready|Watch|Review/)
     const nav = page.getByRole("navigation").first()
     await expect(nav.getByRole("link", { name: "Plans" })).toBeVisible()
     await expect(nav.getByRole("link", { name: "Reports" })).toBeVisible()

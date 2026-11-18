@@ -36,6 +36,7 @@ import {
   type SaveStateValue,
   type StateTone,
   EditConflictDialog,
+  Ring,
 } from "@/components/sk"
 import { PersonAvatar } from "@/components/account/person-avatar"
 import { csvFileName, downloadCsv } from "@/lib/csv"
@@ -478,7 +479,17 @@ export function TestWeekScreen(props: TestWeekScreenProps) {
         align: "right",
         strong: true,
         phone: "trailing",
-        cell: (week) => (week.status === "draft" ? <span className="font-normal text-sk-mute">Not sent yet</span> : week.athleteCount ? `${week.submittedCount} of ${week.athleteCount}` : "No athletes"),
+        cell: (week) =>
+          week.status === "draft" ? (
+            <span className="font-normal text-sk-mute">Not sent yet</span>
+          ) : week.athleteCount ? (
+            <span className="inline-flex items-center gap-2.5">
+              <Ring progress={week.submittedCount / week.athleteCount} size={34} thickness={5} />
+              {`${week.submittedCount} of ${week.athleteCount}`}
+            </span>
+          ) : (
+            "No athletes"
+          ),
       },
     ]
 

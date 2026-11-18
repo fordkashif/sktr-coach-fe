@@ -34,6 +34,7 @@ import {
   type DataTableColumn,
   type RowMenuItem,
   type StateTone,
+  ProgressAvatar,
 } from "@/components/sk"
 import { describeAvailability, AVAILABILITY_CHANGED_EVENT } from "@/lib/data/athlete/availability-data"
 import {
@@ -275,7 +276,9 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
       header: "Athlete",
       cell: (athlete) => (
         <Link to={`/coach/athletes/${athlete.id}`} className="flex items-center gap-3 hover:text-sk-blue-link" data-athlete-row={athlete.id}>
-          <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
+          <ProgressAvatar value={athlete.adherence} size={46}>
+            <PersonAvatar name={athlete.name} athleteId={athlete.id} size="sm" />
+          </ProgressAvatar>
           <span className="min-w-0">
             {athlete.name}
             <TableSub>{athlete.hasLogin ? athlete.primaryEvent : `${athlete.primaryEvent}, no login`}</TableSub>
@@ -325,7 +328,23 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
           <span className="max-sm:hidden">Available</span>
         ),
     },
-    { key: "adherence", header: "Adherence", align: "right", strong: true, phone: "trailing", cell: (athlete) => adherenceText(athlete.adherence) },
+    {
+      key: "adherence",
+      header: "Adherence",
+      align: "right",
+      strong: true,
+      phone: "trailing",
+      cell: (athlete) => (
+        <span className="inline-flex flex-col items-end gap-1">
+          <span>{adherenceText(athlete.adherence)}</span>
+          {athlete.adherence !== null ? (
+            <span aria-hidden className="block h-1.5 w-16 overflow-hidden rounded-full bg-sk-soft-2 max-sm:hidden">
+              <span className="sk-anim-grow block h-full rounded-full bg-sk-ink" style={{ width: `${Math.max(4, athlete.adherence)}%` }} />
+            </span>
+          ) : null}
+        </span>
+      ),
+    },
     {
       key: "attendance",
       header: "Attendance",

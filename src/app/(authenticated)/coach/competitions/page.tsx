@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "@phosphor-icons/react"
+import { Link } from "react-router-dom"
 import { RelayMark } from "@/components/athlete/relay-parts"
 import { dayText, meetDatesText } from "@/components/athlete/results-parts"
 import { COMPETITIONS_PATH, competitionPath, countdownText, plural, scopeText, whereText } from "@/components/coach/competitions/competition-parts"
-import { DayLabel, EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText } from "@/components/sk"
+import { Countdown, DayLabel, EmptyState, LinkButton, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, StatusText } from "@/components/sk"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { getCompetitionsForStaff, splitCompetitions } from "@/lib/data/competition/competition-data"
 import { getRelaysForStaff } from "@/lib/data/competition/relay-data"
@@ -91,6 +92,15 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
         {loading ? (
           <SkeletonRows rows={2} leading label="Loading competitions" />
         ) : upcoming.length > 0 ? (
+          <>
+          <Link to={competitionPath(upcoming[0].id)} className="sk-tile my-2 flex flex-col gap-3 p-5 sm:flex-row sm:items-end sm:justify-between" data-next-meet aria-label={`Next up: ${upcoming[0].name}, ${countdownText(upcoming[0].startDate, today)}`}>
+            <span className="min-w-0">
+              <span className="block text-[0.8125rem] font-extrabold uppercase tracking-[0.02em] text-sk-mute">Next up</span>
+              <span className="mt-1 block font-display text-[2rem] font-black uppercase leading-[0.95] text-sk-ink">{upcoming[0].name}</span>
+              <span className="mt-1 block text-sm text-sk-mute">{[meetDatesText(upcoming[0].startDate, upcoming[0].endDate), whereText(upcoming[0])].filter(Boolean).join(", ")}</span>
+            </span>
+            <Countdown days={Math.max(0, Math.round(((parseLocalDay(upcoming[0].startDate) ?? today).getTime() - today.getTime()) / 86_400_000))} />
+          </Link>
           <List>
             {upcoming.map((competition) => (
               <ListRow
@@ -108,6 +118,7 @@ function Calendar({ teamId, teamName, waiting }: { teamId: string | null; teamNa
               />
             ))}
           </List>
+          </>
         ) : (
           <EmptyState
             title="Nothing coming up"

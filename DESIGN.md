@@ -198,9 +198,9 @@ Controls: 44px minimum tap height, radius 12 to 16px, never a full pill. Focus r
 
 Icons: `@phosphor-icons/react` only. `weight="bold"` in buttons and rows, `weight="fill"` for the active tab. No Lucide, no Hugeicons. Icons support words; they do not replace them, except the bell, back, close and the athlete's log button, which carry an `aria-label`.
 
-## Athlete skin: "Stopwatch"
+## Athlete and coach skin: "Stopwatch"
 
-The athlete side is the most used part of the app and has to feel like a sports app, so it wears a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root for the athlete role; every rule of the skin lives in `src/styles/globals.css` under that attribute, so coach, club admin and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
+The athlete and coach sides are the most used parts of the app and have to feel like a sports app, so they wear a skin on top of everything above. The shell sets `data-skin="stopwatch"` on its root (and on `<html>`, for sheets and dialogs) for the athlete and coach roles; every rule of the skin lives in `src/styles/globals.css` under that attribute, so club admin and platform admin screens are untouched. Build athlete screens with the same kit; the skin restyles it.
 
 - One accent: blue `sk-accent` (#2152ff, white text on it) on ink (#0e1116) and white. The accent is the highlight (the open tab, today, the main button, the best rep, a personal best); ink is the action colour. No second accent colour, no purple. The accent is set in one place, the `--sk-accent*` tokens in `globals.css` (with `--sk-on-accent` for text on it and `--sk-accent-on-ink` for the accent as text on ink), so it can be changed without touching a screen.
 - Type: Big Shoulders Display (900) for titles, section headings and every number (stats, marks, timers, day numbers), in capitals. Sora for words. Outfit stays for the rest of the app.
@@ -214,6 +214,22 @@ The athlete side is the most used part of the app and has to feel like a sports 
   - choosing: a chosen answer or a ticked set pops accent (a tick also sends out a accent ring), the stepper number bumps, the highlight of segmented views and tabs slides to the chosen one (`SlideMarker`), also across screens for `NavTabs`;
   - opening: sheets spring up from the bottom, dialogs pop, a rest or stopwatch pops into the bar;
   - finishing: `Celebrate` (a accent tick that draws itself in a burst) when a session is done, `PbMoment` after a new personal best.
+
+Coach screens (same skin, plus tiles from `@/components/sk`, file `tiles.tsx`):
+
+- Desktop top bar: the accent pill slides to the open destination (`SlideMarker` in the bar).
+- Dashboard: today's session leads, as the accent card over a photo (`race.webp`) with who has done it and an attendance ring beside "Take attendance". The squad is a `TileGrid` of `PersonTile`s, the week a `WeekRail`, the next meet a `Countdown` tile.
+- Roster: each athlete's avatar sits in their adherence ring (`ProgressAvatar`); adherence has a small bar under the number.
+- Plans: each plan shows its weeks as `WeekSegments` (weeks gone ink, this week the accent).
+- Test weeks: results in show as a small `Ring`. Competitions: the next meet is a countdown tile above the list. An athlete's wellness gets a `ReadinessGauge`.
+
+| Part | What it is |
+|---|---|
+| `TileGrid`, `PersonTile` | A list of grey tiles that pop in one after another, lift on hover and give when pressed. A `PersonTile` is an athlete: avatar in their adherence ring, name, event, readiness, check-in, and the adherence as a big number. `flag` outlines someone who needs a look in amber. |
+| `ProgressAvatar` | An avatar inside a `Ring` showing a share (plan adherence). |
+| `WeekRail` | A week as day tiles in a row, today in the accent; scrolls inside itself on a phone. |
+| `Countdown` | Days until something as one scoreboard number ("12 DAYS", "Tomorrow", "On now"). |
+| `WeekSegments` | The weeks of a block as short bars: gone, this week, to come. |
 
 Motion parts (from `@/components/sk`, file `motion.tsx`):
 

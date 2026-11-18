@@ -657,7 +657,7 @@ body {
 
 @media (prefers-reduced-motion: no-preference) {
   /* Every athlete screen arrives: its blocks rise in, one after another. */
-  [data-skin="stopwatch"] .sk-page > :not([data-sk-actionbar]) { animation: sk-rise 0.5s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-page > :not([data-sk-actionbar]):not([data-sk-composer]) { animation: sk-rise 0.5s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
   [data-skin="stopwatch"] .sk-page > :nth-child(2) { animation-delay: 60ms; }
   [data-skin="stopwatch"] .sk-page > :nth-child(3) { animation-delay: 120ms; }
   [data-skin="stopwatch"] .sk-page > :nth-child(4) { animation-delay: 180ms; }
@@ -816,3 +816,44 @@ body {
   [data-skin="stopwatch"] [data-slot="dialog-content"][data-state="open"] { animation: sk-dialog-pop 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
   .sk-anim-draw { stroke-dasharray: 24; animation: sk-draw 0.5s 0.25s ease-out both; }
 }
+
+/* Desktop top bar under the skin: the accent pill slides to the open destination. */
+[data-skin="stopwatch"] [data-shell-tabs] > a { position: relative; z-index: 1; background: transparent !important; transition: color 0.3s ease, transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1); }
+[data-skin="stopwatch"] [data-shell-tabs] > a[aria-current="page"] { color: var(--sk-on-accent); font-weight: 700; }
+/* Sora runs wider than Outfit: below 1440px the tabs tighten so the bar stays on one row with the team switcher. */
+@media (max-width: 1439px) {
+  [data-skin="stopwatch"] [data-shell-tabs] > a { padding-inline: 0.625rem; font-size: 0.875rem; }
+}
+[data-skin="stopwatch"] [data-shell-tabs] > a:not([aria-current="page"]):hover { color: var(--sk-ink); }
+[data-skin="stopwatch"] [data-shell-tabs] > a:active { transform: scale(0.94); }
+[data-skin="stopwatch"] [data-shell-tabs] > .sk-slide-marker[data-variant="pill"] { background: var(--sk-accent); border-radius: 12px; }
+
+/* ---- Tiles (coach side and anywhere else) ---------------------------------------------------- */
+@layer components {
+  .sk-tile { @apply rounded-[24px] bg-sk-soft text-left text-sk-ink outline-offset-2 focus-visible:outline-2 focus-visible:outline-sk-blue; }
+  a.sk-tile { @apply cursor-pointer; }
+  .sk-tile-accent { @apply bg-sk-blue text-white; }
+  .sk-tile-flag { box-shadow: inset 0 0 0 2px var(--sk-amber); }
+}
+[data-skin="stopwatch"] .sk-tile { background: var(--sk-sw-grey); transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.25s ease, background-color 0.2s ease; }
+[data-skin="stopwatch"] .sk-tile-accent { background: var(--sk-accent); color: var(--sk-on-accent); }
+[data-skin="stopwatch"] .sk-tile-flag { box-shadow: inset 0 0 0 2px var(--sk-amber); }
+@media (hover: hover) {
+  [data-skin="stopwatch"] a.sk-tile:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgb(14 17 22 / 0.35); }
+}
+[data-skin="stopwatch"] a.sk-tile:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] .sk-tile-item { animation: sk-pop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(2) { animation-delay: 60ms; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(3) { animation-delay: 120ms; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(4) { animation-delay: 180ms; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(5) { animation-delay: 240ms; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(6) { animation-delay: 300ms; }
+  [data-skin="stopwatch"] .sk-tile-item:nth-child(n + 7) { animation-delay: 360ms; }
+}
+/* Filter chips under the skin: grey pills, the chosen one ink. */
+[data-skin="stopwatch"] [data-sk-chip] { border: 0; border-radius: 9999px; background: var(--sk-sw-grey); color: var(--sk-ink); transition: background-color 0.2s ease, color 0.2s ease, transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1); }
+[data-skin="stopwatch"] [data-sk-chip]:hover { background: #e4e6dd; }
+[data-skin="stopwatch"] [data-sk-chip]:active { transform: scale(0.93); }
+[data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] { background: var(--sk-sw-ink); color: #fff; }
+[data-skin="stopwatch"] [data-sk-chip][aria-checked="true"] span { color: rgb(255 255 255 / 0.75); }

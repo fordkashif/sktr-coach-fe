@@ -47,6 +47,7 @@ import {
   notify,
   type DataTableColumn,
   type StateTone,
+  ReadinessGauge,
 } from "@/components/sk"
 import { AthleteAttendanceSection } from "@/components/coach/athlete-attendance-section"
 import { SessionMediaForCoach, useAthleteSessionMedia } from "@/components/coach/athlete-log/session-media-for-coach"
@@ -867,6 +868,11 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
       </Section>
 
       <Section title="Readiness" meta={latest ? `Last check-in ${shortDay(latest.date)}` : undefined}>
+        {latest ? (
+          <div className="flex justify-center pb-3 pt-2 lg:justify-start">
+            <ReadinessGauge value={latest.readinessScore} />
+          </div>
+        ) : null}
         {points.length >= 2 && latest && earliest ? (
           <TrendLine
             points={points}

@@ -1,3 +1,5 @@
-Photos for the athlete screens. From Unsplash (free to use under the Unsplash License), resized to 900px and saved as WebP.
+Photos for the athlete and coach screens. From Unsplash (free to use under the Unsplash License), resized to 900px and saved as WebP.
 
-- blocks.webp (home, above today's session): unsplash.com/photos/1461896836934-ffe607ba8211
+- blocks.webp (athlete home, above today's session): unsplash.com/photos/1461896836934-ffe607ba8211
+- race.webp (coach dashboard, behind today's session): unsplash.com/photos/1532444458054-01a7dd3e9fca
+- aerial.webp (coach athlete screen header): unsplash.com/photos/1502904550040-7534597429ae
