@@ -133,6 +133,8 @@ export function CoachTeamsProvider({ children }: { children: ReactNode }) {
   const [reloadTick, setReloadTick] = useState(0)
   const guards = useRef(new Set<SwitchGuard>())
   const loadedAt = useRef(0)
+  /** A deep link that asked for a team before the list had loaded. It wins once the list is in. */
+  const pendingTeam = useRef<string | null>(null)
   const stateRef = useRef({ teams, selectedTeamId, userKey })
   useEffect(() => {
     stateRef.current = { teams, selectedTeamId, userKey }
@@ -162,9 +164,14 @@ export function CoachTeamsProvider({ children }: { children: ReactNode }) {
       const assigned = new Set(result.teams.map((team) => team.id))
       const candidates = [stateRef.current.selectedTeamId, readLastTeam(userKey), getCookieValue(COACH_TEAM_COOKIE)]
       // On the first load the remembered team (last picked by this user) beats the cookie the login set.
-      const preferred = stateRef.current.teams === null ? [candidates[1], candidates[2], candidates[0]] : candidates
+      const fromLink = pendingTeam.current
+      pendingTeam.current = null
+      const preferred = [fromLink, ...(stateRef.current.teams === null ? [candidates[1], candidates[2], candidates[0]] : candidates)]
       const nextId = preferred.find((id): id is string => Boolean(id && assigned.has(id))) ?? result.teams[0]?.id ?? null
 
+      // The ref is read by syncSelectedTeam, which a screen's effect can call before this provider's
+      // own effect copies the new state over. Bring it up to date now.
+      stateRef.current = { ...stateRef.current, teams: result.teams, selectedTeamId: nextId }
       setError(null)
       setTeams(result.teams)
       setSelectedTeamId(nextId)
@@ -205,8 +212,14 @@ export function CoachTeamsProvider({ children }: { children: ReactNode }) {
 
   const syncSelectedTeam = useCallback((teamId: string | null | undefined) => {
     const current = stateRef.current
-    if (!teamId || teamId === current.selectedTeamId) return
-    if (!current.teams?.some((team) => team.id === teamId)) return
+    if (!teamId) return
+    // The list is still loading: remember the link's team and pick it when the list arrives.
+    if (current.teams === null) {
+      pendingTeam.current = teamId
+      return
+    }
+    if (teamId === current.selectedTeamId) return
+    if (!current.teams.some((team) => team.id === teamId)) return
     stateRef.current = { ...current, selectedTeamId: teamId }
     setSelectedTeamId(teamId)
     persistSelection(current.userKey, teamId)

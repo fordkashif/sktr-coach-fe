@@ -62,7 +62,7 @@ export default function SharedReportPage() {
   }, [])
 
   return (
-    <main id="main-content" data-shared-report={typeof state === "string" ? state : "found"}>
+    <main id="main-content" data-skin="stopwatch" className="min-h-dvh bg-white py-3 sm:py-8" data-shared-report={typeof state === "string" ? state : "found"}>
       <Screen width="narrow">
         {state === "loading" ? (
           <SkeletonRows rows={6} label="Opening the report" />

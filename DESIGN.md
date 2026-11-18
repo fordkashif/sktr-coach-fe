@@ -287,6 +287,7 @@ Shell, overlays and public pages:
 - More (phone): the extra destinations as a two column grid of tiles (round icon, scoreboard label), the open one in the accent. They bounce in one after another.
 - Sheet and dialog titles take the scoreboard type under the skin (`data-sk-overlay-title`).
 - Sign out: a coral mark that pops in and pulses, with two equal pill buttons.
+- The invite pages (athlete, coach and guardian claim, join a team) use `InviteFrame`, which is the same split as sign in with its own line on the panel ("Your team is waiting.", "Your athletes are waiting.", "Follow their training.", "Join your team."). `InviteSteps` are numbered tiles. The shared report link wears the skin too.
 - Sign in, request access, reset password and the other public pages (`AuthSplit`, `PublicFrame` in `src/layouts/auth-layout.tsx`) wear the skin too. The panel is a photo (`blocks-tall.webp`) with a race clock that runs up to a time and lands a "New best", and the line about the product on an accent card. The demo roles are tiles.
 
 Parent or guardian screens (same skin and tiles):
