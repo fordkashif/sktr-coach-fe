@@ -15,9 +15,8 @@ function dayText(value: string) {
 }
 
 /** One athlete's attendance on the coach's athlete screen: the rate over the last four weeks and the latest marks. */
-export function AthleteAttendanceSection({ athleteId, athleteName, teamId }: { athleteId: string; athleteName: string; teamId: string | null }) {
+export function AthleteAttendanceSection({ athleteId, teamId }: { athleteId: string; athleteName?: string; teamId: string | null }) {
   const [records, setRecords] = useState<AttendanceRecord[] | null>(null)
-  const first = athleteName.split(" ")[0] || athleteName
 
   useEffect(() => {
     let cancelled = false
@@ -59,7 +58,6 @@ export function AthleteAttendanceSection({ athleteId, athleteName, teamId }: { a
       ) : records.length === 0 ? (
         <EmptyState
           title="No attendance taken yet"
-          body={`When you take attendance for the team, ${first}'s marks and their rate over the last 4 weeks show here.`}
           action={
             takeHref ? (
               <LinkButton to={takeHref} size="sm">
@@ -69,7 +67,7 @@ export function AthleteAttendanceSection({ athleteId, athleteName, teamId }: { a
           }
         />
       ) : (
-        <List aria-label="Recent attendance">
+        <List tiles aria-label="Recent attendance">
           {records.slice(0, SHOWN).map((record) => (
             <ListRow
               key={record.id}

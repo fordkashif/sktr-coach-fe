@@ -29,6 +29,8 @@ import {
   Segmented,
   Select,
   SkeletonRows,
+  Stat,
+  StatStrip,
   StatusText,
   Tag,
   type DataTableColumn,
@@ -217,7 +219,6 @@ export default function CoachCompetitionDetailPage() {
           <Section title="This competition is not on your calendar">
             <EmptyState
               title="It may have been removed"
-              body="Or it belongs to a team you do not coach. Your calendar shows every meet you can see."
               action={
                 <LinkButton to={COMPETITIONS_PATH} size="sm">
                   Back to competitions
@@ -421,6 +422,19 @@ export default function CoachCompetitionDetailPage() {
       {notice ? <Notice tone={notice.tone}>{notice.text}</Notice> : null}
       {error ? <Notice tone="error">The latest changes could not be loaded. {error}</Notice> : null}
 
+      <StatStrip aria-label="At a glance">
+        {over ? (
+          <Stat label="Results in" value={withResult} of={entered.length} hint="Past competition" />
+        ) : started ? (
+          <Stat label="Competition" value="On now" hint={meetDatesText(competition.startDate, competition.endDate)} />
+        ) : (
+          <Stat label="Starts in" value={daysAway} hint={daysAway === 1 ? "day to go" : "days to go"} />
+        )}
+        <Stat label="Athletes" value={athleteCount} hint={athleteCount === 0 ? "None entered yet" : "Entered"} />
+        <Stat label="Events" value={entered.length} hint={withResult > 0 ? `${withResult} with a result` : "Entries"} />
+        <Stat label="Relay teams" value={relays.length} />
+      </StatStrip>
+
       {started ? (
         <Segmented
           label="Entries or results"
@@ -437,7 +451,6 @@ export default function CoachCompetitionDetailPage() {
       {activeMode === "results" ? (
         <Section
           title="Results"
-          hint="Type a mark like 10.84, 1:52.30 or 7.42. Tab goes across to wind and place, Enter goes down. Each cell saves as you leave it and the result goes straight into the athlete's records. For splits, every attempt or every height, open Rounds and detail on a row."
           meta={entered.length > 0 ? `${withResult} of ${entered.length} in` : undefined}
         >
           {entered.length > 0 ? (
@@ -474,7 +487,6 @@ export default function CoachCompetitionDetailPage() {
           ) : (
             <EmptyState
               title="No one is entered"
-              body="Enter the athletes who competed, then type their results here."
               action={
                 <LinkButton to={competitionPath(competition.id, "enter")} size="sm">
                   Enter athletes
@@ -490,7 +502,6 @@ export default function CoachCompetitionDetailPage() {
           ) : (
             <EmptyState
               title="No one is entered yet"
-              body="Pick athletes from your roster and their events in one go. Each athlete is told they are entered."
               action={
                 <LinkButton to={competitionPath(competition.id, "enter")} size="sm">
                   Enter athletes
@@ -504,7 +515,6 @@ export default function CoachCompetitionDetailPage() {
       <Section
         title="Relays"
         meta={relays.length > 0 ? plural(relays.length, "team", "teams") : undefined}
-        hint="A relay team is four athletes in running order and one time. It counts for the team's relay records, never as an athlete's own record."
       >
         {relays.length > 0 ? (
           <RelayList
@@ -519,7 +529,7 @@ export default function CoachCompetitionDetailPage() {
             }
           />
         ) : (
-          <p className="sk-list-sub">No relay teams yet.</p>
+          <EmptyState title="No relay teams yet" />
         )}
         <Button className="mt-3 self-start" size="sm" onClick={() => setRelayDialog("new")}>
           <Plus className="size-[18px]" weight="bold" aria-hidden />

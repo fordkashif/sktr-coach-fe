@@ -54,7 +54,6 @@ export function AthleteReportsSection({ athleteId, athleteName }: { athleteId: s
       ) : reports.length === 0 ? (
         <EmptyState
           title="No reports yet"
-          body={`Write up a period for ${first}: your summary with their attendance, training, results and goals. Share it in the app, by a private link, or on paper.`}
           action={
             <LinkButton to={createPath} size="sm">
               Create report
@@ -62,7 +61,7 @@ export function AthleteReportsSection({ athleteId, athleteName }: { athleteId: s
           }
         />
       ) : (
-        <List aria-label="Saved reports">
+        <List tiles aria-label="Saved reports">
           {reports.map((report) => (
             <ListRow
               key={report.id}

@@ -5,7 +5,8 @@ import { Plus, X } from "@phosphor-icons/react"
 import { useNavigate, useParams } from "react-router-dom"
 import { meetDatesText } from "@/components/athlete/results-parts"
 import { competitionPath, plural } from "@/components/coach/competitions/competition-parts"
-import { ActionBar, Button, EmptyState, Input, Notice, PersonPicker, Screen, ScreenHeader, Section, Select, SkeletonRows, StatusText, type PickerPerson } from "@/components/sk"
+import CoachCompetitionDetailPage from "@/app/(authenticated)/coach/competitions/[competitionId]/page"
+import { Button, EmptyState, Input, Notice, PersonPicker, Section, Select, Sheet, SkeletonRows, StatusText, type PickerPerson } from "@/components/sk"
 import { useAvatarLookup } from "@/lib/account-store"
 import { useCoachTeamScope } from "@/lib/coach-teams"
 import { availabilityCovers, describeAvailability, listAthleteAvailability, type AthleteAvailability } from "@/lib/data/athlete/availability-data"
@@ -172,14 +173,28 @@ export default function CoachEnterAthletesPage() {
 
   const loading = (competition === undefined || (competition && roster === null)) && !error
 
-  return (
-    <Screen width="narrow">
-      <ScreenHeader
-        back={{ to: backTo, label: competition?.name ?? "Competition" }}
-        title="Enter athletes"
-        lede={competition ? `${competition.name}, ${meetDatesText(competition.startDate, competition.endDate)}. Tick the athletes, check their events, then enter them all at once.` : undefined}
-      />
+  const footer =
+    competition && roster && roster.length > 0 ? (
+      <div className="flex w-full flex-wrap items-center justify-between gap-3" aria-label="Enter athletes" role="group">
+        <p className="min-w-0 text-[0.9375rem] font-semibold text-sk-ink">{chosen.length === 0 ? "No athletes chosen" : `${plural(chosen.length, "athlete", "athletes")}, ${plural(eventCount, "event", "events")}`}</p>
+        <Button variant="primary" disabled={saving || chosen.length === 0} onClick={() => void submit()}>
+          {saving ? "Entering..." : chosen.length > 1 ? `Enter ${chosen.length} athletes` : "Enter athlete"}
+        </Button>
+      </div>
+    ) : undefined
 
+  return (
+    <>
+      <CoachCompetitionDetailPage />
+      <Sheet
+        open
+        onOpenChange={(open) => (open ? undefined : navigate(backTo))}
+        title="Enter athletes"
+        description={competition ? `${competition.name}, ${meetDatesText(competition.startDate, competition.endDate)}` : undefined}
+        className="sm:max-w-xl"
+        footer={footer}
+      >
+      <div className="flex flex-col gap-4">
       {error ? <Notice tone="error">This could not be loaded. {error}</Notice> : null}
       {competition === null ? <Notice tone="info">This competition no longer exists.</Notice> : null}
 
@@ -190,7 +205,7 @@ export default function CoachEnterAthletesPage() {
       ) : null}
 
       {competition && roster ? (
-        <Section title="Athletes" meta={chosen.length > 0 ? `${chosen.length} chosen` : undefined} hint="Each athlete starts with their primary event. Add more events under their name.">
+        <Section title="Athletes" meta={chosen.length > 0 ? `${chosen.length} chosen` : undefined}>
           {roster.length > 0 ? (
             <PersonPicker
               multiple
@@ -266,7 +281,7 @@ export default function CoachEnterAthletesPage() {
               }}
             />
           ) : (
-            <EmptyState title="No athletes on this roster" body="Invite athletes to the team first, then enter them here." />
+            <EmptyState title="No athletes on this roster" />
           )}
         </Section>
       ) : null}
@@ -274,14 +289,8 @@ export default function CoachEnterAthletesPage() {
       {away.length > 0 ? <Notice tone="warning">{away.join(". ")}. You can still enter them.</Notice> : null}
       {formError ? <Notice tone="error">{formError}</Notice> : null}
 
-      {competition && roster && roster.length > 0 ? (
-        <ActionBar aria-label="Enter athletes">
-          <p className="min-w-0 text-[0.9375rem] font-semibold text-sk-ink">{chosen.length === 0 ? "No athletes chosen" : `${plural(chosen.length, "athlete", "athletes")}, ${plural(eventCount, "event", "events")}`}</p>
-          <Button variant="primary" disabled={saving || chosen.length === 0} onClick={() => void submit()}>
-            {saving ? "Entering..." : chosen.length > 1 ? `Enter ${chosen.length} athletes` : "Enter athlete"}
-          </Button>
-        </ActionBar>
-      ) : null}
-    </Screen>
+      </div>
+      </Sheet>
+    </>
   )
 }

@@ -135,7 +135,6 @@ export function TeamSquadsSection({
     <Section
       aria-label="Squads"
       title="Squads"
-      hint={`Groups inside ${teamName}, for sending a plan or a test week to part of the team.`}
       action={
         canManage && squads && squads.length > 0 ? (
           <Button size="sm" onClick={openNew}>
@@ -153,11 +152,6 @@ export function TeamSquadsSection({
       ) : squads.length === 0 ? (
         <EmptyState
           title="No squads yet"
-          body={
-            canManage
-              ? "Make one for each group you coach differently, such as Short sprints, 400m or Juniors. Then a plan or a test week can go to just that group."
-              : "The lead coach has not made any squads on this team."
-          }
           action={
             canManage ? (
               <Button size="sm" onClick={openNew}>
@@ -167,7 +161,7 @@ export function TeamSquadsSection({
           }
         />
       ) : (
-        <List aria-label={`Squads of ${teamName}`}>
+        <List tiles aria-label={`Squads of ${teamName}`}>
           {squads.map((squad) => {
             const memberNames = squad.athleteIds.map((id) => names.get(id)).filter((name): name is string => Boolean(name))
             const preview = memberNames.length <= 3 ? squadNamesText(memberNames) : `${memberNames.slice(0, 2).join(", ")} and ${memberNames.length - 2} more`

@@ -86,7 +86,6 @@ export function AthleteGuardiansSection({ athleteId, athleteName }: { athleteId:
   return (
     <Section
       title="Parents and guardians"
-      hint={`A guardian gets their own sign-in and can read ${first}'s plan, results and team news. They cannot change anything, and you can end their access at any time.`}
       data-guardians-section
     >
       {loadError ? <Notice tone="error">{`Guardians could not be loaded. ${loadError}`}</Notice> : null}
@@ -99,10 +98,10 @@ export function AthleteGuardiansSection({ athleteId, athleteName }: { athleteId:
           {empty ? (
             <EmptyState
               title="No guardian has access"
-              body={data.storedGuardian.email ? `The contact on file is ${data.storedGuardian.name ?? "a guardian"} (${data.storedGuardian.email}). Invite them to give them a sign-in.` : "Invite a parent or guardian by email to give them a sign-in."}
+              body={data.storedGuardian.email ? `On file: ${data.storedGuardian.name ?? "a guardian"} (${data.storedGuardian.email}).` : undefined}
             />
           ) : (
-            <List aria-label={`Parents and guardians of ${athleteName}`}>
+            <List tiles aria-label={`Parents and guardians of ${athleteName}`}>
               {data.links.map((link) => (
                 <ActionRow
                   key={link.id}

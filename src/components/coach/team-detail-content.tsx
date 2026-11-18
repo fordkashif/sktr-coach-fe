@@ -445,11 +445,6 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
           ) : athletes.length === 0 ? (
             <EmptyState
               title="No athletes yet"
-              body={
-                permissions.canManageRoster
-                  ? "Athletes show up here with their readiness, availability and adherence as soon as they join. Invite them by email, show the squad a QR code, or add an athlete who has no login."
-                  : "Athletes show up here once the lead coach has added them to the team."
-              }
               action={
                 !permissions.canManageRoster ? undefined : (
                 <div className="flex flex-wrap gap-2">
@@ -553,14 +548,13 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
       ) : view === "squads" ? (
         <TeamSquadsSection teamId={teamId} teamName={name} squads={roster ? squads : null} athletes={athletes} loadError={squadsError} onChanged={() => void loadSquads()} canManage={permissions.canManageSquads} />
       ) : (
-        <Section aria-label="Invites" title="Invites" hint="Every invite for this team, newest first. Open the menu on a waiting invite to email it again, copy its link or cancel it.">
+        <Section aria-label="Invites" title="Invites">
           {invitesError ? <Notice tone="error">Could not load invites: {invitesError}</Notice> : null}
           {invites === null ? (
             <SkeletonRows rows={3} label="Loading invites" />
           ) : invites.length === 0 ? (
             <EmptyState
               title="No invites sent yet"
-              body="Invite athletes and we email each one a link to join. The invites appear here, so you can see who has joined and who is still waiting."
               action={
                 <Button size="sm" onClick={() => openAdd("list")}>
                   Invite athletes
@@ -581,9 +575,9 @@ export function CoachTeamDetailContent({ teamId, teamName }: { teamId: string; t
                 ]}
               />
               {shownInvites.length === 0 ? (
-                <EmptyState title="None like that" body="No invite for this team is in that state right now." />
+                <EmptyState title="None like that" />
               ) : (
-                <List aria-label="Invites">
+                <List tiles aria-label="Invites">
                   {shownInvites.map((invite) => {
                     const status = INVITE_STATUS[invite.status]
                     const isPending = invite.status === "pending"

@@ -89,7 +89,6 @@ export function PlanOverview({
   for (const marker of markers) {
     for (const week of weeksTouched(plan.startDate, plan.weeks, marker.startsOn, marker.endsOn)) markersByWeek.set(week, [...(markersByWeek.get(week) ?? []), marker])
   }
-  const hasLoad = loads.some((entry) => entry.load !== null) || targets.some((target) => target !== null)
   const from = Math.min(range.from, range.to, plan.weeks)
   const to = Math.min(Math.max(range.from, range.to), plan.weeks)
 
@@ -137,7 +136,6 @@ export function PlanOverview({
   return (
     <Section
       title="Plan overview"
-      hint={hasLoad ? "Bars are the planned load of each week: minutes times intended effort. A line marks a target." : "Every week at a glance. Pick a week to open it."}
       action={
         <Button variant="quiet" size="sm" aria-expanded={editing} onClick={() => (editing ? setEditing(false) : openEditor())}>
           {editing ? "Close phases" : phases.length > 0 ? "Edit phases" : "Add phases"}
@@ -211,10 +209,18 @@ export function PlanOverview({
                   >
                     {/* The bar: planned load from the bottom, the target as a line across. */}
                     <span className="relative flex h-12 w-full items-end justify-center border-b border-sk-line" aria-hidden>
-                      {load.load !== null ? <span className="w-5 rounded-t-[3px] bg-sk-faint" style={{ height: `${Math.max(6, Math.round((load.load / peak) * 100))}%` }} /> : null}
+                      {load.load !== null ? (
+                        <span className="sk-week-bar w-5 rounded-t-[3px] bg-sk-faint" style={{ height: `${Math.max(6, Math.round((load.load / peak) * 100))}%` }} />
+                      ) : load.sessions > 0 ? (
+                        <span className="sk-week-pips mb-1.5 flex max-w-full flex-wrap justify-center gap-[3px] px-1">
+                          {Array.from({ length: Math.min(load.sessions, 7) }, (_, pip) => (
+                            <span key={pip} className="size-[7px] rounded-full bg-sk-faint" />
+                          ))}
+                        </span>
+                      ) : null}
                       {target !== null ? <span className="absolute inset-x-1 h-0.5 bg-sk-ink" style={{ bottom: `${Math.round((target / peak) * 100)}%` }} /> : null}
                     </span>
-                    <span className={cn("text-[0.9375rem] font-bold tabular-nums", week === activeWeek ? "text-sk-blue-ink" : "text-sk-ink")}>{week}</span>
+                    <span className={cn("sk-week-num text-[0.9375rem] font-bold tabular-nums", week === activeWeek ? "text-sk-blue-ink" : "text-sk-ink")}>{week}</span>
                     <span className="h-4 text-xs font-medium leading-4 text-sk-mute">{type ? TYPE_SHORT[type] : ""}</span>
                     <span className="flex h-4 items-center gap-0.5 text-sk-ink-2" aria-hidden>
                       {hasCompetition ? <Trophy className="size-3.5" weight="fill" /> : null}

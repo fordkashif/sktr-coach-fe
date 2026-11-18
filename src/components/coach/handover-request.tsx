@@ -1,5 +1,6 @@
 "use client"
 
+import { SignOut } from "@phosphor-icons/react"
 import { useCallback, useEffect, useState } from "react"
 import { Button, Dialog, Field, FormActions, Notice, Section, Textarea, notify } from "@/components/sk"
 import { dismissHandoverRequest, getMyOpenHandoverRequest, HANDOVER_NOTE_MAX_LENGTH, requestCoachHandover, type HandoverRequest } from "@/lib/data/club-admin/handover-data"
@@ -64,16 +65,18 @@ export function HandoverRequestSection({ teamId, teamName }: { teamId: string; t
   const covered = request ? request.teamIds.includes(teamId) : false
 
   return (
-    <Section title="Leaving this team" hint="Only a club admin can change who coaches a team.">
+    <Section aria-label="Leaving this team" className="sk-handover">
       {request ? (
-        <p className="text-sm text-sk-ink-2" data-handover-request-sent>
+        <p className="sk-handover-row text-sm text-sk-ink-2" data-handover-request-sent>
+          <SignOut className="sk-handover-icon" weight="bold" aria-hidden />
           You asked your club admins on {shortDate(request.createdAt)} to hand over {covered ? teamName : "a team"}. You keep coaching until they do.{" "}
           <button type="button" className="sk-link cursor-pointer" disabled={busy} onClick={() => void takeBack()}>
             Take the request back
           </button>
         </p>
       ) : (
-        <p className="text-sm text-sk-ink-2">
+        <p className="sk-handover-row text-sm text-sk-ink-2">
+          <SignOut className="sk-handover-icon" weight="bold" aria-hidden />
           Stepping back from {teamName}?{" "}
           <button type="button" className="sk-link cursor-pointer" onClick={() => setOpen(true)}>
             Ask a club admin to hand it over

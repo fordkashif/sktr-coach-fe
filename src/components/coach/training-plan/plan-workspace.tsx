@@ -442,8 +442,8 @@ export function PlanWorkspace({
     />
   ) : null
 
-  if (view === "setup" && plan) {
-    return (
+  const setupSheet =
+    view === "setup" && plan ? (
       <PlanSetup
         plan={plan}
         teams={directory.teams}
@@ -464,12 +464,12 @@ export function PlanWorkspace({
           }
         }}
       />
-    )
-  }
+    ) : null
 
-  if (view === "build" && plan) {
+  if ((view === "build" || (view === "setup" && !isNewSetup)) && plan) {
     return (
       <>
+      {setupSheet}
       {printDialog}
       {templateDialog}
       {conflictDialog}
@@ -541,6 +541,7 @@ export function PlanWorkspace({
 
   return (
     <>
+    {setupSheet}
     {printDialog}
     {templateDialog}
     <PlanList

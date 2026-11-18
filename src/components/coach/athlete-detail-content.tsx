@@ -1,9 +1,10 @@
 "use client"
 
-import { Plus } from "@phosphor-icons/react"
+import { CheckFat, FirstAidKit, Lock, Plus } from "@phosphor-icons/react"
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import { PersonAvatar } from "@/components/account/person-avatar"
+import { cn } from "@/lib/utils"
 import {
   CopyLinkButton,
   EMPTY_MANAGED_ATHLETE_FORM,
@@ -511,6 +512,7 @@ function SessionList({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const visible = showAll ? sessions : sessions.slice(0, ROW_LIMIT)
+  const editingSession = editingId ? (sessions.find((session) => session.id === editingId) ?? null) : null
   // Photos and videos the athlete attached to these sessions. Commenting is the coach's, like the session note.
   const media = useAthleteSessionMedia(athleteId, visible.map((session) => session.id))
 
@@ -530,7 +532,7 @@ function SessionList({
 
   return (
     <>
-      <List aria-label="Recent sessions">
+      <List tiles aria-label="Recent sessions">
         {visible.map((session) => {
           const state = sessionState(session)
           const meta = [
@@ -540,7 +542,6 @@ function SessionList({
             session.enteredByStaff ? "entered by a coach" : null,
             session.status === "completed" && session.completedOn && session.completedOn !== session.isoDate ? `done ${shortDay(session.completedOn)}` : null,
           ].filter(Boolean)
-          const editing = editingId === session.id
           const mediaRows = media.bySession.has(session.id) ? (
             <SessionMediaForCoach
               media={media}
@@ -591,13 +592,12 @@ function SessionList({
                     <span className="mt-1 block text-sk-ink-2">{viewTarget(session.details)}</span>
                   ) : null}
                   {session.status === "skipped" && session.skipNote ? <span className="mt-1 block text-sk-ink-2">Their note: {session.skipNote}</span> : null}
-                  {session.coachNote && !editing ? <span className="mt-1 block text-sk-ink-2">Your note: {session.coachNote}</span> : null}
+                  {session.coachNote ? <span className="mt-1 block text-sk-ink-2">Your note: {session.coachNote}</span> : null}
                 </>
               }
               trailing={<StatusText tone={state.tone}>{state.label}</StatusText>}
               className="[&_.sk-list-row]:items-start"
               actions={(() => {
-                if (editing) return undefined
                 const items = [
                   ...(canAddNote
                     ? [
@@ -619,30 +619,34 @@ function SessionList({
                 // No menu at all rather than an empty one.
                 return items.length > 0 ? <RowMenu label={`More for ${session.title}, ${shortDay(session.isoDate)}`} items={items} /> : undefined
               })()}
-              below={
-                mediaRows && !editing ? (
-                  mediaRows
-                ) : editing ? (
-                  <div className="flex flex-col gap-3">
-                    {mediaRows}
-                    <Field label="Note for this session" hint="The athlete sees it when they open the session." error={error ? `Could not save the note: ${error}` : undefined}>
-                      <Textarea rows={3} maxLength={1000} value={draft} onChange={(event) => setDraft(event.target.value)} />
-                    </Field>
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="sm" disabled={saving} onClick={() => void save(session.id)}>
-                        {saving ? "Saving..." : "Save note"}
-                      </Button>
-                      <Button size="sm" variant="quiet" disabled={saving} onClick={() => setEditingId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : undefined
-              }
+              below={mediaRows ?? undefined}
             />
           )
         })}
       </List>
+      {editingSession ? (
+        <Dialog open onOpenChange={(open) => (open ? undefined : setEditingId(null))} title={editingSession.coachNote ? "Edit note" : "Add note"} description={`${editingSession.title}, ${shortDay(editingSession.isoDate)}`}>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void save(editingSession.id)
+            }}
+          >
+            <Field label="Note for this session" hint={`${athleteFirstName} sees it when they open the session.`} error={error ? `Could not save the note: ${error}` : undefined}>
+              <Textarea rows={4} maxLength={1000} autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving..." : "Save note"}
+              </Button>
+              <Button variant="quiet" disabled={saving} onClick={() => setEditingId(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      ) : null}
       {sessions.length > ROW_LIMIT ? (
         <div>
           <Button variant="quiet" size="sm" aria-expanded={showAll} onClick={() => setShowAll((current) => !current)}>
@@ -727,61 +731,61 @@ function OverviewTab({
 
       {/* Injured, sick or away is health information, and setting it is the coach's call. */}
       {permissions.canSeeHealth && permissions.canEditAthleteRecords ? (
-      <Section
-        title="Availability"
-        action={
-          period ? undefined : (
-            <Button variant="quiet" size="sm" onClick={onOpenAvailability}>
-              Set availability
-            </Button>
-          )
-        }
-      >
-        {endError ? <Notice tone="error">{endError}</Notice> : null}
-        {period ? (
-          <>
-            <List aria-label="Availability">
-              <ListRow
-                leading={<StatusDot tone="amber" />}
-                title={sentenceCase(describeAvailability(period, today))}
-                subtitle={[period.note, period.createdByRole === "athlete" ? `Set by ${first}` : period.createdByRole ? "Set by a coach" : null, "Planned sessions inside it are excused"].filter(Boolean).join(". ")}
-              />
-            </List>
-            {confirmEnd ? (
-              <InlineConfirm
-                question={period.startsOn > today ? `Cancel this for ${first}?` : `Mark ${first} available again from today?`}
-                confirmLabel={period.startsOn > today ? "Cancel it" : "Mark available"}
-                cancelLabel="Keep it"
-                busy={ending}
-                onConfirm={() => void endPeriod()}
-                onCancel={() => setConfirmEnd(false)}
-              />
-            ) : (
-              <div className="flex flex-wrap gap-2 pt-2">
-                <Button size="sm" onClick={() => setConfirmEnd(true)}>
-                  {period.startsOn > today ? "Cancel it" : "Mark available again"}
-                </Button>
-                <Button size="sm" variant="quiet" onClick={onOpenAvailability}>
-                  Change dates
-                </Button>
+        <section aria-label="Availability" data-availability={period ? "away" : "available"} className={cn("sk-avail-tile", period ? "is-away" : "is-available")}>
+          <span className="sk-avail-icon" aria-hidden>
+            {period ? <FirstAidKit className="size-7" weight="bold" /> : <CheckFat className="size-7" weight="fill" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="sk-avail-label">Availability</p>
+            <p className="sk-avail-word">{period ? sentenceCase(describeAvailability(period, today)) : "Available"}</p>
+            {period ? (
+              <p className="mt-1 text-sm text-sk-ink-2">
+                {[period.note, period.createdByRole === "athlete" ? `Set by ${first}` : period.createdByRole ? "Set by a coach" : null, "Sessions excused"].filter(Boolean).join(". ")}
+              </p>
+            ) : null}
+            {endError ? (
+              <Notice tone="error" className="mt-3">
+                {endError}
+              </Notice>
+            ) : null}
+            {period && confirmEnd ? (
+              <div className="mt-3">
+                <InlineConfirm
+                  question={period.startsOn > today ? `Cancel this for ${first}?` : `Mark ${first} available again from today?`}
+                  confirmLabel={period.startsOn > today ? "Cancel it" : "Mark available"}
+                  cancelLabel="Keep it"
+                  busy={ending}
+                  onConfirm={() => void endPeriod()}
+                  onCancel={() => setConfirmEnd(false)}
+                />
               </div>
-            )}
-          </>
-        ) : (
-          <p className="text-[0.9375rem] text-sk-mute">Available. If {first} is injured, sick or away, set it here and their planned sessions are excused instead of counting as missed.</p>
-        )}
-      </Section>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+            {period ? (
+              confirmEnd ? null : (
+                <>
+                  <Button size="sm" variant="primary" onClick={() => setConfirmEnd(true)}>
+                    {period.startsOn > today ? "Cancel it" : "Mark available again"}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={onOpenAvailability}>
+                    Change dates
+                  </Button>
+                </>
+              )
+            ) : null}
+          </div>
+        </section>
       ) : null}
 
       <Split
         main={
-          <Section title="Recent sessions" hint={permissions.canEditPlans ? "What was planned and what was logged, set by set. A note you add to a session is shown to the athlete." : "What was planned and what was logged, set by set."}>
+          <Section title="Recent sessions">
             {sessions.length > 0 ? (
               <SessionList sessions={sessions} athleteId={athlete.id} onNoteSaved={onNoteSaved} onLog={(isoDate) => navigate(logPath(athlete.id, isoDate))} canAddNote={permissions.canEditPlans} athleteFirstName={first} />
             ) : (
               <EmptyState
                 title="No sessions yet"
-                body="Sessions appear here once a training plan is published to this athlete's team."
                 action={
                   permissions.canEditPlans ? (
                     <LinkButton to="/coach/training-plan" size="sm">
@@ -810,7 +814,6 @@ function OverviewTab({
 function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
   const { athlete, wellness, openPainReports } = detail
   const [showAll, setShowAll] = useState(false)
-  const first = athlete.name.split(" ")[0] || athlete.name
   const points = useMemo(
     () =>
       [...wellness]
@@ -846,9 +849,17 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
 
   return (
     <>
-      <Section title="Pain and injury reports" hint="Health information. Only this athlete's coaches and club admins can see it.">
+      <Section
+        title="Pain and injury reports"
+        meta={
+          <span className="inline-flex items-center gap-1.5">
+            <Lock className="size-4" weight="bold" aria-hidden />
+            Coaches only
+          </span>
+        }
+      >
         {openPainReports.length > 0 ? (
-          <List aria-label="Open pain reports">
+          <List tiles aria-label="Open pain reports">
             {openPainReports.map((report) => (
               <ListRow
                 key={report.id}
@@ -863,7 +874,7 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
             ))}
           </List>
         ) : (
-          <EmptyState title="No open reports" body={`When ${first} reports pain or an injury it shows here until they mark it resolved.`} />
+          <EmptyState title="No open reports" />
         )}
       </Section>
 
@@ -886,13 +897,12 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
         ) : (
           <EmptyState
             title={wellness.length === 0 ? "No check-ins yet" : "One check-in so far"}
-            body={`When ${first} fills in the daily check-in, their readiness trend builds up here.`}
           />
         )}
       </Section>
 
       {wellness.length > 0 ? (
-        <Section title="Check-ins" hint="Soreness, fatigue, mood and stress are scored 1 to 5.">
+        <Section title="Check-ins" meta="Scored 1 to 5">
           <DataTable caption={`Wellness check-ins of ${athlete.name}`} columns={columns} rows={showAll ? wellness : wellness.slice(0, ROW_LIMIT)} rowKey={(entry) => entry.id} />
           {wellness.length > ROW_LIMIT ? (
             <div>
@@ -910,7 +920,6 @@ function WellnessTab({ detail }: { detail: CoachAthleteDetail }) {
 function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; records: AthleteRecords | null; error: string | null }) {
   const { athlete } = detail
   const permissions = useCoachPermissions(athlete.teamId)
-  const first = athlete.name.split(" ")[0] || athlete.name
   const addPath = `/coach/athletes/${athlete.id}/results/new`
   const standings = useMemo(() => {
     const all = new Map<string, ResultStanding>()
@@ -932,7 +941,6 @@ function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; re
       <Section title="Results">
         <EmptyState
           title="No results yet"
-          body={`Marks from meets, training and test weeks build ${first}'s history. Personal and season bests are worked out from it.`}
           action={
             permissions.canEditAthleteRecords ? (
               <LinkButton to={addPath} size="sm">
@@ -976,7 +984,7 @@ function ResultsTab({ detail, records, error }: { detail: CoachAthleteDetail; re
   return (
     <>
       <Section title="Bests" meta={`Season ${records.season.start.slice(0, 4)}`}>
-        <List aria-label="Personal and season bests">
+        <List tiles aria-label="Personal and season bests">
           {records.events.map((event) => {
             const { personalBest, seasonBest, windAssistedBest } = event.bests
             const lead = personalBest ?? windAssistedBest ?? event.results[0]
@@ -1063,9 +1071,16 @@ function DetailsTab({
 
   return (
     <>
-      <Notice>Private details. Only {first}'s coaches and your club admins can see this, never other athletes.</Notice>
 
-      <Section title="About" action={athlete.hasLogin || !permissions.canManageRoster ? undefined : <Button variant="quiet" size="sm" onClick={() => setEditOpen(true)}>Edit details</Button>}>
+      <Section
+        title="About"
+        meta={
+          <span className="inline-flex items-center gap-1.5">
+            <Lock className="size-4" weight="bold" aria-hidden />
+            Coaches only
+          </span>
+        }
+        action={athlete.hasLogin || !permissions.canManageRoster ? undefined : <Button variant="quiet" size="sm" onClick={() => setEditOpen(true)}>Edit details</Button>}>
         <FactList aria-label="About this athlete">
           <Fact label="Login">{athlete.hasLogin ? "Has their own login" : "No login. You enter results and availability for them"}</Fact>
           <Fact label="Date of birth" empty="Not added">

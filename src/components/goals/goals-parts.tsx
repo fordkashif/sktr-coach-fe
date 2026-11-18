@@ -350,7 +350,7 @@ export function GoalList({
   const [editing, setEditing] = useState<AthleteGoal | null>(null)
   return (
     <>
-      <List aria-label={ariaLabel}>
+      <List tiles aria-label={ariaLabel}>
         {goals.map((goal) => (
           <GoalRow key={goal.id} goal={goal} results={view.results} audience={audience} onEdit={() => setEditing(goal)} onChanged={onChanged} />
         ))}

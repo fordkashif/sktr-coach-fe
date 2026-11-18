@@ -14,7 +14,7 @@ test("coach can review athlete detail, export reports, and publish a test week",
   await page.getByRole("tab", { name: "Results" }).click()
   await expect(page.locator("#main-content")).toContainText(/No results yet|Bests/)
   await page.getByRole("tab", { name: "Details" }).click()
-  await expect(page.locator("#main-content")).toContainText("Only Mia's coaches and your club admins can see this")
+  await expect(page.locator("#main-content")).toContainText("Coaches only")
 
   await page.goto("/coach/reports")
   await expect(page).toHaveURL(/\/coach\/reports$/)

@@ -1,6 +1,6 @@
 import { ArrowRight } from "@phosphor-icons/react"
 import { useState } from "react"
-import { Button, Field, FormActions, FormGrid, Input, List, Notice, RadioRow, Screen, ScreenHeader, SearchInput, Section, Segmented, Select, SkeletonRows, Textarea } from "@/components/sk"
+import { Button, Field, FormActions, FormGrid, Input, List, Notice, RadioRow, SearchInput, Section, Sheet, Segmented, Select, SkeletonRows, Textarea } from "@/components/sk"
 import {
   EVENT_GROUPS,
   MAX_WEEKS,
@@ -125,17 +125,21 @@ export function PlanSetup({
   }
 
   return (
-    <Screen width="narrow">
-      <ScreenHeader
-        back={{ onClick: onCancel, label: isNew ? "All plans" : "Back to the plan" }}
-        title={isNew ? "New plan" : "Plan details"}
-        lede={isNew ? "Start with the basics. You can change any of this later." : "Changing the start date moves every session with it."}
-      />
-
-      {error ? <Notice tone="error">{error}</Notice> : null}
+    <Sheet
+      open
+      onOpenChange={(open) => (open ? undefined : onCancel())}
+      title={isNew ? "New plan" : "Plan details"}
+      description={isNew ? undefined : "Changing the start date moves every session with it."}
+      className="sm:max-w-xl"
+    >
+      {error ? (
+        <Notice tone="error" className="mb-4">
+          {error}
+        </Notice>
+      ) : null}
 
       <form
-        className="contents"
+        className="sk-plan-setup flex flex-col gap-6"
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
@@ -169,7 +173,7 @@ export function PlanSetup({
         </Section>
 
         {isNew ? (
-          <Section title="Start from" hint="A starter outline or one of your club's templates fills every week with sessions you can then edit.">
+          <Section title="Start from">
             <Segmented<StartFrom>
               label="Start from"
               className="mt-2 self-start"
@@ -249,6 +253,6 @@ export function PlanSetup({
           </Button>
         </FormActions>
       </form>
-    </Screen>
+    </Sheet>
   )
 }

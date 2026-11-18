@@ -80,7 +80,7 @@ test.describe("athlete results, records and competitions (mock mode)", () => {
     const day = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`
     await page.getByLabel("Name").fill("Friday Night Jumps")
     await page.getByLabel("Date", { exact: true }).fill(day)
-    await page.getByRole("button", { name: "Add competition" }).click()
+    await page.getByRole("button", { name: "Add competition", exact: true }).click()
     await expect(page.getByRole("heading", { level: 1, name: "Friday Night Jumps" })).toBeVisible()
 
     await page.getByRole("button", { name: "Add an event" }).click()

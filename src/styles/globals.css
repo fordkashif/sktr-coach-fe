@@ -434,10 +434,10 @@ body {
   /* ---- Empty state: plain text and one action, never a box --------------- */
   .sk-empty {
     @apply flex flex-col items-start gap-3 py-2;
-    background: transparent !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    padding-inline: 0 !important;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding-inline: 0;
   }
 
   /* ---- Notice -------------------------------------------------------------- */
@@ -972,3 +972,111 @@ body {
   [data-sk-bubble="mine"] { animation: sk-bubble-in-right 0.4s ease-out both; }
   [data-sk-bubble="theirs"] { animation: sk-bubble-in-left 0.4s ease-out both; }
 }
+
+/* ---- Tile lists: every row its own grey tile, rising in one after another ---- */
+.sk-empty-mark { display: none; }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] { gap: 8px; }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] > li {
+  border: 0;
+  border-radius: 20px;
+  background: var(--sk-sw-grey);
+  padding: 2px 16px;
+  transition: transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1), background-color 0.2s ease;
+}
+@media (min-width: 640px) { [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li { padding: 4px 20px; } }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:has(a.sk-list-row, button.sk-list-row):hover { transform: translateY(-2px); background: #ebece6; }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] a.sk-list-row:active,
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] button.sk-list-row:active { background: transparent; }
+[data-skin="stopwatch"] .sk-tile .sk-list[data-sk-tiles] > li,
+[data-skin="stopwatch"] [role="dialog"] .sk-list[data-sk-tiles] > li { background: #fff; }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] .sk-list-title { font-weight: 700; }
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] .sk-btn-secondary,
+[data-skin="stopwatch"] .sk-list[data-sk-tiles] .sk-icon-btn { background: #fff; }
+
+/* ---- Empty state: a grey tile with three lane lines that run in ---- */
+[data-skin="stopwatch"] .sk-empty {
+  position: relative;
+  overflow: hidden;
+  align-items: flex-start;
+  gap: 14px;
+  border-radius: 24px;
+  background: var(--sk-sw-grey);
+  padding: 20px 22px;
+}
+[data-skin="stopwatch"] .sk-tile .sk-empty,
+[data-skin="stopwatch"] [role="dialog"] .sk-empty { background: #fff; }
+[data-skin="stopwatch"] .sk-empty-mark { display: flex; flex-direction: column; gap: 5px; }
+[data-skin="stopwatch"] .sk-empty-mark > span { display: block; height: 6px; border-radius: 999px; background: var(--sk-accent); transform-origin: left; }
+[data-skin="stopwatch"] .sk-empty-mark > span:nth-child(1) { width: 44px; }
+[data-skin="stopwatch"] .sk-empty-mark > span:nth-child(2) { width: 30px; opacity: 0.55; }
+[data-skin="stopwatch"] .sk-empty-mark > span:nth-child(3) { width: 18px; opacity: 0.3; }
+[data-skin="stopwatch"] .sk-empty-title { font-family: var(--sk-font-display); font-size: 1.375rem; font-weight: 800; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.01em; }
+
+@keyframes sk-lane-run { from { transform: scaleX(0) } 70% { transform: scaleX(1.12) } to { transform: scaleX(1) } }
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li { animation: sk-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:nth-child(2) { animation-delay: 45ms; }
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:nth-child(3) { animation-delay: 90ms; }
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:nth-child(4) { animation-delay: 135ms; }
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:nth-child(5) { animation-delay: 180ms; }
+  [data-skin="stopwatch"] .sk-list[data-sk-tiles] > li:nth-child(n + 6) { animation-delay: 225ms; }
+  [data-skin="stopwatch"] .sk-empty { animation: sk-tile-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  [data-skin="stopwatch"] .sk-empty-mark > span { animation: sk-lane-run 0.6s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+  [data-skin="stopwatch"] .sk-empty-mark > span:nth-child(1) { animation-delay: 150ms; }
+  [data-skin="stopwatch"] .sk-empty-mark > span:nth-child(2) { animation-delay: 230ms; }
+  [data-skin="stopwatch"] .sk-empty-mark > span:nth-child(3) { animation-delay: 310ms; }
+}
+
+/* ---- Availability tile on the coach's athlete screen ---- */
+.sk-avail-tile { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; border-radius: 24px; padding: 18px 20px; }
+.sk-avail-tile.is-available { background: #e6f6ec; }
+.sk-avail-tile.is-away { background: #fff3d6; }
+.sk-avail-icon { display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; color: #fff; }
+.is-available .sk-avail-icon { background: #12a150; }
+.is-away .sk-avail-icon { background: #e59a00; }
+.sk-avail-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sk-mute); }
+.sk-avail-word { font-family: var(--sk-font-display); font-size: 2rem; font-weight: 800; line-height: 1; text-transform: uppercase; color: var(--sk-ink); }
+.sk-avail-tile .sk-btn-secondary { background: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-avail-tile { animation: sk-tile-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .sk-avail-icon { animation: sk-pop 0.6s 0.15s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+}
+
+/* ---- Leaving a team: one quiet pill row at the foot of the roster ---- */
+.sk-handover-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.sk-handover-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--sk-mute); }
+[data-skin="stopwatch"] .sk-handover-row { width: fit-content; max-width: 100%; border-radius: 999px; background: var(--sk-sw-grey); padding: 10px 18px; }
+
+/* ---- Plan overview: each week a tile, the open one in the accent ---- */
+[data-skin="stopwatch"] [data-plan-overview] ol { column-gap: 6px; }
+[data-skin="stopwatch"] [data-overview-week] { border-radius: 16px; background: var(--sk-sw-grey); padding-top: 8px; transition: transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1), background-color 0.2s ease; }
+[data-skin="stopwatch"] [data-overview-week]:hover { background: #e8e9e3; transform: translateY(-2px); }
+[data-skin="stopwatch"] [data-overview-week] > span:first-child { border-bottom: 0; }
+[data-skin="stopwatch"] [data-overview-week] .sk-week-bar { width: 22px; border-radius: 6px 6px 3px 3px; background: rgba(var(--sk-accent-rgb), 0.35); }
+[data-skin="stopwatch"] [data-overview-week] .sk-week-pips > span { background: rgba(var(--sk-accent-rgb), 0.45); }
+[data-skin="stopwatch"] [data-overview-week] .sk-week-num { font-family: var(--sk-font-display); font-size: 1.5rem; font-weight: 800; line-height: 1; }
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] { background: var(--sk-accent); color: var(--sk-on-accent); }
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] .sk-week-num,
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] span { color: var(--sk-on-accent); }
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] .sk-week-bar,
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] .sk-week-pips > span { background: rgba(255, 255, 255, 0.85); }
+[data-skin="stopwatch"] [data-overview-week][aria-current="true"] > span:last-child { background: transparent; }
+[data-skin="stopwatch"] [data-overview-week][aria-pressed="true"] { outline: 3px solid var(--sk-accent); outline-offset: -3px; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-skin="stopwatch"] [data-overview-week] .sk-week-bar { animation: sk-bar-grow 0.6s cubic-bezier(0.3, 1.4, 0.5, 1) both; transform-origin: bottom; }
+  [data-skin="stopwatch"] [data-overview-week] .sk-week-pips > span { animation: sk-pop 0.4s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+}
+@keyframes sk-bar-grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+
+/* ---- Plan builder: day tiles, block tiles ---- */
+[data-skin="stopwatch"] .sk-plan-days > li:has([aria-current="true"]) { background: var(--sk-accent-tint); box-shadow: inset 0 0 0 2px var(--sk-accent); }
+[data-skin="stopwatch"] .sk-plan-blocks { margin-top: 8px; }
+[data-skin="stopwatch"] .sk-plan-blocks > li { padding: 14px 14px 12px; }
+[data-skin="stopwatch"] .sk-plan-blocks > li:first-child { padding-top: 14px; }
+[data-skin="stopwatch"] .sk-plan-blocks .sk-block-num { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; background: var(--sk-accent); color: var(--sk-on-accent); font-family: var(--sk-font-display); font-size: 0.95rem; }
+[data-skin="stopwatch"] .sk-plan-blocks .sk-field { background: #fff; }
+
+/* ---- A day number badge: "Day" over a big number ---- */
+.sk-day-badge { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 14px; background: var(--sk-accent); color: var(--sk-on-accent); line-height: 1; }
+.sk-day-badge > span:first-child { font-size: 0.625rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.sk-day-badge > span:last-child { font-family: var(--sk-font-display); font-size: 1.375rem; font-weight: 800; }

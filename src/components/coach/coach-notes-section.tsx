@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
-import { ActionRow, Button, EmptyState, Field, FormGrid, InlineConfirm, Input, List, Notice, RowMenu, Section, SkeletonRows, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
+import { Lock } from "@phosphor-icons/react"
+import { ActionRow, Button, Dialog, EmptyState, Field, FormGrid, InlineConfirm, Input, List, Notice, RowMenu, Section, SkeletonRows, StatusText, Textarea, notify, type RowMenuItem } from "@/components/sk"
 import { useUndoableDelete } from "@/lib/use-undoable-delete"
 import { addCoachNote, COACH_NOTE_MAX_LENGTH, deleteCoachNote, listCoachNotes, updateCoachNote, type CoachNote } from "@/lib/data/coach/coach-notes-data"
 import { parseLocalDay } from "@/lib/data/pr/pr-display"
@@ -50,11 +51,11 @@ function NoteForm({
           <Input type="date" required max={todayIso()} value={date} onChange={(event) => setDate(event.target.value)} />
         </Field>
       </FormGrid>
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="sm" disabled={busy || !body.trim()}>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button type="submit" variant="primary" disabled={busy || !body.trim()}>
           {busy ? "Saving..." : submitLabel}
         </Button>
-        <Button size="sm" variant="quiet" disabled={busy} onClick={onCancel}>
+        <Button variant="quiet" disabled={busy} onClick={onCancel}>
           Cancel
         </Button>
       </div>
@@ -117,23 +118,29 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
   }
 
   const visible = notes ? (showAll ? notes : notes.slice(0, SHOWN)) : []
+  const editingNote = editingId ? (notes?.find((note) => note.id === editingId) ?? null) : null
 
   return (
     <Section
-      title="Coach notes"
-      hint="Only coaches and club admins can see these."
+      title={
+        <span className="inline-flex items-center gap-2">
+          Coach notes
+          <span className="inline-grid size-7 place-items-center rounded-full bg-sk-sw-grey" data-coaches-only>
+            <Lock className="size-4" weight="bold" aria-hidden />
+            <span className="sr-only">Coaches only</span>
+          </span>
+        </span>
+      }
       data-coach-notes
       action={
-        adding ? undefined : (
-          <Button variant="quiet" size="sm" onClick={() => setAdding(true)}>
-            Add note
-          </Button>
-        )
+        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+          Add note
+        </Button>
       }
     >
       {loadError ? <Notice tone="error">Could not load or save notes: {loadError}</Notice> : null}
 
-      {adding ? (
+      <Dialog open={adding} onOpenChange={setAdding} title="Add note" description={`Private to coaches. ${first} never sees it.`}>
         <NoteForm
           initial={{ body: "", date: todayIso() }}
           submitLabel="Save note"
@@ -147,17 +154,15 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
             return null
           }}
         />
-      ) : null}
+      </Dialog>
 
       {notes === null ? (
         <SkeletonRows rows={2} label="Loading coach notes" />
       ) : notes.length === 0 ? (
-        adding ? null : (
-          <EmptyState title="No notes yet" body={`Keep what you notice about ${first} here: how a session looked, what you agreed, what to watch. ${first} never sees it.`} />
-        )
+        <EmptyState title="No notes yet" />
       ) : (
         <>
-          <List aria-label="Coach notes">
+          <List tiles aria-label="Coach notes">
             {visible.map((note) => {
               const items: RowMenuItem[] = [
                 ...(note.canEdit
@@ -168,7 +173,6 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
                   : []),
                 ...(note.canDelete ? [{ label: "Delete", onSelect: () => setConfirmId(note.id), danger: true }] : []),
               ]
-              const editing = editingId === note.id
               return (
                 <ActionRow
                   key={note.id}
@@ -176,36 +180,18 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
                   className="[&_.sk-list-row]:items-start"
                   title={dayText(note.date)}
                   subtitle={
-                    editing ? (
-                      note.authorName
-                    ) : (
-                      <>
+                    <>
                         <span className="mt-1 block whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed text-sk-ink">{note.body}</span>
                         <span className="mt-1 block">
                           {note.authorName}
                           {note.edited ? ", edited" : ""}
                         </span>
-                      </>
-                    )
+                    </>
                   }
                   trailing={note.pinned ? <StatusText tone="blue">Pinned</StatusText> : undefined}
-                  actions={items.length > 0 && !editing ? <RowMenu label={`More for the note of ${dayText(note.date)}`} items={items} /> : undefined}
+                  actions={items.length > 0 ? <RowMenu label={`More for the note of ${dayText(note.date)}`} items={items} /> : undefined}
                   below={
-                    editing ? (
-                      <NoteForm
-                        initial={{ body: note.body, date: note.date }}
-                        submitLabel="Save changes"
-                        onCancel={() => setEditingId(null)}
-                        onSubmit={async (values) => {
-                          const result = await updateCoachNote(note.id, values)
-                          if (!result.ok) return result.error.message
-                          setEditingId(null)
-                          notify("Note saved")
-                          void load()
-                          return null
-                        }}
-                      />
-                    ) : confirmId === note.id ? (
+                    confirmId === note.id ? (
                       <InlineConfirm
                         question="Delete this note? It cannot be brought back."
                         confirmLabel="Delete note"
@@ -219,6 +205,23 @@ export function CoachNotesSection({ athleteId, athleteName }: { athleteId: strin
               )
             })}
           </List>
+          {editingNote ? (
+            <Dialog open onOpenChange={(open) => (open ? undefined : setEditingId(null))} title="Edit note">
+              <NoteForm
+                initial={{ body: editingNote.body, date: editingNote.date }}
+                submitLabel="Save changes"
+                onCancel={() => setEditingId(null)}
+                onSubmit={async (values) => {
+                  const result = await updateCoachNote(editingNote.id, values)
+                  if (!result.ok) return result.error.message
+                  setEditingId(null)
+                  notify("Note saved")
+                  void load()
+                  return null
+                }}
+              />
+            </Dialog>
+          ) : null}
           {notes.length > SHOWN ? (
             <div>
               <Button variant="quiet" size="sm" aria-expanded={showAll} onClick={() => setShowAll((current) => !current)}>

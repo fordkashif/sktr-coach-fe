@@ -274,7 +274,7 @@ for (const viewport of [
       await page.getByRole("navigation", { name: "Plans" }).getByRole("link", { name: "Templates" }).click()
       await page.getByRole("button", { name: "More for Phased block" }).click()
       await page.getByRole("menuitem", { name: "Start a plan from it" }).click()
-      await expect(page.getByRole("heading", { level: 1, name: "New plan" })).toBeVisible()
+      await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
       await page.getByLabel("Plan name").fill("Winter phases")
       await page.getByRole("button", { name: "Continue to build" }).click()
       await expect(page.getByRole("heading", { level: 1, name: "Winter phases" })).toBeVisible()
@@ -312,7 +312,7 @@ for (const viewport of [
       await expect(page.getByLabel(/Week focus/)).toHaveValue("Base")
       await expect(page.getByLabel(/Week type/)).toHaveValue("")
       await expect(page.locator('[data-has-session="true"]')).toHaveCount(1)
-      await expect(page.locator("[data-week-planned-load]")).toContainText("Planned load shows once a session has minutes and an intended effort.")
+      await expect(page.locator("[data-week-planned-load]")).toHaveCount(0)
       // Saving it again adds nothing it did not have.
       await page.getByLabel(/Week focus/).fill("Base two")
       await page.getByRole("button", { name: "Save draft" }).click()
