@@ -182,7 +182,10 @@ export default function CoachInviteAcceptPage() {
       displayName: fullName.trim(),
     })
 
-    if (!claimResult.ok) {
+    // A second press after the account was already made (the invite is no longer pending) carries on
+    // by signing in with the same password, so a half-finished join can still be completed.
+    const alreadyClaimed = !claimResult.ok && /not pending/i.test(claimResult.error.message)
+    if (!claimResult.ok && !alreadyClaimed) {
       setSubmitting(false)
       setError(claimResult.error.message)
       return
@@ -194,7 +197,7 @@ export default function CoachInviteAcceptPage() {
     })
     if (signInResult.error || !signInResult.data.session) {
       setSubmitting(false)
-      setError(signInResult.error?.message ?? "Coach account claimed, but no session was established.")
+      setError(alreadyClaimed ? "This invite has already been used. Sign in with your password to continue." : (signInResult.error?.message ?? "Coach account claimed, but no session was established."))
       return
     }
 
@@ -205,9 +208,10 @@ export default function CoachInviteAcceptPage() {
       return
     }
 
+    // The password was set when the account was made above. Setting the same one again is refused by
+    // Supabase ("New password should be different"), so only the name is saved here.
     const completeResult = await completeCurrentCoachOnboarding({
       displayName: fullName.trim(),
-      password: password.trim(),
     })
     setSubmitting(false)
 
