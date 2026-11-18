@@ -49,20 +49,25 @@ export function SignOutDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       }}
       title="Sign out?"
       description="You will need your email and password to sign back in on this device. Your other devices stay signed in."
-      className="sm:max-w-md"
+      className="sk-signout sm:max-w-md"
       footer={
-        <>
-          <Button variant="quiet" onClick={() => onOpenChange(false)} disabled={busy}>
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row">
+          <Button variant="secondary" className="w-full sm:flex-1" onClick={() => onOpenChange(false)} disabled={busy}>
             Stay signed in
           </Button>
-          <button type="button" className="sk-btn sk-btn-danger-solid" onClick={() => void confirm()} disabled={busy} data-confirm-sign-out>
+          <button type="button" className="sk-btn sk-btn-danger-solid w-full sm:flex-1" onClick={() => void confirm()} disabled={busy} data-confirm-sign-out>
             <SignOut className="size-5" weight="bold" aria-hidden />
             {busy ? "Signing out..." : "Sign out"}
           </button>
-        </>
+        </div>
       }
     >
-      {null}
+      <div className="flex justify-center py-2" aria-hidden>
+        <span className="sk-signout-mark relative grid size-24 place-items-center rounded-full bg-sk-coral-tint text-sk-coral-ink">
+          <span className="absolute inset-0 rounded-full bg-sk-coral-tint" />
+          <SignOut className="relative size-10" weight="bold" />
+        </span>
+      </div>
     </Dialog>
   )
 }

@@ -243,6 +243,14 @@ Club admin screens (same skin and tiles):
 - Billing: what is in use is a row of `UsageMeter`s.
 - Rings drawn on a grey tile get a white track.
 
+Shell, overlays and public pages:
+
+- Profile menu: an accent card with the avatar, name, email and role, then rows with a round icon and a chevron; Sign out in coral. It springs open and its rows land one after another.
+- More (phone): the extra destinations as a two column grid of tiles (round icon, scoreboard label), the open one in the accent. They bounce in one after another.
+- Sheet and dialog titles take the scoreboard type under the skin (`data-sk-overlay-title`).
+- Sign out: a coral mark that pops in and pulses, with two equal pill buttons.
+- Sign in, request access, reset password and the other public pages (`AuthSplit`, `PublicFrame` in `src/layouts/auth-layout.tsx`) wear the skin too. The panel is a photo (`blocks-tall.webp`) with a race clock that runs up to a time and lands a "New best", and the line about the product on an accent card. The demo roles are tiles.
+
 Parent or guardian screens (same skin and tiles):
 
 - Home: today leads, as the accent card over a photo (`stride.webp`): the session, sessions done this week in a ring, and "Open the plan". The week is a `WeekRail`; the next competition is a tile with its events as chips and a `Countdown`.
