@@ -1,13 +1,34 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { cn } from "@/lib/utils"
 import { GuardianChildScreen, dayRange, shortDay } from "@/components/guardian/guardian-frame"
-import { EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText } from "@/components/sk"
+import { Bars, EmptyState, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText } from "@/components/sk"
 import { getGuardianReports, getGuardianResults } from "@/lib/data/guardian/guardian-data"
-import type { GuardianChild, GuardianResults } from "@/lib/data/guardian/types"
+import type { GuardianChild, GuardianResult, GuardianResults } from "@/lib/data/guardian/types"
 import { reportRangeText } from "@/lib/data/reports/athlete-report"
 import type { MyReport } from "@/lib/data/reports/athlete-report-data"
 import { viewText } from "@/lib/units-view"
+
+/**
+ * The event with the most marks (two or more), its last five oldest first, for the bars. A mark in
+ * seconds is a time, so lower is better.
+ */
+function progression(results: GuardianResult[]) {
+  const byEvent = new Map<string, GuardianResult[]>()
+  for (const result of results) {
+    if (!Number.isFinite(Number.parseFloat(result.mark))) continue
+    byEvent.set(result.eventLabel, [...(byEvent.get(result.eventLabel) ?? []), result])
+  }
+  const [event, marks] = [...byEvent.entries()].sort((a, b) => b[1].length - a[1].length)[0] ?? []
+  if (!event || !marks || marks.length < 2) return null
+  const recent = [...marks].sort((a, b) => a.date.localeCompare(b.date)).slice(-5)
+  return {
+    event,
+    lowerIsBetter: /\d\s*s$/.test(recent[0].mark.trim()),
+    items: recent.map((result) => ({ key: result.id, label: shortDay(result.date).replace(/^\w+, /, ""), value: Number.parseFloat(result.mark), display: viewText(result.mark) })),
+  }
+}
 
 function ChildResults({ child }: { child: GuardianChild }) {
   const [data, setData] = useState<GuardianResults | null>(null)
@@ -33,6 +54,7 @@ function ChildResults({ child }: { child: GuardianChild }) {
   }, [child])
 
   const loading = !data && !error
+  const progress = data ? progression(data.results) : null
 
   return (
     <Screen>
@@ -62,6 +84,16 @@ function ChildResults({ child }: { child: GuardianChild }) {
                 </List>
               )}
             </Section>
+
+            {progress ? (
+              <Section title={`${progress.event}, mark by mark`}>
+                <Bars
+                  label={`${child.firstName}'s ${progress.event} marks, oldest first`}
+                  lowerIsBetter={progress.lowerIsBetter}
+                  items={progress.items}
+                />
+              </Section>
+            ) : null}
 
             <Section title="Results" hint="Newest first.">
               {loading ? (
@@ -117,11 +149,17 @@ function ChildResults({ child }: { child: GuardianChild }) {
               ) : !data || data.records.length === 0 ? (
                 <EmptyState title="No records yet" />
               ) : (
-                <List aria-label="Records">
-                  {data.records.map((record) => (
-                    <ListRow key={record.eventLabel} title={record.eventLabel} subtitle={shortDay(record.date)} trailing={<span className="text-lg font-extrabold tabular-nums text-sk-ink">{viewText(record.mark)}</span>} />
+                <ul aria-label="Records" className="grid grid-cols-2 gap-2.5">
+                  {data.records.map((record, index) => (
+                    <li key={record.eventLabel} className="sk-tile-item">
+                      <span className={cn("sk-tile flex h-full flex-col p-4", index === 0 && "sk-tile-accent")} data-record={record.eventLabel}>
+                        <span className={cn("text-sm font-bold", index === 0 ? "text-sk-on-accent" : "text-sk-mute")}>{record.eventLabel}</span>
+                        <span className="mt-1 font-display text-[2rem] font-black leading-none tabular-nums">{viewText(record.mark)}</span>
+                        <span className={cn("mt-auto pt-2 text-[0.8125rem]", index === 0 ? "text-sk-on-accent/85" : "text-sk-mute")}>{shortDay(record.date)}</span>
+                      </span>
+                    </li>
                   ))}
-                </List>
+                </ul>
               )}
             </Section>
 

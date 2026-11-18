@@ -234,9 +234,12 @@ export function Bars({
   lowerIsBetter,
   className,
   label,
+  bestWord = "Best",
 }: {
   items: Array<{ key: string; label: ReactNode; value: number; display: ReactNode }>
   lowerIsBetter?: boolean
+  /** The word on the best bar; empty for none. */
+  bestWord?: string
   className?: string
   label: string
 }) {
@@ -257,7 +260,7 @@ export function Bars({
                 className={cn("sk-anim-grow flex h-full items-center justify-between rounded-[14px] px-3", isBest ? "bg-sk-accent text-sk-on-accent" : "bg-sk-ink text-white")}
                 style={{ width: `${width}%`, animationDelay: `${index * 110}ms` }}
               >
-                <span className="text-[0.6875rem] font-extrabold uppercase">{isBest ? "Best" : ""}</span>
+                <span className="text-[0.6875rem] font-extrabold uppercase">{isBest ? bestWord : ""}</span>
                 <span className="font-display text-[1.5rem] font-black leading-none tabular-nums">{item.display}</span>
               </span>
             </span>
