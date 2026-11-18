@@ -437,7 +437,6 @@ export default function PlatformAdminTenantsPage() {
         <Section>
           <EmptyState
             title="No clubs yet"
-            body="Approve a club request and it appears here with its package, status and club admin."
             action={
               <LinkButton to="/platform-admin/requests" size="sm">
                 Open requests

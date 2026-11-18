@@ -316,22 +316,22 @@ export default function PlatformAdminCommercialPage() {
     <Screen>
       <ScreenHeader
         title="Package requests"
-        lede="Clubs ask here when they want a different package. Approving changes their limits straight away. Declining sends your note back to them."
+        lede="Clubs asking for a different package."
       />
 
       {loadError ? <Notice tone="error">We could not load package requests. {loadError}</Notice> : null}
       {done ? <Notice tone="success">{done}</Notice> : null}
       {clubsError ? <Notice tone="warning">Club details could not be loaded, so club names and current packages may be missing below. {clubsError}</Notice> : null}
 
-      <Section title="Waiting for you" meta={loading || pending.length === 0 ? undefined : `${pending.length} waiting`} hint="Open a request to see the club's reason and how its limits would change.">
+      <Section title="Waiting for you" meta={loading || pending.length === 0 ? undefined : `${pending.length} waiting`}>
         {loading ? (
           <SkeletonRows rows={2} label="Loading package requests" />
         ) : pending.length === 0 ? (
           loadError ? null : (
-            <EmptyState title="Nothing to review" body="When a club admin asks for a different package from their billing screen, the request lands here with their reason." />
+            <EmptyState title="Nothing to review" />
           )
         ) : (
-          <List aria-label="Package requests waiting for you">
+          <List tiles aria-label="Package requests waiting for you">
             {pending.map((request) => (
               <ListRow
                 key={request.id}
@@ -349,7 +349,6 @@ export default function PlatformAdminCommercialPage() {
 
       <Section
         title="Decided"
-        hint="Newest decision first. Every decision is also written to Platform activity."
         meta={decided.length > 0 ? plural(decided.length, "request") : undefined}
         action={
           decided.length === 0 ? (
@@ -362,7 +361,7 @@ export default function PlatformAdminCommercialPage() {
         {loading ? (
           <SkeletonRows rows={3} label="Loading decisions" />
         ) : decided.length === 0 ? (
-          <EmptyState title="No decisions yet" body="Approved and declined requests are kept here with your note." />
+          <EmptyState title="No decisions yet" />
         ) : (
           <>
             <DataTable caption="Package requests that were decided" columns={decidedColumns} rows={decided.slice(0, historyVisible)} rowKey={(request) => request.id} />

@@ -1,3 +1,4 @@
+import { Alarm, BellRinging, Broom, EnvelopeSimple } from "@phosphor-icons/react"
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button, EmptyState, Fact, FactList, List, ListRow, Notice, Screen, ScreenHeader, Section, SkeletonRows, Split, StatusText, type StateTone } from "@/components/sk"
@@ -12,7 +13,7 @@ const TONE: Record<HealthState, StateTone> = { working: "green", attention: "cor
 /** One part of the system: its state as a dot and words, one line on what is going on, one on what to do, then its numbers. */
 function Part({ title, health, children }: { title: string; health: Health; children: React.ReactNode }) {
   return (
-    <Section title={title} aria-label={title}>
+    <Section title={title} aria-label={title} className="sk-part-tile" data-health={health.state}>
       <StatusText tone={TONE[health.state]}>{HEALTH_LABEL[health.state]}</StatusText>
       <p className="sk-list-sub mt-1">{health.summary}</p>
       {health.todo ? <p className="mt-1 text-[0.9375rem] font-semibold text-sk-ink">What to do: {health.todo}</p> : null}
@@ -74,6 +75,25 @@ export default function PlatformAdminStatusPage() {
         ) : null
       ) : (
         <>
+          <ul className="sk-health-board" aria-label="Parts of the system">
+            {[
+              { name: "Email", health: emailHealth(status.email), Icon: EnvelopeSimple },
+              { name: "Reminders", health: reminderHealth(status.reminders), Icon: Alarm },
+              { name: "Push", health: pushHealth(status.push), Icon: BellRinging },
+              { name: "Storage", health: storageHealth(status.storage), Icon: Broom },
+            ].map(({ name, health, Icon }) => (
+              <li key={name} data-health={health.state}>
+                <span className="sk-health-icon" aria-hidden>
+                  <Icon className="size-6" weight="bold" />
+                </span>
+                <span className="sk-health-name">{name}</span>
+                <span className="sk-health-state">
+                  <span className="sk-health-dot" aria-hidden />
+                  {HEALTH_LABEL[health.state]}
+                </span>
+              </li>
+            ))}
+          </ul>
           <Split
             main={
               <>
@@ -127,9 +147,9 @@ export default function PlatformAdminStatusPage() {
               <>
                 <Section title="Paused clubs" meta={status.pausedClubs.length > 0 ? String(status.pausedClubs.length) : undefined}>
                   {status.pausedClubs.length === 0 ? (
-                    <EmptyState title="No club is paused" body="A club you suspend on the Clubs screen is listed here." />
+                    <EmptyState title="No club is paused" />
                   ) : (
-                    <List aria-label="Paused clubs">
+                    <List tiles aria-label="Paused clubs">
                       {status.pausedClubs.map((club) => (
                         <ListRow key={club.tenantId} to={`/platform-admin/tenants/${encodeURIComponent(club.tenantId)}`} title={club.clubName} subtitle="Suspended. Its people cannot read or change anything." />
                       ))}
@@ -137,11 +157,11 @@ export default function PlatformAdminStatusPage() {
                   )}
                 </Section>
 
-                <Section title="Closing clubs" hint="Closed by their owner. Deleted for good on the date shown." meta={status.closingClubs.length > 0 ? String(status.closingClubs.length) : undefined}>
+                <Section title="Closing clubs" meta={status.closingClubs.length > 0 ? String(status.closingClubs.length) : undefined}>
                   {status.closingClubs.length === 0 ? (
-                    <EmptyState title="No club is closing" body="A club its owner closes is listed here with its deletion date." />
+                    <EmptyState title="No club is closing" />
                   ) : (
-                    <List aria-label="Closing clubs">
+                    <List tiles aria-label="Closing clubs">
                       {status.closingClubs.map((club) => (
                         <ListRow key={club.tenantId} title={club.clubName} subtitle={`Closed ${formatLocalDate(club.closedAt)}`} trailing={<span className="text-sm font-semibold text-sk-ink">Deleted {formatLocalDate(club.deleteAfter)}</span>} />
                       ))}
