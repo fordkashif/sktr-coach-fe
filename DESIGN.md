@@ -280,7 +280,7 @@ Lists and empty states:
 - A competition opens on four number tiles: the countdown (the accent tile), athletes, events and relay teams.
 - In the plan builder each week of the overview is a tile with its load bar (or a dot per session); the open week is the accent tile.
 - The plan builder is a board: the days of the week sit side by side as columns (a swipe on a phone, with a strip of day buttons to jump). Each day has its name, its type as chips, its rows, and a line at the foot where a row is typed as "Back squat 3x5 @80% (note)" and Enter adds it. A word in capitals ("CORE") starts a section. The session names itself from its first exercises until the coach types a name. Rows pasted from a spreadsheet go in as they are, day rows ("Monday") included. Tapping a row turns it back into its line to change it. The full table (library picks, percent of which lift, changes for one athlete) opens from the day's menu in a sheet.
-- A new plan is a short sheet: a name, a start (the next Mondays or a date) and a number of weeks, then how to start: a blank week, a paste from Excel, a template or a starter outline.
+- A new plan is a short sheet: a name, a start (the next Mondays or a date) and a number of weeks, then how to start: Upload Excel (the main choice), a blank week, pasted rows, a template or a starter outline. An uploaded workbook shows its tabs as tiles, one week each in order; a tab with no training days (best lifts, notes) is left out, and unticking a tab moves the next ones up. In an open plan, Upload Excel fills from the week on screen; pasting rows is in the plan's menu.
 - Test week days carry a "Day 1" badge in the accent.
 - Leaving a team is one grey pill at the foot of the roster.
 

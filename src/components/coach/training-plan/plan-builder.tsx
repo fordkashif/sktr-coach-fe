@@ -1,4 +1,4 @@
-import { ArrowRight, CopySimple, PencilSimple, Printer } from "@phosphor-icons/react"
+import { ArrowRight, CopySimple, PencilSimple, Printer, UploadSimple } from "@phosphor-icons/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActionBar,
@@ -36,7 +36,8 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import { WEEK_TYPES, cleanTargetLoad, isWeekType, phaseForWeek, plannedWeekLoad } from "@/lib/data/training-plan/plan-phases"
 import { BoardDay } from "./plan-board"
-import { DaySheet, PasteWeekButton, PasteWeekDialog, SessionDetailsDialog, type SheetFocus } from "./plan-sheet"
+import { SpreadsheetImport, useSpreadsheetPicker, type ReadSpreadsheet } from "./plan-excel-import"
+import { DaySheet, PasteWeekDialog, SessionDetailsDialog, type SheetFocus } from "./plan-sheet"
 import { PlanOverview, usePlanMarkers } from "./plan-overview"
 import type { AthleteOption, TeamOption } from "./storage"
 import { PlanStatusText, plural } from "./ui"
@@ -84,6 +85,8 @@ export function PlanBuilder({
   const [confirmCopyDay, setConfirmCopyDay] = useState<number | null>(null)
   const [detailsDay, setDetailsDay] = useState<number | null>(null)
   const [pasteOpen, setPasteOpen] = useState(false)
+  const [uploaded, setUploaded] = useState<ReadSpreadsheet | null>(null)
+  const picker = useSpreadsheetPicker(setUploaded)
   const [tableDay, setTableDay] = useState<number | null>(null)
   const [focusDay, setFocusDay] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -210,7 +213,16 @@ export function PlanBuilder({
         lede={[team?.name ?? "No team", plural(plan.weeks, "week"), formatDateRange(plan.startDate, planEndDate(plan))].join(", ")}
         actions={
           <>
-            <PasteWeekButton onClick={() => setPasteOpen(true)} />
+            <Button
+              disabled={picker.reading}
+              onClick={() => {
+                picker.clearError()
+                picker.open()
+              }}
+            >
+              <UploadSimple className="size-5" weight="bold" aria-hidden />
+              {picker.reading ? "Reading..." : "Upload Excel"}
+            </Button>
             <Button onClick={() => onPrint(activeWeek)}>
               <Printer className="size-5" weight="bold" aria-hidden />
               Print
@@ -219,12 +231,20 @@ export function PlanBuilder({
               <PencilSimple className="size-5" weight="bold" aria-hidden />
               Plan details
             </Button>
-            <RowMenu label="More for this plan" items={[{ label: "Save as template", onSelect: onSaveAsTemplate, disabled: busy }]} />
+            <RowMenu
+              label="More for this plan"
+              items={[
+                { label: "Paste rows from Excel", onSelect: () => window.setTimeout(() => setPasteOpen(true), 0), opensOverlay: true },
+                { label: "Save as template", onSelect: onSaveAsTemplate, disabled: busy },
+              ]}
+            />
           </>
         }
       />
 
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {picker.error ? <Notice tone="error">{picker.error}</Notice> : null}
+      {picker.element}
 
       {plan.weeks > 1 ? (
         <>
@@ -466,6 +486,29 @@ export function PlanBuilder({
             })
           }
         />
+      ) : null}
+
+      {uploaded ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setUploaded(null)
+          }}
+          title="Upload Excel"
+          className="sm:max-w-xl"
+        >
+          <SpreadsheetImport
+            plan={plan}
+            read={uploaded}
+            startWeek={activeWeek}
+            onChooseAnother={() => picker.open()}
+            onApply={(next, filled) => {
+              onChange(() => next)
+              setUploaded(null)
+              setNotice(filled.length === 1 ? `Filled week ${filled[0]} from ${uploaded.fileName}.` : `Filled weeks ${filled[0]} to ${filled[filled.length - 1]} from ${uploaded.fileName}.`)
+            }}
+          />
+        </Dialog>
       ) : null}
 
       {pasteOpen ? (

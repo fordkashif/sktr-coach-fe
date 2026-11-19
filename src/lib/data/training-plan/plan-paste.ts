@@ -19,7 +19,12 @@ export type PastedDay = {
   weekday: number | null
   blocks: PastedBlock[]
 }
-export type PastedSheet = { days: PastedDay[]; exerciseCount: number }
+export type PastedSheet = {
+  days: PastedDay[]
+  exerciseCount: number
+  /** True when the rows had a weekday row or a header row: they look like a training sheet. */
+  looksLikePlan: boolean
+}
 
 type Column = "name" | "sets" | "reps" | "load" | "notes" | "skip"
 
@@ -103,6 +108,7 @@ export function parsePastedSheet(text: string): PastedSheet {
   let columns = DEFAULT_COLUMNS
   let lastName = ""
   let exerciseCount = 0
+  let looksLikePlan = false
 
   const currentDay = () => {
     if (!day) {
@@ -128,6 +134,7 @@ export function parsePastedSheet(text: string): PastedSheet {
     const header = headerColumns(values)
     if (header) {
       columns = header
+      looksLikePlan = true
       continue
     }
 
@@ -140,6 +147,7 @@ export function parsePastedSheet(text: string): PastedSheet {
         days.push(day)
         block = null
         lastName = ""
+        looksLikePlan = true
         continue
       }
       // A title row such as "November 9-13, 2026".
@@ -201,6 +209,7 @@ export function parsePastedSheet(text: string): PastedSheet {
   return {
     days: days.map((entry) => ({ ...entry, blocks: entry.blocks.filter((item) => item.exercises.length > 0 || item.title !== "Main") })).filter((entry) => entry.blocks.length > 0),
     exerciseCount,
+    looksLikePlan,
   }
 }
 
