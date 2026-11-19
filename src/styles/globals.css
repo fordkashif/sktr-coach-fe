@@ -520,6 +520,20 @@ body {
   .sk-print-table thead th { font-size: 9pt; font-weight: 600; color: #5a6274; border-bottom-color: #8a91a1; }
   .sk-print-table tbody th { font-weight: 700; }
   .sk-print-table tr { break-inside: avoid; }
+  .sk-pp-title { font-size: 11.5pt; font-weight: 800; letter-spacing: -0.01em; }
+  .sk-pp-title span { margin-left: 2.5mm; font-size: 9pt; font-weight: 500; color: #5a6274; letter-spacing: 0; }
+  .sk-pp-rest { color: #8a91a1; font-weight: 600; }
+  .sk-pp-blocks { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 2.5mm 4mm; margin-top: 2mm; }
+  .sk-print-table tr:has(.sk-pp-blocks) { break-inside: auto; }
+  .sk-pp-block { break-inside: avoid; border-radius: 2.5mm; background: #f2f3ee; padding: 2mm 2.5mm 1.5mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sk-pp-block-title { font-size: 8pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #2152ff; }
+  .sk-pp-block-notes { margin-top: 0.8mm; font-size: 9pt; color: #3a4252; }
+  .sk-pp-ex { width: 100%; margin-top: 0.8mm; border-collapse: collapse; font-size: 9.5pt; }
+  .sk-print-table .sk-pp-ex td { padding: 0.9mm 0; border-bottom: 0; border-top: 0.2mm solid #dcdfd5; vertical-align: baseline; }
+  .sk-print-table .sk-pp-ex tr:first-child td { border-top: 0; }
+  .sk-print-table .sk-pp-ex .sk-pp-vol { padding-left: 2mm; white-space: nowrap; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .sk-print-table .sk-pp-ex .sk-pp-load { padding-left: 2mm; white-space: nowrap; color: #3a4252; text-align: right; font-variant-numeric: tabular-nums; }
+  .sk-pp-note { margin-top: 2mm; font-size: 9pt; font-style: italic; color: #3a4252; }
   .sk-print-break { break-before: page; }
 }
 

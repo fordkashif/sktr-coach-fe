@@ -8,7 +8,6 @@ import {
   getSession,
   planEndDate,
   slotDate,
-  summarizeExercise,
   weekSessions,
   weekdayLabel,
   type PlanDraft,
@@ -24,29 +23,43 @@ type Scope = "week" | "plan"
 function SessionCell({ session }: { session: SessionDraft }) {
   const facts = [session.sessionType, session.durationMinutes ? `${session.durationMinutes} min` : null, session.location.trim() || null].filter(Boolean).join(", ")
   return (
-    <>
-      <strong>{session.title.trim() || "Session"}</strong>
-      <br />
-      {facts}
-    </>
-  )
-}
-
-function DetailCell({ session }: { session: SessionDraft }) {
-  return (
-    <>
-      {session.blocks.map((block, index) => {
-        // Loads are printed in the unit of the coach who prints the sheet.
-        const lines = [block.notes.trim(), ...block.exercises.map((exercise) => viewTarget(summarizeExercise(exercise)))].filter(Boolean)
-        return (
-          <p key={block.id} style={index > 0 ? { marginTop: "1.2mm" } : undefined}>
-            <strong>{block.title.trim() || `Block ${index + 1}`}</strong>
-            {lines.length > 0 ? `: ${lines.join("; ")}` : ""}
-          </p>
-        )
-      })}
-      {session.notes.trim() ? <p style={{ marginTop: session.blocks.length > 0 ? "1.2mm" : undefined, fontStyle: "italic" }}>Note: {session.notes.trim()}</p> : null}
-    </>
+    <div className="sk-pp-session">
+      <p className="sk-pp-title">
+        {session.title.trim() || "Session"}
+        {facts ? <span>{facts}</span> : null}
+      </p>
+      {session.blocks.length > 0 ? (
+        <div className="sk-pp-blocks">
+          {session.blocks.map((block, index) => {
+            const exercises = block.exercises.filter((exercise) => exercise.name.trim() || exercise.sets || exercise.reps || exercise.load)
+            return (
+              <div key={block.id} className="sk-pp-block">
+                <p className="sk-pp-block-title">{block.title.trim() || `Block ${index + 1}`}</p>
+                {block.notes.trim() ? <p className="sk-pp-block-notes">{block.notes.trim()}</p> : null}
+                {exercises.length > 0 ? (
+                  <table className="sk-pp-ex">
+                    <tbody>
+                      {exercises.map((exercise) => {
+                        const volume = exercise.sets && exercise.reps ? `${exercise.sets} x ${exercise.reps}` : exercise.reps || exercise.sets
+                        return (
+                          <tr key={exercise.id}>
+                            <td>{exercise.name.trim()}</td>
+                            <td className="sk-pp-vol">{volume}</td>
+                            {/* Loads are printed in the unit of the coach who prints the sheet. */}
+                            <td className="sk-pp-load">{exercise.load ? viewTarget(exercise.load) : ""}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      {session.notes.trim() ? <p className="sk-pp-note">Note: {session.notes.trim()}</p> : null}
+    </div>
   )
 }
 
@@ -80,15 +93,14 @@ export function PlanPrintSheet({
             Week {week} of {plan.weeks}
           </PrintHeading>
           <PrintTable
-            columns={["Day", "Session", "What to do"]}
-            widths={["16%", "28%", undefined]}
+            columns={["Day", "Session"]}
+            widths={["15%", undefined]}
             rows={[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => {
               const date = slotDate(plan, week, dayIndex)
               const session = getSession(plan, week, dayIndex)
               return [
                 `${weekdayLabel(date)} ${formatDayMonth(date)}`,
-                session ? <SessionCell key="s" session={session} /> : "Rest",
-                session ? <DetailCell key="d" session={session} /> : "",
+                session ? <SessionCell key="s" session={session} /> : <span className="sk-pp-rest">Rest</span>,
               ]
             })}
           />
