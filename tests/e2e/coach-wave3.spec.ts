@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { addRows, boardDay, dayMenu, newBlankPlan, weekTool } from "./helpers/plan-board"
 
 test("coach can review athlete detail, export reports, and publish a test week", async ({ page }) => {
   await seedMockSession(page, { role: "coach", coachTeamId: "t4" })
@@ -67,33 +68,28 @@ test("coach can build a plan with week tools, save a draft, reload, and publish 
   await expect(page.getByRole("heading", { name: "Training plans" })).toBeVisible()
 
   // Create the plan.
-  await page.getByRole("button", { name: "New plan" }).click()
-  await page.getByLabel("Plan name").fill("Wave 3 draft block")
-  await page.getByRole("button", { name: "Continue to build" }).click()
-  await expect(page.getByRole("heading", { name: "Wave 3 draft block" })).toBeVisible()
+  await newBlankPlan(page, "Wave 3 draft block")
   await expect(page.locator('[data-has-session="true"]')).toHaveCount(0)
 
-  // Add a session on the first day of week 1.
-  await page.locator('[data-day-index="0"]').click()
-  await page.getByLabel("Session title").fill("Full throws and strength")
-  await page.getByRole("button", { name: "Strength", exact: true }).click()
-  await page.getByRole("button", { name: "Add exercise" }).click()
-  await page.getByLabel("Block 1 exercise 1 name").fill("Back squat")
-  await expect(page.locator('[data-day-index="0"]')).toHaveAttribute("data-has-session", "true")
+  // Add a session on the first day of week 1 by typing rows.
+  await addRows(page, 0, ["STRENGTH", "Back squat 3x5 @80%"])
+  await boardDay(page, 0).getByLabel(/session title/).fill("Full throws and strength")
+  await expect(boardDay(page, 0)).toHaveAttribute("data-has-session", "true")
+  await expect(boardDay(page, 0)).toContainText("Back squat")
 
   // Copy it to the next day.
-  await page.getByRole("button", { name: "Copy to next day" }).click()
-  await expect(page.locator('[data-day-index="1"]')).toHaveAttribute("data-has-session", "true")
-  await expect(page.locator('[data-day-index="1"]')).toContainText("Full throws and strength")
+  await dayMenu(page, 0, "Copy to next day")
+  await expect(boardDay(page, 1)).toHaveAttribute("data-has-session", "true")
+  await expect(boardDay(page, 1).getByLabel(/session title/)).toHaveValue("Full throws and strength")
 
   // Duplicate week 1 into week 2.
   await page.getByRole("tab", { name: "Week 2" }).click()
   await expect(page.locator('[data-has-session="true"]')).toHaveCount(0)
-  await page.getByRole("button", { name: "Duplicate last week" }).click()
+  await weekTool(page, "Duplicate last week")
   await expect(page.locator('[data-has-session="true"]')).toHaveCount(2)
 
   // A/B days across four days of week 2.
-  await page.getByRole("button", { name: "A/B days" }).click()
+  await weekTool(page, "A/B days")
   const abTool = page.getByRole("group", { name: "A/B days" })
   await abTool.getByRole("checkbox").nth(3).check()
   await abTool.getByRole("checkbox").nth(4).check()

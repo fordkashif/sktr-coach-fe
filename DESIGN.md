@@ -278,7 +278,9 @@ Lists and empty states:
 - An empty state is a grey tile with three accent lane lines that run in, and the title in the scoreboard type. It has a title and, at most, one action.
 - The coach's athlete screen shows availability as its own tile: green with a tick when available, amber with a first aid kit when not, the state in the scoreboard type.
 - A competition opens on four number tiles: the countdown (the accent tile), athletes, events and relay teams.
-- In the plan builder each week of the overview is a tile with its load bar (or a dot per session); the open week is the accent tile. The days of the week are tiles, the open day outlined in the accent, and each block is a tile with its number in an accent circle.
+- In the plan builder each week of the overview is a tile with its load bar (or a dot per session); the open week is the accent tile.
+- The plan builder is a board: the days of the week sit side by side as columns (a swipe on a phone, with a strip of day buttons to jump). Each day has its name, its type as chips, its rows, and a line at the foot where a row is typed as "Back squat 3x5 @80% (note)" and Enter adds it. A word in capitals ("CORE") starts a section. The session names itself from its first exercises until the coach types a name. Rows pasted from a spreadsheet go in as they are, day rows ("Monday") included. Tapping a row turns it back into its line to change it. The full table (library picks, percent of which lift, changes for one athlete) opens from the day's menu in a sheet.
+- A new plan is a short sheet: a name, a start (the next Mondays or a date) and a number of weeks, then how to start: a blank week, a paste from Excel, a template or a starter outline.
 - Test week days carry a "Day 1" badge in the accent.
 - Leaving a team is one grey pill at the foot of the roster.
 

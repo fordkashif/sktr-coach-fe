@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { addRows, boardDay, closeDayTable, dayMenu, newBlankPlan } from "./helpers/plan-board"
 
 // Set SHOT_DIR to keep screenshots of each screen (used when reviewing the layout by eye).
 const SHOT_DIR = process.env.SHOT_DIR
@@ -162,30 +163,24 @@ for (const viewport of [
       test.setTimeout(120_000)
       await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
       await page.goto("/coach/training-plan")
-      await page.getByRole("button", { name: "New plan" }).click()
-      await page.getByLabel("Plan name").fill("Autumn strength")
-      await page.getByLabel("Weeks", { exact: true }).fill("3")
-      await page.getByRole("button", { name: "Continue to build" }).click()
-      await expect(page.getByRole("heading", { name: "Autumn strength" })).toBeVisible()
+      await newBlankPlan(page, "Autumn strength", { weeks: 3 })
 
-      await page.locator('[data-day-index="0"]').click()
-      await page.getByLabel("Session title").fill("Gym day")
-      await page.getByRole("button", { name: "Strength", exact: true }).click()
-      await page.getByRole("button", { name: "Add exercise" }).click()
-      const name1 = page.getByLabel("Block 1 exercise 1 name", { exact: true })
-      await name1.fill("back sq")
-      await page.getByRole("listbox", { name: "Exercises in the library" }).getByRole("option", { name: /Back squat/ }).click()
-      await page.getByLabel("Block 1 exercise 1 sets", { exact: true }).fill("4")
-      await page.getByLabel("Block 1 exercise 1 reps", { exact: true }).fill("4")
-      await page.getByLabel("Block 1 exercise 1 load", { exact: true }).fill("80%")
-      await page.getByRole("button", { name: "More for block 1 exercise 1" }).click()
+      // A typed name that is a library exercise is linked to it.
+      await addRows(page, 0, ["STRENGTH", "Back squat 4x4 @80%"])
+      await boardDay(page, 0).getByLabel(/session title/).fill("Gym day")
+      await dayMenu(page, 0, "Open as a table")
+      const table = page.getByRole("dialog")
+      await expect(table.getByLabel("Block 1 exercise 1 name", { exact: true })).toHaveValue("Back squat")
+      await expect(table.getByLabel("Block 1 exercise 1 sets", { exact: true })).toHaveValue("4")
+      await expect(table.getByLabel("Block 1 exercise 1 load", { exact: true })).toHaveValue("80%")
+      await table.getByRole("button", { name: "More for block 1 exercise 1" }).click()
       await page.getByRole("menuitem", { name: "Adjust for an athlete" }).click()
-      await page.getByLabel("Block 1 exercise 1 change for which athlete").selectOption({ label: "David Okafor" })
-      await page.getByLabel("Block 1 exercise 1 load for David Okafor").fill("70%")
-      await expect(page.locator("[data-exercise-row]").nth(0).locator("[data-override-summary]")).toContainText("David Okafor gets")
+      await table.getByLabel("Block 1 exercise 1 change for which athlete").selectOption({ label: "David Okafor" })
+      await table.getByLabel("Block 1 exercise 1 load for David Okafor").fill("70%")
+      await expect(table.locator("[data-exercise-row]").nth(0).locator("[data-override-summary]")).toContainText("David Okafor gets")
+      await closeDayTable(page)
 
       // Save as template, from the plan's own menu.
-      if (phone) await page.getByRole("button", { name: /Week 1/ }).first().click()
       await page.getByRole("button", { name: "More for this plan" }).click()
       await page.getByRole("menuitem", { name: "Save as template" }).click()
       const save = page.getByRole("dialog", { name: "Save as template" })
@@ -234,17 +229,11 @@ for (const viewport of [
       await page.getByRole("menuitem", { name: "Start a plan from it" }).click()
       await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
       await expect(page).toHaveURL(/\/coach\/training-plan$/)
-      await expect(page.getByRole("tab", { name: "Template", exact: true })).toHaveAttribute("aria-selected", "true")
-      const picker = page.getByRole("radiogroup", { name: "Template" })
-      await expect(picker.getByRole("radio", { name: /Autumn strength block/ })).toBeChecked()
       await expect(page.getByLabel("Plan name")).toHaveValue("Autumn strength block")
-      await expect(page.getByRole("spinbutton", { name: "Weeks" })).toHaveValue("3")
-      await expect(page.locator("body")).toContainText("Changing your plan never changes the template.")
+      await expect(page.locator("output[aria-label='Weeks']")).toHaveText("3")
 
-      // Picking another template follows with the name and the length; a start on another weekday is pointed out.
-      await picker.getByRole("radio", { name: new RegExp(SPRINT) }).check()
-      await expect(page.getByLabel("Plan name")).toHaveValue(SPRINT)
-      await expect(page.getByRole("spinbutton", { name: "Weeks" })).toHaveValue("4")
+      // A start on another weekday than the template was built for is pointed out.
+      await page.getByRole("radio", { name: "Pick a date" }).click()
       await page.getByLabel("Start date").fill("2026-11-04")
       await expect(page.locator("body")).toContainText("built to start on a Monday. Starting on a Wednesday moves its sessions to other weekdays.")
       await page.getByLabel("Start date").fill("2026-11-02")
@@ -252,9 +241,8 @@ for (const viewport of [
       await shot(page, "setup-from-template")
       await noSidewaysScroll(page)
 
-      await picker.getByRole("radio", { name: /Autumn strength block/ }).check()
       await page.getByLabel("Plan name").fill("Winter strength")
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await page.getByRole("button", { name: "Start from Autumn strength block" }).click()
 
       // The builder opens on a draft, filled in and dated from the start date.
       await expect(page.getByRole("heading", { level: 1, name: "Winter strength" })).toBeVisible()
@@ -262,25 +250,26 @@ for (const viewport of [
       await expect(main).toContainText("Draft")
       await expect(main).toContainText("Sprint Group, 3 weeks, Nov 2 to Nov 22")
       await expect(page.getByRole("tab", { name: /^Week \d/ })).toHaveCount(3)
-      await expect(page.locator('[data-day-index="0"]')).toContainText("Gym day")
+      await expect(boardDay(page, 0).getByLabel(/session title/)).toHaveValue("Gym day")
       await shot(page, "builder-from-template")
-      await page.locator('[data-day-index="0"]').click()
-      await expect(page.getByLabel("Session title")).toHaveValue("Gym day")
-      await expect(page.getByLabel("Block 1 exercise 1 name", { exact: true })).toHaveValue("Back squat")
-      await expect(page.getByLabel("Block 1 exercise 1 sets", { exact: true })).toHaveValue("4")
-      await expect(page.getByLabel("Block 1 exercise 1 load", { exact: true })).toHaveValue("80%")
-      const row = page.locator("[data-exercise-row]").nth(0)
-      await expect(row).toContainText("Cue for athletes: Brace before you go down.")
+      await dayMenu(page, 0, "Open as a table")
+      const opened = page.getByRole("dialog")
+      await expect(opened.getByLabel(/session title/)).toHaveValue("Gym day")
+      await expect(opened.getByLabel("Block 1 exercise 1 name", { exact: true })).toHaveValue("Back squat")
+      await expect(opened.getByLabel("Block 1 exercise 1 sets", { exact: true })).toHaveValue("4")
+      await expect(opened.getByLabel("Block 1 exercise 1 load", { exact: true })).toHaveValue("80%")
+      await expect(opened.getByLabel("Block 1 exercise 1 notes", { exact: true })).toHaveValue(/Brace before you go down\./)
+      const row = opened.locator("[data-exercise-row]").nth(0)
       // The change for David stayed with the old squad.
       await expect(row.locator("[data-override-summary]")).toHaveCount(0)
       await expect(row).not.toContainText("David Okafor gets")
 
       // Change the new plan and save it.
-      await page.getByLabel("Session title").fill("Changed in my plan")
-      await page.getByLabel("Block 1 exercise 1 load", { exact: true }).fill("90%")
+      await opened.getByLabel(/session title/).fill("Changed in my plan")
+      await opened.getByLabel("Block 1 exercise 1 load", { exact: true }).fill("90%")
+      await closeDayTable(page)
       await page.getByRole("button", { name: "Save draft" }).click()
       await expect(page.locator("body")).toContainText("Draft saved at")
-      if (phone) await page.getByRole("button", { name: /Week 1/ }).first().click()
       await page.getByRole("button", { name: "All plans" }).click()
       const plans = page.getByRole("list", { name: "Training plans" })
       await expect(plans.locator("li", { hasText: "Winter strength" })).toContainText("Draft")
@@ -305,7 +294,7 @@ for (const viewport of [
       // The preview starts a plan too.
       await preview.getByRole("button", { name: "Start a plan from it" }).click()
       await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
-      await expect(page.getByRole("radiogroup", { name: "Template" }).getByRole("radio", { name: /Autumn strength block/ })).toBeChecked()
+      await expect(page.getByRole("button", { name: "Start from Autumn strength block" })).toBeVisible()
     })
 
     test("save as template from the plan list, and the starter outline still works", async ({ page }) => {
@@ -320,20 +309,21 @@ for (const viewport of [
       // The published plan is still published.
       await expect(page.getByRole("list", { name: "Training plans" }).locator("li", { hasText: "General preparation block" })).toContainText("Published")
 
-      // New plan: blank weeks, a starter outline, or a template.
+      // New plan: a blank week, a paste, a template or a starter outline.
       await page.getByRole("button", { name: "New plan" }).click()
       await page.getByLabel("Plan name").fill("Outline plan")
-      await page.getByRole("tab", { name: "Template", exact: true }).click()
+      await page.getByRole("button", { name: "Next" }).click()
+      await page.getByRole("button", { name: "From a template" }).click()
       const picker = page.getByRole("radiogroup", { name: "Template" })
       await expect(picker.getByRole("radio")).toHaveCount(3)
       await expect(picker).toContainText("General preparation block")
-      await page.getByRole("button", { name: "Continue to build" }).click()
-      await expect(page.getByRole("alert")).toContainText("Choose a template, or start from blank weeks.")
-      await page.getByRole("tab", { name: "Starter outline" }).click()
+      await expect(page.getByRole("button", { name: "Use this template" })).toBeDisabled()
+      await page.getByRole("button", { name: "Back" }).click()
+      await page.getByRole("button", { name: "Starter outline" }).click()
       await expect(page.getByLabel("Event group")).toBeVisible()
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await page.getByRole("button", { name: "Use the outline" }).click()
       await expect(page.getByRole("heading", { level: 1, name: "Outline plan" })).toBeVisible()
-      await expect(page.locator('[data-day-index="0"]')).not.toContainText("Rest")
+      await expect(boardDay(page, 0)).toHaveAttribute("data-has-session", "true")
     })
 
     test("a club admin manages any template, an athlete gets none", async ({ page }) => {

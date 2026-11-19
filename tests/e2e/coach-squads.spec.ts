@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { addRows, boardDay, newBlankPlan } from "./helpers/plan-board"
 
 /**
  * Squads: small named groups inside one team. The coach manages them on the roster and sends a
@@ -22,12 +23,9 @@ async function openSquads(page: Page) {
 async function buildPlanToPublish(page: Page, name: string, sessionTitle: string) {
   await page.goto("/coach/training-plan")
   await expect(page.getByRole("heading", { name: "Training plans" })).toBeVisible()
-  await page.getByRole("button", { name: "New plan" }).click()
-  await page.getByLabel("Plan name").fill(name)
-  await page.getByRole("button", { name: "Continue to build" }).click()
-  await expect(page.getByRole("heading", { name })).toBeVisible()
-  await page.locator('[data-day-index="0"]').click()
-  await page.getByLabel("Session title").fill(sessionTitle)
+  await newBlankPlan(page, name, { startToday: true })
+  await addRows(page, 0, ["Sprints 6x30m"])
+  await boardDay(page, 0).getByLabel(/session title/).fill(sessionTitle)
   await page.getByRole("button", { name: "Publish", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Publish plan" })).toBeVisible()
 }
@@ -220,11 +218,9 @@ test("a team with no squads says so in the publish step and links to the team pa
   await seedMockSession(page, { role: "coach", coachTeamId: "t4" })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto("/coach/training-plan")
-  await page.getByRole("button", { name: "New plan" }).click()
-  await page.getByLabel("Plan name").fill("Throws block")
-  await page.getByRole("button", { name: "Continue to build" }).click()
-  await page.locator('[data-day-index="0"]').click()
-  await page.getByLabel("Session title").fill("Throws")
+  await newBlankPlan(page, "Throws block")
+  await addRows(page, 0, ["Shot put 6x1"])
+  await boardDay(page, 0).getByLabel(/session title/).fill("Throws")
   await page.getByRole("button", { name: "Publish", exact: true }).click()
   await page.getByRole("tab", { name: "Squads", exact: true }).click()
   await expect(page.locator("#main-content")).toContainText("This team has no squads yet")

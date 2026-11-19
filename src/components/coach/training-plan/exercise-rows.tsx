@@ -1,10 +1,11 @@
 import { Plus, X } from "@phosphor-icons/react"
-import { useEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type ClipboardEvent, type InputHTMLAttributes, type KeyboardEvent } from "react"
 import { RowMenu, StatusText, SuggestInput } from "@/components/sk"
 import { cleanReferenceUrl, liftKey, mergeOverride, parsePercent } from "@/lib/data/exercises/loads"
 import { categoryLabel, type ExerciseCategory, type ExerciseMeasure, type LibraryExercise } from "@/lib/data/exercises/types"
 import { inferLogKind } from "@/lib/data/session/session-from-plan"
 import { makeId, newExercise, type ExerciseDraft, type ExerciseOverrideDraft } from "@/lib/data/training-plan/plan-builder-model"
+import { isSectionHeading, looksLikeRows } from "@/lib/data/training-plan/plan-paste"
 import { cn } from "@/lib/utils"
 import type { AthleteOption } from "./storage"
 import { plural } from "./ui"
@@ -12,14 +13,15 @@ import type { ExerciseTools } from "./use-exercise-tools"
 import { useUnits } from "@/lib/units-store"
 import { describePercentLoadFor, loadFieldForViewer, loadFieldToStored } from "@/lib/units"
 
-const FIELDS = ["name", "sets", "reps", "load"] as const
+const FIELDS = ["name", "sets", "reps", "load", "cue"] as const
 type FieldKey = (typeof FIELDS)[number]
-const HEADERS: Record<FieldKey, string> = { name: "Exercise", sets: "Sets", reps: "Reps", load: "Load" }
-const PLACEHOLDERS: Record<Exclude<FieldKey, "load">, string> = { name: "Exercise", sets: "Sets", reps: "Reps" }
+const HEADERS: Record<FieldKey, string> = { name: "Exercise", sets: "Sets", reps: "Reps", load: "Load", cue: "Notes" }
+const PLACEHOLDERS: Record<Exclude<FieldKey, "load">, string> = { name: "Exercise", sets: "Sets", reps: "Reps", cue: "Notes" }
+const valueOf = (exercise: ExerciseDraft, key: FieldKey) => (key === "cue" ? (exercise.cue ?? "") : exercise[key])
 
-// Name, sets, reps, load, the "more" menu, remove. On a phone the name takes a line of its own.
+// Name, sets, reps, load, notes, the "more" menu, remove. On a phone the name and the notes take a line each.
 const GRID =
-  "grid items-center gap-x-2 gap-y-1.5 grid-cols-[repeat(3,minmax(0,1fr))_2.75rem_2.75rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6rem_2.75rem_2.75rem]"
+  "grid items-center gap-x-2 gap-y-1.5 grid-cols-[repeat(3,minmax(0,1fr))_2.75rem_2.75rem] sm:grid-cols-[minmax(0,1.6fr)_4rem_4.5rem_6.5rem_minmax(0,1fr)_2.75rem_2.75rem]"
 const ICON_BUTTON =
   "inline-flex size-11 cursor-pointer items-center justify-center rounded-[12px] text-sk-mute transition-colors hover:bg-sk-soft hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
 
@@ -77,6 +79,9 @@ export function ExerciseRows({
   athletes,
   tools,
   onChange,
+  onPasteRows,
+  onMakeSection,
+  showAdd = true,
   className,
 }: {
   blockIndex: number
@@ -86,6 +91,11 @@ export function ExerciseRows({
   athletes: AthleteOption[]
   tools: ExerciseTools
   onChange: (updater: (exercises: ExerciseDraft[]) => ExerciseDraft[]) => void
+  /** Rows pasted into a name box (from a spreadsheet), to go in after the row they were pasted on. */
+  onPasteRows?: (text: string, afterExerciseId: string) => void
+  /** A row named like a section ("CORE") and Enter: it starts a new section from that row on. */
+  onMakeSection?: (exerciseId: string, title: string) => void
+  showAdd?: boolean
   className?: string
 }) {
   const units = useUnits()
@@ -149,9 +159,12 @@ export function ExerciseRows({
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>, rowIndex: number, columnIndex: number) => {
     const exercise = exercises[rowIndex]
-    const values = FIELDS.map((key) => exercise[key])
+    const values = FIELDS.map((key) => valueOf(exercise, key))
     if (event.key === "Enter") {
       event.preventDefault()
+      if (onMakeSection && columnIndex === 0 && values.slice(1).every((value) => !value.trim()) && isSectionHeading(exercise.name)) {
+        return onMakeSection(exercise.id, exercise.name)
+      }
       if (rowIndex < exercises.length - 1) return focusCell(rowIndex + 1, columnIndex)
       if (values.some((value) => value.trim())) add()
       return
@@ -163,12 +176,20 @@ export function ExerciseRows({
     }
   }
 
+  const onPaste = (event: ClipboardEvent<HTMLInputElement>, exercise: ExerciseDraft) => {
+    if (!onPasteRows) return
+    const text = event.clipboardData.getData("text/plain")
+    if (!looksLikeRows(text)) return
+    event.preventDefault()
+    onPasteRows(text, exercise.id)
+  }
+
   return (
     <div ref={root} className={cn("flex flex-col gap-1.5", className)}>
       {exercises.length > 0 ? (
         <div className={cn(GRID, "hidden text-sm font-semibold text-sk-mute sm:grid")} aria-hidden>
           {FIELDS.map((key) => (
-            <span key={key} className={key === "name" ? "pl-0.5" : "pl-2.5"}>
+            <span key={key} className={key === "name" ? "pl-0.5" : "pl-2.5"} data-col={key}>
               {HEADERS[key]}
             </span>
           ))}
@@ -184,10 +205,10 @@ export function ExerciseRows({
         const known = percent !== null && liftName ? athletes.filter((athlete) => tools.maxFor(athlete.id, liftName) !== null) : []
         const missing = percent !== null && liftName ? athletes.filter((athlete) => tools.maxFor(athlete.id, liftName) === null) : []
         const note = libraryNote?.exerciseId === exercise.id ? libraryNote : null
-        const hasDetails = percent !== null || Boolean(exercise.cue) || Boolean(link) || overrides.length > 0 || note !== null
+        const hasDetails = percent !== null || Boolean(link) || overrides.length > 0 || note !== null
 
         return (
-          <div key={exercise.id} data-exercise-row className="border-b border-sk-line pb-2.5 last:border-b-0 sm:border-b-0 sm:pb-0">
+          <div key={exercise.id} data-exercise-row data-exercise-id={exercise.id} className="border-b border-sk-line pb-2.5 last:border-b-0 sm:border-b-0 sm:pb-0">
             <div className={GRID}>
               {FIELDS.map((key, columnIndex) =>
                 key === "name" ? (
@@ -211,6 +232,7 @@ export function ExerciseRows({
                         if (entry && exercise.libraryId !== entry.id) patch(exercise.id, linkFields(entry))
                       }}
                       onKeyDown={(event) => onKeyDown(event, rowIndex, 0)}
+                      onPaste={(event) => onPaste(event, exercise)}
                     />
                   </div>
                 ) : key === "load" ? (
@@ -230,12 +252,13 @@ export function ExerciseRows({
                   <input
                     key={key}
                     data-cell={`${rowIndex}:${columnIndex}`}
-                    className="sk-field px-2.5"
-                    aria-label={`${label} ${key}`}
+                    className={cn("sk-field px-2.5", key === "cue" && "col-span-full sm:col-span-1 sm:order-none order-last")}
+                    aria-label={`${label} ${key === "cue" ? "notes" : key}`}
                     placeholder={PLACEHOLDERS[key]}
                     autoComplete="off"
+                    maxLength={key === "cue" ? 200 : undefined}
                     enterKeyHint={rowIndex === exercises.length - 1 ? "done" : "next"}
-                    value={exercise[key]}
+                    value={valueOf(exercise, key)}
                     onChange={(event) => patch(exercise.id, { [key]: event.target.value })}
                     onKeyDown={(event) => onKeyDown(event, rowIndex, columnIndex)}
                   />
@@ -262,9 +285,8 @@ export function ExerciseRows({
                   </p>
                 ) : null}
 
-                {exercise.cue || link ? (
+                {link ? (
                   <p className="sk-list-sub">
-                    {exercise.cue ? `Cue for athletes: ${exercise.cue} ` : null}
                     {link ? (
                       <a className="sk-link" href={link} target="_blank" rel="noreferrer noopener">
                         Open the reference link
@@ -364,6 +386,7 @@ export function ExerciseRows({
                                 />
                               ),
                             )}
+                            <span aria-hidden className="hidden sm:block" />
                             <span aria-hidden />
                             <button
                               type="button"
@@ -397,10 +420,12 @@ export function ExerciseRows({
         )
       })}
 
-      <button type="button" data-add-row className="sk-btn sk-btn-text sk-btn-sm -ml-2.5 self-start" onClick={add}>
-        <Plus className="size-4" weight="bold" aria-hidden />
-        Add exercise
-      </button>
+      {showAdd ? (
+        <button type="button" data-add-row className="sk-btn sk-btn-text sk-btn-sm -ml-2.5 self-start" onClick={add}>
+          <Plus className="size-4" weight="bold" aria-hidden />
+          Add exercise
+        </button>
+      ) : null}
     </div>
   )
 }

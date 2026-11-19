@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { seedMockSession, type Role } from "./helpers/session"
+import { closeDayTable, dayMenu, newBlankPlan, openDayTable } from "./helpers/plan-board"
 
 // Set SHOT_DIR to keep screenshots of each screen (used when reviewing the layout by eye).
 const SHOT_DIR = process.env.SHOT_DIR
@@ -213,14 +214,9 @@ for (const viewport of [
       await noSidewaysScroll(page)
 
       await page.goto("/coach/training-plan")
-      await page.getByRole("button", { name: "New plan" }).click()
-      await page.getByLabel("Plan name").fill("Plan in pounds")
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await newBlankPlan(page, "Plan in pounds", { startToday: true })
       await expect(page.getByRole("heading", { name: "Plan in pounds" })).toBeVisible()
-      await page.locator('[data-day-index="0"]').click()
-      await page.getByLabel("Session title").fill("Gym day")
-      await page.getByRole("button", { name: "Strength", exact: true }).click()
-      await page.getByRole("button", { name: "Add exercise" }).click()
+      await openDayTable(page, 0, { title: "Gym day", section: "Strength" })
 
       // Row 1: a percentage. It has no unit; each reader gets the weight in theirs.
       await page.getByLabel("Block 1 exercise 1 name", { exact: true }).fill("Back squat")
@@ -248,6 +244,7 @@ for (const viewport of [
       await expect(load2).toHaveValue("225 lb")
       await shot(page, "builder-lb")
       await noSidewaysScroll(page)
+      await closeDayTable(page)
 
       await page.getByRole("button", { name: "Publish", exact: true }).click()
       await page.getByRole("button", { name: /^Publish to/ }).click()
@@ -281,7 +278,7 @@ for (const viewport of [
       await chooseUnits(page, { weight: "kg" })
       await page.goto("/coach/training-plan")
       await page.locator('li[data-plan-status="published"]', { hasText: "Plan in pounds" }).getByRole("button", { name: /Plan in pounds/ }).first().click()
-      await page.locator('[data-day-index="0"]').click()
+      await dayMenu(page, 0, "Open as a table")
       await expect(page.getByLabel("Block 1 exercise 2 load", { exact: true })).toHaveValue("102.06 kg")
       await expect(page.getByLabel("Block 1 exercise 1 load", { exact: true })).toHaveValue("80%")
       await expect(page.locator("[data-override-summary]")).toHaveText("David Okafor gets 4 x 4 at 70%, 122.5 kg")
