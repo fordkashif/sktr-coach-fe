@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { closeDayTable, dayMenu, newBlankPlan, openDayTable } from "./helpers/plan-board"
 
 // Set SHOT_DIR to keep screenshots of each screen (used when reviewing the layout by eye).
 const SHOT_DIR = process.env.SHOT_DIR
@@ -102,16 +103,11 @@ for (const viewport of [
       test.setTimeout(90_000)
       await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
       await page.goto("/coach/training-plan")
-      await page.getByRole("button", { name: "New plan" }).click()
-      await page.getByLabel("Plan name").fill("Strength with percentages")
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await newBlankPlan(page, "Strength with percentages", { startToday: true })
       await expect(page.getByRole("heading", { name: "Strength with percentages" })).toBeVisible()
 
       // The plan starts today, so day one is the session the athlete sees today.
-      await page.locator('[data-day-index="0"]').click()
-      await page.getByLabel("Session title").fill("Gym day")
-      await page.getByRole("button", { name: "Strength", exact: true }).click()
-      await page.getByRole("button", { name: "Add exercise" }).click()
+      await openDayTable(page, 0, { title: "Gym day", section: "Strength" })
 
       // Typing suggests library exercises. Picking one fills the name and brings its cue and link.
       const name1 = page.getByLabel("Block 1 exercise 1 name", { exact: true })
@@ -121,7 +117,7 @@ for (const viewport of [
       await suggestions.getByRole("option", { name: /Back squat/ }).click()
       await expect(name1).toHaveValue("Back squat")
       const row1 = page.locator("[data-exercise-row]").nth(0)
-      await expect(row1).toContainText("Cue for athletes: Brace before you go down.")
+      await expect(page.getByLabel("Block 1 exercise 1 notes", { exact: true })).toHaveValue(/Brace before you go down\./)
       await expect(row1.getByRole("link", { name: "Open the reference link" })).toHaveAttribute("href", /^https:\/\//)
 
       await page.getByLabel("Block 1 exercise 1 sets", { exact: true }).fill("4")
@@ -160,6 +156,7 @@ for (const viewport of [
 
       await shot(page, "builder")
       await noSidewaysScroll(page)
+      await closeDayTable(page)
 
       // Publish.
       await page.getByRole("button", { name: "Publish", exact: true }).click()
@@ -203,7 +200,7 @@ for (const viewport of [
       await page.getByRole("navigation", { name: "Plans" }).getByRole("link", { name: "Plans", exact: true }).click()
       await page.locator('li[data-plan-status="published"]', { hasText: "Strength with percentages" }).getByRole("button", { name: /Strength with percentages/ }).first().click()
       await expect(page.getByRole("heading", { name: "Strength with percentages" })).toBeVisible()
-      await page.locator('[data-day-index="0"]').click()
+      await dayMenu(page, 0, "Open as a table")
       await expect(page.locator("[data-exercise-row]").nth(1)).toContainText("Best Zercher carry saved for 1 of 4 athletes")
       await page.getByRole("button", { name: "More for block 1 exercise 1" }).click()
       await page.getByRole("menuitem", { name: "Adjust for an athlete" }).click()
@@ -211,6 +208,7 @@ for (const viewport of [
       await page.getByLabel("Block 1 exercise 1 reps for Marcus Johnson").fill("6")
       await page.getByLabel("Block 1 exercise 1 load for Marcus Johnson").fill("60%")
       await expect(page.locator("[data-override-summary]").last()).toHaveText("Marcus Johnson gets 4 x 6 at 60%, 120 kg")
+      await closeDayTable(page)
       await page.getByRole("button", { name: "Review and update" }).click()
       await page.getByRole("button", { name: /^Save for/ }).click()
       await expect(page.locator("body")).toContainText("Plan updated for")

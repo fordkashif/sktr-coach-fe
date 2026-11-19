@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { addRows, boardDay, dayMenu, newBlankPlan, weekTool } from "./helpers/plan-board"
 
 // Set SHOT_DIR to keep screenshots of each screen (used when reviewing the layout by eye).
 const SHOT_DIR = process.env.SHOT_DIR
@@ -169,9 +170,7 @@ for (const viewport of [
       await seedMockSession(page, { role: "coach", coachTeamId: "t1" })
       await page.goto("/coach/training-plan")
       await expect(page.getByRole("heading", { name: "Training plans" })).toBeVisible()
-      await page.getByRole("button", { name: "New plan" }).click()
-      await page.getByLabel("Plan name").fill("Autumn phases")
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await newBlankPlan(page, "Autumn phases", { startToday: true })
       await expect(page.getByRole("heading", { level: 1, name: "Autumn phases" })).toBeVisible()
 
       const overview = page.getByRole("region", { name: "Plan overview" })
@@ -179,16 +178,20 @@ for (const viewport of [
       await expect(overview.locator("[data-phase]")).toHaveCount(0)
 
       // A session with minutes and an intended effort gives the week a planned load.
-      await page.locator('[data-day-index="0"]').click()
-      await page.getByLabel("Session title").fill("Speed and gym")
-      await page.getByLabel("Minutes").fill("60")
-      await page.getByLabel(/Intended effort/).selectOption("7")
-      if (phone) await page.getByRole("button", { name: /Week 1/ }).first().click()
+      await addRows(page, 0, ["Sprints 4x30m"])
+      await boardDay(page, 0).getByLabel(/session title/).fill("Speed and gym")
+      await dayMenu(page, 0, "Session details")
+      const details = page.getByRole("dialog")
+      await details.getByLabel("Minutes").fill("60")
+      await details.getByLabel(/Intended effort/).selectOption("7")
+      await details.getByRole("button", { name: "Done" }).click()
       await expect(page.locator("[data-week-planned-load]")).toContainText("Planned load 420, from 1 of 1 session.")
 
       // The kind of week and a target.
-      await page.getByLabel(/Week type/).selectOption("deload")
-      await page.getByLabel(/Target load/).fill("500")
+      await weekTool(page, "Week focus and load")
+      await page.getByRole("dialog").getByLabel(/Week type/).selectOption("deload")
+      await page.getByRole("dialog").getByLabel(/Target load/).fill("500")
+      await page.getByRole("dialog").getByRole("button", { name: "Done" }).click()
       await expect(page.locator("[data-week-planned-load]")).toContainText("Planned load 420 of a target of 500")
       await expect(overview.locator('[data-overview-week="1"]')).toHaveAttribute("data-week-type", "deload")
 
@@ -228,11 +231,13 @@ for (const viewport of [
 
       // Copy still works: week 2 takes week 1's sessions and its kind of week.
       await page.getByRole("tab", { name: "Week 2" }).click()
-      await page.getByRole("button", { name: "Duplicate last week" }).click()
+      await weekTool(page, "Duplicate last week")
       await expect(page.locator('[data-has-session="true"]')).toHaveCount(1)
-      await expect(page.getByLabel(/Week type/)).toHaveValue("deload")
       await expect(page.locator("[data-week-planned-load]")).toContainText("Planned load 420")
-      await page.getByLabel(/Week type/).selectOption("build")
+      await weekTool(page, "Week focus and load")
+      await expect(page.getByRole("dialog").getByLabel(/Week type/)).toHaveValue("deload")
+      await page.getByRole("dialog").getByLabel(/Week type/).selectOption("build")
+      await page.getByRole("dialog").getByRole("button", { name: "Done" }).click()
       await shot(page, "builder-overview")
       await shot(page, "builder-overview-strip", overview)
       await noSidewaysScroll(page)
@@ -248,7 +253,9 @@ for (const viewport of [
       await expect(overview.locator('[data-overview-week="1"]')).toHaveAttribute("data-week-type", "deload")
       await expect(overview.locator('[data-overview-week="2"]')).toHaveAttribute("data-week-type", "build")
       await expect(overview.locator('[data-overview-week="3"]')).toHaveAttribute("data-phase", "Altitude camp")
-      await expect(page.getByLabel(/Target load/)).toHaveValue("500")
+      await weekTool(page, "Week focus and load")
+      await expect(page.getByRole("dialog").getByLabel(/Target load/)).toHaveValue("500")
+      await page.getByRole("dialog").getByRole("button", { name: "Done" }).click()
 
       // Into a template...
       await page.getByRole("button", { name: "More for this plan" }).click()
@@ -276,7 +283,7 @@ for (const viewport of [
       await page.getByRole("menuitem", { name: "Start a plan from it" }).click()
       await expect(page.getByRole("dialog", { name: "New plan" })).toBeVisible()
       await page.getByLabel("Plan name").fill("Winter phases")
-      await page.getByRole("button", { name: "Continue to build" }).click()
+      await page.getByRole("button", { name: "Start from Phased block" }).click()
       await expect(page.getByRole("heading", { level: 1, name: "Winter phases" })).toBeVisible()
       const fresh = page.getByRole("region", { name: "Plan overview" })
       await expect(fresh.locator('[data-overview-week="1"]')).toHaveAttribute("data-phase", "General prep")
@@ -309,12 +316,15 @@ for (const viewport of [
       await expect(overview.locator("[data-overview-week]")).toHaveCount(3)
       await expect(overview.locator("[data-phase]")).toHaveCount(0)
       await expect(overview.getByRole("button", { name: "Add phases" })).toBeVisible()
-      await expect(page.getByLabel(/Week focus/)).toHaveValue("Base")
-      await expect(page.getByLabel(/Week type/)).toHaveValue("")
       await expect(page.locator('[data-has-session="true"]')).toHaveCount(1)
       await expect(page.locator("[data-week-planned-load]")).toHaveCount(0)
+      await weekTool(page, "Week focus and load")
+      const week = page.getByRole("dialog")
+      await expect(week.getByLabel(/Week focus/)).toHaveValue("Base")
+      await expect(week.getByLabel(/Week type/)).toHaveValue("")
       // Saving it again adds nothing it did not have.
-      await page.getByLabel(/Week focus/).fill("Base two")
+      await week.getByLabel(/Week focus/).fill("Base two")
+      await week.getByRole("button", { name: "Done" }).click()
       await page.getByRole("button", { name: "Save draft" }).click()
       await expect(page.locator("body")).toContainText("Draft saved at")
       const stored = await page.evaluate((tenant) => window.localStorage.getItem(`pacelab:coach-training-plans:v1:${tenant}`) ?? "", TENANT)

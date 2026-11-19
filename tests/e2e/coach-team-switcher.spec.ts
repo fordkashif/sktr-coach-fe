@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { seedMockSession } from "./helpers/session"
+import { newBlankPlan } from "./helpers/plan-board"
 
 // Demo data: t1 "Sprint Group" (Marcus Johnson, Sarah Chen, ...) and t4 "Throws Group" (Mia Anderson, Liam Patel).
 // The coach is put on both teams with the mock mechanism in tests/e2e/helpers/session.ts (coachTeamIds).
@@ -72,7 +73,7 @@ test("a coach on two teams can switch team and every screen follows", async ({ p
   await expect(planTeam).toBeEnabled()
   await expect(planTeam).toHaveValue("t4")
   await expect(planTeam.locator("option")).toHaveText(["Sprint Group", "Throws Group"])
-  await page.getByRole("button", { name: "Cancel" }).click()
+  await page.keyboard.press("Escape")
 
   // Switching on the plans screen swaps the list without a reload.
   await switchTo(page, "Sprint Group")
@@ -180,9 +181,7 @@ test("the plan builder asks before switching team with unsaved work", async ({ p
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/coach/training-plan")
 
-  await page.getByRole("button", { name: "New plan" }).click()
-  await page.getByLabel("Plan name").fill("Switcher guard block")
-  await page.getByRole("button", { name: "Continue to build" }).click()
+  await newBlankPlan(page, "Switcher guard block")
   await expect(page.getByRole("heading", { name: "Switcher guard block" })).toBeVisible()
 
   // Cancel: stay in the builder on the same team.

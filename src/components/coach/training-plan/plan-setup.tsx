@@ -1,9 +1,13 @@
-import { ArrowRight } from "@phosphor-icons/react"
-import { useState } from "react"
+import { ArrowRight, ClipboardText, ListBullets, Minus, Plus, Stack } from "@phosphor-icons/react"
+import { useMemo, useState } from "react"
 import { Button, Field, FormActions, FormGrid, Input, List, Notice, RadioRow, SearchInput, Section, Sheet, Segmented, Select, SkeletonRows, Textarea } from "@/components/sk"
 import {
   EVENT_GROUPS,
   MAX_WEEKS,
+  addDaysIso,
+  formatDayMonth,
+  todayIso,
+  weekdayLabel,
   createSkeletonSessions,
   sessionsBeyondWeek,
   setPlanWeeks,
@@ -12,6 +16,8 @@ import {
 import { planFromTemplate, weekdayName, weekdayOfIso, type PlanTemplate, type PlanTemplateSummary } from "@/lib/data/training-plan/plan-templates"
 import type { Result } from "@/lib/data/result"
 import type { EventGroup } from "@/lib/mock-data"
+import { parsePastedSheet } from "@/lib/data/training-plan/plan-paste"
+import { placePastedDays, sessionsFromPlaced } from "./plan-sheet"
 import type { TeamOption } from "./storage"
 import { plural, templateFacts } from "./ui"
 
@@ -28,8 +34,12 @@ export type SetupTemplates = {
   load: (templateId: string) => Promise<Result<PlanTemplate>>
 }
 
-/** Plan basics. For a new plan this is step one; for an existing plan it edits the details. */
-export function PlanSetup({
+/** Plan basics. A new plan gets the quick two-step start; an existing plan edits its details here. */
+export function PlanSetup(props: Parameters<typeof PlanDetailsForm>[0]) {
+  return props.isNew ? <NewPlanSheet {...props} /> : <PlanDetailsForm {...props} />
+}
+
+function PlanDetailsForm({
   plan,
   teams,
   isNew,
@@ -253,6 +263,315 @@ export function PlanSetup({
           </Button>
         </FormActions>
       </form>
+    </Sheet>
+  )
+}
+
+/* --------------------------------- A new plan --------------------------------- */
+
+type NewStep = "basics" | "start" | "paste" | "template" | "outline"
+
+/** The next three Mondays from today (today included when it is one). */
+function nextMondays(count: number) {
+  const today = todayIso()
+  const weekday = weekdayOfIso(today) ?? 1
+  const first = addDaysIso(today, (8 - weekday) % 7)
+  return Array.from({ length: count }, (_, index) => addDaysIso(first, index * 7))
+}
+
+function shortDate(dateIso: string) {
+  return `${weekdayLabel(dateIso)} ${formatDayMonth(dateIso)}`
+}
+
+/**
+ * A new plan in two short steps: a name, a start and a length, then how to start it (a blank week,
+ * rows pasted from a spreadsheet, a club template or a starter outline).
+ */
+function NewPlanSheet({
+  plan,
+  teams,
+  teamLocked,
+  templates,
+  onCancel,
+  onDone,
+}: {
+  plan: PlanDraft
+  teams: TeamOption[]
+  isNew: boolean
+  teamLocked: boolean
+  templates?: SetupTemplates
+  onCancel: () => void
+  onDone: (next: PlanDraft, usedTemplateId?: string) => void
+}) {
+  const mondays = useMemo(() => nextMondays(3), [])
+  const [step, setStep] = useState<NewStep>("basics")
+  const [name, setName] = useState(plan.name)
+  const [teamId, setTeamId] = useState(plan.teamId)
+  // A new plan starts on the coming Monday unless the coach picks another day.
+  const [startDate, setStartDate] = useState(mondays[0])
+  const [pickDate, setPickDate] = useState(false)
+  const [weeks, setWeeks] = useState(Math.min(Math.max(plan.weeks || 4, 1), MAX_WEEKS))
+  const [pasteText, setPasteText] = useState("")
+  const [templateId, setTemplateId] = useState<string | null>(templates?.initialId ?? null)
+  const team = teams.find((candidate) => candidate.id === teamId) ?? null
+  const [eventGroup, setEventGroup] = useState<EventGroup>(team?.eventGroup ?? "Sprint")
+  const [daysPerWeek, setDaysPerWeek] = useState("5")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const templateList = templates?.list ?? null
+  const chosenTemplate = templateList?.find((candidate) => candidate.id === templateId) ?? null
+  const [appliedInitial, setAppliedInitial] = useState(false)
+  if (!appliedInitial && templates?.initialId && templateList) {
+    setAppliedInitial(true)
+    const initial = templateList.find((candidate) => candidate.id === templates.initialId)
+    if (initial) {
+      setWeeks(initial.weeks)
+      if (!name.trim()) setName(initial.name)
+    }
+  }
+
+  const base = (): PlanDraft => setPlanWeeks({ ...plan, name: name.trim(), teamId, startDate }, weeks)
+  const endDate = addDaysIso(startDate, weeks * 7 - 1)
+  const pasted = useMemo(() => parsePastedSheet(pasteText), [pasteText])
+  const placedPaste = useMemo(() => placePastedDays(setPlanWeeks({ ...plan, startDate }, weeks), 1, pasted), [plan, startDate, weeks, pasted])
+
+  const toStart = () => {
+    if (!name.trim()) return setError("Give the plan a name.")
+    if (!teamId) return setError("Choose a team for this plan.")
+    if (!startDate) return setError("Pick a start date.")
+    setError(null)
+    setStep("start")
+  }
+
+  const applyTemplate = async () => {
+    if (!templates || !templateId || !chosenTemplate) return setError("Choose a template.")
+    setBusy(true)
+    const loaded = await templates.load(templateId)
+    setBusy(false)
+    if (!loaded.ok) return setError(`Could not open the template: ${loaded.error.message}`)
+    // A copy with its own ids, dated from the start date. The template itself is never touched.
+    onDone(setPlanWeeks(planFromTemplate(loaded.data, { teamId, startDate, name: name.trim(), notes: plan.notes }), Math.max(weeks, chosenTemplate.weeks)), templateId)
+  }
+
+  const builtFor = chosenTemplate?.startWeekday ?? null
+  const startWeekday = weekdayOfIso(startDate)
+  const weekdayNote =
+    chosenTemplate && builtFor !== null && startWeekday !== null && builtFor !== startWeekday
+      ? `This template was built to start on a ${weekdayName(builtFor)}. Starting on a ${weekdayName(startWeekday)} moves its sessions to other weekdays.`
+      : null
+  const back = step === "start" ? () => setStep("basics") : step === "basics" ? null : () => setStep("start")
+
+  return (
+    <Sheet open onOpenChange={(open) => (open ? undefined : onCancel())} title="New plan" className="sm:max-w-xl">
+      {error ? (
+        <Notice tone="error" className="mb-4">
+          {error}
+        </Notice>
+      ) : null}
+
+      {back ? (
+        <button type="button" className="sk-link mb-4 self-start text-[0.9375rem] font-bold" onClick={back}>
+          Back
+        </button>
+      ) : null}
+
+      {step === "basics" ? (
+        <form
+          className="sk-plan-setup flex flex-col gap-5"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (templates?.initialId && chosenTemplate) void applyTemplate()
+            else toStart()
+          }}
+        >
+          <Field label="Plan name">
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Winter strength block" autoFocus />
+          </Field>
+          {teams.length > 1 && !teamLocked ? (
+            <Field label="Team">
+              <Select value={teamId} onChange={(event) => setTeamId(event.target.value)}>
+                {teams.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          <div>
+            <p className="sk-field-label mb-1.5" id="plan-starts">
+              Starts
+            </p>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="plan-starts">
+              {mondays.map((monday) => (
+                <button
+                  key={monday}
+                  type="button"
+                  role="radio"
+                  aria-checked={!pickDate && startDate === monday}
+                  className="sk-choice-tile"
+                  onClick={() => {
+                    setPickDate(false)
+                    setStartDate(monday)
+                  }}
+                >
+                  {shortDate(monday)}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={pickDate}
+                className="sk-choice-tile"
+                onClick={() => {
+                  setPickDate(true)
+                  setStartDate(todayIso())
+                }}
+              >
+                Pick a date
+              </button>
+            </div>
+            {pickDate ? <Input type="date" aria-label="Start date" className="mt-2" value={startDate} onChange={(event) => setStartDate(event.target.value)} /> : null}
+          </div>
+          <div>
+            <p className="sk-field-label mb-1.5">Weeks</p>
+            <div className="flex items-center gap-3">
+              <button type="button" className="sk-step-btn" aria-label="Fewer weeks" disabled={weeks <= 1} onClick={() => setWeeks((current) => Math.max(1, current - 1))}>
+                <Minus className="size-5" weight="bold" aria-hidden />
+              </button>
+              <output className="sk-step-value" aria-label="Weeks" aria-live="polite">
+                {weeks}
+              </output>
+              <button type="button" className="sk-step-btn" aria-label="More weeks" disabled={weeks >= MAX_WEEKS} onClick={() => setWeeks((current) => Math.min(MAX_WEEKS, current + 1))}>
+                <Plus className="size-5" weight="bold" aria-hidden />
+              </button>
+              <span className="text-sm text-sk-mute">to {shortDate(endDate)}</span>
+            </div>
+          </div>
+          {templates?.initialId && weekdayNote ? <Notice tone="warning">{weekdayNote}</Notice> : null}
+          <Button type="submit" variant="primary" className="mt-1" disabled={busy}>
+            {templates?.initialId && chosenTemplate ? (busy ? "Opening the template..." : `Start from ${chosenTemplate.name}`) : "Next"}
+            <ArrowRight className="size-5" weight="bold" aria-hidden />
+          </Button>
+        </form>
+      ) : null}
+
+      {step === "start" ? (
+        <div className="grid grid-cols-2 gap-3" role="group" aria-label="How to start">
+          <button type="button" className="sk-start-tile" data-primary onClick={() => onDone(base())}>
+            <Plus className="size-8" weight="bold" aria-hidden />
+            <span>Blank week</span>
+          </button>
+          <button type="button" className="sk-start-tile" onClick={() => setStep("paste")}>
+            <ClipboardText className="size-8" weight="bold" aria-hidden />
+            <span>Paste from Excel</span>
+          </button>
+          <button type="button" className="sk-start-tile" onClick={() => setStep("template")} disabled={templateList !== null && templateList.length === 0}>
+            <Stack className="size-8" weight="bold" aria-hidden />
+            <span>From a template</span>
+          </button>
+          <button type="button" className="sk-start-tile" onClick={() => setStep("outline")}>
+            <ListBullets className="size-8" weight="bold" aria-hidden />
+            <span>Starter outline</span>
+          </button>
+        </div>
+      ) : null}
+
+      {step === "paste" ? (
+        <div className="flex flex-col gap-3">
+          <Textarea
+            autoFocus
+            rows={9}
+            aria-label="Rows from your spreadsheet"
+            placeholder={"Copy your week in Excel and paste it here.\nMonday\nBack squat\t3\t5\t80%"}
+            value={pasteText}
+            onChange={(event) => setPasteText(event.target.value)}
+            className="font-mono text-sm"
+          />
+          {placedPaste.placed.length > 0 ? (
+            <ul className="flex flex-wrap gap-2" aria-label="What will be filled">
+              {placedPaste.placed.map(({ slot, count }) => (
+                <li key={slot.index} className="sk-paste-day">
+                  <strong>{slot.name}</strong>
+                  <span>{plural(count, "exercise")}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Button
+            variant="primary"
+            disabled={placedPaste.placed.length === 0}
+            onClick={() => {
+              const next = base()
+              onDone({ ...next, sessions: sessionsFromPlaced(next, 1, placePastedDays(next, 1, pasted).placed) })
+            }}
+          >
+            {placedPaste.placed.length === 0 ? "Fill week 1" : `Fill ${plural(placedPaste.placed.length, "day")}`}
+          </Button>
+        </div>
+      ) : null}
+
+      {step === "template" ? (
+        templates?.error ? (
+          <Notice tone="error">{templates.error}</Notice>
+        ) : templateList === null ? (
+          <SkeletonRows rows={2} label="Loading templates" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div role="radiogroup" aria-label="Template">
+              <List>
+                {templateList.map((candidate) => (
+                  <RadioRow
+                    key={candidate.id}
+                    name="plan-template"
+                    value={candidate.id}
+                    checked={candidate.id === templateId}
+                    onChange={(id) => {
+                      setTemplateId(id)
+                      setError(null)
+                    }}
+                    title={candidate.name}
+                    subtitle={templateFacts(candidate)}
+                  />
+                ))}
+              </List>
+            </div>
+            {weekdayNote ? <Notice tone="warning">{weekdayNote}</Notice> : null}
+            <Button variant="primary" disabled={!chosenTemplate || busy} onClick={() => void applyTemplate()}>
+              {busy ? "Opening the template..." : "Use this template"}
+            </Button>
+          </div>
+        )
+      ) : null}
+
+      {step === "outline" ? (
+        <div className="flex flex-col gap-4">
+          <FormGrid>
+            <Field label="Event group">
+              <Select value={eventGroup} onChange={(event) => setEventGroup(event.target.value as EventGroup)}>
+                {EVENT_GROUPS.map((group) => (
+                  <option key={group.value} value={group.value}>
+                    {group.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Training days per week">
+              <Select value={daysPerWeek} onChange={(event) => setDaysPerWeek(event.target.value)}>
+                {[3, 4, 5, 6, 7].map((count) => (
+                  <option key={count} value={count}>
+                    {count} days
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </FormGrid>
+          <Button variant="primary" onClick={() => onDone({ ...base(), sessions: createSkeletonSessions(weeks, eventGroup, Number.parseInt(daysPerWeek, 10)) })}>
+            Use the outline
+          </Button>
+        </div>
+      ) : null}
     </Sheet>
   )
 }

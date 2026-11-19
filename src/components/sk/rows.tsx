@@ -1,5 +1,5 @@
 import { CaretRight, DotsThree } from "@phosphor-icons/react"
-import type { HTMLAttributes, ReactNode } from "react"
+import { useRef, type HTMLAttributes, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
@@ -74,6 +74,8 @@ export type RowMenuItem = {
   /** Coral text, for remove and delete. */
   danger?: boolean
   disabled?: boolean
+  /** It opens a dialog or a sheet: focus stays with that, not back on the menu button. */
+  opensOverlay?: boolean
 }
 
 /**
@@ -83,6 +85,7 @@ export type RowMenuItem = {
  * for ("More for General preparation block").
  */
 export function RowMenu({ label, items, className }: { label: string; items: RowMenuItem[]; className?: string }) {
+  const openedOverlay = useRef(false)
   if (items.length === 0) return null
   return (
     <DropdownMenu>
@@ -91,12 +94,24 @@ export function RowMenu({ label, items, className }: { label: string; items: Row
           <DotsThree className="size-6" weight="bold" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="min-w-48 rounded-2xl border-sk-line-strong bg-white p-1.5">
+      <DropdownMenuContent
+        align="end"
+        sideOffset={6}
+        className="min-w-48 rounded-2xl border-sk-line-strong bg-white p-1.5"
+        onCloseAutoFocus={(event) => {
+          if (!openedOverlay.current) return
+          openedOverlay.current = false
+          event.preventDefault()
+        }}
+      >
         {items.map((item) => (
           <DropdownMenuItem
             key={item.label}
             disabled={item.disabled}
-            onSelect={item.onSelect}
+            onSelect={() => {
+              openedOverlay.current = Boolean(item.opensOverlay)
+              item.onSelect()
+            }}
             className={cn(
               "min-h-11 cursor-pointer rounded-[10px] px-3 text-[0.9375rem] font-semibold focus:bg-sk-soft",
               item.danger ? "text-sk-coral-ink focus:text-sk-coral-ink" : "text-sk-ink",

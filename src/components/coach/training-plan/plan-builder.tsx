@@ -1,37 +1,30 @@
-import { ArrowRight, CopySimple, PencilSimple, Plus, Printer, Swap, Trash, X } from "@phosphor-icons/react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowRight, CopySimple, PencilSimple, Printer } from "@phosphor-icons/react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActionBar,
   Button,
+  Dialog,
   DayChecks,
-  DayLabel,
-  EmptyState,
   Field,
   FormGrid,
   InlineConfirm,
   Input,
-  List,
-  ListRow,
   Notice,
   RowMenu,
   Screen,
   ScreenHeader,
   Section,
   Select,
-  Split,
+  Sheet,
   Tabs,
 } from "@/components/sk"
 import {
-  QUICK_BLOCKS,
-  SESSION_TYPES,
   applyABPattern,
   copySessionToNextDay,
   duplicatePreviousWeek,
   formatDateRange,
   formatDayMonth,
   getSession,
-  newBlock,
-  newSession,
   nextSlot,
   planEndDate,
   putSession,
@@ -39,38 +32,19 @@ import {
   slotDate,
   weekSessions,
   weekdayLabel,
-  type BlockDraft,
     type PlanDraft,
-  type SessionDraft,
-  type SessionType,
 } from "@/lib/data/training-plan/plan-builder-model"
 import { WEEK_TYPES, cleanTargetLoad, isWeekType, phaseForWeek, plannedWeekLoad } from "@/lib/data/training-plan/plan-phases"
-import { ExerciseRows } from "./exercise-rows"
+import { BoardDay } from "./plan-board"
+import { DaySheet, PasteWeekButton, PasteWeekDialog, SessionDetailsDialog, type SheetFocus } from "./plan-sheet"
 import { PlanOverview, usePlanMarkers } from "./plan-overview"
 import type { AthleteOption, TeamOption } from "./storage"
 import { PlanStatusText, plural } from "./ui"
-import { useExerciseTools, type ExerciseTools } from "./use-exercise-tools"
+import { useExerciseTools } from "./use-exercise-tools"
 
 const DAY_INDEXES = [0, 1, 2, 3, 4, 5, 6]
 
-type WeekTool = null | "duplicate-confirm" | "ab"
-
-function useIsDesktop() {
-  const query = "(min-width: 1024px)"
-  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? true : window.matchMedia(query).matches))
-  useEffect(() => {
-    const list = window.matchMedia(query)
-    const update = () => setMatches(list.matches)
-    update()
-    list.addEventListener("change", update)
-    return () => list.removeEventListener("change", update)
-  }, [])
-  return matches
-}
-
-function dayOfMonth(dateIso: string) {
-  return Number(dateIso.slice(8, 10)) || 0
-}
+type WeekTool = null | "duplicate-confirm" | "ab" | "settings" | "copy-rest-confirm"
 
 export function PlanBuilder({
   plan,
@@ -80,8 +54,6 @@ export function PlanBuilder({
   busy,
   error,
   savedLabel,
-  mobileEditorOpen,
-  onMobileEditorChange,
   onChange,
   onBack,
   onEditDetails,
@@ -98,9 +70,6 @@ export function PlanBuilder({
   busy: boolean
   error: string | null
   savedLabel: string | null
-  /** On phones the session editor replaces the week. */
-  mobileEditorOpen: boolean
-  onMobileEditorChange: (open: boolean) => void
   onChange: (updater: (plan: PlanDraft) => PlanDraft) => void
   onBack: () => void
   onEditDetails: () => void
@@ -111,30 +80,32 @@ export function PlanBuilder({
   onSaveAsTemplate: () => void
 }) {
   const [week, setWeek] = useState(1)
-  const [dayIndex, setDayIndex] = useState(() => weekSessions(plan, 1)[0]?.dayIndex ?? 0)
   const [tool, setTool] = useState<WeekTool>(null)
-  const [confirmCopy, setConfirmCopy] = useState(false)
+  const [confirmCopyDay, setConfirmCopyDay] = useState<number | null>(null)
+  const [detailsDay, setDetailsDay] = useState<number | null>(null)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [tableDay, setTableDay] = useState<number | null>(null)
+  const [focusDay, setFocusDay] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const isDesktop = useIsDesktop()
   const athleteIds = useMemo(() => athletes.map((athlete) => athlete.id), [athletes])
   const exerciseTools = useExerciseTools(athleteIds)
-  const editorRef = useRef<HTMLDivElement | null>(null)
+  const sheetRef = useRef<HTMLOListElement | null>(null)
+  const tableRef = useRef<HTMLOListElement | null>(null)
+  const clearFocusDay = useCallback(() => setFocusDay(null), [])
   const markers = usePlanMarkers(plan, team?.name ?? null)
-  // What to put the cursor in once the screen has caught up with a change.
-  const pendingFocus = useRef<null | "title" | { blockId: string; field: "name" | "details" }>(null)
+  const pendingFocus = useRef<SheetFocus>(null)
 
   const activeWeek = Math.min(week, plan.weeks)
   const sessions = weekSessions(plan, activeWeek)
-  const session = getSession(plan, activeWeek, dayIndex)
-  const selectedDate = slotDate(plan, activeWeek, dayIndex)
-  const selectedDayName = `${weekdayLabel(selectedDate)} ${formatDayMonth(selectedDate)}`
-  const copyTarget = nextSlot(plan, activeWeek, dayIndex)
-  const copyTargetDate = copyTarget ? slotDate(plan, copyTarget.week, copyTarget.dayIndex) : null
-  const copyTargetName = copyTargetDate ? `${weekdayLabel(copyTargetDate)} ${formatDayMonth(copyTargetDate)}` : ""
   const isPublished = plan.status === "published"
   const weekPhase = phaseForWeek(plan.phases, activeWeek)
   const weekPlanned = plannedWeekLoad(plan.sessions, activeWeek)
   const weekTarget = plan.weekTargetLoad?.[String(activeWeek)] ?? null
+  const weekFocus = plan.weekFocus[String(activeWeek)]?.trim() ?? ""
+  const dayName = (index: number) => {
+    const date = slotDate(plan, activeWeek, index)
+    return `${weekdayLabel(date)} ${formatDayMonth(date)}`
+  }
 
   useEffect(() => {
     if (!notice) return
@@ -144,14 +115,20 @@ export function PlanBuilder({
 
   useEffect(() => {
     const target = pendingFocus.current
-    if (!target || !editorRef.current) return
+    const root = tableRef.current
+    if (!target || !root) return
     const node =
-      target === "title"
-        ? editorRef.current.querySelector<HTMLInputElement>("[data-session-title]")
-        : editorRef.current.querySelector<HTMLInputElement>(`[data-block-id="${target.blockId}"] [data-block-field="${target.field}"]`)
+      target.kind === "title"
+        ? root.querySelector<HTMLInputElement>(`[data-day-title="${target.dayIndex}"]`)
+        : target.kind === "section"
+          ? root.querySelector<HTMLInputElement>(`[data-block-id="${target.blockId}"] [data-block-field="name"]`)
+          : root.querySelector<HTMLInputElement>(`[data-exercise-id="${target.exerciseId}"] [data-cell$=":0"]`)
     if (!node) return
     pendingFocus.current = null
     node.focus()
+    // A row started from the "type an exercise" line keeps the first letter typed: the cursor goes after it.
+    const end = node.value.length
+    node.setSelectionRange?.(end, end)
   })
 
   // Ctrl or Cmd + S saves the draft, as people expect.
@@ -169,60 +146,30 @@ export function PlanBuilder({
 
   const selectWeek = (next: number) => {
     setWeek(next)
-    setDayIndex(weekSessions(plan, next)[0]?.dayIndex ?? 0)
     setTool(null)
-    setConfirmCopy(false)
+    setConfirmCopyDay(null)
   }
 
-  const openDay = (index: number) => {
-    setDayIndex(index)
-    setConfirmCopy(false)
-    if (!getSession(plan, activeWeek, index)) {
-      onChange((current) => (getSession(current, activeWeek, index) ? current : putSession(current, newSession(activeWeek, index))))
-      pendingFocus.current = "title"
-    }
-    onMobileEditorChange(true)
-    if (!isDesktop) document.getElementById("main-content")?.scrollTo({ top: 0 })
+  const copyToNextDay = (index: number) => {
+    const target = nextSlot(plan, activeWeek, index)
+    if (!target) return
+    const date = slotDate(plan, target.week, target.dayIndex)
+    onChange((current) => copySessionToNextDay(current, activeWeek, index))
+    setConfirmCopyDay(null)
+    setNotice(`Copied to ${weekdayLabel(date)} ${formatDayMonth(date)}.`)
   }
 
-  const updateSession = (patch: Partial<SessionDraft>) =>
-    onChange((current) => {
-      const existing = getSession(current, activeWeek, dayIndex)
-      return existing ? putSession(current, { ...existing, ...patch }) : current
-    })
-
-  const updateBlock = (blockId: string, updater: (block: BlockDraft) => BlockDraft) =>
-    onChange((current) => {
-      const existing = getSession(current, activeWeek, dayIndex)
-      if (!existing) return current
-      return putSession(current, { ...existing, blocks: existing.blocks.map((block) => (block.id === blockId ? updater(block) : block)) })
-    })
-
-  const addBlock = (title?: string) => {
-    if (!session) return
-    const block = newBlock(title)
-    pendingFocus.current = { blockId: block.id, field: title ? "details" : "name" }
-    updateSession({ blocks: [...session.blocks, block] })
-  }
-
-  const copyToNextDay = () => {
-    if (!session || !copyTarget) return
-    onChange((current) => copySessionToNextDay(current, activeWeek, dayIndex))
-    setConfirmCopy(false)
-    setNotice(`Copied to ${copyTargetName}.`)
-  }
-
-  const requestCopy = () => {
-    if (!session || !copyTarget) return
-    if (getSession(plan, copyTarget.week, copyTarget.dayIndex)) setConfirmCopy(true)
-    else copyToNextDay()
+  const requestCopy = (index: number) => {
+    const target = nextSlot(plan, activeWeek, index)
+    if (!target) return
+    if (getSession(plan, target.week, target.dayIndex)) setConfirmCopyDay(index)
+    else copyToNextDay(index)
   }
 
   const duplicateLastWeek = () => {
     const copied = weekSessions(plan, activeWeek - 1).length
     onChange((current) => duplicatePreviousWeek(current, activeWeek))
     setTool(null)
-    setDayIndex(weekSessions(plan, activeWeek - 1)[0]?.dayIndex ?? 0)
     setNotice(`Copied ${plural(copied, "session")} from week ${activeWeek - 1}.`)
   }
 
@@ -232,294 +179,307 @@ export function PlanBuilder({
     else duplicateLastWeek()
   }
 
-  const removeAndClose = () => {
-    onChange((current) => removeSession(current, activeWeek, dayIndex))
-    setConfirmCopy(false)
-    onMobileEditorChange(false)
-    setNotice(`Removed the ${selectedDayName} session.`)
+  const laterWeeks = plan.weeks - activeWeek
+  const laterSessions = plan.sessions.filter((session) => session.week > activeWeek).length
+  const copyToRest = () => {
+    onChange((current) => {
+      let next = current
+      for (let target = activeWeek + 1; target <= current.weeks; target += 1) next = duplicatePreviousWeek(next, target)
+      return next
+    })
+    setTool(null)
+    setNotice(laterWeeks === 1 ? `Copied to week ${activeWeek + 1}.` : `Copied to weeks ${activeWeek + 1} to ${plan.weeks}.`)
+  }
+  const requestCopyToRest = () => {
+    if (laterWeeks <= 0 || sessions.length === 0) return
+    if (laterSessions > 0) setTool("copy-rest-confirm")
+    else copyToRest()
   }
 
+  const copyTarget = confirmCopyDay === null ? null : nextSlot(plan, activeWeek, confirmCopyDay)
+  const copyTargetDate = copyTarget ? slotDate(plan, copyTarget.week, copyTarget.dayIndex) : ""
+  const detailsSession = detailsDay === null ? null : getSession(plan, activeWeek, detailsDay)
   const status = notice ?? (busy ? "Saving..." : dirty ? "Unsaved changes" : savedLabel)
 
-  /* ---------------------------------- The week ---------------------------------- */
-
-  const weekSection = (
-    <Section
-      title={`Week ${activeWeek}`}
-      hint={[formatDateRange(slotDate(plan, activeWeek, 0), slotDate(plan, activeWeek, 6)), weekPhase?.name].filter(Boolean).join(", ")}
-      meta={sessions.length === 0 ? "No sessions yet" : plural(sessions.length, "session")}
-      className="lg:sticky lg:top-6"
-    >
-      <Field label="Week focus" optional className="mt-3">
-        <Input
-          placeholder="For example: acceleration"
-          value={plan.weekFocus[String(activeWeek)] ?? ""}
-          onChange={(event) => onChange((current) => ({ ...current, weekFocus: { ...current.weekFocus, [String(activeWeek)]: event.target.value } }))}
-        />
-      </Field>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <Field label="Week type" optional>
-          <Select
-            value={plan.weekTypes?.[String(activeWeek)] ?? ""}
-            onChange={(event) =>
-              onChange((current) => {
-                const next = { ...(current.weekTypes ?? {}) }
-                if (isWeekType(event.target.value)) next[String(activeWeek)] = event.target.value
-                else delete next[String(activeWeek)]
-                return { ...current, weekTypes: next }
-              })
-            }
-          >
-            <option value="">Not set</option>
-            {WEEK_TYPES.map((type) => (
-              <option key={type.value} value={type.value}>
-                {type.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Target load" optional>
-          <Input
-            inputMode="numeric"
-            placeholder="1500"
-            value={weekTarget === null ? "" : String(weekTarget)}
-            onChange={(event) =>
-              onChange((current) => {
-                const next = { ...(current.weekTargetLoad ?? {}) }
-                const target = cleanTargetLoad(event.target.value.replace(/[^0-9]/g, "").slice(0, 5))
-                if (target === null) delete next[String(activeWeek)]
-                else next[String(activeWeek)] = target
-                return { ...current, weekTargetLoad: next }
-              })
-            }
-          />
-        </Field>
-      </div>
-      {weekPlanned.load !== null ? (
-        <p className="mt-2 text-sm text-sk-mute" data-week-planned-load>
-          {`Planned load ${weekPlanned.load.toLocaleString("en-GB")}${weekTarget !== null ? ` of a target of ${weekTarget.toLocaleString("en-GB")}` : ""}, from ${weekPlanned.counted} of ${plural(weekPlanned.sessions, "session")}.`}
-        </p>
-      ) : null}
-
-      <List tiles className="sk-plan-days mt-3" aria-label={`Week ${activeWeek} days`}>
-        {DAY_INDEXES.map((index) => {
-          const date = slotDate(plan, activeWeek, index)
-          const daySession = getSession(plan, activeWeek, index)
-          const selected = index === dayIndex
-          const dayName = `${weekdayLabel(date)} ${formatDayMonth(date)}`
-          return (
-            <ListRow
-              key={index}
-              data-day-index={index}
-              data-has-session={Boolean(daySession)}
-              aria-current={selected ? "true" : undefined}
-              aria-label={daySession ? `${dayName}: ${daySession.title || "Untitled session"}. Edit session` : `${dayName}: rest day. Add a session`}
-              onClick={() => openDay(index)}
-              leading={<DayLabel weekday={weekdayLabel(date)} number={dayOfMonth(date)} today={selected} muted={!daySession} />}
-              title={daySession ? daySession.title || "Untitled session" : <span className="font-medium text-sk-mute">Rest day</span>}
-              subtitle={daySession ? `${daySession.sessionType}, ${plural(daySession.blocks.length, "block")}` : undefined}
-              trailing={daySession ? undefined : <Plus className="size-[18px] text-sk-blue-link" weight="bold" aria-hidden />}
-            />
-          )
-        })}
-      </List>
-
-      <div className="-ml-2.5 mt-2 flex flex-wrap gap-x-1">
-        <Button variant="quiet" size="sm" disabled={activeWeek <= 1} title={activeWeek <= 1 ? "Week 1 has no week before it" : undefined} onClick={requestDuplicate}>
-          <CopySimple className="size-4" weight="bold" aria-hidden />
-          Duplicate last week
-        </Button>
-        <Button variant="quiet" size="sm" aria-expanded={tool === "ab"} onClick={() => setTool(tool === "ab" ? null : "ab")}>
-          <Swap className="size-4" weight="bold" aria-hidden />
-          A/B days
-        </Button>
-      </div>
-
-      {tool === "duplicate-confirm" ? (
-        <InlineConfirm
-          className="mt-2"
-          question={`Week ${activeWeek} already has ${plural(sessions.length, "session")}. Replace them with a copy of week ${activeWeek - 1}?`}
-          confirmLabel={`Replace week ${activeWeek}`}
-          onConfirm={duplicateLastWeek}
-          onCancel={() => setTool(null)}
-        />
-      ) : null}
-
-      {tool === "ab" ? (
-        <ABDaysTool
-          plan={plan}
-          week={activeWeek}
-          defaultA={session ? dayIndex : (sessions[0]?.dayIndex ?? null)}
-          onCancel={() => setTool(null)}
-          onApply={(a, b, targets) => {
-            onChange((current) => applyABPattern(current, activeWeek, a, b, targets))
-            setTool(null)
-            setNotice(`A/B pattern applied to ${plural(targets.length, "day")}.`)
-          }}
-        />
-      ) : null}
-    </Section>
-  )
-
-  /* -------------------------------- One session -------------------------------- */
-
-  const editor = session ? (
-    <div ref={editorRef} className="contents">
-      <Section title={isDesktop ? selectedDayName : undefined} hint={isDesktop ? `Week ${activeWeek}` : undefined}>
-        {confirmCopy ? (
-          <InlineConfirm
-            question={`${copyTargetName} already has a session. Replace it with this one?`}
-            confirmLabel={`Replace ${weekdayLabel(copyTargetDate ?? "")}`}
-            onConfirm={copyToNextDay}
-            onCancel={() => setConfirmCopy(false)}
-          />
-        ) : null}
-        <FormGrid columns={4} className="mt-3">
-          <Field label="Session title" className="sm:col-span-2">
-            <Input
-              data-session-title
-              value={session.title}
-              onChange={(event) => updateSession({ title: event.target.value })}
-              placeholder="Acceleration and weights"
-              enterKeyHint="next"
-            />
-          </Field>
-          <Field label="Type">
-            <Select value={session.sessionType} onChange={(event) => updateSession({ sessionType: event.target.value as SessionType })}>
-              {SESSION_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Minutes">
-            <Input
-              inputMode="numeric"
-              value={session.durationMinutes}
-              onChange={(event) => updateSession({ durationMinutes: event.target.value.replace(/[^0-9]/g, "").slice(0, 3) })}
-              placeholder="75"
-            />
-          </Field>
-          <Field label="Intended effort" optional>
-            <Select value={session.intendedEffort ?? ""} onChange={(event) => updateSession({ intendedEffort: event.target.value })}>
-              <option value="">Not set</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort} out of 10
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Location">
-            <Input value={session.location} onChange={(event) => updateSession({ location: event.target.value })} placeholder="Track, gym, throws field" />
-          </Field>
-          <Field label="Coach note" className="sm:col-span-2">
-            <Input value={session.notes} onChange={(event) => updateSession({ notes: event.target.value })} placeholder="What athletes should know before they start" />
-          </Field>
-        </FormGrid>
-        <div className="-ml-2.5 mt-2 flex flex-wrap gap-x-1">
-          <Button variant="quiet" size="sm" disabled={!copyTarget} title={copyTarget ? `Copies to ${copyTargetName}` : "This is the last day of the plan"} onClick={requestCopy}>
-            <CopySimple className="size-4" weight="bold" aria-hidden />
-            Copy to next day
-          </Button>
-          <Button variant="quiet" size="sm" className="text-sk-coral-ink hover:text-sk-coral-ink" onClick={removeAndClose}>
-            <Trash className="size-4" weight="bold" aria-hidden />
-            Remove session
-          </Button>
-        </div>
-      </Section>
-
-      <Section
-        title="Blocks"
-        meta={session.blocks.length > 0 ? plural(session.blocks.length, "block") : undefined}
-      >
-        {session.blocks.length > 0 ? (
-          <ol className="sk-list sk-plan-blocks" data-sk-tiles="">
-            {session.blocks.map((block, blockIndex) => (
-              <SessionBlock
-                key={block.id}
-                block={block}
-                index={blockIndex}
-                athletes={athletes}
-                tools={exerciseTools}
-                onChange={(updater) => updateBlock(block.id, updater)}
-                onRemove={() => updateSession({ blocks: session.blocks.filter((candidate) => candidate.id !== block.id) })}
-              />
-            ))}
-          </ol>
-        ) : null}
-
-        <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Add a block">
-          {QUICK_BLOCKS[team?.eventGroup ?? "Sprint"].map((title) => (
-            <Button key={title} size="sm" onClick={() => addBlock(title)}>
-              <Plus className="size-4" weight="bold" aria-hidden />
-              {title}
+  return (
+    <Screen className="sk-page-board">
+      <ScreenHeader
+        back={{ onClick: onBack, label: "All plans" }}
+        fact={<PlanStatusText status={plan.status} />}
+        title={plan.name || "Untitled plan"}
+        lede={[team?.name ?? "No team", plural(plan.weeks, "week"), formatDateRange(plan.startDate, planEndDate(plan))].join(", ")}
+        actions={
+          <>
+            <PasteWeekButton onClick={() => setPasteOpen(true)} />
+            <Button onClick={() => onPrint(activeWeek)}>
+              <Printer className="size-5" weight="bold" aria-hidden />
+              Print
             </Button>
-          ))}
-          <Button size="sm" onClick={() => addBlock()}>
-            <Plus className="size-4" weight="bold" aria-hidden />
-            Custom block
-          </Button>
-        </div>
-      </Section>
-    </div>
-  ) : (
-    <Section title={isDesktop ? selectedDayName : undefined} hint={isDesktop ? `Week ${activeWeek}` : undefined}>
-      <EmptyState
-        title="Rest day"
-        action={
-          <Button size="sm" onClick={() => openDay(dayIndex)}>
-            <Plus className="size-4" weight="bold" aria-hidden />
-            Add a session on {weekdayLabel(selectedDate)}
-          </Button>
+            <Button onClick={onEditDetails}>
+              <PencilSimple className="size-5" weight="bold" aria-hidden />
+              Plan details
+            </Button>
+            <RowMenu label="More for this plan" items={[{ label: "Save as template", onSelect: onSaveAsTemplate, disabled: busy }]} />
+          </>
         }
       />
-    </Section>
-  )
-
-  const showEditorOnly = !isDesktop && mobileEditorOpen
-
-  return (
-    <Screen>
-      {showEditorOnly ? (
-        <ScreenHeader back={{ onClick: () => onMobileEditorChange(false), label: `Week ${activeWeek}` }} title={selectedDayName} />
-      ) : (
-        <ScreenHeader
-          back={{ onClick: onBack, label: "All plans" }}
-          fact={<PlanStatusText status={plan.status} />}
-          title={plan.name || "Untitled plan"}
-          lede={[team?.name ?? "No team", plural(plan.weeks, "week"), formatDateRange(plan.startDate, planEndDate(plan))].join(", ")}
-          actions={
-            <>
-              <Button onClick={() => onPrint(activeWeek)}>
-                <Printer className="size-5" weight="bold" aria-hidden />
-                Print
-              </Button>
-              <Button onClick={onEditDetails}>
-                <PencilSimple className="size-5" weight="bold" aria-hidden />
-                Plan details
-              </Button>
-              <RowMenu label="More for this plan" items={[{ label: "Save as template", onSelect: onSaveAsTemplate, disabled: busy }]} />
-            </>
-          }
-        />
-      )}
 
       {error ? <Notice tone="error">{error}</Notice> : null}
 
-      {showEditorOnly ? null : (
-        <Tabs<string>
-          label="Week"
-          value={String(activeWeek)}
-          onChange={(next) => selectWeek(Number(next))}
-          options={Array.from({ length: plan.weeks }, (_, index) => ({ value: String(index + 1), label: `Week ${index + 1}` }))}
+      {plan.weeks > 1 ? (
+        <>
+          <Tabs<string>
+            label="Week"
+            value={String(activeWeek)}
+            onChange={(next) => selectWeek(Number(next))}
+            options={Array.from({ length: plan.weeks }, (_, index) => ({ value: String(index + 1), label: `Week ${index + 1}` }))}
+          />
+        </>
+      ) : null}
+
+      <Section
+        title={`Week ${activeWeek}`}
+        hint={[formatDateRange(slotDate(plan, activeWeek, 0), slotDate(plan, activeWeek, 6)), weekPhase?.name, weekFocus].filter(Boolean).join(", ")}
+        meta={
+          <span className="flex items-center gap-2">
+            {sessions.length === 0 ? "No sessions yet" : plural(sessions.length, "session")}
+            <RowMenu
+              label={`Tools for week ${activeWeek}`}
+              items={[
+                { label: "Week focus and load", onSelect: () => window.setTimeout(() => setTool("settings"), 0), opensOverlay: true },
+                { label: "Duplicate last week", onSelect: requestDuplicate, disabled: activeWeek <= 1 },
+                { label: "A/B days", onSelect: () => setTool(tool === "ab" ? null : "ab") },
+              ]}
+            />
+          </span>
+        }
+      >
+        {weekPlanned.load !== null ? (
+          <p className="mt-1 text-sm text-sk-mute" data-week-planned-load>
+            {`Planned load ${weekPlanned.load.toLocaleString("en-GB")}${weekTarget !== null ? ` of a target of ${weekTarget.toLocaleString("en-GB")}` : ""}, from ${weekPlanned.counted} of ${plural(weekPlanned.sessions, "session")}.`}
+          </p>
+        ) : null}
+
+        {tool === "duplicate-confirm" ? (
+          <InlineConfirm
+            className="mt-2"
+            question={`Week ${activeWeek} already has ${plural(sessions.length, "session")}. Replace them with a copy of week ${activeWeek - 1}?`}
+            confirmLabel={`Replace week ${activeWeek}`}
+            onConfirm={duplicateLastWeek}
+            onCancel={() => setTool(null)}
+          />
+        ) : null}
+
+        {tool === "ab" ? (
+          <ABDaysTool
+            plan={plan}
+            week={activeWeek}
+            defaultA={sessions[0]?.dayIndex ?? null}
+            onCancel={() => setTool(null)}
+            onApply={(a, b, targets) => {
+              onChange((current) => applyABPattern(current, activeWeek, a, b, targets))
+              setTool(null)
+              setNotice(`A/B pattern applied to ${plural(targets.length, "day")}.`)
+            }}
+          />
+        ) : null}
+
+        {confirmCopyDay !== null && copyTarget ? (
+          <InlineConfirm
+            className="mt-2"
+            question={`${weekdayLabel(copyTargetDate)} ${formatDayMonth(copyTargetDate)} already has a session. Replace it with ${dayName(confirmCopyDay)}?`}
+            confirmLabel={`Replace ${weekdayLabel(copyTargetDate)}`}
+            onConfirm={() => copyToNextDay(confirmCopyDay)}
+            onCancel={() => setConfirmCopyDay(null)}
+          />
+        ) : null}
+
+        {tool === "copy-rest-confirm" ? (
+          <InlineConfirm
+            className="mt-2"
+            question={`Weeks ${activeWeek + 1} to ${plan.weeks} already have ${plural(laterSessions, "session")}. Replace them with copies of week ${activeWeek}?`}
+            confirmLabel="Replace them"
+            onConfirm={copyToRest}
+            onCancel={() => setTool(null)}
+          />
+        ) : null}
+
+        <nav className="sk-board-days" aria-label={`Days of week ${activeWeek}`}>
+          {DAY_INDEXES.map((index) => {
+            const date = slotDate(plan, activeWeek, index)
+            return (
+              <button
+                key={index}
+                type="button"
+                data-on={getSession(plan, activeWeek, index) ? "" : undefined}
+                onClick={() => sheetRef.current?.querySelector<HTMLElement>(`[data-board-day="${index}"]`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })}
+              >
+                {weekdayLabel(date).slice(0, 2)}
+              </button>
+            )
+          })}
+        </nav>
+
+        <ol ref={sheetRef} className="sk-board" aria-label={`Week ${activeWeek} days`}>
+          {DAY_INDEXES.map((index) => (
+            <BoardDay
+              key={`${activeWeek}:${index}`}
+              plan={plan}
+              week={activeWeek}
+              dayIndex={index}
+              tools={exerciseTools}
+              focusLine={focusDay === index}
+              canCopyNext={Boolean(nextSlot(plan, activeWeek, index))}
+              onFocusDone={clearFocusDay}
+              onStarted={() => setFocusDay(index)}
+              onChange={onChange}
+              // After the menu has closed: opening a sheet while the menu still holds the page leaves it unclickable.
+              onOpenTable={() => window.setTimeout(() => setTableDay(index), 0)}
+              onOpenDetails={() => window.setTimeout(() => setDetailsDay(index), 0)}
+              onCopyNext={() => requestCopy(index)}
+              onRemove={() => {
+                onChange((current) => removeSession(current, activeWeek, index))
+                setNotice(`Removed the ${dayName(index)} session.`)
+              }}
+              onNotice={setNotice}
+            />
+          ))}
+        </ol>
+
+        {laterWeeks > 0 && sessions.length > 0 ? (
+          <Button size="sm" className="mt-3" onClick={requestCopyToRest}>
+            <CopySimple className="size-4" weight="bold" aria-hidden />
+            {laterWeeks === 1 ? `Copy to week ${activeWeek + 1}` : `Copy to weeks ${activeWeek + 1} to ${plan.weeks}`}
+          </Button>
+        ) : null}
+      </Section>
+
+      {plan.weeks > 1 ? <PlanOverview plan={plan} activeWeek={activeWeek} markers={markers} onSelectWeek={selectWeek} onChange={onChange} /> : null}
+
+      {tool === "settings" ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setTool(null)
+          }}
+          title={`Week ${activeWeek}`}
+          footer={
+            <Button variant="primary" onClick={() => setTool(null)}>
+              Done
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <Field label="Week focus" optional>
+              <Input
+                placeholder="For example: acceleration"
+                value={plan.weekFocus[String(activeWeek)] ?? ""}
+                onChange={(event) => onChange((current) => ({ ...current, weekFocus: { ...current.weekFocus, [String(activeWeek)]: event.target.value } }))}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Week type" optional>
+                <Select
+                  value={plan.weekTypes?.[String(activeWeek)] ?? ""}
+                  onChange={(event) =>
+                    onChange((current) => {
+                      const next = { ...(current.weekTypes ?? {}) }
+                      if (isWeekType(event.target.value)) next[String(activeWeek)] = event.target.value
+                      else delete next[String(activeWeek)]
+                      return { ...current, weekTypes: next }
+                    })
+                  }
+                >
+                  <option value="">Not set</option>
+                  {WEEK_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Target load" optional>
+                <Input
+                  inputMode="numeric"
+                  placeholder="1500"
+                  value={weekTarget === null ? "" : String(weekTarget)}
+                  onChange={(event) =>
+                    onChange((current) => {
+                      const next = { ...(current.weekTargetLoad ?? {}) }
+                      const target = cleanTargetLoad(event.target.value.replace(/[^0-9]/g, "").slice(0, 5))
+                      if (target === null) delete next[String(activeWeek)]
+                      else next[String(activeWeek)] = target
+                      return { ...current, weekTargetLoad: next }
+                    })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
+
+      {tableDay !== null ? (
+        <Sheet
+          open
+          onOpenChange={(open) => {
+            if (!open) setTableDay(null)
+          }}
+          title={dayName(tableDay)}
+          className="sm:max-w-4xl"
+        >
+          <ol ref={tableRef} className="sk-sheet-week mt-0" aria-label={`${dayName(tableDay)} as a table`}>
+            <DaySheet
+              plan={plan}
+              week={activeWeek}
+              dayIndex={tableDay}
+              eventGroup={team?.eventGroup ?? "Sprint"}
+              athletes={athletes}
+              tools={exerciseTools}
+              canCopyNext={Boolean(nextSlot(plan, activeWeek, tableDay))}
+              onChange={onChange}
+              onFocus={(target) => {
+                pendingFocus.current = target
+              }}
+              onOpenSettings={() => window.setTimeout(() => setDetailsDay(tableDay), 0)}
+              onCopyNext={() => requestCopy(tableDay)}
+              onRemove={() => {
+                onChange((current) => removeSession(current, activeWeek, tableDay))
+                setTableDay(null)
+                setNotice(`Removed the ${dayName(tableDay)} session.`)
+              }}
+              onNotice={setNotice}
+            />
+          </ol>
+        </Sheet>
+      ) : null}
+
+      {detailsDay !== null && detailsSession ? (
+        <SessionDetailsDialog
+          session={detailsSession}
+          dayName={dayName(detailsDay)}
+          onClose={() => setDetailsDay(null)}
+          onChange={(patch) =>
+            onChange((current) => {
+              const existing = getSession(current, activeWeek, detailsDay)
+              return existing ? putSession(current, { ...existing, ...patch }) : current
+            })
+          }
         />
-      )}
+      ) : null}
 
-      {showEditorOnly ? null : <PlanOverview plan={plan} activeWeek={activeWeek} markers={markers} onSelectWeek={selectWeek} onChange={onChange} />}
-
-      {isDesktop ? <Split main={editor} side={weekSection} /> : showEditorOnly ? editor : weekSection}
+      {pasteOpen ? (
+        <PasteWeekDialog
+          plan={plan}
+          week={activeWeek}
+          onClose={() => setPasteOpen(false)}
+          onApply={(pasted) => {
+            onChange((current) => pasted.reduce((next, session) => putSession(next, session), current))
+            setPasteOpen(false)
+            setNotice(`Filled ${plural(pasted.length, "day")} of week ${activeWeek}.`)
+          }}
+        />
+      ) : null}
 
       <ActionBar aria-label="Save and publish">
         <div className="flex min-w-0 items-center gap-1">
@@ -546,83 +506,6 @@ export function PlanBuilder({
         </Button>
       </ActionBar>
     </Screen>
-  )
-}
-
-/** One block of a session: its name, a line of details and its exercises. */
-function SessionBlock({
-  block,
-  index,
-  athletes,
-  tools,
-  onChange,
-  onRemove,
-}: {
-  block: BlockDraft
-  index: number
-  athletes: AthleteOption[]
-  tools: ExerciseTools
-  onChange: (updater: (block: BlockDraft) => BlockDraft) => void
-  onRemove: () => void
-}) {
-  return (
-    <li data-block data-block-id={block.id} className="py-4 first:pt-2">
-      <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_2.75rem] items-center gap-2 sm:grid-cols-[1.5rem_minmax(0,13rem)_minmax(0,1fr)_2.75rem]">
-        <span className="sk-block-num text-center text-base font-extrabold tabular-nums text-sk-mute" aria-hidden>
-          {index + 1}
-        </span>
-        <input
-          className="sk-field font-bold"
-          data-block-field="name"
-          aria-label={`Block ${index + 1} name`}
-          placeholder="Block name"
-          enterKeyHint="next"
-          value={block.title}
-          onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return
-            event.preventDefault()
-            event.currentTarget.closest("[data-block]")?.querySelector<HTMLInputElement>('[data-block-field="details"]')?.focus()
-          }}
-        />
-        <input
-          className="sk-field order-last col-span-3 sm:order-none sm:col-span-1"
-          data-block-field="details"
-          aria-label={`Block ${index + 1} details`}
-          placeholder="Details, for example 6 x 30m, full recovery"
-          enterKeyHint="next"
-          value={block.notes}
-          onChange={(event) => onChange((current) => ({ ...current, notes: event.target.value }))}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return
-            event.preventDefault()
-            // Enter carries on into the exercises: the first one, or a new one.
-            const root = event.currentTarget.closest("[data-block]")
-            const first = root?.querySelector<HTMLInputElement>('[data-cell="0:0"]')
-            if (first) first.focus()
-            else root?.querySelector<HTMLButtonElement>("[data-add-row]")?.click()
-          }}
-        />
-        <button
-          type="button"
-          className="inline-flex size-11 cursor-pointer items-center justify-center rounded-[12px] text-sk-mute transition-colors hover:bg-sk-soft hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-          aria-label={`Remove block ${index + 1}`}
-          onClick={onRemove}
-        >
-          <X className="size-4" weight="bold" aria-hidden />
-        </button>
-      </div>
-
-      <ExerciseRows
-        className="mt-2 sm:pl-8"
-        blockIndex={index}
-        blockTitle={block.title}
-        exercises={block.exercises}
-        athletes={athletes}
-        tools={tools}
-        onChange={(updater) => onChange((current) => ({ ...current, exercises: updater(current.exercises) }))}
-      />
-    </li>
   )
 }
 

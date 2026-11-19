@@ -92,7 +92,6 @@ export function PlanWorkspace({
   const [busy, setBusy] = useState<Busy>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [savedLabel, setSavedLabel] = useState<string | null>(null)
-  const [mobileEditorOpen, setMobileEditorOpen] = useState(false)
   const [published, setPublished] = useState<{ count: number; wasUpdate: boolean } | null>(null)
   const [unsaved, setUnsaved] = useState<PlanDraft | null>(() => readUnsaved())
   const [builderKey, setBuilderKey] = useState(0)
@@ -150,7 +149,6 @@ export function PlanWorkspace({
     setPlan(null)
     setDirty(false)
     setActionError(null)
-    setMobileEditorOpen(false)
   }, [selectedTeamId])
 
   useTeamSwitchGuard(
@@ -180,7 +178,6 @@ export function PlanWorkspace({
     setPlan(null)
     setDirty(false)
     setActionError(null)
-    setMobileEditorOpen(false)
     void refresh()
   }, [dirty, plan, refresh])
 
@@ -200,7 +197,6 @@ export function PlanWorkspace({
     setDirty(options.dirty)
     setSavedLabel(options.savedLabel ?? null)
     setActionError(null)
-    setMobileEditorOpen(false)
     setPublished(null)
     setBuilderKey((key) => key + 1)
     setView("build")
@@ -482,8 +478,6 @@ export function PlanWorkspace({
         busy={busy !== null}
         error={actionError}
         savedLabel={savedLabel}
-        mobileEditorOpen={mobileEditorOpen}
-        onMobileEditorChange={setMobileEditorOpen}
         onChange={changePlan}
         onBack={backToList}
         onEditDetails={() => {
@@ -493,7 +487,6 @@ export function PlanWorkspace({
         onSaveDraft={() => void saveDraft()}
         onReview={() => {
           setActionError(null)
-          setMobileEditorOpen(false)
           setView("publish")
         }}
         onPrint={(week) => setPrinting({ plan, week })}
