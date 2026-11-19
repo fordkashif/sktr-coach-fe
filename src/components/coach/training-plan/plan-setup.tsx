@@ -1,4 +1,4 @@
-import { ArrowRight, ClipboardText, ListBullets, Minus, Plus, Stack } from "@phosphor-icons/react"
+import { ArrowRight, ClipboardText, ListBullets, Minus, Plus, Stack, UploadSimple } from "@phosphor-icons/react"
 import { useMemo, useState } from "react"
 import { Button, Field, FormActions, FormGrid, Input, List, Notice, RadioRow, SearchInput, Section, Sheet, Segmented, Select, SkeletonRows, Textarea } from "@/components/sk"
 import {
@@ -17,6 +17,7 @@ import { planFromTemplate, weekdayName, weekdayOfIso, type PlanTemplate, type Pl
 import type { Result } from "@/lib/data/result"
 import type { EventGroup } from "@/lib/mock-data"
 import { parsePastedSheet } from "@/lib/data/training-plan/plan-paste"
+import { SpreadsheetImport, useSpreadsheetPicker, type ReadSpreadsheet } from "./plan-excel-import"
 import { placePastedDays, sessionsFromPlaced } from "./plan-sheet"
 import type { TeamOption } from "./storage"
 import { plural, templateFacts } from "./ui"
@@ -269,7 +270,7 @@ function PlanDetailsForm({
 
 /* --------------------------------- A new plan --------------------------------- */
 
-type NewStep = "basics" | "start" | "paste" | "template" | "outline"
+type NewStep = "basics" | "start" | "paste" | "template" | "outline" | "upload"
 
 /** The next three Mondays from today (today included when it is one). */
 function nextMondays(count: number) {
@@ -318,6 +319,11 @@ function NewPlanSheet({
   const [daysPerWeek, setDaysPerWeek] = useState("5")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [read, setRead] = useState<ReadSpreadsheet | null>(null)
+  const picker = useSpreadsheetPicker((next) => {
+    setRead(next)
+    setStep("upload")
+  })
 
   const templateList = templates?.list ?? null
   const chosenTemplate = templateList?.find((candidate) => candidate.id === templateId) ?? null
@@ -364,11 +370,12 @@ function NewPlanSheet({
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onCancel())} title="New plan" className="sm:max-w-xl">
-      {error ? (
+      {error || picker.error ? (
         <Notice tone="error" className="mb-4">
-          {error}
+          {error ?? picker.error}
         </Notice>
       ) : null}
+      {picker.element}
 
       {back ? (
         <button type="button" className="sk-link mb-4 self-start text-[0.9375rem] font-bold" onClick={back}>
@@ -459,13 +466,26 @@ function NewPlanSheet({
 
       {step === "start" ? (
         <div className="grid grid-cols-2 gap-3" role="group" aria-label="How to start">
-          <button type="button" className="sk-start-tile" data-primary onClick={() => onDone(base())}>
+          <button
+            type="button"
+            className="sk-start-tile col-span-2 h-[120px]"
+            data-primary
+            disabled={picker.reading}
+            onClick={() => {
+              picker.clearError()
+              picker.open()
+            }}
+          >
+            <UploadSimple className="size-8" weight="bold" aria-hidden />
+            <span>{picker.reading ? "Reading the file..." : "Upload Excel"}</span>
+          </button>
+          <button type="button" className="sk-start-tile" onClick={() => onDone(base())}>
             <Plus className="size-8" weight="bold" aria-hidden />
             <span>Blank week</span>
           </button>
           <button type="button" className="sk-start-tile" onClick={() => setStep("paste")}>
             <ClipboardText className="size-8" weight="bold" aria-hidden />
-            <span>Paste from Excel</span>
+            <span>Paste rows</span>
           </button>
           <button type="button" className="sk-start-tile" onClick={() => setStep("template")} disabled={templateList !== null && templateList.length === 0}>
             <Stack className="size-8" weight="bold" aria-hidden />
@@ -476,6 +496,16 @@ function NewPlanSheet({
             <span>Starter outline</span>
           </button>
         </div>
+      ) : null}
+
+      {step === "upload" && read ? (
+        <SpreadsheetImport
+          plan={base()}
+          read={read}
+          startWeek={1}
+          onChooseAnother={() => picker.open()}
+          onApply={(next) => onDone(next)}
+        />
       ) : null}
 
       {step === "paste" ? (

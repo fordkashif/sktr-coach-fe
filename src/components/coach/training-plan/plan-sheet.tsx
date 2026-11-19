@@ -1,4 +1,4 @@
-import { ClipboardText, Plus, X } from "@phosphor-icons/react"
+import { Plus, X } from "@phosphor-icons/react"
 import { useMemo, useState, type ClipboardEvent } from "react"
 import { Button, Dialog, Field, FormGrid, Input, Notice, RowMenu, Select, Textarea } from "@/components/sk"
 import {
@@ -20,7 +20,6 @@ import {
 } from "@/lib/data/training-plan/plan-builder-model"
 import { looksLikeRows, mergePastedBlocks, parsePastedSheet, pastedToBlocks, tidyHeading, titleFromBlocks, type PastedSheet } from "@/lib/data/training-plan/plan-paste"
 import type { EventGroup } from "@/lib/mock-data"
-import { cn } from "@/lib/utils"
 import { ExerciseRows } from "./exercise-rows"
 import type { AthleteOption } from "./storage"
 import { plural } from "./ui"
@@ -500,14 +499,5 @@ export function PasteWeekDialog({ plan, week, onClose, onApply }: { plan: PlanDr
         ) : null}
       </div>
     </Dialog>
-  )
-}
-
-export function PasteWeekButton({ onClick, className }: { onClick: () => void; className?: string }) {
-  return (
-    <Button onClick={onClick} className={cn(className)}>
-      <ClipboardText className="size-5" weight="bold" aria-hidden />
-      Paste from Excel
-    </Button>
   )
 }

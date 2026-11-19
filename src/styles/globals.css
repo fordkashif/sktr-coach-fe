@@ -1243,3 +1243,12 @@ body {
 .sk-board-type { flex-shrink: 0; }
 .sk-board-line { scroll-margin-bottom: 160px; }
 .sk-board-title { field-sizing: content; }
+
+/* ---- Upload Excel: the tabs of a file ---- */
+.sk-import-tab { border-radius: 18px; background: #fff; box-shadow: inset 0 0 0 2px #e3e5de; padding: 12px 14px; }
+.sk-import-tab[data-on] { background: var(--sk-sw-grey, #f2f3ee); box-shadow: none; }
+.sk-import-check { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 2px #c9ccc2; color: #fff; }
+.sk-import-tab[data-on] .sk-import-check { background: var(--sk-accent, #2152ff); box-shadow: none; }
+.peer:focus-visible + .sk-import-check { outline: 2px solid var(--sk-accent, #2152ff); outline-offset: 2px; }
+.peer:disabled + .sk-import-check { opacity: 0.4; }
+.sk-import-week { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; border-radius: 999px; background: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; }
