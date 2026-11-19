@@ -221,8 +221,9 @@ test.describe("athlete plan (mock mode)", () => {
     await page.locator('[aria-current="date"]').first().click()
     await expect(page.getByRole("heading", { level: 1, name: "Acceleration and weights" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "From your coach" })).toBeVisible()
-    await expect(main).toContainText("Back squat")
-    await expect(main).toContainText("3 x 5 at 120kg")
+    const squat = page.locator(".sk-planned-row", { hasText: "Back squat" })
+    await expect(squat.locator(".sk-planned-vol")).toHaveText("3 x 5")
+    await expect(squat.locator(".sk-planned-load")).toHaveText("120kg")
     await expect(page.locator('[data-shell="tabbar"]')).toBeVisible()
     await expect(page.getByRole("link", { name: "Start session" })).toHaveAttribute("href", "/athlete/log")
 

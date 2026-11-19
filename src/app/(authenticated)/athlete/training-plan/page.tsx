@@ -45,6 +45,7 @@ import type { TrainingPlanDay, TrainingPlanDetail, TrainingPlanSummary, Training
 import { isWeekType, weekLine } from "@/lib/data/training-plan/plan-phases"
 import { getBackendMode } from "@/lib/supabase/config"
 import { useUnits } from "@/lib/units-store"
+import { PlannedBlocks, blockFromPreview, splitTarget } from "@/components/athlete/planned-blocks"
 
 
 /** The photo behind the block card (public/images/athlete, from Unsplash). */
@@ -225,27 +226,23 @@ function PlanDayScreen({
           <SkeletonRows rows={4} label="Getting the session" />
         </Section>
       ) : session && session.blocks.length > 0 ? (
-        session.blocks.map((block) => (
-          <Section key={block.id} title={block.name} hint={[block.focus, block.coachNote].filter(Boolean).join(" ") || undefined}>
-            <List>
-              {block.rows.map((row) =>
-                block.rows.length === 1 && row.label === block.name ? (
-                  <ListRow key={row.id} title={row.target} />
-                ) : (
-                  <ListRow key={row.id} title={row.label} subtitle={row.helper ?? undefined} trailing={row.target} />
-                ),
-              )}
-            </List>
-          </Section>
-        ))
+        <PlannedBlocks
+          blocks={session.blocks.map((block) => ({
+            key: block.id,
+            name: block.name,
+            hint: [block.focus, block.coachNote].filter(Boolean).join(" ") || undefined,
+            rows:
+              block.rows.length === 1 && block.rows[0].label === block.name
+                ? [{ key: block.rows[0].id, name: block.rows[0].target, volume: "", load: "", note: "" }]
+                : block.rows.map((row) => {
+                    const target = splitTarget(units.target(row.target))
+                    // A row with no name of its own reads as its sets and reps.
+                    return row.label.trim() ? { key: row.id, name: row.label, ...target, note: row.helper ?? "" } : { key: row.id, name: target.volume || target.load, volume: "", load: target.volume ? target.load : "", note: row.helper ?? "" }
+                  }),
+          }))}
+        />
       ) : planDay && planDay.blockPreview.length > 0 ? (
-        <Section title="What is planned">
-          <List ordered>
-            {planDay.blockPreview.map((block, index) => (
-              <ListRow key={`${index}-${block}`} title={units.target(block)} />
-            ))}
-          </List>
-        </Section>
+        <PlannedBlocks blocks={planDay.blockPreview.map((preview, index) => blockFromPreview(units.target(preview), index))} />
       ) : day ? (
         <Section aria-label="What is planned">
           <EmptyState
