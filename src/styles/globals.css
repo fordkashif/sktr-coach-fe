@@ -1130,3 +1130,19 @@ body {
 /* ---- A wide table scrolls inside its own box instead of running off the screen ---- */
 .sk-table-wrap { min-width: 0; max-width: 100%; }
 @media (min-width: 640px) { .sk-table-wrap { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; } }
+
+/* ---- Test week builder: each test is a tile with its name, a number and what it is measured in ---- */
+.sk-test-tile { border-radius: 20px; background: var(--sk-sw-grey, #f2f3ee); padding: 12px; }
+.sk-test-tile .sk-field { background: #fff; }
+.sk-test-tile .sk-icon-btn { background: #fff; }
+.sk-test-num { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 999px; background: var(--sk-accent, #2152ff); color: #fff; font-family: var(--sk-font-display); font-size: 1.05rem; font-weight: 800; }
+.sk-unit-chip { height: 34px; padding: 0 12px; border-radius: 999px; background: #fff; font-size: 0.875rem; font-weight: 700; color: var(--sk-ink); cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sk-unit-chip:active { transform: scale(0.95); }
+.sk-unit-chip[aria-checked="true"] { background: var(--sk-accent, #2152ff); color: #fff; }
+.sk-unit-chip:focus-visible { outline: 2px solid var(--sk-accent, #2152ff); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .sk-test-tile { animation: sk-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+}
+.sk-unit-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-right: -12px; padding-right: 12px; }
+.sk-unit-row::-webkit-scrollbar { display: none; }
+.sk-unit-chip { flex-shrink: 0; white-space: nowrap; }

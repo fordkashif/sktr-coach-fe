@@ -1146,47 +1146,59 @@ function Builder({
             {dayTests.length === 0 ? (
               <p className="mt-2 text-[0.9375rem] text-sk-mute">Nothing on day {day + 1} yet. Add a test below, or leave it as a rest day.</p>
             ) : (
-              <ul className="mt-2 flex flex-col gap-2">
+              <ol className="mt-3 flex flex-col gap-2.5" aria-label={`Tests on day ${day + 1}`}>
                 {dayTests.map((test, index) => (
-                  <li key={test.key} className="grid grid-cols-[minmax(0,1fr)_2.75rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_11rem_2.75rem]">
-                    <input
-                      className="sk-field"
-                      aria-label={`Test ${index + 1} name`}
-                      placeholder="Test name, for example 300m"
-                      value={test.name}
-                      autoFocus={focusKey.current === test.key}
-                      enterKeyHint="next"
-                      onChange={(event) => patchTest(test.key, { name: event.target.value })}
-                      onKeyDown={(event) => {
-                        // Enter on the last test starts the next one, so a list can be typed without the mouse.
-                        if (event.key !== "Enter") return
-                        event.preventDefault()
-                        if (index === dayTests.length - 1 && test.name.trim()) addTest()
-                      }}
-                    />
-                    <select
-                      className="sk-field col-start-1 row-start-2 sm:col-start-auto sm:row-start-auto"
-                      aria-label={`Test ${index + 1} unit`}
-                      value={test.unit}
-                      onChange={(event) => patchTest(test.key, { unit: event.target.value as TestUnit })}
-                    >
-                      {UNIT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value === "weight" ? `Weight (${viewUnitLabel("kg")})` : option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="inline-flex size-11 cursor-pointer items-center justify-center rounded-[12px] text-sk-mute transition-colors hover:bg-sk-soft hover:text-sk-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sk-blue"
-                      aria-label={`Remove ${test.name.trim() || `test ${index + 1}`}`}
-                      onClick={() => setDraft((current) => ({ ...current, tests: current.tests.filter((item) => item.key !== test.key) }))}
-                    >
-                      <Trash className="size-5" weight="bold" aria-hidden />
-                    </button>
+                  <li key={test.key} className="sk-test-tile" data-test-tile>
+                    <div className="flex items-center gap-2.5">
+                      <span className="sk-test-num" aria-hidden>
+                        {index + 1}
+                      </span>
+                      <input
+                        className="sk-field min-w-0 flex-1 font-bold"
+                        aria-label={`Test ${index + 1} name`}
+                        placeholder="Test name, for example 300m"
+                        value={test.name}
+                        autoFocus={focusKey.current === test.key}
+                        enterKeyHint="next"
+                        onChange={(event) => patchTest(test.key, { name: event.target.value })}
+                        onKeyDown={(event) => {
+                          // Enter on the last test starts the next one, so a list can be typed without the mouse.
+                          if (event.key !== "Enter") return
+                          event.preventDefault()
+                          if (index === dayTests.length - 1 && test.name.trim()) addTest()
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="sk-icon-btn shrink-0"
+                        aria-label={`Remove ${test.name.trim() || `test ${index + 1}`}`}
+                        onClick={() => setDraft((current) => ({ ...current, tests: current.tests.filter((item) => item.key !== test.key) }))}
+                      >
+                        <Trash className="size-5" weight="bold" aria-hidden />
+                      </button>
+                    </div>
+                    <div className="sk-unit-row mt-2.5 pl-[2.625rem]" role="radiogroup" aria-label={`Test ${index + 1} measured in`}>
+                      {UNIT_OPTIONS.map((option) => {
+                        const on = test.unit === option.value
+                        const unit = option.value === "weight" ? viewUnitLabel("kg") : option.label.replace(/^.*\((.*)\)$/, "$1")
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            className="sk-unit-chip"
+                            onClick={() => patchTest(test.key, { unit: option.value })}
+                          >
+                            {option.label.replace(/\s*\(.*\)$/, "")}
+                            <span className="opacity-70"> {unit}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
