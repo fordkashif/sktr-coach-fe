@@ -310,8 +310,34 @@ test("athlete home shows today's session, the week and what is left to do", asyn
   await expect(main.locator("[data-sk-hero]")).toHaveCount(1)
   await expect(main.locator("[data-sk-hero]").getByRole("link", { name: /session$/ })).toHaveAttribute("href", "/athlete/log")
   await expect(main.getByRole("list", { name: "This week" }).getByRole("listitem")).toHaveCount(7)
-  await expect(main.getByRole("link", { name: /Wellness check-in/ })).toHaveAttribute("href", "/athlete/wellness")
+  // The daily check-in sits right under the greeting, above everything else.
+  const checkIn = main.getByRole("link", { name: /Daily check-in, due today/ })
+  await expect(checkIn).toHaveAttribute("href", "/athlete/wellness")
+  const checkInBox = await checkIn.boundingBox()
+  const heroBox = await main.locator("[data-sk-hero]").boundingBox()
+  expect(checkInBox && heroBox && checkInBox.y < heroBox.y).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test("athlete home turns the check-in into today's readiness once it is done", async ({ page }) => {
+  await seedSession(page, "athlete")
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/athlete/home")
+  const main = page.locator("#main-content")
+  await main.getByRole("link", { name: /Daily check-in, due today/ }).click()
+  await expect(page).toHaveURL(/\/athlete\/wellness$/)
+  await page.evaluate(() => {
+    const d = new Date()
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    const tenant = document.cookie.match(/pacelab_tenant=([^;]+)/)?.[1] ?? "public"
+    localStorage.setItem(
+      `pacelab:wellness-entries:${tenant}`,
+      JSON.stringify([{ id: "m", athleteId: "a", entryDate: day, sleepHours: 8, soreness: 2, fatigue: 2, mood: 4, stress: 2, trainingLoad: 3, readiness: "green", readinessScore: 82, notes: null, createdAt: d.toISOString() }]),
+    )
+  })
+  await page.goto("/athlete/home")
+  await expect(main.getByRole("link", { name: /Checked in today\. Readiness 82/ })).toHaveAttribute("href", "/athlete/wellness")
+  await expect(main.getByRole("link", { name: /Daily check-in, due today/ })).toHaveCount(0)
 })
 
 test("coach dashboard shows today's session and the team's athletes as tiles that link to each athlete", async ({ page }) => {

@@ -48,7 +48,9 @@ import { getCurrentAthleteActiveTestWeekContext } from "@/lib/data/test-week/tes
 import type { CurrentAthleteTestWeekContext } from "@/lib/data/test-week/types"
 import { getAssignedTrainingPlansForCurrentAthlete, getTrainingPlanDetail } from "@/lib/data/training-plan/training-plan-data"
 import type { TrainingPlanDay } from "@/lib/data/training-plan/types"
-import { getCurrentAthleteWellnessEntries } from "@/lib/data/wellness/wellness-data"
+import { loadCurrentAthleteWellnessEntries } from "@/lib/data/wellness/wellness-data"
+import type { WellnessEntry } from "@/lib/data/wellness/types"
+import { CheckInCard } from "@/components/athlete/check-in-card"
 import { getBackendMode } from "@/lib/supabase/config"
 import { tenantStorageKey } from "@/lib/tenant-storage"
 import type { CurrentSession } from "@/lib/mock-data"
@@ -123,7 +125,7 @@ export default function AthleteHomePage() {
   const [setupGuideSaving, setSetupGuideSaving] = useState(false)
   const [planName, setPlanName] = useState<string | null>(null)
   const [planDays, setPlanDays] = useState<TrainingPlanDay[] | null>(null)
-  const [wellnessDates, setWellnessDates] = useState<string[] | null>(null)
+  const [wellnessEntries, setWellnessEntries] = useState<WellnessEntry[] | null>(null)
   const [testWeek, setTestWeek] = useState<CurrentAthleteTestWeekContext | null>(null)
   const [mockTestWeekSubmitted, setMockTestWeekSubmitted] = useState<boolean>(() => {
     if (typeof window === "undefined") return false
@@ -207,6 +209,23 @@ export default function AthleteHomePage() {
     }
   }, [currentSessionId, currentSessionBlockCount, isSupabase])
 
+  // The check-in card works in both modes: the demo keeps its check-ins in the browser.
+  useEffect(() => {
+    let cancelled = false
+    const loadWellness = async () => {
+      // The newest few are enough to know whether today is done.
+      const result = await loadCurrentAthleteWellnessEntries(7)
+      if (cancelled) return
+      setWellnessEntries(result.ok ? result.data : [])
+    }
+    void loadWellness()
+    window.addEventListener("focus", loadWellness)
+    return () => {
+      cancelled = true
+      window.removeEventListener("focus", loadWellness)
+    }
+  }, [backendMode])
+
   useEffect(() => {
     if (backendMode !== "supabase") return
     let cancelled = false
@@ -259,13 +278,8 @@ export default function AthleteHomePage() {
     }
 
     const loadTodos = async () => {
-      const [wellnessResult, testWeekResult] = await Promise.all([
-        // The data function returns the oldest rows first, so ask for plenty to be sure today is included.
-        getCurrentAthleteWellnessEntries(1000),
-        getCurrentAthleteActiveTestWeekContext(),
-      ])
+      const testWeekResult = await getCurrentAthleteActiveTestWeekContext()
       if (cancelled) return
-      if (wellnessResult.ok) setWellnessDates(wellnessResult.data.map((entry) => entry.entryDate.slice(0, 10)))
       if (testWeekResult.ok) setTestWeek(testWeekResult.data)
     }
 
@@ -380,18 +394,19 @@ export default function AthleteHomePage() {
 
   /* To do ----------------------------------------------------------- */
   const utcTodayKey = now.toISOString().slice(0, 10)
-  const wellnessKnown = isSupabase ? wellnessDates !== null : true
-  const wellnessDoneToday = isSupabase
-    ? Boolean(wellnessDates?.some((date) => date === todayKey || date === utcTodayKey))
-    : false
-  const showWellnessTodo = wellnessKnown && !wellnessDoneToday
+  const wellnessKnown = wellnessEntries !== null
+  const todayCheckIn =
+    [...(wellnessEntries ?? [])].reverse().find((entry) => {
+      const date = entry.entryDate.slice(0, 10)
+      return date === todayKey || date === utcTodayKey
+    }) ?? null
   const openTestWeek =
     isSupabase && testWeek && !testWeek.lastSubmittedAt && testWeek.tests.length > 0 && testWeek.endDate.slice(0, 10) >= todayKey
       ? testWeek
       : null
   const showMockTestWeekTodo = !isSupabase && !mockTestWeekSubmitted
   const coachNote = (!todayDone && (todaySession?.coachNote || planDayToday?.coachNote)) || ""
-  const todoCount = [showWellnessTodo, Boolean(openTestWeek), showMockTestWeekTodo, Boolean(overdueSession), Boolean(coachNote)].filter(Boolean).length
+  const todoCount = [Boolean(openTestWeek), showMockTestWeekTodo, Boolean(overdueSession), Boolean(coachNote)].filter(Boolean).length
 
   const firstName = displayName.trim().split(/\s+/)[0] || backendSessionDetail?.athleteFirstName || ""
   const title = firstName && firstName !== "Athlete" ? `${greeting(now)}, ${firstName}` : `Good ${greeting(now).toLowerCase()}`
@@ -428,6 +443,8 @@ export default function AthleteHomePage() {
   return (
     <Screen>
       <ScreenHeader fact={dateLine} title={title} />
+
+      {wellnessKnown ? <CheckInCard entry={todayCheckIn} /> : null}
 
       <MyAvailabilityNotice />
       <UnreadAnnouncementsNotice role="athlete" />
@@ -534,9 +551,6 @@ export default function AthleteHomePage() {
                 subtitle={`Planned for ${longDate(overdueSession.scheduledFor)}, not logged yet`}
               />
             ) : null}
-            {showWellnessTodo ? (
-              <ListRow to="/athlete/wellness" leading={<StatusDot tone="coral" />} title="Wellness check-in" subtitle="Sleep, soreness and mood. It takes a minute." />
-            ) : null}
             {openTestWeek ? (
               <ListRow
                 to="/athlete/test-week"
@@ -552,7 +566,7 @@ export default function AthleteHomePage() {
           </List>
         ) : wellnessKnown ? (
           <p className="py-3.5">
-            <StatusText tone="green">Check-in done, nothing else waiting.</StatusText>
+            <StatusText tone="green">Nothing else waiting.</StatusText>
           </p>
         ) : (
           <SkeletonRows rows={2} label="Checking what is left to do" />
